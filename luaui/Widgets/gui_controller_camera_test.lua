@@ -60,6 +60,7 @@ ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	lastParamsCount = 0,
 	lastIssuedCount = 0,
 	analogRotateArmed = true,
+	queueActive = false,
 }
 ControllerCameraTestAreaSelect = ControllerCameraTestAreaSelect or {
 	pressActive = false,
@@ -94,6 +95,7 @@ ControllerCameraTestVisualFeedback = ControllerCameraTestVisualFeedback or {
 	targetY = nil,
 	targetZ = nil,
 	label = "none",
+	kind = "generic",
 	expireTime = 0,
 }
 ControllerCameraTestLayerDebug = ControllerCameraTestLayerDebug or {
@@ -131,6 +133,121 @@ local DEBUG_PANEL_MIN_WIDTH = 280
 local DEBUG_PANEL_MIN_HEIGHT = 118
 local DEBUG_PANEL_DEFAULT_WIDTH = 650
 local DEBUG_PANEL_DEFAULT_HEIGHT = 150
+
+ControllerCameraTestSettings = ControllerCameraTestSettings or {
+	panSpeed = PAN_SPEED,
+	fastPanMultiplier = FAST_PAN_MULTIPLIER,
+	zoomSpeed = ZOOM_SPEED,
+	zoomBoostMultiplier = FAST_ZOOM_MULTIPLIER,
+	rotationSpeed = ROTATION_SPEED,
+	pitchSpeed = PITCH_SPEED,
+	stickDeadzone = 3000,
+	triggerDeadzone = 3000,
+	areaSelectRadius = 320,
+	reticleSize = 16,
+	debugPanelVisible = true,
+	helpOverlayVisible = false,
+}
+ControllerCameraTestTuning = ControllerCameraTestTuning or {
+	selectedIndex = 1,
+	backHeld = false,
+	backComboUsed = false,
+	lastAction = "none",
+}
+ControllerCameraTestQuickGroups = ControllerCameraTestQuickGroups or {
+	slots = {},
+	lastResult = "none",
+	lastSlot = "none",
+	currentSlot = 1,
+}
+
+function ControllerCameraTestClampSetting(name, value)
+	value = tonumber(value)
+	if not value then
+		return ControllerCameraTestSettings[name]
+	end
+	local ranges = {
+		panSpeed = { 500, 8000 },
+		fastPanMultiplier = { 1, 6 },
+		zoomSpeed = { 400, 9000 },
+		zoomBoostMultiplier = { 1, 6 },
+		rotationSpeed = { 0.5, 8 },
+		pitchSpeed = { 0.5, 8 },
+		stickDeadzone = { 0, 12000 },
+		triggerDeadzone = { 0, 12000 },
+		areaSelectRadius = { 120, 1200 },
+		reticleSize = { 8, 36 },
+	}
+	local range = ranges[name]
+	if not range then
+		return value
+	end
+	return math.max(range[1], math.min(range[2], value))
+end
+
+function ControllerCameraTestApplySettingsDefaults()
+	local settings = ControllerCameraTestSettings
+	settings.panSpeed = ControllerCameraTestClampSetting("panSpeed", settings.panSpeed or PAN_SPEED)
+	settings.fastPanMultiplier = ControllerCameraTestClampSetting("fastPanMultiplier", settings.fastPanMultiplier or FAST_PAN_MULTIPLIER)
+	settings.zoomSpeed = ControllerCameraTestClampSetting("zoomSpeed", settings.zoomSpeed or ZOOM_SPEED)
+	settings.zoomBoostMultiplier = ControllerCameraTestClampSetting("zoomBoostMultiplier", settings.zoomBoostMultiplier or FAST_ZOOM_MULTIPLIER)
+	settings.rotationSpeed = ControllerCameraTestClampSetting("rotationSpeed", settings.rotationSpeed or ROTATION_SPEED)
+	settings.pitchSpeed = ControllerCameraTestClampSetting("pitchSpeed", settings.pitchSpeed or PITCH_SPEED)
+	settings.stickDeadzone = ControllerCameraTestClampSetting("stickDeadzone", settings.stickDeadzone or 3000)
+	settings.triggerDeadzone = ControllerCameraTestClampSetting("triggerDeadzone", settings.triggerDeadzone or 3000)
+	settings.areaSelectRadius = ControllerCameraTestClampSetting("areaSelectRadius", settings.areaSelectRadius or 320)
+	settings.reticleSize = ControllerCameraTestClampSetting("reticleSize", settings.reticleSize or 16)
+	settings.debugPanelVisible = settings.debugPanelVisible ~= false
+	settings.helpOverlayVisible = settings.helpOverlayVisible == true
+	ControllerCameraTestAreaSelect.radius = settings.areaSelectRadius
+end
+
+function ControllerCameraTestSettingDefinitions()
+	return {
+		{ key = "panSpeed", label = "Pan speed", step = 100, decimals = 0 },
+		{ key = "fastPanMultiplier", label = "LT pan boost", step = 0.25, decimals = 2 },
+		{ key = "zoomSpeed", label = "Zoom speed", step = 100, decimals = 0 },
+		{ key = "zoomBoostMultiplier", label = "LT zoom boost", step = 0.25, decimals = 2 },
+		{ key = "rotationSpeed", label = "Rotate speed", step = 0.25, decimals = 2 },
+		{ key = "pitchSpeed", label = "Pitch speed", step = 0.25, decimals = 2 },
+		{ key = "stickDeadzone", label = "Stick deadzone", step = 500, decimals = 0 },
+		{ key = "triggerDeadzone", label = "Trigger deadzone", step = 500, decimals = 0 },
+		{ key = "areaSelectRadius", label = "Area radius", step = 40, decimals = 0 },
+		{ key = "reticleSize", label = "Reticle size", step = 1, decimals = 0 },
+	}
+end
+
+function ControllerCameraTestCurrentSettingLabel()
+	local defs = ControllerCameraTestSettingDefinitions()
+	local index = ControllerCameraTestTuning.selectedIndex
+	if index < 1 or index > #defs then
+		ControllerCameraTestTuning.selectedIndex = 1
+		index = 1
+	end
+	local def = defs[index]
+	local value = ControllerCameraTestSettings[def.key]
+	local format = def.decimals == 0 and "%s: %.0f" or "%s: %.2f"
+	return string.format(format, def.label, tonumber(value) or 0)
+end
+
+function ControllerCameraTestCycleTuningSetting(delta)
+	local defs = ControllerCameraTestSettingDefinitions()
+	ControllerCameraTestTuning.selectedIndex = ((ControllerCameraTestTuning.selectedIndex - 1 + delta) % #defs) + 1
+	ControllerCameraTestTuning.lastAction = "selected " .. ControllerCameraTestCurrentSettingLabel()
+end
+
+function ControllerCameraTestAdjustTuningSetting(delta)
+	local defs = ControllerCameraTestSettingDefinitions()
+	local def = defs[ControllerCameraTestTuning.selectedIndex] or defs[1]
+	local settings = ControllerCameraTestSettings
+	settings[def.key] = ControllerCameraTestClampSetting(def.key, (tonumber(settings[def.key]) or 0) + (def.step * delta))
+	if def.key == "areaSelectRadius" then
+		ControllerCameraTestAreaSelect.radius = settings.areaSelectRadius
+	end
+	ControllerCameraTestTuning.lastAction = "adjusted " .. ControllerCameraTestCurrentSettingLabel()
+end
+
+ControllerCameraTestApplySettingsDefaults()
 
 
 local XboxController = {
@@ -214,12 +331,14 @@ local XboxController = {
 	},
 	buttonOrder = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 },
 	commandLayerButtonOrder = { 0, 1, 2, 3, 9, 10, 11, 12, 13, 14 },
-	previewButtonOrder = { 0, 1, 2, 3, 9, 10, 11, 12, 13, 14 },
+	previewButtonOrder = { 0, 1, 2, 3, 4, 6, 9, 10, 11, 12, 13, 14 },
 	normalPreviewLabels = {
 		[0] = "A = Select / Confirm",
 		[1] = "B = Clear Selection",
 		[2] = "X = Smart Action (Move/Build/Attack)",
 		[3] = "Y = Controller Build Menu",
+		[4] = "Back/View = Debug toggle; hold for tuning/groups",
+		[6] = "Start/Menu = Help overlay",
 		[9] = "LB = Camera pitch modifier",
 		[10] = "RB = Cycle selection",
 		[11] = "D-pad Up = Camera bookmark Up",
@@ -239,7 +358,7 @@ local XboxController = {
 		[13] = "RT + D-pad Left = Previous selection cycle",
 		[14] = "RT + D-pad Right = Next selection cycle",
 	},
-	normalLayoutSummary = "A Tap Select / Hold Area, B Clear, X Context, Y Build Menu, LB Pitch, RB Cycle, D-pad Bookmarks",
+	normalLayoutSummary = "A Tap/Hold Select, B Clear, X Context, Y Build, LB Pitch/Cycle, RB Cycle, D-pad Bookmarks, Back Settings, Start Help",
 	commandLayoutSummary = "RT+A Select combat, RT+B Stop, RT+X Attack, RT+Y Tactical, RT+LB/RB Cycle, RT+D-pad Commands",
 }
 
@@ -394,6 +513,7 @@ local function resetControllerInputDebug()
 	lastClearSelectionResult = "none"
 	lastIssuedCommand = "none"
 	ControllerCameraTestBuildPlacement.active = false
+	ControllerCameraTestBuildPlacement.queueActive = false
 	ControllerCameraTestAreaSelect.pressActive = false
 	ControllerCameraTestAreaSelect.active = false
 	ControllerCameraTestTacticalMenu.open = false
@@ -459,31 +579,31 @@ local function formatNumber(value)
 end
 
 local function normalizeAxis(value)
-	local DEADZONE = 3000
 	local AXIS_MAX = 32767
 	local mathAbs = math.abs
 	value = tonumber(value) or 0
 
 	local magnitude = mathAbs(value)
-	if magnitude < DEADZONE then
+	local deadzone = tonumber(ControllerCameraTestSettings.stickDeadzone) or 3000
+	if magnitude < deadzone then
 		return 0
 	end
 
 	local sign = value < 0 and -1 or 1
-	local normalized = (magnitude - DEADZONE) / (AXIS_MAX - DEADZONE)
+	local normalized = (magnitude - deadzone) / (AXIS_MAX - deadzone)
 	return sign * clamp(normalized, 0, 1)
 end
 
 local function normalizeTrigger(value)
-	local TRIGGER_DEADZONE = 3000
 	local AXIS_MAX = 32767
 	value = tonumber(value) or 0
 
-	if value < TRIGGER_DEADZONE then
+	local deadzone = tonumber(ControllerCameraTestSettings.triggerDeadzone) or 3000
+	if value < deadzone then
 		return 0
 	end
 
-	return clamp((value - TRIGGER_DEADZONE) / (AXIS_MAX - TRIGGER_DEADZONE), 0, 1)
+	return clamp((value - deadzone) / (AXIS_MAX - deadzone), 0, 1)
 end
 
 local function getDebugPanelScreenSize()
@@ -1137,7 +1257,7 @@ function ControllerCameraTestResetMexCommandDebug()
 	ControllerCameraTestCommandDebug.mexFallbackGiveOrderPath = "no"
 end
 
-function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z)
+function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift)
 	ControllerCameraTestResetMexCommandDebug()
 
 	local builder = WG and WG.resource_spot_builder
@@ -1214,6 +1334,7 @@ function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z)
 
 	if type(builder.ApplyPreviewCmds) == "function" then
 		local _, _, _, shift = Spring.GetModKeyState()
+		shift = forceShift or shift
 		local applyOk = pcall(builder.ApplyPreviewCmds, { buildCmd }, mexConstructors, shift)
 		if applyOk then
 			lastIssuedCommand = "Mex Build (" .. tostring(cmdID) .. ")"
@@ -1231,9 +1352,10 @@ function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z)
 	end
 
 	local issuedCount = 0
+	local orderOptions = forceShift and { "shift" } or {}
 	for _, unitID in ipairs(selectedUnits) do
 		if mexConstructors[unitID] then
-			local orderOk = pcall(spGiveOrderToUnit, unitID, cmdID, params, {})
+			local orderOk = pcall(spGiveOrderToUnit, unitID, cmdID, params, orderOptions)
 			if orderOk then
 				issuedCount = issuedCount + 1
 			end
@@ -1350,12 +1472,13 @@ local function attemptStopCommand()
 	issueOrderToSelection(CMD.STOP, {}, "Stop", "none")
 end
 
-function ControllerCameraTestSetCommandMarker(x, y, z, label)
+function ControllerCameraTestSetCommandMarker(x, y, z, label, kind)
 	local marker = ControllerCameraTestVisualFeedback
 	marker.targetX = x
 	marker.targetY = y
 	marker.targetZ = z
 	marker.label = label or "command"
+	marker.kind = kind or string.lower(tostring(label or "generic"))
 	marker.expireTime = debugEventTime + 1.0
 end
 
@@ -1522,6 +1645,14 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 		latchSelectionDebugMessage(tostring(cmdName) .. " ordered to " .. tostring(issuedCount) .. " units")
 		if type(params[1]) == "number" and type(params[2]) == "number" and type(params[3]) == "number" then
 			ControllerCameraTestSetCommandMarker(params[1], params[2], params[3], cmdName)
+		elseif type(params[1]) == "number" and type(Spring.GetUnitPosition) == "function" then
+			local x, y, z = Spring.GetUnitPosition(params[1])
+			if not x and params[1] > (Game.maxUnits or 32000) and type(Spring.GetFeaturePosition) == "function" then
+				x, y, z = Spring.GetFeaturePosition(params[1] - (Game.maxUnits or 32000))
+			end
+			if x and y and z then
+				ControllerCameraTestSetCommandMarker(x, y, z, cmdName)
+			end
 		end
 		return true, issuedCount
 	end
@@ -1680,6 +1811,77 @@ function ControllerCameraTestHandleBookmarkButton(slot)
 		ControllerCameraTestRecallCameraBookmark(slot)
 	end
 	ControllerCameraTestLayerDebug.normalUtilityAction = "Bookmark " .. tostring(ControllerCameraTestBookmarkDebug.lastResult)
+end
+
+function ControllerCameraTestFilterValidUnits(units)
+	local validUnits = {}
+	if type(units) ~= "table" then
+		return validUnits
+	end
+	for _, unitID in ipairs(units) do
+		local isValid = true
+		if type(Spring.GetUnitIsDead) == "function" and Spring.GetUnitIsDead(unitID) then
+			isValid = false
+		end
+		if type(Spring.GetUnitDefID) == "function" and not Spring.GetUnitDefID(unitID) then
+			isValid = false
+		end
+		if isValid then
+			validUnits[#validUnits + 1] = unitID
+		end
+	end
+	return validUnits
+end
+
+function ControllerCameraTestStoreQuickGroup(slot)
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	local units = ControllerCameraTestFilterValidUnits(selectedUnits)
+	ControllerCameraTestQuickGroups.currentSlot = slot
+	ControllerCameraTestQuickGroups.lastSlot = tostring(slot)
+	if #units == 0 then
+		ControllerCameraTestQuickGroups.lastResult = "store failed: no selected units"
+		ControllerCameraTestTuning.lastAction = "quick group " .. tostring(slot) .. " store failed"
+		latchSelectionDebugMessage("Quick group " .. tostring(slot) .. ": no selected units")
+		return
+	end
+
+	ControllerCameraTestQuickGroups.slots[slot] = units
+	ControllerCameraTestQuickGroups.lastResult = "stored " .. tostring(#units) .. " units"
+	ControllerCameraTestTuning.lastAction = "quick group " .. tostring(slot) .. " stored"
+	latchSelectionDebugMessage("Quick group " .. tostring(slot) .. " stored: " .. tostring(#units))
+end
+
+function ControllerCameraTestRecallQuickGroup(slot)
+	local units = ControllerCameraTestFilterValidUnits(ControllerCameraTestQuickGroups.slots[slot])
+	ControllerCameraTestQuickGroups.currentSlot = slot
+	ControllerCameraTestQuickGroups.lastSlot = tostring(slot)
+	if #units == 0 then
+		ControllerCameraTestQuickGroups.slots[slot] = nil
+		ControllerCameraTestQuickGroups.lastResult = "empty"
+		ControllerCameraTestTuning.lastAction = "quick group " .. tostring(slot) .. " empty"
+		latchSelectionDebugMessage("Quick group " .. tostring(slot) .. " empty")
+		return false
+	end
+
+	ControllerCameraTestQuickGroups.slots[slot] = units
+	ControllerCameraTestQuickGroups.lastResult = "recalled " .. tostring(#units) .. " units"
+	ControllerCameraTestTuning.lastAction = "quick group " .. tostring(slot) .. " recalled"
+	ControllerCameraTestSelectUnits(units, "Quick group " .. tostring(slot))
+	return true
+end
+
+function ControllerCameraTestCycleQuickGroup(delta)
+	local startSlot = ControllerCameraTestQuickGroups.currentSlot or 1
+	for i = 1, 4 do
+		local slot = ((startSlot - 1 + (delta * i)) % 4) + 1
+		if ControllerCameraTestRecallQuickGroup(slot) then
+			ControllerCameraTestLayerDebug.commandLayerAction = "Quick group " .. tostring(slot)
+			return true
+		end
+	end
+	ControllerCameraTestQuickGroups.lastResult = "no stored groups"
+	latchSelectionDebugMessage("No stored quick groups")
+	return false
 end
 
 function ControllerCameraTestGetTacticalCommands()
@@ -2074,6 +2276,7 @@ function ControllerCameraTestCancelPlacement(reason)
 	placement.lastResult = reason or "cancelled"
 	placement.lastParamsCount = 0
 	placement.lastIssuedCount = 0
+	placement.queueActive = false
 	latchSelectionDebugMessage("Placement cancelled")
 end
 
@@ -2100,6 +2303,9 @@ end
 
 function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	local menu = ControllerCameraTestBuildMenu
+	local queueActive = normalizedLeftTrigger > 0
+	local orderOptions = queueActive and { "shift" } or {}
+	ControllerCameraTestBuildPlacement.queueActive = queueActive
 	if not option or type(option.cmdID) ~= "number" or option.cmdID >= 0 then
 		menu.placementResult = "no highlighted build option"
 		menu.placementParamsCount = 0
@@ -2122,7 +2328,7 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	end
 
 	if ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits) then
-		local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(option.cmdID, {}, "Factory queue " .. tostring(option.name), "queue", {})
+		local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(option.cmdID, {}, "Factory queue " .. tostring(option.name), "queue", orderOptions)
 		menu.placementParamsCount = 0
 		ControllerCameraTestBuildPlacement.lastParamsCount = 0
 		ControllerCameraTestBuildPlacement.lastIssuedCount = issuedCount
@@ -2153,7 +2359,7 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	end
 
 	if ControllerCameraTestIsMexBuildCommand(option.cmdID)
-		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ)
+		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ, queueActive)
 	then
 		menu.placementResult = "mex smart action"
 		menu.placementParamsCount = 4
@@ -2183,7 +2389,7 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	local params = { x, y, z, facing }
 	local issuedCount = 0
 	for _, unitID in ipairs(selectedUnits) do
-		local orderOk, orderResult = pcall(spGiveOrderToUnit, unitID, option.cmdID, params, {})
+		local orderOk, orderResult = pcall(spGiveOrderToUnit, unitID, option.cmdID, params, orderOptions)
 		if orderOk and orderResult ~= false then
 			issuedCount = issuedCount + 1
 		end
@@ -2201,7 +2407,7 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 		ControllerCameraTestBuildPlacement.lastResult = menu.placementResult
 		ControllerCameraTestCommandDebug.lastResult = "build menu GiveOrderToUnit"
 		latchSelectionDebugMessage("Build placed: " .. tostring(option.name))
-		ControllerCameraTestSetCommandMarker(x, y, z, "Build")
+		ControllerCameraTestSetCommandMarker(x, y, z, "Build", "build")
 		if exitPlacement then
 			ControllerCameraTestBuildPlacement.active = false
 		end
@@ -2246,6 +2452,7 @@ function ControllerCameraTestHandlePlacementInput()
 		return false
 	end
 
+	placement.queueActive = normalizedLeftTrigger > 0
 	ControllerCameraTestUpdatePlacementAnalog()
 	if WasButtonPressed("B") then
 		ControllerCameraTestCancelPlacement("cancelled by B")
@@ -2321,6 +2528,7 @@ function ControllerCameraTestUpdateAreaRadius(dt)
 	end
 	if radiusDelta ~= 0 then
 		area.radius = clamp(area.radius + radiusDelta, 120, 1200)
+		ControllerCameraTestSettings.areaSelectRadius = area.radius
 	end
 end
 
@@ -2446,11 +2654,15 @@ function ControllerCameraTestHandleCommandLayerInput()
 	elseif WasButtonPressed("dpadDown") then
 		ControllerCameraTestIssueReclaimOrStop()
 	elseif WasButtonPressed("dpadLeft") then
-		ControllerCameraTestCycleSelection(-1)
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Left cycle selection"
+		if not ControllerCameraTestCycleQuickGroup(-1) then
+			ControllerCameraTestCycleSelection(-1)
+			ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Left cycle selection"
+		end
 	elseif WasButtonPressed("dpadRight") then
-		ControllerCameraTestCycleSelection(1)
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Right cycle selection"
+		if not ControllerCameraTestCycleQuickGroup(1) then
+			ControllerCameraTestCycleSelection(1)
+			ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Right cycle selection"
+		end
 	elseif WasButtonPressed("LB") then
 		ControllerCameraTestCycleSelection(-1)
 		ControllerCameraTestLayerDebug.commandLayerAction = "RT+LB previous selection"
@@ -2480,6 +2692,82 @@ function ControllerCameraTestUpdateLBTapState()
 	end
 end
 
+function ControllerCameraTestCanUseTuningControls()
+	return not commandLayerActive
+		and not ControllerCameraTestBuildMenu.open
+		and not ControllerCameraTestBuildPlacement.active
+		and not ControllerCameraTestTacticalMenu.open
+		and not ControllerCameraTestAreaSelect.active
+		and not ControllerCameraTestAreaSelect.pressActive
+end
+
+function ControllerCameraTestHandleBackViewControls()
+	if not ControllerCameraTestCanUseTuningControls() then
+		ControllerCameraTestTuning.backHeld = false
+		ControllerCameraTestTuning.backComboUsed = false
+		return false
+	end
+
+	if WasButtonPressed("back") then
+		ControllerCameraTestTuning.backHeld = true
+		ControllerCameraTestTuning.backComboUsed = false
+	end
+
+	if IsButtonDown("back") then
+		local usedCombo = false
+		if WasButtonPressed("dpadLeft") then
+			ControllerCameraTestCycleTuningSetting(-1)
+			usedCombo = true
+		elseif WasButtonPressed("dpadRight") then
+			ControllerCameraTestCycleTuningSetting(1)
+			usedCombo = true
+		elseif WasButtonPressed("dpadUp") then
+			ControllerCameraTestAdjustTuningSetting(1)
+			usedCombo = true
+		elseif WasButtonPressed("dpadDown") then
+			ControllerCameraTestAdjustTuningSetting(-1)
+			usedCombo = true
+		elseif WasButtonPressed("A") then
+			ControllerCameraTestStoreQuickGroup(1)
+			usedCombo = true
+		elseif WasButtonPressed("B") then
+			ControllerCameraTestStoreQuickGroup(2)
+			usedCombo = true
+		elseif WasButtonPressed("X") then
+			ControllerCameraTestStoreQuickGroup(3)
+			usedCombo = true
+		elseif WasButtonPressed("Y") then
+			ControllerCameraTestStoreQuickGroup(4)
+			usedCombo = true
+		elseif WasButtonPressed("LB") then
+			ControllerCameraTestCycleQuickGroup(-1)
+			usedCombo = true
+		elseif WasButtonPressed("RB") then
+			ControllerCameraTestCycleQuickGroup(1)
+			usedCombo = true
+		end
+
+		if usedCombo then
+			ControllerCameraTestTuning.backComboUsed = true
+			ControllerCameraTestLayerDebug.normalUtilityAction = "Back/View combo: " .. tostring(ControllerCameraTestTuning.lastAction)
+		end
+		return true
+	end
+
+	if WasButtonReleased("back") and ControllerCameraTestTuning.backHeld then
+		if not ControllerCameraTestTuning.backComboUsed then
+			ControllerCameraTestSettings.debugPanelVisible = not ControllerCameraTestSettings.debugPanelVisible
+			ControllerCameraTestTuning.lastAction = "debug panel " .. (ControllerCameraTestSettings.debugPanelVisible and "shown" or "hidden")
+			latchSelectionDebugMessage("Debug panel " .. (ControllerCameraTestSettings.debugPanelVisible and "shown" or "hidden"))
+		end
+		ControllerCameraTestTuning.backHeld = false
+		ControllerCameraTestTuning.backComboUsed = false
+		return true
+	end
+
+	return false
+end
+
 function ControllerCameraTestHandleNormalUtilityInput()
 	if WasButtonPressed("RB") then
 		ControllerCameraTestCycleSelection(1)
@@ -2500,9 +2788,8 @@ function ControllerCameraTestHandleNormalUtilityInput()
 	elseif WasButtonPressed("dpadRight") then
 		ControllerCameraTestHandleBookmarkButton("right")
 	elseif WasButtonPressed("start") then
-		ControllerCameraTestSetNormalUtilityAction("Start/Menu placeholder")
-	elseif WasButtonPressed("back") then
-		ControllerCameraTestSetNormalUtilityAction("Back/View tactical overlay placeholder")
+		ControllerCameraTestSettings.helpOverlayVisible = not ControllerCameraTestSettings.helpOverlayVisible
+		ControllerCameraTestSetNormalUtilityAction("Help overlay " .. (ControllerCameraTestSettings.helpOverlayVisible and "shown" or "hidden"))
 	end
 end
 
@@ -2521,6 +2808,12 @@ function ControllerCameraTestGetModeSummary()
 	end
 	if ControllerCameraTestAreaSelect.active then
 		return "area select"
+	end
+	if ControllerCameraTestTuning.backHeld then
+		return "tuning"
+	end
+	if ControllerCameraTestSettings.helpOverlayVisible then
+		return "help overlay"
 	end
 	if controllerMode then
 		return "normal"
@@ -2557,7 +2850,7 @@ local function applyFallbackHeightZoom(cameraState, zoomInput, dt)
 		return false
 	end
 
-	cameraState.py = cameraState.py - (zoomInput * ZOOM_SPEED * (dt or 0))
+	cameraState.py = cameraState.py - (zoomInput * ControllerCameraTestSettings.zoomSpeed * (dt or 0))
 
 	if spGetGroundHeight and type(cameraState.px) == "number" and type(cameraState.pz) == "number" then
 		local groundHeight = spGetGroundHeight(cameraState.px, cameraState.pz)
@@ -2600,7 +2893,7 @@ local function applyRotation(cameraState, rotationInput, dt)
 		return
 	end
 
-	local rotationAmount = rotationInput * ROTATION_SPEED * (dt or 0)
+	local rotationAmount = rotationInput * ControllerCameraTestSettings.rotationSpeed * (dt or 0)
 
 	if type(cameraState.ry) == "number" then
 		cameraState.ry = cameraState.ry + rotationAmount
@@ -2631,7 +2924,7 @@ local function applyPitch(cameraState, pitchInput, dt)
 		return
 	end
 
-	local pitchAmount = pitchInput * PITCH_SPEED * (dt or 0)
+	local pitchAmount = pitchInput * ControllerCameraTestSettings.pitchSpeed * (dt or 0)
 
 	if type(cameraState.rx) == "number" then
 		cameraState.rx = clamp(cameraState.rx + pitchAmount, MIN_CAMERA_RX, MAX_CAMERA_RX)
@@ -2676,7 +2969,7 @@ local function applyCameraInput(leftX, leftY, zoomInput, rotationInput, pitchInp
 		return
 	end
 
-	local distance = PAN_SPEED * (panMultiplier or 1) * (dt or 0)
+	local distance = ControllerCameraTestSettings.panSpeed * (panMultiplier or 1) * (dt or 0)
 	local deltaX, deltaZ = getCameraPanDelta(leftX, leftY, distance)
 
 	cameraState.px = cameraState.px + deltaX
@@ -2728,7 +3021,7 @@ local function drawControllerReticle()
 		return
 	end
 
-	local RETICLE_RADIUS = 16
+	local RETICLE_RADIUS = ControllerCameraTestSettings.reticleSize
 
 	gl.LineWidth(4)
 	gl.Color(0, 0, 0, 0.42)
@@ -2844,6 +3137,10 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
 			ControllerCameraTestCancelAreaSelect("cancelled by build menu")
 		end
+	elseif ControllerCameraTestHandleBackViewControls() then
+		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
+			ControllerCameraTestCancelAreaSelect("cancelled by Back/View")
+		end
 	else
 		local areaBusy = ControllerCameraTestHandleNormalAInput(dt)
 		if areaBusy and WasButtonPressed("B") then
@@ -2906,8 +3203,8 @@ function ControllerCameraTestUpdateCameraControls(dt)
 	rotationActive = rotationInput ~= 0
 	pitchActive = pitchInput ~= 0
 
-	local panMultiplier = fastPanActive and FAST_PAN_MULTIPLIER or 1
-	zoomSpeedMultiplier = fastPanActive and FAST_ZOOM_MULTIPLIER or 1
+	local panMultiplier = fastPanActive and ControllerCameraTestSettings.fastPanMultiplier or 1
+	zoomSpeedMultiplier = fastPanActive and ControllerCameraTestSettings.zoomBoostMultiplier or 1
 	if panActive or zoomActive or rotationActive or pitchActive then
 		applyCameraInput(normalizedLeftX, normalizedLeftY, zoomInput, rotationInput, pitchInput, panMultiplier, zoomSpeedMultiplier, dt)
 	elseif spGetCameraState then
@@ -2954,6 +3251,9 @@ function widget:MousePress(x, y, button)
 	if button ~= 1 then
 		return
 	end
+	if not ControllerCameraTestSettings.debugPanelVisible then
+		return
+	end
 
 	ensureDebugPanelInitialized()
 	if isPointInDebugPanelResizeHandle(x, y) then
@@ -2984,10 +3284,87 @@ function widget:MouseRelease()
 	end
 end
 
+function ControllerCameraTestDrawHelpOverlay()
+	local screenWidth = viewSizeX > 0 and viewSizeX or 1280
+	local screenHeight = viewSizeY > 0 and viewSizeY or 720
+	local width = math.min(760, math.max(300, screenWidth - 40))
+	local height = math.min(430, math.max(300, screenHeight - 60))
+	local left = math.max(20, (screenWidth - width) * 0.5)
+	local top = math.min(screenHeight - 20, height + 20)
+	local bottom = top - height
+	local right = left + width
+	local x = left + 18
+	local y = top - 24
+	local lineHeight = 17
+	local maxChars = math.max(28, math.floor((width - 36) / 7.5))
+	local lines = {
+		"Controller Camera Test Help",
+		"Normal: LS pan | LT boost | RS X rotate | RS Y zoom | LB+RSY pitch",
+		"A tap select | A hold radius select | A double-tap same type / combat fallback",
+		"B clear/cancel | X smart move/mex/context | Y build menu | RB/LB cycle",
+		"D-pad recalls camera bookmarks | LT+D-pad stores camera bookmarks",
+		"Build: A enter/place+exit | X place+stay | B cancel | D-pad/RS X rotate facing",
+		"RT: A visible combat/mobile | B stop | X attack | Y tactical menu",
+		"RT+D-pad Up guard/patrol | Down reclaim | Left/Right quick group or cycle",
+		"Tactical menu: D-pad/LB/RB choose | A/X confirm | B/Y cancel",
+		"Back/View tap toggles debug panel",
+		"Back/View + D-pad Left/Right selects setting | Up/Down adjusts",
+		"Back/View + A/B/X/Y stores quick group 1-4 | Back/View + LB/RB recalls groups",
+		"Start/Menu toggles this overlay",
+		"Selected setting: " .. ControllerCameraTestCurrentSettingLabel(),
+	}
+
+	gl.Color(0, 0, 0, 0.86)
+	gl.Rect(left, bottom, right, top)
+	gl.Color(0.12, 0.18, 0.23, 0.96)
+	gl.Rect(left, top - 34, right, top)
+	gl.Color(0.72, 0.88, 1, 0.9)
+	gl.Rect(left, top - 34, right, top - 33)
+	gl.Color(1, 1, 1, 1)
+
+	for i, line in ipairs(lines) do
+		local size = (i == 1) and 18 or 14
+		local colorIsHeader = i == 1 or i == 10
+		if colorIsHeader then
+			gl.Color(0.72, 0.9, 1, 1)
+		else
+			gl.Color(1, 1, 1, 0.96)
+		end
+		local remaining = line
+		local first = true
+		while #remaining > 0 and y > bottom + 12 do
+			local drawText = remaining
+			if #remaining > maxChars then
+				local breakAt = maxChars
+				for pos = maxChars, math.max(1, math.floor(maxChars * 0.5)), -1 do
+					if string.sub(remaining, pos, pos) == " " then
+						breakAt = pos
+						break
+					end
+				end
+				drawText = string.sub(remaining, 1, breakAt)
+				remaining = string.gsub(string.sub(remaining, breakAt + 1), "^%s+", "")
+			else
+				remaining = ""
+			end
+			gl.Text((first and "" or "  ") .. drawText, x, y, size, "o")
+			y = y - lineHeight
+			first = false
+		end
+	end
+	gl.Color(1, 1, 1, 1)
+end
+
 function widget:DrawScreen()
 	local mathMax, mathPi = math.max, math.pi
 	updateDebugLatchSummaries()
 	drawControllerReticle()
+	if ControllerCameraTestSettings.helpOverlayVisible then
+		ControllerCameraTestDrawHelpOverlay()
+	end
+	if not ControllerCameraTestSettings.debugPanelVisible then
+		return
+	end
 
 	local function yesNo(value)
 		return value and "yes" or "no"
@@ -3104,6 +3481,8 @@ function widget:DrawScreen()
 				"Input: " .. (controllerMode and "controller" or "mouse"),
 				"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary),
 				"Reticle visible: " .. yesNo(reticleVisible),
+				"Debug panel: " .. yesNo(ControllerCameraTestSettings.debugPanelVisible),
+				"Help overlay: " .. yesNo(ControllerCameraTestSettings.helpOverlayVisible),
 			},
 		},
 		{
@@ -3144,6 +3523,9 @@ function widget:DrawScreen()
 				"Area result: " .. tostring(ControllerCameraTestAreaSelect.lastResult) .. " count=" .. tostring(ControllerCameraTestAreaSelect.lastCount),
 				"Cycle: " .. tostring(ControllerCameraTestCycleDebug.lastResult) .. " count=" .. tostring(ControllerCameraTestCycleDebug.lastCount),
 				"Bookmark: " .. tostring(ControllerCameraTestBookmarkDebug.lastResult),
+				"Quick group: " .. tostring(ControllerCameraTestQuickGroups.lastResult) .. " slot=" .. tostring(ControllerCameraTestQuickGroups.lastSlot),
+				"Tuning: " .. ControllerCameraTestCurrentSettingLabel(),
+				"Tuning action: " .. tostring(ControllerCameraTestTuning.lastAction),
 			},
 		},
 	}
@@ -3160,6 +3542,9 @@ function widget:DrawScreen()
 				"Rotate active: " .. yesNo(rotationActive),
 				"Pitch active: " .. yesNo(pitchActive),
 				string.format("Zoom speed: %.1fx", zoomSpeedMultiplier),
+				string.format("Pan speed setting: %.0f", ControllerCameraTestSettings.panSpeed),
+				string.format("Rotate/Pitch: %.2f / %.2f", ControllerCameraTestSettings.rotationSpeed, ControllerCameraTestSettings.pitchSpeed),
+				string.format("Deadzones stick/trigger: %.0f / %.0f", ControllerCameraTestSettings.stickDeadzone, ControllerCameraTestSettings.triggerDeadzone),
 				"Zoom method: " .. zoomMethod,
 				"Rotate method: " .. rotationMethod,
 				"Pitch method: " .. pitchMethod,
@@ -3205,6 +3590,7 @@ function widget:DrawScreen()
 				"Options: " .. ControllerCameraTestGetBuildOptionSummary(),
 				"Placement active: " .. yesNo(ControllerCameraTestBuildPlacement.active),
 				"Placement facing: " .. tostring(ControllerCameraTestBuildPlacement.facing),
+				"Queue active: " .. yesNo(ControllerCameraTestBuildPlacement.queueActive),
 				"Placement result: " .. tostring(ControllerCameraTestBuildPlacement.lastResult),
 				"Placement issued: " .. tostring(ControllerCameraTestBuildPlacement.lastIssuedCount),
 				"Menu place result: " .. tostring(ControllerCameraTestBuildMenu.placementResult),
@@ -3276,11 +3662,18 @@ end
 
 function widget:GetConfigData()
 	ensureDebugPanelInitialized()
+	local settings = {}
+	for key, value in pairs(ControllerCameraTestSettings) do
+		if type(value) ~= "table" then
+			settings[key] = value
+		end
+	end
 	return {
 		panelX = debugPanelX,
 		panelY = debugPanelY,
 		panelWidth = debugPanelWidth,
 		panelHeight = debugPanelHeight,
+		settings = settings,
 	}
 end
 
@@ -3289,21 +3682,30 @@ function widget:SetConfigData(data)
 		return
 	end
 
+	if type(data.settings) == "table" then
+		for key, value in pairs(data.settings) do
+			if ControllerCameraTestSettings[key] ~= nil then
+				ControllerCameraTestSettings[key] = value
+			end
+		end
+	end
+	ControllerCameraTestApplySettingsDefaults()
+
 	local panelX = tonumber(data.panelX)
 	local panelY = tonumber(data.panelY)
 	local panelWidth = tonumber(data.panelWidth)
 	local panelHeight = tonumber(data.panelHeight)
 	if not panelX or not panelY or not panelWidth or not panelHeight then
-		return
-	end
-
-	debugPanelX = panelX
-	debugPanelY = panelY
-	debugPanelWidth = panelWidth
-	debugPanelHeight = panelHeight
-	debugPanelInitialized = true
-	if viewSizeX > 0 and viewSizeY > 0 then
-		clampDebugPanelToScreen()
+		ensureDebugPanelInitialized()
+	else
+		debugPanelX = panelX
+		debugPanelY = panelY
+		debugPanelWidth = panelWidth
+		debugPanelHeight = panelHeight
+		debugPanelInitialized = true
+		if viewSizeX > 0 and viewSizeY > 0 then
+			clampDebugPanelToScreen()
+		end
 	end
 end
 
@@ -3341,13 +3743,25 @@ function widget:DrawWorld()
 	end
 
 	if ControllerCameraTestVisualFeedback.expireTime > debugEventTime and ControllerCameraTestVisualFeedback.targetX then
+		local marker = ControllerCameraTestVisualFeedback
+		local alpha = clamp(marker.expireTime - debugEventTime, 0, 1)
+		if string.find(marker.kind, "attack") then
+			gl.Color(1.0, 0.18, 0.12, 0.75 * alpha)
+		elseif string.find(marker.kind, "build") then
+			gl.Color(1.0, 0.88, 0.18, 0.75 * alpha)
+		elseif string.find(marker.kind, "reclaim") or string.find(marker.kind, "repair") then
+			gl.Color(0.35, 1.0, 0.45, 0.72 * alpha)
+		elseif string.find(marker.kind, "guard") or string.find(marker.kind, "patrol") then
+			gl.Color(0.25, 0.65, 1.0, 0.72 * alpha)
+		else
+			gl.Color(1.0, 1.0, 1.0, 0.62 * alpha)
+		end
 		gl.LineWidth(2)
-		gl.Color(1.0, 0.55, 0.12, 0.75)
 		gl.DrawGroundCircle(
-			ControllerCameraTestVisualFeedback.targetX,
-			ControllerCameraTestVisualFeedback.targetY or 0,
-			ControllerCameraTestVisualFeedback.targetZ,
-			44,
+			marker.targetX,
+			marker.targetY or 0,
+			marker.targetZ,
+			44 + ((1 - alpha) * 32),
 			28
 		)
 	end
