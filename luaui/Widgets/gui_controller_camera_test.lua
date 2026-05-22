@@ -141,6 +141,24 @@ ControllerCameraTestBookmarkDebug = ControllerCameraTestBookmarkDebug or {
 	lastResult = "none",
 	lastSlot = "none",
 }
+ControllerCameraTestIdleCycle = ControllerCameraTestIdleCycle or {
+	currentUnitID = nil,
+	currentIndex = 1,
+	currentTypeKey = nil,
+	currentTypeIndex = 1,
+	lastResult = "none",
+	lastTypeName = "none",
+	lastCount = 0,
+	selectedAllCount = 0,
+}
+ControllerCameraTestControlGroups = ControllerCameraTestControlGroups or {
+	slots = {},
+	activeSlot = 1,
+	visibleUntil = 0,
+	lastAction = "none",
+	lastSlot = "none",
+	lastCount = 0,
+}
 ControllerCameraTestVisualFeedback = ControllerCameraTestVisualFeedback or {
 	targetX = nil,
 	targetY = nil,
@@ -165,6 +183,8 @@ ControllerCameraTestDebugSections = ControllerCameraTestDebugSections or {
 	TacticalMenu = false,
 	BuildMenu = true,
 	Bookmarks = false,
+	IdleCycle = true,
+	ControlGroups = true,
 	QuickGroups = false,
 	Tuning = false,
 }
@@ -400,21 +420,21 @@ local XboxController = {
 	commandLayerButtonOrder = { 0, 1, 2, 3, 9, 10, 11, 12, 13, 14 },
 	previewButtonOrder = { 0, 1, 2, 3, 4, 6, 9, 10, 11, 12, 13, 14 },
 	normalPreviewLabels = {
-		[0] = "A = Select / Confirm",
+		[0] = "A = Select / Hold area / Double-tap commander if no selection",
 		[1] = "B = Clear Selection",
 		[2] = "X = Smart Action (Move/Build/Attack)",
 		[3] = "Y = Controller Build Menu",
 		[4] = "Back/View = Debug toggle; hold for tuning/groups",
 		[6] = "Start/Menu = Help overlay",
-		[9] = "LB = Camera pitch modifier",
-		[10] = "RB = Cycle selection",
+		[9] = "LB = Camera pitch; LB+D-pad L/R idle type",
+		[10] = "RB = Hold control-group mode",
 		[11] = "D-pad Up = Camera bookmark Up",
 		[12] = "D-pad Down = Camera bookmark Down",
-		[13] = "D-pad Left = Camera bookmark Left",
-		[14] = "D-pad Right = Camera bookmark Right",
+		[13] = "D-pad Left = Previous idle unit",
+		[14] = "D-pad Right = Next idle unit",
 	},
 	commandPreviewLabels = {
-		[0] = "RT + A = Select visible combat/mobile units",
+		[0] = "RT + A = Reserved / select-all disabled",
 		[1] = "RT + B = Stop selected units",
 		[2] = "RT + X = Attack / Attack-move",
 		[3] = "RT + Y = Tactical command menu",
@@ -425,8 +445,8 @@ local XboxController = {
 		[13] = "RT + D-pad Left = Previous selection cycle",
 		[14] = "RT + D-pad Right = Next selection cycle",
 	},
-	normalLayoutSummary = "A Tap/Hold Select, B Clear, X Context, Y Build, LB Pitch/Cycle, RB Cycle, D-pad Bookmarks, Back Settings, Start Help",
-	commandLayoutSummary = "RT+A Select combat, RT+B Stop, RT+X Attack, RT+Y Tactical, RT+LB/RB Cycle, RT+D-pad Commands",
+	normalLayoutSummary = "A Select/Hold Area/Double Commander, B Clear, X Context, Y Build, D-pad L/R Idle, LB+D-pad Type, RB Groups",
+	commandLayoutSummary = "RT+A Reserved, RT+B Stop, RT+X Attack, RT+Y Tactical, RT+LB/RB Cycle, RT+D-pad Commands",
 }
 
 apiAvailable = false
@@ -2221,55 +2241,325 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 end
 
 function ControllerCameraTestSelectVisibleCombatUnits()
-	local alliedUnits = ControllerCameraTestGetVisibleAlliedUnits()
-	local combatUnits = {}
-	local mobileUnits = {}
-	local fallbackUnits = {}
-
-	for _, unitID in ipairs(alliedUnits) do
-		local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
-		if ControllerCameraTestIsMobileUnitDef(unitDef) then
-			mobileUnits[#mobileUnits + 1] = unitID
-			if ControllerCameraTestIsCombatUnitDef(unitDef) then
-				combatUnits[#combatUnits + 1] = unitID
-			end
-		elseif #fallbackUnits < 1 then
-			fallbackUnits[#fallbackUnits + 1] = unitID
-		end
-	end
-
-	local units = (#combatUnits > 0 and combatUnits) or (#mobileUnits > 0 and mobileUnits) or fallbackUnits
-	ControllerCameraTestCycleDebug.lastCount = #units
-	if ControllerCameraTestSelectUnits(units, "RT+A visible combat") then
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+A selected " .. tostring(#units) .. " visible units"
-	else
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+A found no safe visible units"
-	end
+	ControllerCameraTestCycleDebug.lastResult = "visible select disabled"
+	ControllerCameraTestLayerDebug.commandLayerAction = "RT+A select-all disabled"
+	latchSelectionDebugMessage("Visible select-all is disabled")
+	return false
 end
 
 function ControllerCameraTestSelectSameTypeAtReticleOrCombat()
-	local target = ControllerCameraTestGetReticleTargetInfo()
-	if target.targetType == "unit" and target.targetID and ControllerCameraTestIsAlliedUnit(target.targetID) then
-		local targetDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(target.targetID)
-		if targetDefID then
-			local sameTypeUnits = {}
-			for _, unitID in ipairs(ControllerCameraTestGetVisibleAlliedUnits()) do
-				local unitDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(unitID)
-				if unitDefID == targetDefID then
-					sameTypeUnits[#sameTypeUnits + 1] = unitID
-				end
+	ControllerCameraTestAreaSelect.lastResult = "legacy double-tap select disabled"
+	ControllerCameraTestLayerDebug.normalUtilityAction = "Double-tap select-all disabled"
+	latchSelectionDebugMessage("Double-tap select-all disabled")
+	return false
+end
+
+function ControllerCameraTestFocusCameraAt(x, y, z, label)
+	if not x or not z then
+		return false
+	end
+	local focusY = y
+	if not focusY and type(spGetGroundHeight) == "function" then
+		focusY = spGetGroundHeight(x, z)
+	end
+	focusY = focusY or 0
+	if type(Spring.SetCameraTarget) == "function" then
+		local ok = pcall(Spring.SetCameraTarget, x, focusY, z, 0.35)
+		if ok then
+			ControllerCameraTestSetCommandMarker(x, focusY, z, label or "Focus", "generic")
+			return true
+		end
+	end
+	if type(spGetCameraState) == "function" and type(spSetCameraState) == "function" then
+		local cameraState = spGetCameraState()
+		if type(cameraState) == "table" then
+			cameraState.px = x
+			cameraState.pz = z
+			if cameraState.py == nil then
+				cameraState.py = focusY + 600
 			end
-			if #sameTypeUnits > 0 then
-				ControllerCameraTestAreaSelect.lastCount = #sameTypeUnits
-				ControllerCameraTestAreaSelect.lastResult = "double tap same type " .. tostring(#sameTypeUnits)
-				ControllerCameraTestSelectUnits(sameTypeUnits, "A double-tap same type")
-				return
+			local ok = pcall(spSetCameraState, cameraState, 0.25)
+			if ok then
+				ControllerCameraTestSetCommandMarker(x, focusY, z, label or "Focus", "generic")
+				return true
 			end
 		end
 	end
+	return false
+end
 
-	ControllerCameraTestSelectVisibleCombatUnits()
-	ControllerCameraTestAreaSelect.lastResult = "double tap visible combat"
+function ControllerCameraTestFocusAndSelectUnit(unitID, label)
+	if not unitID then
+		return false
+	end
+	local selected = ControllerCameraTestSelectUnits({ unitID }, label or "Select unit")
+	if type(spGetUnitPosition) == "function" then
+		local ok, x, y, z = pcall(spGetUnitPosition, unitID)
+		if ok and x and z then
+			ControllerCameraTestFocusCameraAt(x, y, z, label or "Focus unit")
+		end
+	end
+	return selected
+end
+
+function ControllerCameraTestFocusUnitsCenter(units, label)
+	if type(units) ~= "table" or #units == 0 or type(spGetUnitPosition) ~= "function" then
+		return false
+	end
+	local sx, sy, sz, count = 0, 0, 0, 0
+	for _, unitID in ipairs(units) do
+		local ok, x, y, z = pcall(spGetUnitPosition, unitID)
+		if ok and x and z then
+			sx, sy, sz = sx + x, sy + (y or 0), sz + z
+			count = count + 1
+		end
+	end
+	if count <= 0 then
+		return false
+	end
+	return ControllerCameraTestFocusCameraAt(sx / count, sy / count, sz / count, label or "Focus group")
+end
+
+function ControllerCameraTestGetOwnTeamUnits()
+	local teamID = type(Spring.GetMyTeamID) == "function" and Spring.GetMyTeamID()
+		or (type(Spring.GetLocalTeamID) == "function" and Spring.GetLocalTeamID() or nil)
+	if teamID and type(Spring.GetTeamUnits) == "function" then
+		local ok, units = pcall(Spring.GetTeamUnits, teamID)
+		if ok and type(units) == "table" then
+			table.sort(units)
+			return units
+		end
+	end
+	return ControllerCameraTestGetVisibleAlliedUnits()
+end
+
+function ControllerCameraTestIsCommanderUnit(unitID)
+	local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
+	if type(unitDef) ~= "table" then
+		return false
+	end
+	local cp = unitDef.customParams or {}
+	if cp.iscommander or cp.commtype or cp.level == "commander" then
+		return true
+	end
+	local name = string.lower(tostring(unitDef.name or "") .. " " .. tostring(unitDef.humanName or "") .. " " .. tostring(unitDef.translatedHumanName or ""))
+	return string.find(name, "commander", 1, true) ~= nil
+end
+
+function ControllerCameraTestFocusCommander()
+	for _, unitID in ipairs(ControllerCameraTestGetOwnTeamUnits()) do
+		if ControllerCameraTestIsCommanderUnit(unitID) then
+			if type(spGetUnitPosition) ~= "function" then
+				ControllerCameraTestIdleCycle.lastResult = "commander focus failed: position API unavailable"
+				latchSelectionDebugMessage(ControllerCameraTestIdleCycle.lastResult)
+				return false
+			end
+			local ok, x, y, z = pcall(spGetUnitPosition, unitID)
+			if ok and x and z and ControllerCameraTestFocusCameraAt(x, y, z, "Commander") then
+				ControllerCameraTestIdleCycle.currentUnitID = unitID
+				ControllerCameraTestIdleCycle.lastResult = "focused Commander " .. tostring(unitID)
+				ControllerCameraTestLayerDebug.normalUtilityAction = "Double-tap A Commander focus"
+				latchSelectionDebugMessage("Focused Commander")
+				return true
+			end
+		end
+	end
+	ControllerCameraTestIdleCycle.lastResult = "Commander focus failed: no commander found"
+	ControllerCameraTestLayerDebug.normalUtilityAction = ControllerCameraTestIdleCycle.lastResult
+	latchSelectionDebugMessage(ControllerCameraTestIdleCycle.lastResult)
+	return false
+end
+
+function ControllerCameraTestUnitIsIdle(unitID)
+	if type(Spring.GetCommandQueue) == "function" then
+		local ok, queue = pcall(Spring.GetCommandQueue, unitID, 1)
+		if ok and type(queue) == "table" then
+			return #queue == 0
+		end
+	end
+	if type(Spring.GetUnitCommands) == "function" then
+		local ok, queue = pcall(Spring.GetUnitCommands, unitID, 1)
+		if ok and type(queue) == "table" then
+			return #queue == 0
+		end
+	end
+	return false
+end
+
+function ControllerCameraTestUnitIsFinished(unitID)
+	if type(Spring.GetUnitHealth) ~= "function" then
+		return true
+	end
+	local ok, health, maxHealth, paralyzeDamage, captureProgress, buildProgress = pcall(Spring.GetUnitHealth, unitID)
+	if not ok then
+		return true
+	end
+	return not (type(buildProgress) == "number" and buildProgress < 1)
+end
+
+function ControllerCameraTestIsIdleCycleCandidate(unitID)
+	local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
+	if type(unitDef) ~= "table" then
+		return false, false
+	end
+	if unitDef.isBuilding or unitDef.isFactory then
+		return false, false
+	end
+	if not ControllerCameraTestIsMobileUnitDef(unitDef) then
+		return false, false
+	end
+	if not ControllerCameraTestUnitIsFinished(unitID) then
+		return false, false
+	end
+	if not ControllerCameraTestUnitIsIdle(unitID) then
+		return false, false
+	end
+	local isBuilder = unitDef.isBuilder or unitDef.canBuild or (type(unitDef.buildOptions) == "table" and #unitDef.buildOptions > 0)
+	return true, isBuilder
+end
+
+function ControllerCameraTestGetIdleCycleUnits()
+	local builders, fallback = {}, {}
+	for _, unitID in ipairs(ControllerCameraTestGetOwnTeamUnits()) do
+		local ok, isBuilder = ControllerCameraTestIsIdleCycleCandidate(unitID)
+		if ok then
+			if isBuilder then
+				builders[#builders + 1] = unitID
+			else
+				fallback[#fallback + 1] = unitID
+			end
+		end
+	end
+	local units = (#builders > 0) and builders or fallback
+	table.sort(units)
+	ControllerCameraTestIdleCycle.lastCount = #units
+	return units
+end
+
+function ControllerCameraTestUnitTypeName(unitDefID)
+	local unitDef = unitDefID and UnitDefs and UnitDefs[unitDefID]
+	if not unitDef then
+		return tostring(unitDefID or "unknown")
+	end
+	return unitDef.translatedHumanName or unitDef.humanName or unitDef.name or tostring(unitDefID)
+end
+
+function ControllerCameraTestCycleIdleUnit(delta)
+	local units = ControllerCameraTestGetIdleCycleUnits()
+	if #units == 0 then
+		ControllerCameraTestIdleCycle.lastResult = "no idle units"
+		ControllerCameraTestIdleCycle.currentUnitID = nil
+		latchSelectionDebugMessage("Idle cycle: no idle units")
+		return false
+	end
+
+	local currentIndex = 0
+	for i, unitID in ipairs(units) do
+		if unitID == ControllerCameraTestIdleCycle.currentUnitID then
+			currentIndex = i
+			break
+		end
+	end
+	local nextIndex = ((currentIndex - 1 + delta) % #units) + 1
+	local unitID = units[nextIndex]
+	local unitDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(unitID) or nil
+	ControllerCameraTestIdleCycle.currentIndex = nextIndex
+	ControllerCameraTestIdleCycle.currentUnitID = unitID
+	ControllerCameraTestIdleCycle.currentTypeKey = unitDefID
+	ControllerCameraTestIdleCycle.lastTypeName = ControllerCameraTestUnitTypeName(unitDefID)
+	if ControllerCameraTestFocusAndSelectUnit(unitID, "Idle unit") then
+		ControllerCameraTestIdleCycle.lastResult = "idle unit " .. tostring(nextIndex) .. "/" .. tostring(#units)
+		ControllerCameraTestLayerDebug.normalUtilityAction = "Idle cycle " .. ControllerCameraTestIdleCycle.lastResult
+		return true
+	end
+	return false
+end
+
+function ControllerCameraTestGetIdleUnitTypeBuckets()
+	local bucketsByDef = {}
+	local buckets = {}
+	for _, unitID in ipairs(ControllerCameraTestGetIdleCycleUnits()) do
+		local unitDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(unitID) or nil
+		if unitDefID then
+			local bucket = bucketsByDef[unitDefID]
+			if not bucket then
+				bucket = { unitDefID = unitDefID, name = ControllerCameraTestUnitTypeName(unitDefID), units = {} }
+				bucketsByDef[unitDefID] = bucket
+				buckets[#buckets + 1] = bucket
+			end
+			bucket.units[#bucket.units + 1] = unitID
+		end
+	end
+	table.sort(buckets, function(a, b)
+		if a.name == b.name then
+			return a.unitDefID < b.unitDefID
+		end
+		return a.name < b.name
+	end)
+	return buckets
+end
+
+function ControllerCameraTestSelectRepresentativeFromIdleTypeBucket(bucket)
+	if type(bucket) ~= "table" or type(bucket.units) ~= "table" or #bucket.units == 0 then
+		return false
+	end
+	local unitID = bucket.units[1]
+	ControllerCameraTestIdleCycle.currentUnitID = unitID
+	ControllerCameraTestIdleCycle.currentTypeKey = bucket.unitDefID
+	ControllerCameraTestIdleCycle.lastTypeName = bucket.name
+	ControllerCameraTestIdleCycle.lastCount = #bucket.units
+	return ControllerCameraTestFocusAndSelectUnit(unitID, "Idle type " .. tostring(bucket.name))
+end
+
+function ControllerCameraTestCycleIdleUnitType(delta)
+	local buckets = ControllerCameraTestGetIdleUnitTypeBuckets()
+	if #buckets == 0 then
+		ControllerCameraTestIdleCycle.lastResult = "no idle type buckets"
+		latchSelectionDebugMessage("Idle type cycle: no idle units")
+		return false
+	end
+	local currentIndex = 0
+	for i, bucket in ipairs(buckets) do
+		if bucket.unitDefID == ControllerCameraTestIdleCycle.currentTypeKey then
+			currentIndex = i
+			break
+		end
+	end
+	local nextIndex = ((currentIndex - 1 + delta) % #buckets) + 1
+	local bucket = buckets[nextIndex]
+	ControllerCameraTestIdleCycle.currentTypeIndex = nextIndex
+	if ControllerCameraTestSelectRepresentativeFromIdleTypeBucket(bucket) then
+		ControllerCameraTestIdleCycle.lastResult = "idle type " .. tostring(nextIndex) .. "/" .. tostring(#buckets)
+		ControllerCameraTestLayerDebug.normalUtilityAction = "Idle type " .. tostring(bucket.name) .. " x" .. tostring(#bucket.units)
+		return true
+	end
+	return false
+end
+
+function ControllerCameraTestSelectAllIdleUnitsInCurrentTypeBucket()
+	local buckets = ControllerCameraTestGetIdleUnitTypeBuckets()
+	if #buckets == 0 then
+		ControllerCameraTestIdleCycle.selectedAllCount = 0
+		ControllerCameraTestIdleCycle.lastResult = "no idle units for type-select"
+		latchSelectionDebugMessage("LT+A double-tap: no idle units")
+		return false
+	end
+	local bucket = buckets[1]
+	for _, candidate in ipairs(buckets) do
+		if candidate.unitDefID == ControllerCameraTestIdleCycle.currentTypeKey then
+			bucket = candidate
+			break
+		end
+	end
+	if ControllerCameraTestSelectUnits(bucket.units, "Idle type group") then
+		ControllerCameraTestIdleCycle.currentTypeKey = bucket.unitDefID
+		ControllerCameraTestIdleCycle.lastTypeName = bucket.name
+		ControllerCameraTestIdleCycle.selectedAllCount = #bucket.units
+		ControllerCameraTestIdleCycle.lastResult = "selected idle type x" .. tostring(#bucket.units)
+		ControllerCameraTestFocusUnitsCenter(bucket.units, "Idle type group")
+		return true
+	end
+	return false
 end
 
 function ControllerCameraTestCycleSelection(delta)
@@ -2440,6 +2730,134 @@ function ControllerCameraTestCycleQuickGroup(delta)
 	ControllerCameraTestQuickGroups.lastResult = "no stored groups"
 	latchSelectionDebugMessage("No stored quick groups")
 	return false
+end
+
+function ControllerCameraTestNormalizeControlGroupSlot(slot)
+	slot = tonumber(slot) or 1
+	slot = ((slot - 1) % 10) + 1
+	return slot
+end
+
+function ControllerCameraTestGetControlGroupDisplaySlot(slot)
+	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
+	return slot == 10 and "0" or tostring(slot)
+end
+
+function ControllerCameraTestShowControlGroupOverlay(seconds)
+	ControllerCameraTestControlGroups.visibleUntil = debugEventTime + (seconds or 1.5)
+end
+
+function ControllerCameraTestPruneDeadUnitsFromControlGroup(slot)
+	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
+	local groups = ControllerCameraTestControlGroups
+	local entry = groups.slots[slot]
+	if type(entry) ~= "table" then
+		return {}
+	end
+	local units = ControllerCameraTestFilterValidUnits(entry.units)
+	entry.units = units
+	entry.count = #units
+	if #units == 0 then
+		groups.slots[slot] = nil
+	end
+	return units
+end
+
+function ControllerCameraTestSetControlGroupAction(action, slot, count)
+	local groups = ControllerCameraTestControlGroups
+	groups.lastAction = action
+	groups.lastSlot = ControllerCameraTestGetControlGroupDisplaySlot(slot)
+	groups.lastCount = count or 0
+	ControllerCameraTestShowControlGroupOverlay(1.5)
+	ControllerCameraTestLayerDebug.normalUtilityAction = "Group " .. tostring(groups.lastSlot) .. ": " .. tostring(action)
+	latchSelectionDebugMessage("Group " .. tostring(groups.lastSlot) .. ": " .. tostring(action))
+end
+
+function ControllerCameraTestAssignControlGroup(slot)
+	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
+	local groups = ControllerCameraTestControlGroups
+	local units = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if #units == 0 then
+		local target = ControllerCameraTestGetReticleTargetInfo()
+		if target.targetType == "unit" and target.targetID and ControllerCameraTestIsAlliedUnit(target.targetID) then
+			units = { target.targetID }
+		end
+	end
+	units = ControllerCameraTestFilterValidUnits(units)
+	if #units == 0 then
+		ControllerCameraTestSetControlGroupAction("assign failed: no units", slot, 0)
+		return false
+	end
+	table.sort(units)
+	local representativeDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(units[1]) or nil
+	groups.slots[slot] = {
+		units = units,
+		unitDefID = representativeDefID,
+		count = #units,
+		lastAssignedTime = debugEventTime,
+	}
+	groups.activeSlot = slot
+	ControllerCameraTestSetControlGroupAction("assigned", slot, #units)
+	return true
+end
+
+function ControllerCameraTestRecallControlGroup(slot)
+	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
+	local groups = ControllerCameraTestControlGroups
+	local units = ControllerCameraTestPruneDeadUnitsFromControlGroup(slot)
+	groups.activeSlot = slot
+	if #units == 0 then
+		ControllerCameraTestSetControlGroupAction("empty", slot, 0)
+		return false
+	end
+	if ControllerCameraTestSelectUnits(units, "Control group " .. ControllerCameraTestGetControlGroupDisplaySlot(slot)) then
+		ControllerCameraTestFocusUnitsCenter(units, "Control group")
+		ControllerCameraTestSetControlGroupAction("recalled", slot, #units)
+		return true
+	end
+	ControllerCameraTestSetControlGroupAction("recall failed", slot, #units)
+	return false
+end
+
+function ControllerCameraTestClearControlGroup(slot)
+	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
+	ControllerCameraTestControlGroups.slots[slot] = nil
+	ControllerCameraTestControlGroups.activeSlot = slot
+	ControllerCameraTestSetControlGroupAction("cleared", slot, 0)
+	return true
+end
+
+function ControllerCameraTestChangeControlGroupSlot(delta)
+	local groups = ControllerCameraTestControlGroups
+	groups.activeSlot = ControllerCameraTestNormalizeControlGroupSlot((groups.activeSlot or 1) + delta)
+	ControllerCameraTestSetControlGroupAction("active slot", groups.activeSlot, groups.slots[groups.activeSlot] and (groups.slots[groups.activeSlot].count or 0) or 0)
+end
+
+function ControllerCameraTestHandleControlGroupInput()
+	if not (IsButtonDown("RB") or WasButtonPressed("RB")) then
+		return false
+	end
+
+	local groups = ControllerCameraTestControlGroups
+	groups.activeSlot = ControllerCameraTestNormalizeControlGroupSlot(groups.activeSlot or 1)
+	ControllerCameraTestShowControlGroupOverlay(IsButtonDown("RB") and 0.2 or 1.5)
+
+	if IsButtonDown("RB") then
+		if WasButtonPressed("dpadUp") then
+			ControllerCameraTestChangeControlGroupSlot(1)
+		elseif WasButtonPressed("dpadDown") then
+			ControllerCameraTestChangeControlGroupSlot(-1)
+		elseif WasButtonPressed("dpadLeft") or WasButtonPressed("A") then
+			ControllerCameraTestAssignControlGroup(groups.activeSlot)
+		elseif WasButtonPressed("dpadRight") or WasButtonPressed("X") then
+			ControllerCameraTestRecallControlGroup(groups.activeSlot)
+		elseif WasButtonPressed("B") then
+			ControllerCameraTestClearControlGroup(groups.activeSlot)
+		else
+			ControllerCameraTestLayerDebug.normalUtilityAction = "Control group mode"
+		end
+	end
+	return true
 end
 
 function ControllerCameraTestTacticalCommandAvailable(cmdID)
@@ -4183,7 +4601,9 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 		if drag.active then
 			ControllerCameraTestConfirmDragCommand(false)
 		else
-			ControllerCameraTestSelectVisibleCombatUnits()
+			ControllerCameraTestLayerDebug.commandLayerAction = "RT+A select-all disabled"
+			ControllerCameraTestCycleDebug.lastResult = "RT+A select-all disabled"
+			latchSelectionDebugMessage("RT+A reserved: select-all disabled")
 		end
 		drag.pressActive = false
 	end
@@ -4220,7 +4640,16 @@ function ControllerCameraTestHandleNormalAInput(dt)
 		if area.active then
 			ControllerCameraTestSelectAreaUnits()
 		elseif (debugEventTime - (area.lastTapTime or -10)) <= 0.35 then
-			ControllerCameraTestSelectSameTypeAtReticleOrCombat()
+			local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+			if ControllerCameraTestIsQueueModifierActive() then
+				ControllerCameraTestSelectAllIdleUnitsInCurrentTypeBucket()
+			elseif #selectedUnits == 0 then
+				ControllerCameraTestFocusCommander()
+			else
+				ControllerCameraTestAreaSelect.lastResult = "double tap ignored: units selected"
+				ControllerCameraTestLayerDebug.normalUtilityAction = "Double-tap A ignored"
+				latchSelectionDebugMessage("Double-tap A ignored: units already selected")
+			end
 			area.lastTapTime = -10
 		else
 			attemptReticleSelection()
@@ -4263,7 +4692,9 @@ function ControllerCameraTestHandleCommandLayerInput(dt)
 	end
 
 	if WasButtonPressed("A") then
-		ControllerCameraTestSelectVisibleCombatUnits()
+		ControllerCameraTestLayerDebug.commandLayerAction = "RT+A select-all disabled"
+		ControllerCameraTestCycleDebug.lastResult = "RT+A select-all disabled"
+		latchSelectionDebugMessage("RT+A reserved: select-all disabled")
 	elseif WasButtonPressed("B") then
 		attemptStopCommand()
 		ControllerCameraTestLayerDebug.commandLayerAction = "RT+B stop"
@@ -4393,9 +4824,14 @@ function ControllerCameraTestHandleBackViewControls()
 end
 
 function ControllerCameraTestHandleNormalUtilityInput()
-	if WasButtonPressed("RB") then
-		ControllerCameraTestCycleSelection(1)
-		ControllerCameraTestLayerDebug.normalUtilityAction = "RB cycle selection"
+	if ControllerCameraTestHandleControlGroupInput() then
+		return true
+	elseif IsButtonDown("LB") and WasButtonPressed("dpadLeft") then
+		ControllerCameraTestCycleDebug.lbHadPitchMotion = true
+		ControllerCameraTestCycleIdleUnitType(-1)
+	elseif IsButtonDown("LB") and WasButtonPressed("dpadRight") then
+		ControllerCameraTestCycleDebug.lbHadPitchMotion = true
+		ControllerCameraTestCycleIdleUnitType(1)
 	elseif WasButtonReleased("LB") and ControllerCameraTestCycleDebug.lbPressActive then
 		if not ControllerCameraTestCycleDebug.lbHadPitchMotion then
 			ControllerCameraTestCycleSelection(-1)
@@ -4408,13 +4844,14 @@ function ControllerCameraTestHandleNormalUtilityInput()
 	elseif WasButtonPressed("dpadDown") then
 		ControllerCameraTestHandleBookmarkButton("down")
 	elseif WasButtonPressed("dpadLeft") then
-		ControllerCameraTestHandleBookmarkButton("left")
+		ControllerCameraTestCycleIdleUnit(-1)
 	elseif WasButtonPressed("dpadRight") then
-		ControllerCameraTestHandleBookmarkButton("right")
+		ControllerCameraTestCycleIdleUnit(1)
 	elseif WasButtonPressed("start") then
 		ControllerCameraTestSettings.helpOverlayVisible = not ControllerCameraTestSettings.helpOverlayVisible
 		ControllerCameraTestSetNormalUtilityAction("Help overlay " .. (ControllerCameraTestSettings.helpOverlayVisible and "shown" or "hidden"))
 	end
+	return false
 end
 
 function ControllerCameraTestGetModeSummary()
@@ -4435,6 +4872,9 @@ function ControllerCameraTestGetModeSummary()
 	end
 	if ControllerCameraTestTuning.backHeld then
 		return "tuning"
+	end
+	if IsButtonDown("RB") then
+		return "control groups"
 	end
 	if ControllerCameraTestSettings.helpOverlayVisible then
 		return "help overlay"
@@ -4766,25 +5206,31 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 			ControllerCameraTestCancelAreaSelect("cancelled by Back/View")
 		end
 	else
-		local areaBusy = ControllerCameraTestHandleNormalAInput(dt)
-		local xBusy = false
-		if not areaBusy then
-			xBusy = ControllerCameraTestHandleNormalXInput(dt)
-		end
+		if ControllerCameraTestHandleControlGroupInput() then
+			if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
+				ControllerCameraTestCancelAreaSelect("cancelled by control group")
+			end
+		else
+			local areaBusy = ControllerCameraTestHandleNormalAInput(dt)
+			local xBusy = false
+			if not areaBusy then
+				xBusy = ControllerCameraTestHandleNormalXInput(dt)
+			end
 
-		if areaBusy and WasButtonPressed("B") then
-			ControllerCameraTestCancelAreaSelect("cancelled by B")
-		elseif xBusy and WasButtonPressed("B") then
-			-- Handled inside X handler
-		elseif not areaBusy and not xBusy and WasButtonPressed("B") then
-			attemptClearSelection()
-		end
+			if areaBusy and WasButtonPressed("B") then
+				ControllerCameraTestCancelAreaSelect("cancelled by B")
+			elseif xBusy and WasButtonPressed("B") then
+				-- Handled inside X handler
+			elseif not areaBusy and not xBusy and WasButtonPressed("B") then
+				attemptClearSelection()
+			end
 
-		if not areaBusy and not xBusy and WasButtonPressed("Y") then
-			attemptBuildMenu()
-		end
-		if not areaBusy and not xBusy then
-			ControllerCameraTestHandleNormalUtilityInput()
+			if not areaBusy and not xBusy and WasButtonPressed("Y") then
+				attemptBuildMenu()
+			end
+			if not areaBusy and not xBusy then
+				ControllerCameraTestHandleNormalUtilityInput()
+			end
 		end
 	end
 
@@ -4798,6 +5244,8 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		activeButtonLayoutSummary = "Build menu: A placement, X quick-place, B/Y close, D-pad/LB/RB navigate"
 	elseif ControllerCameraTestAreaSelect.active then
 		activeButtonLayoutSummary = "Area select: release A to select, RS Y/D-pad changes radius"
+	elseif IsButtonDown("RB") then
+		activeButtonLayoutSummary = "Control Groups: RB+D-pad U/D slot, L assign, R recall, A assign, X recall, B clear"
 	else
 		activeButtonLayoutSummary = XboxController.normalLayoutSummary
 	end
@@ -5062,6 +5510,84 @@ function ControllerCameraTestDrawQueueIndicator()
 	end)
 	gl.Color(0.8, 1, 0.86, 1)
 	gl.Text("QUEUE", cx, cy + 35, 12, "oc")
+	gl.LineWidth(1)
+	gl.Color(1, 1, 1, 1)
+end
+
+function ControllerCameraTestDrawControlGroupOverlay()
+	local groups = ControllerCameraTestControlGroups
+	if not (IsButtonDown("RB") or (groups.visibleUntil or 0) > debugEventTime) then
+		return
+	end
+
+	local screenWidth = viewSizeX > 0 and viewSizeX or 1280
+	local slotSize = 42
+	local gap = 5
+	local stripWidth = (slotSize * 10) + (gap * 9) + 24
+	local left = math.max(12, (screenWidth - stripWidth) * 0.5)
+	local bottom = 86
+	local top = bottom + slotSize + 34
+	local activeSlot = ControllerCameraTestNormalizeControlGroupSlot(groups.activeSlot or 1)
+
+	gl.Color(0, 0, 0, 0.72)
+	gl.Rect(left, bottom, left + stripWidth, top)
+	gl.Color(0.36, 0.68, 1, 0.65)
+	gl.LineWidth(1.5)
+	gl.BeginEnd(GL.LINE_LOOP, function()
+		gl.Vertex(left, bottom)
+		gl.Vertex(left + stripWidth, bottom)
+		gl.Vertex(left + stripWidth, top)
+		gl.Vertex(left, top)
+	end)
+
+	gl.Color(0.82, 0.92, 1, 1)
+	gl.Text("Controller Groups  RB+Dpad: slot/assign/recall  RB+B clear", left + 12, top - 18, 12, "o")
+
+	for slot = 1, 10 do
+		local x1 = left + 12 + ((slot - 1) * (slotSize + gap))
+		local y1 = bottom + 8
+		local x2 = x1 + slotSize
+		local y2 = y1 + slotSize
+		local entry = groups.slots[slot]
+		local isActive = slot == activeSlot
+		local isRecent = tostring(groups.lastSlot) == ControllerCameraTestGetControlGroupDisplaySlot(slot)
+
+		if isActive then
+			gl.Color(0.18, 0.42, 0.78, 0.88)
+		elseif entry then
+			gl.Color(0.10, 0.18, 0.24, 0.82)
+		else
+			gl.Color(0.05, 0.07, 0.09, 0.74)
+		end
+		gl.Rect(x1, y1, x2, y2)
+
+		if entry and entry.unitDefID then
+			gl.Texture("#" .. tostring(entry.unitDefID))
+			gl.Color(1, 1, 1, isActive and 0.95 or 0.75)
+			gl.TexRect(x1 + 5, y1 + 7, x2 - 5, y2 - 5)
+			gl.Texture(false)
+		end
+
+		gl.Color(isActive and 1 or 0.55, isActive and 0.92 or 0.72, isActive and 0.35 or 0.82, 1)
+		gl.LineWidth((isActive or isRecent) and 2.5 or 1)
+		gl.BeginEnd(GL.LINE_LOOP, function()
+			gl.Vertex(x1, y1)
+			gl.Vertex(x2, y1)
+			gl.Vertex(x2, y2)
+			gl.Vertex(x1, y2)
+		end)
+
+		gl.Color(1, 1, 1, 1)
+		gl.Text(ControllerCameraTestGetControlGroupDisplaySlot(slot), x1 + 4, y2 - 13, 11, "o")
+		if entry and (entry.count or 0) > 0 then
+			gl.Color(1, 0.92, 0.42, 1)
+			gl.Text("x" .. tostring(entry.count), x2 - 4, y1 + 3, 10, "ro")
+		end
+	end
+
+	gl.Color(0.92, 0.96, 1, 1)
+	gl.Text("Group " .. ControllerCameraTestGetControlGroupDisplaySlot(activeSlot) .. ": " .. tostring(groups.lastAction), left + 12, bottom - 16, 12, "o")
+	gl.Texture(false)
 	gl.LineWidth(1)
 	gl.Color(1, 1, 1, 1)
 end
@@ -5360,9 +5886,9 @@ function ControllerCameraTestDrawHelpOverlay()
 	local lines = {
 		"Controller Camera Test Help",
 		"Camera/Move: LS pan | RS X rotate | RS Y zoom | LB+RS Y pitch | LT boost",
-		"Selection: A select | A hold area-select | A double-tap select-all-type | B clear | X hold Move Line Drag",
+		"Selection: A select | A hold area-select | double-tap A no selection = Commander focus | LT+double-tap A = idle type select",
 		"Context Actions: X context | RT+B stop | RT+X attack | RT+X hold Fight Line Drag | RT+A hold Attack Line Drag",
-		"Combat Layers: RT+A combat-select | RT+Y tactical radial | LS/Dpad choose | A confirm | B/Y close",
+		"Combat Layers: RT+A reserved/disabled | RT+Y tactical radial | LS/Dpad choose | A confirm | B/Y close",
 		"Queue Modifier: hold LT while confirming Move/Fight/Attack/Reclaim/Repair/Build to queue like Shift",
 		"Constructor Radial: Y open | LS/Dpad select | LB/RB page | Y close",
 		"   * A enter placement | X quick-place | B close radial",
@@ -5370,7 +5896,9 @@ function ControllerCameraTestDrawHelpOverlay()
 		"   * A add 1 queue | LT+A add 5 queue | B remove 1 | LT+B remove 5",
 		"Placement Mode: A place | X place+stay | B cancel | LT queue | RT queue front",
 		"   * Dpad L/R or RS X rotate | Dpad U/D build spacing | LB/RB pattern | A/X hold Build Line/Grid Drag",
-		"Bookmarks & Groups: Dpad recall cam | LT+Dpad store cam | Back+A/B/X/Y store group 1-4",
+		"Idle Cycling: Dpad L/R idle unit | LB+Dpad L/R idle type | Dpad U/D recall cam | LT+Dpad U/D store cam",
+		"Control Groups: hold RB overlay | RB+Dpad U/D slot | RB+Dpad L assign | RB+Dpad R recall | RB+B clear",
+		"Legacy Groups: Back+A/B/X/Y store quick groups | Back+LB/RB cycle legacy groups",
 		"Debug Panel: Back toggle panel | Click headers expand/collapse | Compact/Full button | Tuning: Back+Dpad U/D/L/R",
 		"Tuning Selection: " .. ControllerCameraTestCurrentSettingLabel(),
 	}
@@ -5427,6 +5955,7 @@ function widget:DrawScreen()
 		ControllerCameraTestDrawTacticalRadial()
 	end
 	ControllerCameraTestDrawQueueIndicator()
+	ControllerCameraTestDrawControlGroupOverlay()
 	if ControllerCameraTestSettings.helpOverlayVisible then
 		ControllerCameraTestDrawHelpOverlay()
 	end
@@ -5659,6 +6188,27 @@ function widget:DrawScreen()
 			},
 		},
 		{
+			key = "IdleCycle",
+			title = "Idle Unit Cycling",
+			lines = {
+				"Idle result: " .. tostring(ControllerCameraTestIdleCycle.lastResult),
+				"Idle unitID: " .. tostring(ControllerCameraTestIdleCycle.currentUnitID or "none"),
+				"Idle type: " .. tostring(ControllerCameraTestIdleCycle.lastTypeName),
+				"Idle count/type count: " .. tostring(ControllerCameraTestIdleCycle.lastCount),
+				"Idle selected all count: " .. tostring(ControllerCameraTestIdleCycle.selectedAllCount),
+			},
+		},
+		{
+			key = "ControlGroups",
+			title = "Controller Groups",
+			lines = {
+				"Active group slot: " .. ControllerCameraTestGetControlGroupDisplaySlot(ControllerCameraTestControlGroups.activeSlot or 1),
+				"Group last action: " .. tostring(ControllerCameraTestControlGroups.lastAction),
+				"Group last slot: " .. tostring(ControllerCameraTestControlGroups.lastSlot),
+				"Group last count: " .. tostring(ControllerCameraTestControlGroups.lastCount),
+			},
+		},
+		{
 			key = "QuickGroups",
 			title = "Quick Groups",
 			lines = {
@@ -5840,6 +6390,7 @@ function widget:DrawScreen()
 	if ControllerCameraTestDebugCompact then
 		local compactLines = {
 			"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary) .. " | Held: " .. heldButtonsSummary .. " | Pressed: " .. pressedRecentlySummary,
+			"Idle: " .. tostring(ControllerCameraTestIdleCycle.lastTypeName) .. " x" .. tostring(ControllerCameraTestIdleCycle.lastCount) .. " | Group " .. ControllerCameraTestGetControlGroupDisplaySlot(ControllerCameraTestControlGroups.activeSlot or 1) .. ": " .. tostring(ControllerCameraTestControlGroups.lastAction),
 			"Queue: " .. yesNo(ControllerCameraTestIsQueueModifierActive()) .. " | Tactical: " .. yesNo(ControllerCameraTestTacticalMenu.open) .. " | Build: " .. yesNo(ControllerCameraTestBuildMenu.open),
 			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName) .. " (Q:" .. tostring(highlightedQueueCount) .. (factoryProgressKnown == "yes" and " P:" .. factoryProgressValue or "") .. ")",
 			"Placement: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none") .. " | Pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern) .. " | Spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
