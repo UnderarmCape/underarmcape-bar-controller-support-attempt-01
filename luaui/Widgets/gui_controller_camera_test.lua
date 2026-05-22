@@ -33,6 +33,7 @@ ControllerCameraTestCommandDebug = ControllerCameraTestCommandDebug or {
 	isBuild = "no",
 	issuedCmdID = "none",
 	issuedParamsCount = 0,
+	lastOptions = "none",
 	lastResult = "none",
 	mexSmartAvailable = "no",
 	mexNearestSpot = "no",
@@ -62,6 +63,10 @@ ControllerCameraTestBuildMenu = ControllerCameraTestBuildMenu or {
 	radialLastAction = "none",
 	factoryQueueCounts = {},
 	factoryQueueProgress = {},
+	factoryProgressKnown = "no",
+	factoryProgressCmdID = "none",
+	factoryProgressValue = "none",
+	factoryProgressSource = "none",
 }
 ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	active = false,
@@ -81,6 +86,7 @@ ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	queueFrontActive = false,
 	gridShortcutResult = "none",
 	lastConstructionShortcut = "none",
+	useCustomGridFallback = true,
 }
 ControllerCameraTestDragCommand = ControllerCameraTestDragCommand or {
 	active = false,
@@ -101,6 +107,9 @@ ControllerCameraTestDragCommand = ControllerCameraTestDragCommand or {
 	pressActive = false,
 	pressButton = nil,
 	nativeRouteUsed = false,
+	nativeRouteName = "unavailable",
+	nativePreviewResult = "none",
+	customGridFallback = "yes",
 }
 
 ControllerCameraTestAreaSelect = ControllerCameraTestAreaSelect or {
@@ -118,6 +127,7 @@ ControllerCameraTestTacticalMenu = ControllerCameraTestTacticalMenu or {
 	highlightedName = "none",
 	lastAction = "none",
 	lastResult = "none",
+	radialLastAngle = 0,
 }
 ControllerCameraTestCycleDebug = ControllerCameraTestCycleDebug or {
 	lastResult = "none",
@@ -1275,12 +1285,38 @@ local function attemptClearSelection()
 	end
 end
 
-local function issueOrderToSelection(cmdID, params, cmdName, targetName)
+function ControllerCameraTestIsQueueModifierActive()
+	return (normalizedLeftTrigger or 0) > 0.35
+end
+
+function ControllerCameraTestGetCommandOptions(extraOptions)
+	local opts = {}
+	if ControllerCameraTestIsQueueModifierActive() then
+		opts[#opts + 1] = "shift"
+	end
+	if type(extraOptions) == "table" then
+		for _, opt in ipairs(extraOptions) do
+			opts[#opts + 1] = opt
+		end
+	end
+	return opts
+end
+
+function ControllerCameraTestCommandOptionsSummary(options)
+	if type(options) ~= "table" or #options == 0 then
+		return "none"
+	end
+	return table.concat(options, ",")
+end
+
+local function issueOrderToSelection(cmdID, params, cmdName, targetName, options)
 	-- 1. Check if we actually have units selected
 	local selectedUnits = type(Spring.GetSelectedUnits) == "function" and Spring.GetSelectedUnits() or {}
 	local paramsCount = type(params) == "table" and #params or 0
+	local orderOptions = type(options) == "table" and options or ControllerCameraTestGetCommandOptions()
 	ControllerCameraTestCommandDebug.issuedCmdID = tostring(cmdID)
 	ControllerCameraTestCommandDebug.issuedParamsCount = paramsCount
+	ControllerCameraTestCommandDebug.lastOptions = ControllerCameraTestCommandOptionsSummary(orderOptions)
 	if #selectedUnits == 0 then
 		lastIssuedCommand = "none"
 		ControllerCameraTestCommandDebug.lastResult = "no selected units"
@@ -1290,7 +1326,7 @@ local function issueOrderToSelection(cmdID, params, cmdName, targetName)
 
 	-- 2. Use the universally safe LuaUI GiveOrder API
 	if type(Spring.GiveOrder) == "function" then
-		local orderOk, orderResult = pcall(Spring.GiveOrder, cmdID, params, {})
+		local orderOk, orderResult = pcall(Spring.GiveOrder, cmdID, params, orderOptions)
 		if not orderOk or orderResult == false then
 			lastIssuedCommand = "none"
 			ControllerCameraTestCommandDebug.lastResult = "GiveOrder failed"
@@ -1411,6 +1447,7 @@ end
 	local params = { buildCmd[2], buildCmd[3], buildCmd[4], buildCmd[5] }
 	ControllerCameraTestCommandDebug.issuedCmdID = tostring(cmdID)
 	ControllerCameraTestCommandDebug.issuedParamsCount = #params
+	ControllerCameraTestCommandDebug.lastOptions = forceShift and "shift" or "none"
 
 	if type(builder.ApplyPreviewCmds) == "function" then
 		local _, _, _, shift = Spring.GetModKeyState()
@@ -1458,6 +1495,7 @@ end
 local function ControllerCameraTestIssueBuildOrders(builders, unitDefID, buildPositions, useQueue, useQueueFront)
 	local cmdInsert = CMD.INSERT or 140
 	local firstOpts = useQueue and { "shift" } or {}
+	ControllerCameraTestCommandDebug.lastOptions = useQueueFront and "queue-front" or ControllerCameraTestCommandOptionsSummary(firstOpts)
 	local restOpts = { "shift" }
 
 	if useQueueFront then
@@ -1494,9 +1532,23 @@ local function ControllerCameraTestIssueBuildOrders(builders, unitDefID, buildPo
 	return true
 end
 
+function ControllerCameraTestClearNativeBlueprintPreview()
+	local api = WG and WG["api_blueprint"]
+	if type(api) ~= "table" then
+		return
+	end
+	if type(api.setActiveBlueprint) == "function" then
+		pcall(api.setActiveBlueprint, nil)
+	end
+	if type(api.setBlueprintPositions) == "function" then
+		pcall(api.setBlueprintPositions, {})
+	end
+end
+
 function ControllerCameraTestUpdateDragPreview()
 	local drag = ControllerCameraTestDragCommand
 	if not drag.active then
+		ControllerCameraTestClearNativeBlueprintPreview()
 		drag.previewPoints = {}
 		return
 	end
@@ -1565,12 +1617,34 @@ function ControllerCameraTestUpdateDragPreview()
 			local buildPositions = {}
 
 			drag.nativeRouteUsed = false
+			drag.nativeRouteName = "unavailable"
+			drag.nativePreviewResult = "not attempted"
+			drag.customGridFallback = "yes"
 			if apiMode and WG["api_blueprint"] and WG["api_blueprint"].calculateBuildPositions then
 				local ok, res = pcall(WG["api_blueprint"].calculateBuildPositions, bp, apiMode, startPos, endPos, spacing)
 				if ok and type(res) == "table" and #res > 0 then
 					buildPositions = res
 					drag.nativeRouteUsed = true
+					drag.nativeRouteName = "api_blueprint.calculateBuildPositions"
+					drag.nativePreviewResult = "positions calculated"
+					drag.customGridFallback = "no"
+					if type(WG["api_blueprint"].setActiveBlueprint) == "function"
+						and type(WG["api_blueprint"].setBlueprintPositions) == "function"
+					then
+						local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+						if type(WG["api_blueprint"].setActiveBuilders) == "function" then
+							pcall(WG["api_blueprint"].setActiveBuilders, selectedUnits)
+						end
+						local previewOk = pcall(WG["api_blueprint"].setActiveBlueprint, bp)
+						local posOk = pcall(WG["api_blueprint"].setBlueprintPositions, buildPositions)
+						if previewOk and posOk then
+							drag.nativePreviewResult = "native preview active"
+						end
+					end
 				end
+			end
+			if not drag.nativeRouteUsed then
+				ControllerCameraTestClearNativeBlueprintPreview()
 			end
 
 			if #buildPositions == 0 then
@@ -1653,9 +1727,10 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		return
 	end
 
-	local isQueue = IsButtonDown("LT") or (normalizedLeftTrigger and normalizedLeftTrigger > 0.1)
+	local isQueue = ControllerCameraTestIsQueueModifierActive()
 	local isQueueFront = IsButtonDown("RT") or (normalizedRightTrigger and normalizedRightTrigger > 0.1)
-	local orderOptions = isQueue and { "shift" } or {}
+	local orderOptions = isQueue and ControllerCameraTestGetCommandOptions() or {}
+	ControllerCameraTestCommandDebug.lastOptions = ControllerCameraTestCommandOptionsSummary(orderOptions)
 
 	if drag.mode == "moveLine" or drag.mode == "fightLine" or drag.mode == "attackLine" then
 		local mobileUnits = {}
@@ -1777,6 +1852,7 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 
 	drag.lastMode = drag.mode
 	drag.active = false
+	ControllerCameraTestClearNativeBlueprintPreview()
 end
 
 function ControllerCameraTestConfirmDragBuild(exitMode)
@@ -1839,6 +1915,7 @@ function ControllerCameraTestConfirmDragBuild(exitMode)
 
 	drag.lastMode = drag.mode
 	drag.active = false
+	ControllerCameraTestClearNativeBlueprintPreview()
 
 	if exitMode then
 		ControllerCameraTestCancelPlacement("placed and exited")
@@ -1851,6 +1928,7 @@ function ControllerCameraTestCancelDrag(reason)
 	drag.pressActive = false
 	drag.lastResult = reason or "cancelled"
 	drag.previewPoints = {}
+	ControllerCameraTestClearNativeBlueprintPreview()
 	latchSelectionDebugMessage("Drag cancelled")
 end
 
@@ -1904,7 +1982,7 @@ local function attemptContextCommand()
 		params = { reticleWorldX, reticleWorldY, reticleWorldZ, facing }
 		targetString = "build pos"
 	elseif cmdID == 10 and reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ
-		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ)
+		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ, ControllerCameraTestIsQueueModifierActive())
 	then
 		return
 	elseif ok and (targetType == "unit" or targetType == "feature") and tonumber(targetID) then
@@ -1948,7 +2026,7 @@ local function attemptAttackCommand()
 end
 
 local function attemptStopCommand()
-	issueOrderToSelection(CMD.STOP, {}, "Stop", "none")
+	issueOrderToSelection(CMD.STOP, {}, "Stop", "none", {})
 end
 
 function ControllerCameraTestSetCommandMarker(x, y, z, label, kind)
@@ -2090,10 +2168,11 @@ end
 function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, targetName, options)
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	params = type(params) == "table" and params or {}
-	options = type(options) == "table" and options or {}
+	options = type(options) == "table" and options or ControllerCameraTestGetCommandOptions()
 
 	ControllerCameraTestCommandDebug.issuedCmdID = tostring(cmdID)
 	ControllerCameraTestCommandDebug.issuedParamsCount = #params
+	ControllerCameraTestCommandDebug.lastOptions = ControllerCameraTestCommandOptionsSummary(options)
 	if type(cmdID) ~= "number" then
 		ControllerCameraTestCommandDebug.lastResult = "command unavailable"
 		latchSelectionDebugMessage(tostring(cmdName) .. " unavailable")
@@ -2363,6 +2442,38 @@ function ControllerCameraTestCycleQuickGroup(delta)
 	return false
 end
 
+function ControllerCameraTestTacticalCommandAvailable(cmdID)
+	if type(cmdID) ~= "number" then
+		return true
+	end
+	if cmdID == CMD.STOP or cmdID == CMD.WAIT or cmdID == CMD.REPEAT then
+		return true
+	end
+	if type(Spring.GetActiveCmdDescs) ~= "function" then
+		return true
+	end
+	local ok, descs = pcall(Spring.GetActiveCmdDescs)
+	if not ok or type(descs) ~= "table" then
+		return true
+	end
+	for _, desc in ipairs(descs) do
+		if desc and desc.id == cmdID then
+			return true
+		end
+	end
+	return false
+end
+
+function ControllerCameraTestAppendTacticalCommand(commands, option)
+	if type(option) ~= "table" then
+		return
+	end
+	if option.cmdID ~= nil and not ControllerCameraTestTacticalCommandAvailable(option.cmdID) then
+		return
+	end
+	commands[#commands + 1] = option
+end
+
 function ControllerCameraTestGetTacticalCommands()
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	local isFactory = ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits)
@@ -2375,27 +2486,49 @@ function ControllerCameraTestGetTacticalCommands()
 		}
 	end
 
-	return {
-		{ name = "Stop", cmdID = CMD.STOP, kind = "none" },
-		{ name = "Wait", cmdID = CMD.WAIT, kind = "none" },
-		{ name = "Repeat", kind = "repeat_toggle" },
-		{ name = "Move Line", kind = "drag_line", dragMode = "moveLine" },
-		{ name = "Fight Line", kind = "drag_line", dragMode = "fightLine" },
-		{ name = "Attack Line", kind = "drag_line", dragMode = "attackLine" },
-		{ name = "Reclaim Area", kind = "drag_area", dragMode = "reclaimArea" },
-		{ name = "Repair Area", kind = "drag_area", dragMode = "repairArea" },
-		{ name = "Attack Area", kind = "drag_area", dragMode = "attackArea" },
-		{ name = "Patrol", cmdID = CMD.PATROL, kind = "ground" },
-		{ name = "Guard", cmdID = CMD.GUARD, kind = "alliedUnit" },
-		{ name = "Fire State", kind = "fire_state_cycle" },
-	}
+	local commands = {}
+	ControllerCameraTestAppendTacticalCommand(commands, { name = "Stop", cmdID = CMD.STOP, kind = "none" })
+	ControllerCameraTestAppendTacticalCommand(commands, { name = "Wait", cmdID = CMD.WAIT, kind = "none" })
+	ControllerCameraTestAppendTacticalCommand(commands, { name = "Repeat", cmdID = CMD.REPEAT, kind = "repeat_toggle" })
+	ControllerCameraTestAppendTacticalCommand(commands, { name = "Move Line", cmdID = CMD.MOVE, kind = "drag_line", dragMode = "moveLine" })
+	ControllerCameraTestAppendTacticalCommand(commands, { name = "Fight Line", cmdID = CMD.FIGHT, kind = "drag_line", dragMode = "fightLine" })
+	ControllerCameraTestAppendTacticalCommand(commands, { name = "Attack Line", cmdID = CMD.ATTACK, kind = "drag_line", dragMode = "attackLine" })
+	ControllerCameraTestAppendTacticalCommand(commands, { name = "Reclaim Area", cmdID = CMD.RECLAIM, kind = "drag_area", dragMode = "reclaimArea" })
+	ControllerCameraTestAppendTacticalCommand(commands, { name = "Repair Area", cmdID = CMD.REPAIR, kind = "drag_area", dragMode = "repairArea" })
+	ControllerCameraTestAppendTacticalCommand(commands, { name = "Attack Area", cmdID = CMD.ATTACK, kind = "drag_area", dragMode = "attackArea" })
+	ControllerCameraTestAppendTacticalCommand(commands, { name = "Patrol", cmdID = CMD.PATROL, kind = "ground" })
+	ControllerCameraTestAppendTacticalCommand(commands, { name = "Guard", cmdID = CMD.GUARD, kind = "alliedUnit" })
+	ControllerCameraTestAppendTacticalCommand(commands, { name = "Fire State", cmdID = CMD.FIRESTATE or 20, kind = "fire_state_cycle" })
+	return commands
 end
 
 function ControllerCameraTestRefreshTacticalDebug()
 	local menu = ControllerCameraTestTacticalMenu
 	local commands = ControllerCameraTestGetTacticalCommands()
+	if #commands <= 0 then
+		menu.selectedIndex = 1
+		menu.highlightedName = "none"
+		return
+	end
+	if menu.selectedIndex < 1 or menu.selectedIndex > #commands then
+		menu.selectedIndex = 1
+	end
 	local option = commands[menu.selectedIndex]
 	menu.highlightedName = option and option.name or "none"
+end
+
+function ControllerCameraTestSetTacticalHighlight(index, reason)
+	local menu = ControllerCameraTestTacticalMenu
+	local commands = ControllerCameraTestGetTacticalCommands()
+	if #commands <= 0 then
+		menu.selectedIndex = 1
+		menu.highlightedName = "none"
+		menu.lastAction = "no tactical commands"
+		return
+	end
+	menu.selectedIndex = ((index - 1) % #commands) + 1
+	menu.lastAction = reason or "highlight changed"
+	ControllerCameraTestRefreshTacticalDebug()
 end
 
 function ControllerCameraTestToggleTacticalMenu()
@@ -2409,10 +2542,51 @@ end
 function ControllerCameraTestCycleTacticalCommand(delta)
 	local menu = ControllerCameraTestTacticalMenu
 	local commands = ControllerCameraTestGetTacticalCommands()
-	menu.selectedIndex = ((menu.selectedIndex - 1 + delta) % #commands) + 1
-	menu.lastAction = "highlight changed"
-	ControllerCameraTestRefreshTacticalDebug()
+	if #commands <= 0 then
+		menu.lastAction = "no tactical commands"
+		menu.highlightedName = "none"
+		return
+	end
+	ControllerCameraTestSetTacticalHighlight(menu.selectedIndex + delta, "highlight changed")
 	latchSelectionDebugMessage("Tactical: " .. tostring(menu.highlightedName))
+end
+
+function ControllerCameraTestUpdateTacticalStickSelection()
+	local menu = ControllerCameraTestTacticalMenu
+	if not menu.open then
+		return
+	end
+
+	local commands = ControllerCameraTestGetTacticalCommands()
+	local count = #commands
+	if count <= 0 then
+		ControllerCameraTestRefreshTacticalDebug()
+		return
+	end
+
+	local aimX = normalizedLeftX
+	local aimY = -normalizedLeftY
+	local magnitude = math.sqrt(aimX * aimX + aimY * aimY)
+	if magnitude <= 0.5 then
+		return
+	end
+
+	local angle = math.atan2(aimX, aimY)
+	if angle < 0 then
+		angle = angle + 2 * math.pi
+	end
+	menu.radialLastAngle = angle
+
+	local segment = 2 * math.pi / count
+	local adjustedAngle = angle + (segment / 2)
+	if adjustedAngle >= 2 * math.pi then
+		adjustedAngle = adjustedAngle - 2 * math.pi
+	end
+
+	local newIndex = math.floor(adjustedAngle / segment) + 1
+	if newIndex ~= menu.selectedIndex then
+		ControllerCameraTestSetTacticalHighlight(newIndex, "stick select")
+	end
 end
 
 function ControllerCameraTestExecuteTacticalCommand(option)
@@ -2544,7 +2718,7 @@ function ControllerCameraTestExecuteTacticalCommand(option)
 		end
 	end
 
-	local ok, count = ControllerCameraTestIssueOrderToSelectedUnits(option.cmdID, params, option.name, targetName, {})
+	local ok, count = ControllerCameraTestIssueOrderToSelectedUnits(option.cmdID, params, option.name, targetName)
 	ControllerCameraTestTacticalMenu.lastResult = ok and ("issued to " .. tostring(count)) or "failed"
 	ControllerCameraTestLayerDebug.commandLayerAction = option.name .. " " .. ControllerCameraTestTacticalMenu.lastResult
 	ControllerCameraTestTacticalMenu.open = false
@@ -2556,13 +2730,15 @@ function ControllerCameraTestHandleTacticalMenuInput()
 		return false
 	end
 
+	ControllerCameraTestUpdateTacticalStickSelection()
+
 	if WasButtonPressed("B") or WasButtonPressed("Y") then
 		menu.open = false
 		menu.lastAction = "cancelled"
 		latchSelectionDebugMessage("Tactical menu cancelled")
-	elseif WasButtonPressed("dpadUp") or WasButtonPressed("LB") then
+	elseif WasButtonPressed("dpadUp") or WasButtonPressed("dpadLeft") or WasButtonPressed("LB") then
 		ControllerCameraTestCycleTacticalCommand(-1)
-	elseif WasButtonPressed("dpadDown") or WasButtonPressed("RB") then
+	elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadRight") or WasButtonPressed("RB") then
 		ControllerCameraTestCycleTacticalCommand(1)
 	elseif WasButtonPressed("A") or WasButtonPressed("X") then
 		local commands = ControllerCameraTestGetTacticalCommands()
@@ -2575,10 +2751,10 @@ end
 function ControllerCameraTestIssueGuardOrPatrol()
 	local target = ControllerCameraTestGetReticleTargetInfo()
 	if target.targetType == "unit" and target.targetID and ControllerCameraTestIsAlliedUnit(target.targetID) then
-		ControllerCameraTestIssueOrderToSelectedUnits(CMD.GUARD, { target.targetID }, "Guard", "unit " .. tostring(target.targetID), {})
+		ControllerCameraTestIssueOrderToSelectedUnits(CMD.GUARD, { target.targetID }, "Guard", "unit " .. tostring(target.targetID))
 		ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Up guard"
 	elseif target.hasWorld then
-		ControllerCameraTestIssueOrderToSelectedUnits(CMD.PATROL, { target.x, target.y, target.z }, "Patrol", "ground", {})
+		ControllerCameraTestIssueOrderToSelectedUnits(CMD.PATROL, { target.x, target.y, target.z }, "Patrol", "ground")
 		ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Up patrol"
 	else
 		ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Up failed: no target"
@@ -2904,6 +3080,11 @@ end
 
 function ControllerCameraTestGetFactoryQueueProgress()
 	local progressByCmdID = {}
+	local menu = ControllerCameraTestBuildMenu
+	menu.factoryProgressKnown = "no"
+	menu.factoryProgressCmdID = "none"
+	menu.factoryProgressValue = "none"
+	menu.factoryProgressSource = "none"
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	if #selectedUnits == 0 then
 		return progressByCmdID
@@ -2916,12 +3097,25 @@ function ControllerCameraTestGetFactoryQueueProgress()
 			if unitBuildID then
 				local buildUnitDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(unitBuildID)
 				if buildUnitDefID then
-					local _, _, progress = type(Spring.GetUnitIsBeingBuilt) == "function" and Spring.GetUnitIsBeingBuilt(unitBuildID)
+					local progress = nil
+					if type(Spring.GetUnitHealth) == "function" then
+						local ok, health, maxHealth, paralyzeDamage, captureProgress, buildProgress = pcall(Spring.GetUnitHealth, unitBuildID)
+						if ok and type(buildProgress) == "number" then
+							progress = buildProgress
+							menu.factoryProgressSource = "GetUnitIsBuilding/GetUnitHealth"
+						elseif ok and type(health) == "number" and type(maxHealth) == "number" and maxHealth > 0 then
+							progress = health / maxHealth
+							menu.factoryProgressSource = "health fallback"
+						end
+					end
 					if progress and progress >= 0.0 and progress <= 1.0 then
 						local cmdID = -buildUnitDefID
 						if not progressByCmdID[cmdID] or progress > progressByCmdID[cmdID] then
 							progressByCmdID[cmdID] = progress
 						end
+						menu.factoryProgressKnown = "yes"
+						menu.factoryProgressCmdID = tostring(cmdID)
+						menu.factoryProgressValue = string.format("%.2f", progress)
 					end
 				end
 			end
@@ -3296,6 +3490,19 @@ function ControllerCameraTestTryConstructionShortcut(actionName, direction)
 	return false
 end
 
+function ControllerCameraTestDragModeForPlacementPattern(pattern)
+	if pattern == "line" then
+		return "buildLine"
+	elseif pattern == "grid" then
+		return "buildGrid"
+	elseif pattern == "border" then
+		return "buildBorder"
+	elseif pattern == "split" then
+		return "buildSplit"
+	end
+	return "buildLine"
+end
+
 
 function ControllerCameraTestUpdatePlacementAnalog()
 	local placement = ControllerCameraTestBuildPlacement
@@ -3313,9 +3520,10 @@ end
 
 function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	local menu = ControllerCameraTestBuildMenu
-	local queueActive = normalizedLeftTrigger > 0
-	local orderOptions = queueActive and { "shift" } or {}
+	local queueActive = ControllerCameraTestIsQueueModifierActive()
+	local orderOptions = ControllerCameraTestGetCommandOptions()
 	ControllerCameraTestBuildPlacement.queueActive = queueActive
+	ControllerCameraTestCommandDebug.lastOptions = ControllerCameraTestCommandOptionsSummary(orderOptions)
 	if not option or type(option.cmdID) ~= "number" or option.cmdID >= 0 then
 		menu.placementResult = "no highlighted build option"
 		menu.placementParamsCount = 0
@@ -3507,7 +3715,7 @@ function ControllerCameraTestDequeueFactoryBuildOption(option)
 		return false
 	end
 
-	local queueActive = normalizedLeftTrigger > 0
+	local queueActive = ControllerCameraTestIsQueueModifierActive()
 	local optionsToIssue = { "right" }
 	if queueActive then
 		optionsToIssue = { "right", "shift" }
@@ -3600,7 +3808,7 @@ function ControllerCameraTestHandlePlacementInput(dt)
 		return false
 	end
 
-	placement.queueActive = normalizedLeftTrigger > 0
+	placement.queueActive = ControllerCameraTestIsQueueModifierActive()
 	placement.queueFrontActive = normalizedRightTrigger > 0
 	ControllerCameraTestUpdatePlacementAnalog()
 
@@ -3625,7 +3833,7 @@ function ControllerCameraTestHandlePlacementInput(dt)
 				drag.pressActive = true
 				drag.pressStartTime = debugEventTime
 				drag.pressButton = button
-				drag.mode = "build" .. (placement.placementPattern == "line" and "Line" or (placement.placementPattern == "grid" and "Grid" or (placement.placementPattern == "border" and "Border" or "Split")))
+				drag.mode = ControllerCameraTestDragModeForPlacementPattern(placement.placementPattern)
 				drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
 				drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
 				drag.previewPoints = {}
@@ -3648,6 +3856,23 @@ function ControllerCameraTestHandlePlacementInput(dt)
 		end
 	elseif drag.active then
 		ControllerCameraTestUpdateDragPreview()
+	end
+
+	if drag.active then
+		local changed = false
+		if WasButtonPressed("LB") then
+			changed = ControllerCameraTestTryConstructionShortcut("pattern", "prev")
+		elseif WasButtonPressed("RB") then
+			changed = ControllerCameraTestTryConstructionShortcut("pattern", "next")
+		elseif WasButtonPressed("dpadUp") then
+			changed = ControllerCameraTestTryConstructionShortcut("spacing", "inc")
+		elseif WasButtonPressed("dpadDown") then
+			changed = ControllerCameraTestTryConstructionShortcut("spacing", "dec")
+		end
+		if changed then
+			drag.mode = ControllerCameraTestDragModeForPlacementPattern(placement.placementPattern)
+			ControllerCameraTestUpdateDragPreview()
+		end
 	end
 
 	if not drag.active then
@@ -3716,9 +3941,9 @@ function ControllerCameraTestHandleBuildMenuInput()
 		if ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits) then
 			local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
 			if option then
-				local queueActive = normalizedLeftTrigger > 0
+				local queueActive = ControllerCameraTestIsQueueModifierActive()
 				local queueFrontActive = normalizedRightTrigger > 0
-				local orderOptions = queueActive and { "shift" } or {}
+				local orderOptions = ControllerCameraTestGetCommandOptions()
 
 				local cmdToIssue = option.cmdID
 				local paramsToIssue = {}
@@ -4596,7 +4821,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 end
 
 function ControllerCameraTestUpdateCameraControls(dt)
-	local menuOpen = ControllerCameraTestBuildMenu.open
+	local menuOpen = ControllerCameraTestBuildMenu.open or ControllerCameraTestTacticalMenu.open
 	panActive = (not menuOpen) and (normalizedLeftX ~= 0 or normalizedLeftY ~= 0)
 	local placementActive = ControllerCameraTestBuildPlacement.active
 	local areaActive = ControllerCameraTestAreaSelect.active
@@ -4630,6 +4855,9 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 	ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	if ControllerCameraTestBuildMenu.open then
 		ControllerCameraTestUpdateRadialStickSelection()
+	end
+	if ControllerCameraTestTacticalMenu.open then
+		ControllerCameraTestUpdateTacticalStickSelection()
 	end
 	ControllerCameraTestUpdateCameraControls(dt)
 	updateReticleWorldTarget()
@@ -4718,6 +4946,124 @@ function widget:MouseRelease()
 		debugPanelResizing = false
 		return true
 	end
+end
+
+function ControllerCameraTestDrawCircle2D(x, y, r, segments)
+	segments = segments or 32
+	gl.BeginEnd(GL.TRIANGLE_FAN, function()
+		gl.Vertex(x, y)
+		for i = 0, segments do
+			local theta = i * (2 * math.pi / segments)
+			gl.Vertex(x + r * math.cos(theta), y + r * math.sin(theta))
+		end
+	end)
+end
+
+function ControllerCameraTestDrawTacticalRadial()
+	local menu = ControllerCameraTestTacticalMenu
+	if not menu.open then
+		return
+	end
+
+	local commands = ControllerCameraTestGetTacticalCommands()
+	local n = #commands
+	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
+	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
+	local minView = math.min(viewSizeX, viewSizeY)
+	local radius = math.min(330, math.max(210, minView * 0.22))
+	local itemW = math.min(142, math.max(104, minView * 0.11))
+	local itemH = 40
+
+	gl.Color(0, 0, 0, 0.46)
+	ControllerCameraTestDrawCircle2D(cx, cy, radius * 1.28, 42)
+	gl.Color(0.95, 0.32, 0.24, 0.74)
+	gl.LineWidth(2.5)
+	gl.BeginEnd(GL.LINE_LOOP, function()
+		for i = 0, 44 do
+			local theta = i * (2 * math.pi / 44)
+			gl.Vertex(cx + radius * math.cos(theta), cy + radius * math.sin(theta))
+		end
+	end)
+
+	if n <= 0 then
+		gl.Color(1, 1, 1, 1)
+		gl.Text("No tactical commands", cx, cy, 16, "oc")
+		return
+	end
+
+	for i, option in ipairs(commands) do
+		local angle = ((i - 1) * (2 * math.pi / n)) - (math.pi / 2)
+		local x = cx + radius * math.cos(angle)
+		local y = cy - radius * math.sin(angle)
+		local selected = (i == menu.selectedIndex)
+		local label = tostring(option.name or "Command")
+		if #label > 18 then
+			label = string.sub(label, 1, 16) .. ".."
+		end
+
+		if selected then
+			gl.Color(0.95, 0.36, 0.26, 0.88)
+		else
+			gl.Color(0.10, 0.12, 0.15, 0.74)
+		end
+		gl.Rect(x - itemW / 2, y - itemH / 2, x + itemW / 2, y + itemH / 2)
+		gl.Color(selected and 1 or 0.55, selected and 0.92 or 0.7, selected and 0.62 or 0.78, selected and 1 or 0.88)
+		gl.LineWidth(selected and 2.5 or 1.2)
+		gl.BeginEnd(GL.LINE_LOOP, function()
+			gl.Vertex(x - itemW / 2, y - itemH / 2)
+			gl.Vertex(x + itemW / 2, y - itemH / 2)
+			gl.Vertex(x + itemW / 2, y + itemH / 2)
+			gl.Vertex(x - itemW / 2, y + itemH / 2)
+		end)
+
+		gl.Color(1, 1, 1, selected and 1 or 0.82)
+		gl.Text(label, x, y - 5, selected and 13 or 11, "oc")
+	end
+
+	local current = commands[menu.selectedIndex]
+	gl.Color(0.08, 0.10, 0.13, 0.76)
+	ControllerCameraTestDrawCircle2D(cx, cy, radius * 0.36, 30)
+	gl.Color(1, 0.92, 0.72, 1)
+	gl.Text(current and current.name or "Tactical", cx, cy + 22, 15, "oc")
+	gl.Color(1, 1, 1, 0.86)
+	gl.Text("A select  B/Y close", cx, cy - 2, 11, "oc")
+	if ControllerCameraTestIsQueueModifierActive() then
+		gl.Color(0.35, 0.95, 0.65, 1)
+		gl.Text("LT QUEUE", cx, cy - 20, 11, "oc")
+	end
+	gl.Color(1, 1, 1, 1)
+	gl.LineWidth(1)
+end
+
+function ControllerCameraTestDrawQueueIndicator()
+	if not ControllerCameraTestIsQueueModifierActive() then
+		return
+	end
+	if not (ControllerCameraTestBuildPlacement.active
+		or ControllerCameraTestBuildMenu.open
+		or ControllerCameraTestTacticalMenu.open
+		or ControllerCameraTestDragCommand.active
+		or commandLayerActive)
+	then
+		return
+	end
+
+	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
+	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
+	gl.Color(0.02, 0.12, 0.06, 0.74)
+	gl.Rect(cx - 38, cy + 30, cx + 38, cy + 50)
+	gl.Color(0.35, 1.0, 0.62, 0.95)
+	gl.LineWidth(1.5)
+	gl.BeginEnd(GL.LINE_LOOP, function()
+		gl.Vertex(cx - 38, cy + 30)
+		gl.Vertex(cx + 38, cy + 30)
+		gl.Vertex(cx + 38, cy + 50)
+		gl.Vertex(cx - 38, cy + 50)
+	end)
+	gl.Color(0.8, 1, 0.86, 1)
+	gl.Text("QUEUE", cx, cy + 35, 12, "oc")
+	gl.LineWidth(1)
+	gl.Color(1, 1, 1, 1)
 end
 
 function ControllerCameraTestDrawBuildRadial()
@@ -5016,7 +5362,8 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Camera/Move: LS pan | RS X rotate | RS Y zoom | LB+RS Y pitch | LT boost",
 		"Selection: A select | A hold area-select | A double-tap select-all-type | B clear | X hold Move Line Drag",
 		"Context Actions: X context | RT+B stop | RT+X attack | RT+X hold Fight Line Drag | RT+A hold Attack Line Drag",
-		"Combat Layers: RT+A combat-select | RT+Y tactical-menu | RT+Dpad Down Reclaim/Repair Area Drag",
+		"Combat Layers: RT+A combat-select | RT+Y tactical radial | LS/Dpad choose | A confirm | B/Y close",
+		"Queue Modifier: hold LT while confirming Move/Fight/Attack/Reclaim/Repair/Build to queue like Shift",
 		"Constructor Radial: Y open | LS/Dpad select | LB/RB page | Y close",
 		"   * A enter placement | X quick-place | B close radial",
 		"Factory Radial: Y open | LS/Dpad select | LB/RB page | Y close",
@@ -5076,6 +5423,10 @@ function widget:DrawScreen()
 	if ControllerCameraTestBuildMenu.open then
 		ControllerCameraTestDrawBuildRadial()
 	end
+	if ControllerCameraTestTacticalMenu.open then
+		ControllerCameraTestDrawTacticalRadial()
+	end
+	ControllerCameraTestDrawQueueIndicator()
 	if ControllerCameraTestSettings.helpOverlayVisible then
 		ControllerCameraTestDrawHelpOverlay()
 	end
@@ -5238,13 +5589,21 @@ function widget:DrawScreen()
 	local factoryProgressKnown = "no"
 	local factoryProgressCmdID = "none"
 	local factoryProgressValue = "none"
+	local factoryProgressSource = "none"
 	if isFactoryRadialVal and currentOption and currentOption.cmdID and ControllerCameraTestBuildMenu.factoryQueueProgress then
 		local progress = ControllerCameraTestBuildMenu.factoryQueueProgress[currentOption.cmdID]
 		if progress then
 			factoryProgressKnown = "yes"
 			factoryProgressCmdID = tostring(currentOption.cmdID)
 			factoryProgressValue = string.format("%.2f", progress)
+			factoryProgressSource = tostring(ControllerCameraTestBuildMenu.factoryProgressSource or "GetUnitIsBuilding")
 		end
+	end
+	if factoryProgressKnown ~= "yes" and ControllerCameraTestBuildMenu.factoryProgressKnown == "yes" then
+		factoryProgressKnown = "yes"
+		factoryProgressCmdID = tostring(ControllerCameraTestBuildMenu.factoryProgressCmdID or "none")
+		factoryProgressValue = tostring(ControllerCameraTestBuildMenu.factoryProgressValue or "none")
+		factoryProgressSource = tostring(ControllerCameraTestBuildMenu.factoryProgressSource or "none")
 	end
 
 	local controllerSections = {
@@ -5354,6 +5713,7 @@ function widget:DrawScreen()
 				"Command preview: " .. commandPreviewSummary,
 				"Command action: " .. tostring(ControllerCameraTestLayerDebug.commandLayerAction),
 				"Normal utility: " .. tostring(ControllerCameraTestLayerDebug.normalUtilityAction),
+				"Queue modifier active: " .. yesNo(ControllerCameraTestIsQueueModifierActive()),
 				"Default cmd index: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdIndex),
 				"Default cmd ID: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdID),
 				"Default cmd type: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdType),
@@ -5361,6 +5721,7 @@ function widget:DrawScreen()
 				"Is build: " .. tostring(ControllerCameraTestCommandDebug.isBuild),
 				"Issued cmd ID: " .. tostring(ControllerCameraTestCommandDebug.issuedCmdID),
 				"Issued params count: " .. tostring(ControllerCameraTestCommandDebug.issuedParamsCount),
+				"Last command options: " .. tostring(ControllerCameraTestCommandDebug.lastOptions),
 				"Last command result: " .. tostring(ControllerCameraTestCommandDebug.lastResult),
 				"Last issued command: " .. tostring(lastIssuedCommand),
 				"Mex smart available: " .. tostring(ControllerCameraTestCommandDebug.mexSmartAvailable),
@@ -5386,6 +5747,7 @@ function widget:DrawScreen()
 			title = "Tactical Menu",
 			lines = {
 				"Tactical open: " .. yesNo(ControllerCameraTestTacticalMenu.open),
+				"Tactical radial visible: " .. yesNo(ControllerCameraTestTacticalMenu.open),
 				"Tactical command: " .. tostring(ControllerCameraTestTacticalMenu.highlightedName),
 				"Tactical result: " .. tostring(ControllerCameraTestTacticalMenu.lastResult),
 			},
@@ -5432,6 +5794,7 @@ function widget:DrawScreen()
 				"Factory progress known: " .. tostring(factoryProgressKnown),
 				"Factory progress cmdID: " .. tostring(factoryProgressCmdID),
 				"Factory progress value: " .. tostring(factoryProgressValue),
+				"Factory progress source: " .. tostring(factoryProgressSource),
 				"Drag active: " .. yesNo(ControllerCameraTestDragCommand.active),
 				"Drag mode: " .. tostring(ControllerCameraTestDragCommand.mode),
 				"Drag start: " .. (ControllerCameraTestDragCommand.startX and string.format("%.0f, %.0f, %.0f", ControllerCameraTestDragCommand.startX, ControllerCameraTestDragCommand.startY, ControllerCameraTestDragCommand.startZ) or "nil"),
@@ -5439,6 +5802,9 @@ function widget:DrawScreen()
 				"Drag preview points count: " .. tostring(ControllerCameraTestDragCommand.previewPoints and #ControllerCameraTestDragCommand.previewPoints or 0),
 				"Drag last result: " .. tostring(ControllerCameraTestDragCommand.lastResult),
 				"Drag native route used: " .. yesNo(ControllerCameraTestDragCommand.nativeRouteUsed),
+				"Native blueprint route: " .. tostring(ControllerCameraTestDragCommand.nativeRouteName),
+				"Native preview result: " .. tostring(ControllerCameraTestDragCommand.nativePreviewResult),
+				"Custom grid fallback: " .. tostring(ControllerCameraTestDragCommand.customGridFallback),
 			},
 		},
 	}
@@ -5474,6 +5840,7 @@ function widget:DrawScreen()
 	if ControllerCameraTestDebugCompact then
 		local compactLines = {
 			"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary) .. " | Held: " .. heldButtonsSummary .. " | Pressed: " .. pressedRecentlySummary,
+			"Queue: " .. yesNo(ControllerCameraTestIsQueueModifierActive()) .. " | Tactical: " .. yesNo(ControllerCameraTestTacticalMenu.open) .. " | Build: " .. yesNo(ControllerCameraTestBuildMenu.open),
 			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName) .. " (Q:" .. tostring(highlightedQueueCount) .. (factoryProgressKnown == "yes" and " P:" .. factoryProgressValue or "") .. ")",
 			"Placement: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none") .. " | Pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern) .. " | Spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
 			"Drag: Act=" .. yesNo(ControllerCameraTestDragCommand.active) .. " Mode=" .. tostring(ControllerCameraTestDragCommand.mode) .. " Pts=" .. tostring(ControllerCameraTestDragCommand.previewPoints and #ControllerCameraTestDragCommand.previewPoints or 0) .. " Res=" .. tostring(ControllerCameraTestDragCommand.lastResult) .. " Route=" .. (ControllerCameraTestDragCommand.nativeRouteUsed and "Native" or "Fallback"),
