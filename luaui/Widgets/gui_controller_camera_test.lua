@@ -36,6 +36,74 @@ local MIN_SPRING_DISTANCE = 20
 local MIN_OVERHEAD_HEIGHT = 60
 local MIN_CAMERA_HEIGHT = 80
 
+local XboxController = {
+	axes = {
+		leftStickX = 0,
+		leftStickY = 1,
+		rightStickX = 2,
+		rightStickY = 3,
+		leftTrigger = 4,
+		rightTrigger = 5,
+	},
+	axisLabels = {
+		leftStickX = "Left Stick X",
+		leftStickY = "Left Stick Y",
+		rightStickX = "Right Stick X",
+		rightStickY = "Right Stick Y",
+		leftTrigger = "LT",
+		rightTrigger = "RT",
+	},
+	axisOrder = {
+		"leftStickX",
+		"leftStickY",
+		"rightStickX",
+		"rightStickY",
+		"leftTrigger",
+		"rightTrigger",
+	},
+	buttons = {
+		a = 0,
+		b = 1,
+		x = 2,
+		y = 3,
+		back = 4,
+		view = 4,
+		guide = 5,
+		start = 6,
+		menu = 6,
+		leftStick = 7,
+		leftStickClick = 7,
+		rightStick = 8,
+		rightStickClick = 8,
+		lb = 9,
+		leftBumper = 9,
+		rb = 10,
+		rightBumper = 10,
+		dpadUp = 11,
+		dpadDown = 12,
+		dpadLeft = 13,
+		dpadRight = 14,
+	},
+	buttonLabels = {
+		[0] = "A",
+		[1] = "B",
+		[2] = "X",
+		[3] = "Y",
+		[4] = "Back/View",
+		[5] = "Guide",
+		[6] = "Start/Menu",
+		[7] = "Left Stick Click",
+		[8] = "Right Stick Click",
+		[9] = "LB",
+		[10] = "RB",
+		[11] = "D-pad Up",
+		[12] = "D-pad Down",
+		[13] = "D-pad Left",
+		[14] = "D-pad Right",
+	},
+	buttonOrder = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 },
+}
+
 local apiAvailable = false
 local controllerName = "none"
 local controllerInstanceId = nil
@@ -43,6 +111,8 @@ local normalizedLeftX = 0
 local normalizedLeftY = 0
 local normalizedLeftTrigger = 0
 local normalizedRightTrigger = 0
+local pressedButtonsSummary = "none"
+local activeAxesSummary = "none"
 local panActive = false
 local zoomActive = false
 local cameraMode = "unknown"
@@ -87,6 +157,92 @@ local function normalizeTrigger(value)
 	end
 
 	return clamp((value - TRIGGER_DEADZONE) / (AXIS_MAX - TRIGGER_DEADZONE), 0, 1)
+end
+
+local function GetAxis(state, axisId)
+	if type(state) ~= "table" or type(state.axes) ~= "table" then
+		return 0
+	end
+
+	return tonumber(state.axes[axisId]) or 0
+end
+
+local function GetButton(state, buttonId)
+	if type(state) ~= "table" or type(state.buttons) ~= "table" then
+		return false
+	end
+
+	local value = state.buttons[buttonId]
+	if type(value) == "boolean" then
+		return value
+	end
+
+	return (tonumber(value) or 0) ~= 0
+end
+
+local function GetNamedAxis(state, axisName)
+	local axisId = XboxController.axes[axisName]
+	if axisId == nil then
+		return 0
+	end
+
+	return GetAxis(state, axisId)
+end
+
+local function GetNamedButton(state, buttonName)
+	local buttonId = XboxController.buttons[buttonName]
+	if buttonId == nil then
+		return false
+	end
+
+	return GetButton(state, buttonId)
+end
+
+local function getPressedButtonSummary(state)
+	local pressed = {}
+
+	for _, buttonId in ipairs(XboxController.buttonOrder) do
+		if GetButton(state, buttonId) then
+			pressed[#pressed + 1] = XboxController.buttonLabels[buttonId] or tostring(buttonId)
+		end
+	end
+
+	if #pressed == 0 then
+		return "none"
+	end
+
+	return table.concat(pressed, ", ")
+end
+
+local function getNormalizedDebugAxis(state, axisName)
+	local value = GetNamedAxis(state, axisName)
+
+	if axisName == "leftTrigger" or axisName == "rightTrigger" then
+		return normalizeTrigger(value)
+	end
+
+	return normalizeAxis(value)
+end
+
+local function getActiveAxisSummary(state)
+	local active = {}
+
+	for _, axisName in ipairs(XboxController.axisOrder) do
+		local value = getNormalizedDebugAxis(state, axisName)
+		if value ~= 0 then
+			active[#active + 1] = string.format(
+				"%s=%.2f",
+				XboxController.axisLabels[axisName] or axisName,
+				value
+			)
+		end
+	end
+
+	if #active == 0 then
+		return "none"
+	end
+
+	return table.concat(active, ", ")
 end
 
 local function getFirstController(controllers)
@@ -300,6 +456,8 @@ function widget:Update(dt)
 		normalizedLeftY = 0
 		normalizedLeftTrigger = 0
 		normalizedRightTrigger = 0
+		pressedButtonsSummary = "none"
+		activeAxesSummary = "none"
 		return
 	end
 
@@ -309,13 +467,17 @@ function widget:Update(dt)
 		normalizedLeftY = 0
 		normalizedLeftTrigger = 0
 		normalizedRightTrigger = 0
+		pressedButtonsSummary = "none"
+		activeAxesSummary = "none"
 		return
 	end
 
-	normalizedLeftX = normalizeAxis(state.axes[0])
-	normalizedLeftY = normalizeAxis(state.axes[1])
-	normalizedLeftTrigger = normalizeTrigger(state.axes[4])
-	normalizedRightTrigger = normalizeTrigger(state.axes[5])
+	normalizedLeftX = normalizeAxis(GetNamedAxis(state, "leftStickX"))
+	normalizedLeftY = normalizeAxis(GetNamedAxis(state, "leftStickY"))
+	normalizedLeftTrigger = normalizeTrigger(GetNamedAxis(state, "leftTrigger"))
+	normalizedRightTrigger = normalizeTrigger(GetNamedAxis(state, "rightTrigger"))
+	pressedButtonsSummary = getPressedButtonSummary(state)
+	activeAxesSummary = getActiveAxisSummary(state)
 	panActive = normalizedLeftX ~= 0 or normalizedLeftY ~= 0
 	local zoomInput = normalizedRightTrigger - normalizedLeftTrigger
 	zoomActive = zoomInput ~= 0
@@ -348,10 +510,16 @@ function widget:DrawScreen()
 	glText(string.format("left stick: x=%.3f y=%.3f", normalizedLeftX, normalizedLeftY), x, y, 12, "o")
 	y = y - lineHeight
 
-	glText("camera pan active: " .. (panActive and "yes" or "no"), x, y, 12, "o")
+	glText("pan active: " .. (panActive and "yes" or "no"), x, y, 12, "o")
 	y = y - lineHeight
 
 	glText(string.format("triggers: LT=%.3f RT=%.3f", normalizedLeftTrigger, normalizedRightTrigger), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("axes: " .. activeAxesSummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("buttons: " .. pressedButtonsSummary, x, y, 12, "o")
 	y = y - lineHeight
 
 	glText("zoom active: " .. (zoomActive and "yes" or "no"), x, y, 12, "o")
