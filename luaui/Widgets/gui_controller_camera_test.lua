@@ -21,6 +21,7 @@ local spGetGroundHeight = Spring.GetGroundHeight
 local spGetMouseState = Spring.GetMouseState
 local spGetViewGeometry = Spring.GetViewGeometry
 local spTraceScreenRay = Spring.TraceScreenRay
+local spSelectUnitArray = Spring.SelectUnitArray
 
 local glText = gl.Text
 local glRect = gl.Rect
@@ -62,6 +63,7 @@ local DEBUG_PANEL_MIN_WIDTH = 280
 local DEBUG_PANEL_MIN_HEIGHT = 118
 local DEBUG_PANEL_DEFAULT_WIDTH = 650
 local DEBUG_PANEL_DEFAULT_HEIGHT = 150
+local SELECTION_DEBUG_HOLD_SECONDS = 1.2
 
 local XboxController = {
 	axes = {
@@ -209,6 +211,11 @@ local cameraPitchSummary = "pitch field unavailable"
 local zoomMethod = "none"
 local rotationMethod = "none"
 local pitchMethod = "none"
+local selectionTestActive = false
+local lastReticleSelectedUnitID = "none"
+local lastSelectionResult = "none"
+local selectionDebugMessage = "none"
+local selectionDebugExpiration = 0
 local controllerMode = false
 local reticleVisible = false
 local screenCenterX = 0
@@ -274,6 +281,8 @@ local function clearDebugEventLatches()
 	commandPreviewExpiration = 0
 	normalPreviewSummary = "none"
 	commandPreviewSummary = "none"
+	selectionDebugMessage = "none"
+	selectionDebugExpiration = 0
 end
 
 local resetReticleWorldTarget
@@ -309,6 +318,7 @@ local function resetControllerInputDebug()
 	zoomMethod = "none"
 	rotationMethod = "none"
 	pitchMethod = "none"
+	selectionTestActive = false
 	clearButtonStateTracking()
 	clearDebugEventLatches()
 	resetReticleWorldTarget()
@@ -593,6 +603,9 @@ local function updateDebugLatchSummaries()
 	if commandPreviewExpiration <= debugEventTime then
 		commandPreviewSummary = "none"
 	end
+	if selectionDebugExpiration <= debugEventTime then
+		selectionDebugMessage = "none"
+	end
 end
 
 local function getPreviewSummary(buttonStates, previewLabels)
@@ -865,6 +878,62 @@ local function updateReticleWorldTarget()
 	reticleHasWorldTarget = false
 end
 
+local function latchSelectionDebugMessage(message)
+	selectionDebugMessage = message
+	selectionDebugExpiration = debugEventTime + SELECTION_DEBUG_HOLD_SECONDS
+end
+
+local function updateSelectionTestActive()
+	selectionTestActive = controllerMode
+		and reticleVisible
+		and not commandLayerActive
+		and type(spTraceScreenRay) == "function"
+		and type(spSelectUnitArray) == "function"
+end
+
+local function attemptReticleSelection()
+	if commandLayerActive then
+		lastSelectionResult = "RT layer active"
+		latchSelectionDebugMessage("A select skipped: RT command layer active")
+		return
+	end
+	if not controllerMode or not reticleVisible then
+		lastSelectionResult = "unavailable"
+		latchSelectionDebugMessage("A select skipped: reticle inactive")
+		return
+	end
+	if type(spTraceScreenRay) ~= "function" or type(spSelectUnitArray) ~= "function" then
+		lastSelectionResult = "unavailable"
+		latchSelectionDebugMessage("A select unavailable")
+		return
+	end
+
+	local ok, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
+	if not ok then
+		lastSelectionResult = "unavailable"
+		latchSelectionDebugMessage("A select trace failed")
+		return
+	end
+
+	if targetType ~= "unit" or tonumber(targetID) == nil then
+		lastSelectionResult = "no unit"
+		latchSelectionDebugMessage("A select: no unit under reticle")
+		return
+	end
+
+	local unitID = tonumber(targetID)
+	local selectOk = pcall(spSelectUnitArray, { unitID }, false)
+	if not selectOk then
+		lastSelectionResult = "unavailable"
+		latchSelectionDebugMessage("A select failed")
+		return
+	end
+
+	lastReticleSelectedUnitID = tostring(unitID)
+	lastSelectionResult = "selected"
+	latchSelectionDebugMessage("A selected unit " .. tostring(unitID))
+end
+
 local function applySpringZoom(cameraState, zoomInput, dt)
 	if type(cameraState.dist) ~= "number" then
 		return false
@@ -1082,7 +1151,7 @@ function widget:ViewResize(vsx, vsy)
 	ensureDebugPanelInitialized()
 end
 
-function widget:Update(dt)
+function ControllerCameraTestBeginControllerUpdate(dt)
 	debugEventTime = debugEventTime + (dt or 0)
 	updateMouseInputMode()
 	panActive = false
@@ -1104,9 +1173,13 @@ function widget:Update(dt)
 	local state = pollControllerState(controller.instanceId)
 	if not state or type(state.axes) ~= "table" then
 		resetControllerInputDebug()
-		return
+		return nil
 	end
 
+	return state
+end
+
+function ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	normalizedLeftX = normalizeAxis(GetNamedAxis(state, "leftStickX"))
 	normalizedLeftY = normalizeAxis(GetNamedAxis(state, "leftStickY"))
 	normalizedRightX = normalizeAxis(GetNamedAxis(state, "rightStickX"))
@@ -1131,10 +1204,16 @@ function widget:Update(dt)
 	end
 	latchDebugButtonEvents(pressedButtonStates, pressedRecentlyExpirations)
 	latchDebugButtonEvents(releasedButtonStates, releasedRecentlyExpirations)
+end
 
+function ControllerCameraTestUpdateControllerModeAndCommandLayer()
 	fastPanActive = normalizedLeftTrigger > 0
 	lbCameraModifierActive = IsButtonDown("LB")
 	commandLayerActive = normalizedRightTrigger > 0
+	updateSelectionTestActive()
+	if WasButtonPressed("A") then
+		attemptReticleSelection()
+	end
 	activeButtonLayoutSummary = commandLayerActive
 		and XboxController.commandLayoutSummary
 		or XboxController.normalLayoutSummary
@@ -1155,6 +1234,9 @@ function widget:Update(dt)
 			normalPreviewExpiration = normalExpiration
 		end
 	end
+end
+
+function ControllerCameraTestUpdateCameraControls(dt)
 	panActive = normalizedLeftX ~= 0 or normalizedLeftY ~= 0
 	rightStickYMode = lbCameraModifierActive and "pitch" or "zoom"
 	local zoomInput = lbCameraModifierActive and 0 or -normalizedRightY
@@ -1173,8 +1255,22 @@ function widget:Update(dt)
 		pitchMethod = "none"
 		updateCameraDebug(spGetCameraState())
 	end
+end
 
+function ControllerCameraTestUpdateControllerFrame(dt)
+	local state = ControllerCameraTestBeginControllerUpdate(dt)
+	if not state then
+		return
+	end
+
+	ControllerCameraTestUpdateControllerAxesAndButtons(state)
+	ControllerCameraTestUpdateControllerModeAndCommandLayer()
+	ControllerCameraTestUpdateCameraControls(dt)
 	updateReticleWorldTarget()
+end
+
+function widget:Update(dt)
+	ControllerCameraTestUpdateControllerFrame(dt)
 end
 
 function widget:MouseMove(x, y)
@@ -1372,6 +1468,10 @@ function widget:DrawScreen()
 				"Pressed recent: " .. pressedRecentlySummary,
 				"Released recent: " .. releasedRecentlySummary,
 				"Cmd recent: " .. commandLayerPressedRecentlySummary,
+				"Selection test: " .. yesNo(selectionTestActive),
+				"Last selected unitID: " .. tostring(lastReticleSelectedUnitID),
+				"Selection result: " .. lastSelectionResult,
+				"Selection msg: " .. selectionDebugMessage,
 			},
 		},
 	}
