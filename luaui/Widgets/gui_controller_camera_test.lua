@@ -51,6 +51,15 @@ ControllerCameraTestBuildMenu = ControllerCameraTestBuildMenu or {
 	lastAction = "none",
 	placementResult = "none",
 	placementParamsCount = 0,
+	radialCategories = { "All", "Economy", "Combat", "Utility", "Build" },
+	radialPage = 1,
+	radialPageCount = 1,
+	radialCategoryIndex = 1,
+	radialCategoryName = "All",
+	radialVisibleOptions = {},
+	radialStickArmed = true,
+	radialLastAngle = 0,
+	radialLastAction = "none",
 }
 ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	active = false,
@@ -2106,6 +2115,88 @@ function ControllerCameraTestBuildOptionName(cmdID, desc)
 	return "Build " .. tostring(unitDefID or cmdID)
 end
 
+function ControllerCameraTestClassifyBuildOption(unitDef, name)
+	if not unitDef then
+		return "Build"
+	end
+
+	local nameLower = string.lower(name or "")
+
+	-- Economy Heuristic
+	local isEco = unitDef.isExtractor
+		or (unitDef.energyMake and unitDef.energyMake > 0)
+		or (unitDef.metalMake and unitDef.metalMake > 0)
+		or (unitDef.energyStorage and unitDef.energyStorage > 0)
+		or (unitDef.metalStorage and unitDef.metalStorage > 0)
+		or (unitDef.customParams and (unitDef.customParams.energyprod or unitDef.customParams.metalprod))
+		or string.find(nameLower, "solar")
+		or string.find(nameLower, "wind")
+		or string.find(nameLower, "generator")
+		or string.find(nameLower, "fusion")
+		or string.find(nameLower, "converter")
+		or string.find(nameLower, "mex")
+		or string.find(nameLower, "extractor")
+		or string.find(nameLower, "storage")
+		or string.find(nameLower, "tidal")
+		or string.find(nameLower, "geothermal")
+	if isEco then
+		return "Economy"
+	end
+
+	-- Combat Heuristic
+	local isCombat = (unitDef.weapons and #unitDef.weapons > 0)
+		or unitDef.canAttack
+		or string.find(nameLower, "turret")
+		or string.find(nameLower, "laser")
+		or string.find(nameLower, "cannon")
+		or string.find(nameLower, "artillery")
+		or string.find(nameLower, "anti")
+		or string.find(nameLower, "defense")
+		or string.find(nameLower, "fortification")
+		or string.find(nameLower, "mine")
+		or string.find(nameLower, "missile")
+	if isCombat then
+		return "Combat"
+	end
+
+	-- Utility Heuristic
+	local isUtility = (unitDef.radarRadius and unitDef.radarRadius > 0)
+		or (unitDef.jammerRadius and unitDef.jammerRadius > 0)
+		or (unitDef.sonarRadius and unitDef.sonarRadius > 0)
+		or (unitDef.shieldRadius and unitDef.shieldRadius > 0)
+		or unitDef.canRepair
+		or unitDef.canRestore
+		or unitDef.canTransport
+		or string.find(nameLower, "radar")
+		or string.find(nameLower, "jammer")
+		or string.find(nameLower, "sonar")
+		or string.find(nameLower, "shield")
+		or string.find(nameLower, "repair")
+		or string.find(nameLower, "juno")
+		or string.find(nameLower, "support")
+		or string.find(nameLower, "transport")
+		or string.find(nameLower, "targeting")
+		or string.find(nameLower, "beacon")
+	if isUtility then
+		return "Utility"
+	end
+
+	-- Build Heuristic
+	local isBuild = unitDef.builder
+		or string.find(nameLower, "lab")
+		or string.find(nameLower, "factory")
+		or string.find(nameLower, "gantry")
+		or string.find(nameLower, "hub")
+		or string.find(nameLower, "builder")
+		or string.find(nameLower, "con ")
+		or string.find(nameLower, "construction")
+	if isBuild then
+		return "Build"
+	end
+
+	return "Build"
+end
+
 function ControllerCameraTestGatherBuildOptions()
 	local menu = ControllerCameraTestBuildMenu
 	menu.options = {}
@@ -2141,13 +2232,23 @@ function ControllerCameraTestGatherBuildOptions()
 				local action = tostring(desc.action or "")
 				if action == "" or string.sub(action, 1, 10) == "buildunit_" or (UnitDefs and UnitDefs[-cmdID]) then
 					seen[cmdID] = true
+					local unitDef = UnitDefs and UnitDefs[-cmdID]
+					local name = ControllerCameraTestBuildOptionName(cmdID, desc)
+					local cat = ControllerCameraTestClassifyBuildOption(unitDef, name)
 					menu.options[#menu.options + 1] = {
 						cmdID = cmdID,
-						name = ControllerCameraTestBuildOptionName(cmdID, desc),
+						name = name,
 						index = index,
 						type = desc.type or "unknown",
 						action = action,
 						tooltip = desc.tooltip or "",
+						unitDefID = -cmdID,
+						unitDefName = unitDef and unitDef.name or "unknown",
+						buildPicName = unitDef and unitDef.buildPicName or nil,
+						iconTexture = "#" .. tostring(-cmdID),
+						metalCost = unitDef and unitDef.metalCost or 0,
+						energyCost = unitDef and unitDef.energyCost or 0,
+						category = cat,
 					}
 				end
 			end
@@ -2167,6 +2268,136 @@ function ControllerCameraTestGatherBuildOptions()
 	return #menu.options
 end
 
+function ControllerCameraTestRefreshRadialVisibleOptions()
+	local menu = ControllerCameraTestBuildMenu
+	menu.radialVisibleOptions = {}
+
+	local filterCat = menu.radialCategoryName or "All"
+	local filtered = {}
+	for i, option in ipairs(menu.options) do
+		if filterCat == "All" or option.category == filterCat then
+			filtered[#filtered + 1] = option
+			option.menuIndex = i
+		end
+	end
+
+	if #filtered == 0 and filterCat ~= "All" then
+		filterCat = "All"
+		menu.radialCategoryIndex = 1
+		menu.radialCategoryName = "All"
+		for i, option in ipairs(menu.options) do
+			filtered[#filtered + 1] = option
+			option.menuIndex = i
+		end
+	end
+
+	local maxPerPage = 8
+	local totalFiltered = #filtered
+	menu.radialPageCount = math.max(1, math.ceil(totalFiltered / maxPerPage))
+
+	if menu.radialPage < 1 then
+		menu.radialPage = 1
+	elseif menu.radialPage > menu.radialPageCount then
+		menu.radialPage = menu.radialPageCount
+	end
+
+	local startIndex = (menu.radialPage - 1) * maxPerPage + 1
+	local endIndex = math.min(startIndex + maxPerPage - 1, totalFiltered)
+
+	for i = startIndex, endIndex do
+		menu.radialVisibleOptions[#menu.radialVisibleOptions + 1] = filtered[i]
+	end
+
+	local currentVisibleSelected = nil
+	for i, option in ipairs(menu.radialVisibleOptions) do
+		if option.menuIndex == menu.selectedIndex then
+			currentVisibleSelected = i
+			break
+		end
+	end
+
+	if not currentVisibleSelected then
+		if #menu.radialVisibleOptions > 0 then
+			menu.selectedIndex = menu.radialVisibleOptions[1].menuIndex
+		end
+	end
+
+	ControllerCameraTestRefreshBuildMenuDebug()
+end
+
+function ControllerCameraTestGetRadialCurrentOption()
+	local menu = ControllerCameraTestBuildMenu
+	if type(menu.radialVisibleOptions) == "table" and #menu.radialVisibleOptions > 0 then
+		for _, option in ipairs(menu.radialVisibleOptions) do
+			if option.menuIndex == menu.selectedIndex then
+				return option
+			end
+		end
+		return menu.radialVisibleOptions[1]
+	end
+	return type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
+end
+
+function ControllerCameraTestSetRadialHighlight(localIndex, reason)
+	local menu = ControllerCameraTestBuildMenu
+	local count = #menu.radialVisibleOptions
+	if count <= 0 then
+		return
+	end
+
+	localIndex = ((localIndex - 1) % count) + 1
+	local option = menu.radialVisibleOptions[localIndex]
+	if option and option.menuIndex then
+		menu.selectedIndex = option.menuIndex
+		menu.lastAction = reason or "radial highlight changed"
+		menu.radialLastAction = reason or "radial highlight changed"
+		ControllerCameraTestRefreshBuildMenuDebug()
+	end
+end
+
+function ControllerCameraTestUpdateRadialStickSelection()
+	local menu = ControllerCameraTestBuildMenu
+	if not menu.open then
+		return
+	end
+	if ControllerCameraTestBuildPlacement.active then
+		return
+	end
+
+	local dx = normalizedLeftX
+	local dy = -normalizedLeftY
+	local magnitude = math.sqrt(dx * dx + dy * dy)
+	local visibleOptions = menu.radialVisibleOptions or {}
+	local visibleCount = #visibleOptions
+
+	if visibleCount <= 0 then
+		return
+	end
+
+	if magnitude > 0.5 then
+		local angle = math.atan2(dx, dy)
+		if angle < 0 then
+			angle = angle + 2 * math.pi
+		end
+		menu.radialLastAngle = angle
+
+		local segment = 2 * math.pi / visibleCount
+		local adjustedAngle = angle + (segment / 2)
+		if adjustedAngle >= 2 * math.pi then
+			adjustedAngle = adjustedAngle - 2 * math.pi
+		end
+
+		local newIndex = math.floor(adjustedAngle / segment) + 1
+		local option = visibleOptions[newIndex]
+		if option and option.menuIndex and menu.selectedIndex ~= option.menuIndex then
+			menu.selectedIndex = option.menuIndex
+			menu.lastAction = "stick select"
+			menu.radialLastAction = "stick select"
+			ControllerCameraTestRefreshBuildMenuDebug()
+		end
+	end
+end
+
 function ControllerCameraTestOpenBuildMenu()
 	local menu = ControllerCameraTestBuildMenu
 	local count = ControllerCameraTestGatherBuildOptions()
@@ -2180,9 +2411,18 @@ function ControllerCameraTestOpenBuildMenu()
 	end
 
 	menu.open = true
+	menu.radialCategoryIndex = 1
+	menu.radialCategoryName = "All"
+	menu.radialPage = 1
+	menu.radialStickArmed = true
+	menu.radialLastAngle = 0
+	menu.radialLastAction = "none"
+
+	ControllerCameraTestRefreshRadialVisibleOptions()
+
 	menu.lastAction = "opened"
 	menu.placementResult = "none"
-	activeButtonLayoutSummary = "Build menu: A placement, X quick-place, B/Y close, D-pad/LB/RB navigate"
+	activeButtonLayoutSummary = "Build radial: LS/D-pad select | LB/RB page/category | A place | X quick-place | B/Y close"
 	latchSelectionDebugMessage("Y build menu opened: " .. tostring(count) .. " options")
 	ControllerCameraTestRefreshBuildMenuDebug()
 end
@@ -2496,31 +2736,64 @@ function ControllerCameraTestHandleBuildMenuInput()
 		return false
 	end
 
-	local navStep = fastPanActive and 5 or 1
-	local pageStep = fastPanActive and 10 or 5
+	if ControllerCameraTestBuildPlacement.active then
+		return false
+	end
+
+	local currentLocalIndex = 1
+	for idx, option in ipairs(menu.radialVisibleOptions or {}) do
+		if option.menuIndex == menu.selectedIndex then
+			currentLocalIndex = idx
+			break
+		end
+	end
+
+	local categories = menu.radialCategories or { "All", "Economy", "Combat", "Utility", "Build" }
+
 	if WasButtonPressed("B") then
 		ControllerCameraTestCloseBuildMenu("closed by B")
 	elseif WasButtonPressed("Y") then
 		ControllerCameraTestCloseBuildMenu("closed by Y")
 	elseif WasButtonPressed("A") then
 		ControllerCameraTestEnterPlacementFromHighlight()
-	elseif WasButtonPressed("dpadUp") then
-		ControllerCameraTestCycleBuildOption(-navStep)
-	elseif WasButtonPressed("dpadDown") then
-		ControllerCameraTestCycleBuildOption(navStep)
-	elseif WasButtonPressed("dpadLeft") then
-		ControllerCameraTestCycleBuildOption(-pageStep)
-	elseif WasButtonPressed("dpadRight") then
-		ControllerCameraTestCycleBuildOption(pageStep)
-	elseif WasButtonPressed("LB") then
-		ControllerCameraTestCycleBuildOption(-pageStep)
-	elseif WasButtonPressed("RB") then
-		ControllerCameraTestCycleBuildOption(pageStep)
+		ControllerCameraTestCloseBuildMenu("entered placement")
 	elseif WasButtonPressed("X") then
-		ControllerCameraTestPlaceHighlightedBuildOption(false, "quick placed from menu")
+		ControllerCameraTestPlaceHighlightedBuildOption(false, "quick placed from radial")
+	elseif WasButtonPressed("dpadUp") or WasButtonPressed("dpadLeft") then
+		ControllerCameraTestSetRadialHighlight(currentLocalIndex - 1, "dpad prev")
+	elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadRight") then
+		ControllerCameraTestSetRadialHighlight(currentLocalIndex + 1, "dpad next")
+	elseif WasButtonPressed("LB") then
+		if menu.radialPage > 1 then
+			menu.radialPage = menu.radialPage - 1
+			ControllerCameraTestRefreshRadialVisibleOptions()
+		else
+			menu.radialCategoryIndex = ((menu.radialCategoryIndex - 2) % #categories) + 1
+			menu.radialCategoryName = categories[menu.radialCategoryIndex]
+			menu.radialPage = 1
+			ControllerCameraTestRefreshRadialVisibleOptions()
+			if #menu.radialVisibleOptions > 0 then
+				menu.selectedIndex = menu.radialVisibleOptions[1].menuIndex
+			end
+		end
+		menu.lastAction = "category/page prev"
+	elseif WasButtonPressed("RB") then
+		if menu.radialPage < menu.radialPageCount then
+			menu.radialPage = menu.radialPage + 1
+			ControllerCameraTestRefreshRadialVisibleOptions()
+		else
+			menu.radialCategoryIndex = (menu.radialCategoryIndex % #categories) + 1
+			menu.radialCategoryName = categories[menu.radialCategoryIndex]
+			menu.radialPage = 1
+			ControllerCameraTestRefreshRadialVisibleOptions()
+			if #menu.radialVisibleOptions > 0 then
+				menu.selectedIndex = menu.radialVisibleOptions[1].menuIndex
+			end
+		end
+		menu.lastAction = "category/page next"
 	end
 
-	activeButtonLayoutSummary = "Build menu: A placement, X quick-place, B/Y close, D-pad/LB/RB navigate"
+	activeButtonLayoutSummary = "Build radial: LS/D-pad select | LB/RB page/category | A place | X quick-place | B/Y close"
 	ControllerCameraTestRefreshBuildMenuDebug()
 	return true
 end
@@ -3210,13 +3483,14 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 end
 
 function ControllerCameraTestUpdateCameraControls(dt)
-	panActive = normalizedLeftX ~= 0 or normalizedLeftY ~= 0
+	local menuOpen = ControllerCameraTestBuildMenu.open
+	panActive = (not menuOpen) and (normalizedLeftX ~= 0 or normalizedLeftY ~= 0)
 	local placementActive = ControllerCameraTestBuildPlacement.active
 	local areaActive = ControllerCameraTestAreaSelect.active
 	rightStickYMode = areaActive and "area radius" or (lbCameraModifierActive and "pitch" or "zoom")
-	local zoomInput = (lbCameraModifierActive or areaActive) and 0 or -normalizedRightY
-	local pitchInput = (lbCameraModifierActive and not areaActive) and -normalizedRightY or 0
-	local rotationInput = placementActive and 0 or normalizedRightX
+	local zoomInput = (lbCameraModifierActive or areaActive or menuOpen) and 0 or -normalizedRightY
+	local pitchInput = (lbCameraModifierActive and not areaActive and not menuOpen) and -normalizedRightY or 0
+	local rotationInput = (placementActive or menuOpen) and 0 or normalizedRightX
 	zoomActive = zoomInput ~= 0
 	rotationActive = rotationInput ~= 0
 	pitchActive = pitchInput ~= 0
@@ -3224,7 +3498,7 @@ function ControllerCameraTestUpdateCameraControls(dt)
 	local panMultiplier = fastPanActive and ControllerCameraTestSettings.fastPanMultiplier or 1
 	zoomSpeedMultiplier = fastPanActive and ControllerCameraTestSettings.zoomBoostMultiplier or 1
 	if panActive or zoomActive or rotationActive or pitchActive then
-		applyCameraInput(normalizedLeftX, normalizedLeftY, zoomInput, rotationInput, pitchInput, panMultiplier, zoomSpeedMultiplier, dt)
+		applyCameraInput(menuOpen and 0 or normalizedLeftX, menuOpen and 0 or normalizedLeftY, zoomInput, rotationInput, pitchInput, panMultiplier, zoomSpeedMultiplier, dt)
 	elseif spGetCameraState then
 		zoomMethod = "none"
 		rotationMethod = "none"
@@ -3241,6 +3515,9 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 
 	ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
+	if ControllerCameraTestBuildMenu.open then
+		ControllerCameraTestUpdateRadialStickSelection()
+	end
 	ControllerCameraTestUpdateCameraControls(dt)
 	updateReticleWorldTarget()
 	if controllerMode and reticleVisible and type(spWarpMouse) == "function" then spWarpMouse(screenCenterX, screenCenterY) end
@@ -3302,6 +3579,143 @@ function widget:MouseRelease()
 	end
 end
 
+function ControllerCameraTestDrawBuildRadial()
+	local menu = ControllerCameraTestBuildMenu
+	if not menu.open then
+		return
+	end
+
+	if ControllerCameraTestBuildPlacement.active then
+		return
+	end
+
+	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
+	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
+
+	local radius = math.max(150, math.min(220, math.min(viewSizeX, viewSizeY) * 0.25))
+
+	local visibleOptions = menu.radialVisibleOptions or {}
+	local n = #visibleOptions
+
+	-- 1. Translucent backdrop (large dark circle around the reticle)
+	gl.Color(0, 0, 0, 0.72)
+	local function drawCircle(x, y, r, segments)
+		segments = segments or 32
+		gl.BeginEnd(GL.TRIANGLE_FAN, function()
+			gl.Vertex(x, y)
+			for i = 0, segments do
+				local theta = i * (2 * math.pi / segments)
+				gl.Vertex(x + r * math.cos(theta), y + r * math.sin(theta))
+			end
+		end)
+	end
+
+	drawCircle(cx, cy, radius * 1.3, 40)
+
+	-- Draw a thin ring
+	gl.LineWidth(2)
+	gl.Color(0.56, 0.84, 1, 0.45)
+	gl.BeginEnd(GL.LINE_LOOP, function()
+		for i = 0, 36 do
+			local theta = i * (2 * math.pi / 36)
+			gl.Vertex(cx + radius * math.cos(theta), cy + radius * math.sin(theta))
+		end
+	end)
+
+	-- 2. Draw each item
+	local iconSize = 48
+	for i = 1, n do
+		local option = visibleOptions[i]
+		local angle = ((i - 1) * (2 * math.pi / n)) - (math.pi / 2)
+		local x = cx + radius * math.cos(angle)
+		local y = cy + radius * math.sin(angle)
+
+		local isSelected = (option.menuIndex == menu.selectedIndex)
+
+		if isSelected then
+			gl.Color(0.2, 0.6, 1, 0.85)
+			gl.Rect(x - iconSize/2 - 4, y - iconSize/2 - 4, x + iconSize/2 + 4, y + iconSize/2 + 4)
+			gl.Color(0.85, 0.95, 1, 1)
+		else
+			gl.Color(0.12, 0.18, 0.23, 0.85)
+			gl.Rect(x - iconSize/2 - 2, y - iconSize/2 - 2, x + iconSize/2 + 2, y + iconSize/2 + 2)
+			gl.Color(0.8, 0.8, 0.8, 0.9)
+		end
+
+		gl.LineWidth(isSelected and 3 or 1.5)
+		gl.BeginEnd(GL.LINE_LOOP, function()
+			gl.Vertex(x - iconSize/2, y - iconSize/2)
+			gl.Vertex(x + iconSize/2, y - iconSize/2)
+			gl.Vertex(x + iconSize/2, y + iconSize/2)
+			gl.Vertex(x - iconSize/2, y + iconSize/2)
+		end)
+
+		local hasIcon = false
+		if option.iconTexture then
+			gl.Texture(option.iconTexture)
+			gl.Color(1, 1, 1, 1)
+			gl.TexRect(x - iconSize/2, y - iconSize/2, x + iconSize/2, y + iconSize/2)
+			gl.Texture(false)
+			hasIcon = true
+		end
+
+		if not hasIcon then
+			gl.Color(1, 1, 1, 1)
+			gl.Text(string.sub(option.name, 1, 4), x, y - 4, 10, "oc")
+		end
+
+		gl.Color(1, 0.84, 0, 1)
+		gl.Text(tostring(i), x - iconSize/2 + 4, y + iconSize/2 - 12, 10, "o")
+	end
+
+	-- 3. Center display details
+	local currentOption = ControllerCameraTestGetRadialCurrentOption()
+	if currentOption then
+		gl.Color(0.2, 0.6, 1, 0.15)
+		drawCircle(cx, cy, radius * 0.45, 30)
+
+		gl.Color(0.82, 0.94, 1, 1)
+		gl.Text(currentOption.name or "unknown", cx, cy + 12, 15, "oc")
+
+		local costText = ""
+		if currentOption.metalCost and currentOption.metalCost > 0 then
+			costText = costText .. "M: " .. tostring(currentOption.metalCost)
+		end
+		if currentOption.energyCost and currentOption.energyCost > 0 then
+			if costText ~= "" then costText = costText .. "  " end
+			costText = costText .. "E: " .. tostring(currentOption.energyCost)
+		end
+		if costText ~= "" then
+			gl.Color(1, 0.85, 0.3, 0.95)
+			gl.Text(costText, cx, cy - 10, 12, "oc")
+		end
+
+		if currentOption.tooltip and currentOption.tooltip ~= "" then
+			gl.Color(0.7, 0.7, 0.7, 0.8)
+			local tip = string.sub(currentOption.tooltip, 1, 26)
+			if #currentOption.tooltip > 26 then tip = tip .. "..." end
+			gl.Text(tip, cx, cy - 28, 10, "oc")
+		end
+	end
+
+	-- 4. Category/Page Indicator
+	gl.Color(0.56, 0.84, 1, 0.95)
+	local categoryStr = string.upper(menu.radialCategoryName or "All")
+	local pageStr = "PAGE " .. tostring(menu.radialPage) .. "/" .. tostring(menu.radialPageCount)
+
+	gl.Text(categoryStr, cx, cy + radius * 0.7, 14, "oc")
+	gl.Color(0.8, 0.8, 0.8, 0.8)
+	gl.Text(pageStr, cx, cy - radius * 0.7, 12, "oc")
+
+	gl.Color(0.6, 0.6, 0.6, 0.7)
+	gl.Text("LB", cx - 80, cy + radius * 0.7, 11, "oc")
+	gl.Text("RB", cx + 80, cy + radius * 0.7, 11, "oc")
+
+	gl.Color(1, 1, 1, 1)
+	gl.Texture(false)
+	gl.LineWidth(1)
+end
+
 function ControllerCameraTestDrawHelpOverlay()
 	local screenWidth = viewSizeX > 0 and viewSizeX or 1280
 	local screenHeight = viewSizeY > 0 and viewSizeY or 720
@@ -3321,7 +3735,7 @@ function ControllerCameraTestDrawHelpOverlay()
 		"A tap select | A hold radius select | A double-tap same type / combat fallback",
 		"B clear/cancel | X smart move/mex/context | Y build menu | RB/LB cycle",
 		"D-pad recalls camera bookmarks | LT+D-pad stores camera bookmarks",
-		"Build: A enter/place+exit | X place+stay | B cancel | D-pad/RS X rotate facing",
+		"Build radial: LS/D-pad select | LB/RB page/category | A place | X quick-place | B/Y close",
 		"RT: A visible combat/mobile | B stop | X attack | Y tactical menu",
 		"RT+D-pad Up guard/patrol | Down reclaim | Left/Right quick group or cycle",
 		"Tactical menu: D-pad/LB/RB choose | A/X confirm | B/Y cancel",
@@ -3377,6 +3791,9 @@ function widget:DrawScreen()
 	local mathMax, mathPi = math.max, math.pi
 	updateDebugLatchSummaries()
 	drawControllerReticle()
+	if ControllerCameraTestBuildMenu.open then
+		ControllerCameraTestDrawBuildRadial()
+	end
 	if ControllerCameraTestSettings.helpOverlayVisible then
 		ControllerCameraTestDrawHelpOverlay()
 	end
@@ -3486,6 +3903,14 @@ function widget:DrawScreen()
 	local reticleWorldSummary = "none"
 	if reticleHasWorldTarget then
 		reticleWorldSummary = string.format("x=%.1f y=%.1f z=%.1f", reticleWorldX, reticleWorldY, reticleWorldZ)
+	end
+
+	local currentLocalIndex = 1
+	for idx, option in ipairs(ControllerCameraTestBuildMenu.radialVisibleOptions or {}) do
+		if option.menuIndex == ControllerCameraTestBuildMenu.selectedIndex then
+			currentLocalIndex = idx
+			break
+		end
 	end
 
 	local controllerSections = {
@@ -3614,6 +4039,13 @@ function widget:DrawScreen()
 				"Menu place result: " .. tostring(ControllerCameraTestBuildMenu.placementResult),
 				"Placement params: " .. tostring(ControllerCameraTestBuildMenu.placementParamsCount),
 				"Last action: " .. tostring(ControllerCameraTestBuildMenu.lastAction),
+				"Radial open: " .. yesNo(ControllerCameraTestBuildMenu.open),
+				"Radial category: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName),
+				"Radial page: " .. tostring(ControllerCameraTestBuildMenu.radialPage) .. " / " .. tostring(ControllerCameraTestBuildMenu.radialPageCount),
+				"Radial visible count: " .. tostring(ControllerCameraTestBuildMenu.radialVisibleOptions and #ControllerCameraTestBuildMenu.radialVisibleOptions or 0),
+				"Radial selected local index: " .. tostring(currentLocalIndex or 1),
+				"Radial highlighted name: " .. tostring(ControllerCameraTestBuildMenu.highlightedName),
+				"Radial last action: " .. tostring(ControllerCameraTestBuildMenu.radialLastAction or "none"),
 			},
 		},
 		{
