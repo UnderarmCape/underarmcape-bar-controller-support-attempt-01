@@ -61,6 +61,7 @@ ControllerCameraTestBuildMenu = ControllerCameraTestBuildMenu or {
 	radialLastAngle = 0,
 	radialLastAction = "none",
 	factoryQueueCounts = {},
+	factoryQueueProgress = {},
 }
 ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	active = false,
@@ -2408,6 +2409,38 @@ function ControllerCameraTestRefreshFactoryQueueCounts()
 	ControllerCameraTestBuildMenu.factoryQueueCounts = ControllerCameraTestGetFactoryQueueCounts()
 end
 
+function ControllerCameraTestGetFactoryQueueProgress()
+	local progressByCmdID = {}
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if #selectedUnits == 0 then
+		return progressByCmdID
+	end
+
+	for _, unitID in ipairs(selectedUnits) do
+		local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
+		if type(unitDef) == "table" and unitDef.isFactory then
+			local unitBuildID = type(Spring.GetUnitIsBuilding) == "function" and Spring.GetUnitIsBuilding(unitID)
+			if unitBuildID then
+				local buildUnitDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(unitBuildID)
+				if buildUnitDefID then
+					local _, _, progress = type(Spring.GetUnitIsBeingBuilt) == "function" and Spring.GetUnitIsBeingBuilt(unitBuildID)
+					if progress and progress >= 0.0 and progress <= 1.0 then
+						local cmdID = -buildUnitDefID
+						if not progressByCmdID[cmdID] or progress > progressByCmdID[cmdID] then
+							progressByCmdID[cmdID] = progress
+						end
+					end
+				end
+			end
+		end
+	end
+	return progressByCmdID
+end
+
+function ControllerCameraTestRefreshFactoryQueueProgress()
+	ControllerCameraTestBuildMenu.factoryQueueProgress = ControllerCameraTestGetFactoryQueueProgress()
+end
+
 function ControllerCameraTestCanAffordBuildOption(option)
 	if not option then
 		return false, false, false, "no option"
@@ -2537,6 +2570,7 @@ function ControllerCameraTestOpenBuildMenu()
 
 	ControllerCameraTestRefreshRadialVisibleOptions()
 	ControllerCameraTestRefreshFactoryQueueCounts()
+	ControllerCameraTestRefreshFactoryQueueProgress()
 
 	menu.lastAction = "opened"
 	menu.placementResult = "none"
@@ -2991,6 +3025,7 @@ function ControllerCameraTestDequeueFactoryBuildOption(option)
 		menu.lastAction = queueActive and "factory dequeued 5 (B)" or "factory dequeued (B)"
 		menu.radialLastAction = menu.lastAction
 		ControllerCameraTestRefreshFactoryQueueCounts()
+		ControllerCameraTestRefreshFactoryQueueProgress()
 		return true
 	else
 		menu.lastAction = "factory dequeue failed"
@@ -3163,6 +3198,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 					menu.lastAction = queueFrontActive and "factory prepended (A)" or "factory queued (A)"
 					menu.radialLastAction = menu.lastAction
 					ControllerCameraTestRefreshFactoryQueueCounts()
+					ControllerCameraTestRefreshFactoryQueueProgress()
 				else
 					menu.lastAction = "factory queue failed (A)"
 					menu.radialLastAction = "factory queue failed (A)"
@@ -4037,6 +4073,10 @@ function ControllerCameraTestDrawBuildRadial()
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	local isFactoryContext = ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits)
 
+	if isFactoryContext then
+		ControllerCameraTestRefreshFactoryQueueProgress()
+	end
+
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 
@@ -4113,14 +4153,34 @@ function ControllerCameraTestDrawBuildRadial()
 		local hasIcon = false
 		if option.iconTexture then
 			gl.Texture(option.iconTexture)
-			if isSelected then
-				gl.Color(1, 1, 1, 1)
-			elseif affordable then
-				gl.Color(0.85, 0.85, 0.85, 0.9)
+			local progress = isFactoryContext and option.cmdID and menu.factoryQueueProgress and menu.factoryQueueProgress[option.cmdID]
+			if progress and progress >= 0.0 and progress <= 1.0 then
+				-- Draw darkened base icon
+				gl.Color(0.2, 0.2, 0.2, 0.5)
+				gl.TexRect(x - iconSize/2, y - iconSize/2, x + iconSize/2, y + iconSize/2)
+
+				-- Draw bright/full-color version wiped on top according to build progress
+				if progress > 0 then
+					gl.Scissor(x - iconSize/2, y - iconSize/2, iconSize, iconSize * progress)
+					if isSelected then
+						gl.Color(1, 1, 1, 1)
+					else
+						gl.Color(0.85, 0.85, 0.85, 0.9)
+					end
+					gl.TexRect(x - iconSize/2, y - iconSize/2, x + iconSize/2, y + iconSize/2)
+					gl.Scissor(false)
+				end
 			else
-				gl.Color(0.35, 0.3, 0.3, 0.42) -- dim texture for unaffordable
+				-- Standard icon drawing
+				if isSelected then
+					gl.Color(1, 1, 1, 1)
+				elseif affordable then
+					gl.Color(0.85, 0.85, 0.85, 0.9)
+				else
+					gl.Color(0.35, 0.3, 0.3, 0.42) -- dim texture for unaffordable
+				end
+				gl.TexRect(x - iconSize/2, y - iconSize/2, x + iconSize/2, y + iconSize/2)
 			end
-			gl.TexRect(x - iconSize/2, y - iconSize/2, x + iconSize/2, y + iconSize/2)
 			gl.Texture(false)
 			hasIcon = true
 		end
@@ -4511,6 +4571,18 @@ function widget:DrawScreen()
 		end
 	end
 
+	local factoryProgressKnown = "no"
+	local factoryProgressCmdID = "none"
+	local factoryProgressValue = "none"
+	if isFactoryRadialVal and currentOption and currentOption.cmdID and ControllerCameraTestBuildMenu.factoryQueueProgress then
+		local progress = ControllerCameraTestBuildMenu.factoryQueueProgress[currentOption.cmdID]
+		if progress then
+			factoryProgressKnown = "yes"
+			factoryProgressCmdID = tostring(currentOption.cmdID)
+			factoryProgressValue = string.format("%.2f", progress)
+		end
+	end
+
 	local controllerSections = {
 		{
 			key = "Input",
@@ -4693,6 +4765,9 @@ function widget:DrawScreen()
 				"Highlighted queue count: " .. tostring(highlightedQueueCount),
 				"Last factory queue action: " .. tostring(ControllerCameraTestBuildMenu.radialLastAction or "none"),
 				"Factory queue counts known: " .. tostring(hasQueueCounts),
+				"Factory progress known: " .. tostring(factoryProgressKnown),
+				"Factory progress cmdID: " .. tostring(factoryProgressCmdID),
+				"Factory progress value: " .. tostring(factoryProgressValue),
 			},
 		},
 	}
@@ -4728,7 +4803,7 @@ function widget:DrawScreen()
 	if ControllerCameraTestDebugCompact then
 		local compactLines = {
 			"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary) .. " | Held: " .. heldButtonsSummary .. " | Pressed: " .. pressedRecentlySummary,
-			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName) .. " (Q:" .. tostring(highlightedQueueCount) .. ")",
+			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName) .. " (Q:" .. tostring(highlightedQueueCount) .. (factoryProgressKnown == "yes" and " P:" .. factoryProgressValue or "") .. ")",
 			"Placement: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none") .. " | Pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern) .. " | Spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
 			"Last Action: " .. tostring(ControllerCameraTestBuildMenu.lastAction or "none") .. " | Result: " .. tostring(ControllerCameraTestBuildMenu.radialLastAction or "none"),
 			"Selection Msg: " .. selectionDebugMessage .. " | Last cmd: " .. tostring(lastIssuedCommand)
