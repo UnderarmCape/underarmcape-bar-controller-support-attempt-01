@@ -74,6 +74,11 @@ ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	nativeSetActiveCommandResult = "none",
 	cmdDescIndex = nil,
 	placementMode = "none",
+	placementPattern = "single",
+	placementSpacing = 0,
+	queueFrontActive = false,
+	gridShortcutResult = "none",
+	lastConstructionShortcut = "none",
 }
 ControllerCameraTestAreaSelect = ControllerCameraTestAreaSelect or {
 	pressActive = false,
@@ -117,6 +122,22 @@ ControllerCameraTestLayerDebug = ControllerCameraTestLayerDebug or {
 	areaSelect = "inactive",
 	modeSummary = "normal",
 }
+ControllerCameraTestDebugSections = ControllerCameraTestDebugSections or {
+	Input = true,
+	Camera = false,
+	Reticle = false,
+	Selection = false,
+	Commands = false,
+	AreaSelect = false,
+	TacticalMenu = false,
+	BuildMenu = true,
+	Bookmarks = false,
+	QuickGroups = false,
+	Tuning = false,
+}
+ControllerCameraTestDebugCompact = ControllerCameraTestDebugCompact or false
+ControllerCameraTestDebugSectionHitboxes = {}
+
 local spGetUnitPosition = Spring.GetUnitPosition
 local spGetUnitAllyTeam = Spring.GetUnitAllyTeam
 local spGetMyAllyTeamID = Spring.GetMyAllyTeamID
@@ -656,18 +677,23 @@ end
 
 local function isPointInDebugPanel(x, y)
 	ensureDebugPanelInitialized()
+	local height = ControllerCameraTestDebugCompact and 120 or debugPanelHeight
 	return x >= debugPanelX
 		and x <= debugPanelX + debugPanelWidth
 		and y >= debugPanelY
-		and y <= debugPanelY + debugPanelHeight
+		and y <= debugPanelY + height
 end
 
 local function isPointInDebugPanelHeader(x, y)
+	local height = ControllerCameraTestDebugCompact and 120 or debugPanelHeight
 	return isPointInDebugPanel(x, y)
-		and y >= debugPanelY + debugPanelHeight - DEBUG_PANEL_HEADER_HEIGHT
+		and y >= debugPanelY + height - DEBUG_PANEL_HEADER_HEIGHT
 end
 
 local function isPointInDebugPanelResizeHandle(x, y)
+	if ControllerCameraTestDebugCompact then
+		return false
+	end
 	return isPointInDebugPanel(x, y)
 		and x >= debugPanelX + debugPanelWidth - DEBUG_PANEL_RESIZE_HANDLE
 		and y <= debugPanelY + DEBUG_PANEL_RESIZE_HANDLE
@@ -2586,6 +2612,11 @@ function ControllerCameraTestSetPlacementOption(option)
 		pcall(Spring.SetBuildFacing, placement.facing)
 	end
 	placement.analogRotateArmed = true
+	placement.placementSpacing = (type(Spring.GetBuildSpacing) == "function" and Spring.GetBuildSpacing()) or 0
+	placement.placementPattern = "single"
+	placement.queueFrontActive = false
+	placement.lastConstructionShortcut = "none"
+	placement.gridShortcutResult = "none"
 	placement.lastResult = "placing " .. tostring(option.name)
 	latchSelectionDebugMessage("Placement: " .. tostring(option.name))
 	return true
@@ -2611,13 +2642,69 @@ end
 
 function ControllerCameraTestRotatePlacementFacing(delta)
 	local placement = ControllerCameraTestBuildPlacement
-	placement.facing = ((placement.facing or 0) + delta) % 4
+	-- Flip delta sign to fix inverted placement rotation
+	local correctedDelta = -delta
+	placement.facing = ((placement.facing or 0) + correctedDelta) % 4
 	if type(Spring.SetBuildFacing) == "function" then
 		pcall(Spring.SetBuildFacing, placement.facing)
 	end
 	placement.lastResult = "facing " .. tostring(placement.facing)
 	latchSelectionDebugMessage("Build facing: " .. tostring(placement.facing))
 end
+
+function ControllerCameraTestTryConstructionShortcut(actionName, direction)
+	local placement = ControllerCameraTestBuildPlacement
+	if not placement.active then
+		return false
+	end
+
+	if actionName == "spacing" then
+		if direction == "inc" then
+			local ok = pcall(Spring.SendCommands, "buildspacing inc")
+			if ok then
+				if type(Spring.GetBuildSpacing) == "function" then
+					placement.placementSpacing = Spring.GetBuildSpacing() or 0
+				end
+				placement.lastConstructionShortcut = "spacing inc"
+				placement.gridShortcutResult = "success"
+				return true
+			end
+		elseif direction == "dec" then
+			local ok = pcall(Spring.SendCommands, "buildspacing dec")
+			if ok then
+				if type(Spring.GetBuildSpacing) == "function" then
+					placement.placementSpacing = Spring.GetBuildSpacing() or 0
+				end
+				placement.lastConstructionShortcut = "spacing dec"
+				placement.gridShortcutResult = "success"
+				return true
+			end
+		end
+	elseif actionName == "pattern" then
+		local patterns = { "single", "line", "grid", "border" }
+		local currentIdx = 1
+		for idx, pat in ipairs(patterns) do
+			if pat == placement.placementPattern then
+				currentIdx = idx
+				break
+			end
+		end
+
+		if direction == "next" then
+			currentIdx = (currentIdx % #patterns) + 1
+		elseif direction == "prev" then
+			currentIdx = ((currentIdx - 2) % #patterns) + 1
+		end
+
+		placement.placementPattern = patterns[currentIdx]
+		placement.lastConstructionShortcut = "pattern " .. direction
+		placement.gridShortcutResult = "shortcut unavailable"
+		return true
+	end
+
+	return false
+end
+
 
 function ControllerCameraTestUpdatePlacementAnalog()
 	local placement = ControllerCameraTestBuildPlacement
@@ -2660,12 +2747,23 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	end
 
 	if ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits) then
-		local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(option.cmdID, {}, "Factory queue " .. tostring(option.name), "queue", orderOptions)
-		menu.placementParamsCount = 0
-		ControllerCameraTestBuildPlacement.lastParamsCount = 0
+		local queueFrontActive = ControllerCameraTestBuildPlacement.active and ControllerCameraTestBuildPlacement.queueFrontActive
+		local cmdToIssue = option.cmdID
+		local paramsToIssue = {}
+		local optionsToIssue = orderOptions
+
+		if queueFrontActive then
+			cmdToIssue = CMD.INSERT or 140
+			paramsToIssue = { 0, option.cmdID, 0 }
+			optionsToIssue = { "alt" }
+		end
+
+		local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(cmdToIssue, paramsToIssue, "Factory queue " .. tostring(option.name), "queue", optionsToIssue)
+		menu.placementParamsCount = #paramsToIssue
+		ControllerCameraTestBuildPlacement.lastParamsCount = #paramsToIssue
 		ControllerCameraTestBuildPlacement.lastIssuedCount = issuedCount
 		if ok then
-			menu.placementResult = "factory queued to " .. tostring(issuedCount)
+			menu.placementResult = queueFrontActive and ("factory prepended to " .. tostring(issuedCount)) or ("factory queued to " .. tostring(issuedCount))
 			menu.lastAction = source or "factory queued"
 			ControllerCameraTestBuildPlacement.lastResult = menu.placementResult
 			if exitPlacement then
@@ -2734,25 +2832,39 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	local x, y, z = ControllerCameraTestGetSnappedBuildPosition(option.cmdID, reticleWorldX, reticleWorldY, reticleWorldZ, facing)
 	local params = { x, y, z, facing }
 	local issuedCount = 0
+
+	local useQueueFront = ControllerCameraTestBuildPlacement.active and ControllerCameraTestBuildPlacement.queueFrontActive
+	local cmdInsert = CMD.INSERT or 140
+
 	for _, unitID in ipairs(selectedUnits) do
-		local orderOk, orderResult = pcall(spGiveOrderToUnit, unitID, option.cmdID, params, orderOptions)
+		local orderOk, orderResult
+		if useQueueFront then
+			orderOk, orderResult = pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, option.cmdID, 0, x, y, z, facing }, { "alt" })
+		else
+			orderOk, orderResult = pcall(spGiveOrderToUnit, unitID, option.cmdID, params, orderOptions)
+		end
 		if orderOk and orderResult ~= false then
 			issuedCount = issuedCount + 1
 		end
 	end
 
-	ControllerCameraTestCommandDebug.issuedCmdID = tostring(option.cmdID)
-	ControllerCameraTestCommandDebug.issuedParamsCount = #params
-	menu.placementParamsCount = #params
-	ControllerCameraTestBuildPlacement.lastParamsCount = #params
+	if useQueueFront then
+		ControllerCameraTestCommandDebug.issuedCmdID = tostring(cmdInsert) .. " (inserting " .. tostring(option.cmdID) .. ")"
+		ControllerCameraTestCommandDebug.issuedParamsCount = 7
+	else
+		ControllerCameraTestCommandDebug.issuedCmdID = tostring(option.cmdID)
+		ControllerCameraTestCommandDebug.issuedParamsCount = #params
+	end
+	menu.placementParamsCount = useQueueFront and 7 or #params
+	ControllerCameraTestBuildPlacement.lastParamsCount = useQueueFront and 7 or #params
 	ControllerCameraTestBuildPlacement.lastIssuedCount = issuedCount
 	if issuedCount > 0 then
-		lastIssuedCommand = "Build menu: " .. tostring(option.name)
-		menu.placementResult = "issued to " .. tostring(issuedCount) .. " units"
+		lastIssuedCommand = useQueueFront and ("Build menu prepend: " .. tostring(option.name)) or ("Build menu: " .. tostring(option.name))
+		menu.placementResult = useQueueFront and ("prepended to " .. tostring(issuedCount) .. " units") or ("issued to " .. tostring(issuedCount) .. " units")
 		menu.lastAction = source or "placed"
 		ControllerCameraTestBuildPlacement.lastResult = menu.placementResult
 		ControllerCameraTestCommandDebug.lastResult = "build menu GiveOrderToUnit"
-		latchSelectionDebugMessage("Build placed: " .. tostring(option.name))
+		latchSelectionDebugMessage(useQueueFront and ("Build prepended: " .. tostring(option.name)) or ("Build placed: " .. tostring(option.name)))
 		ControllerCameraTestSetCommandMarker(x, y, z, "Build", "build")
 		if exitPlacement then
 			if ControllerCameraTestBuildPlacement.nativePreviewActive then
@@ -2781,6 +2893,45 @@ function ControllerCameraTestPlaceHighlightedBuildOption(exitPlacement, source)
 	local menu = ControllerCameraTestBuildMenu
 	local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
 	return ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
+end
+
+function ControllerCameraTestDequeueFactoryBuildOption(option)
+	local menu = ControllerCameraTestBuildMenu
+	if not option or type(option.cmdID) ~= "number" or option.cmdID >= 0 then
+		menu.lastAction = "dequeue failed: invalid option"
+		menu.radialLastAction = "dequeue failed: invalid option"
+		return false
+	end
+
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if #selectedUnits == 0 then
+		menu.lastAction = "dequeue failed: no selected units"
+		menu.radialLastAction = "dequeue failed: no selected units"
+		return false
+	end
+
+	if not ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits) then
+		menu.lastAction = "dequeue failed: not a factory"
+		menu.radialLastAction = "dequeue failed: not a factory"
+		return false
+	end
+
+	local queueActive = normalizedLeftTrigger > 0
+	local optionsToIssue = { "right" }
+	if queueActive then
+		optionsToIssue = { "right", "shift" }
+	end
+
+	local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(option.cmdID, {}, "Factory dequeue " .. tostring(option.name), "queue", optionsToIssue)
+	if ok then
+		menu.lastAction = queueActive and "factory dequeued 5 (B)" or "factory dequeued (B)"
+		menu.radialLastAction = menu.lastAction
+		return true
+	else
+		menu.lastAction = "factory dequeue failed"
+		menu.radialLastAction = "factory dequeue failed"
+		return false
+	end
 end
 
 function ControllerCameraTestEnterPlacementFromHighlight()
@@ -2822,6 +2973,11 @@ function ControllerCameraTestEnterPlacementFromHighlight()
 			placement.nativePreviewActive = true
 			placement.lastResult = "native placement active"
 			placement.placementMode = "native"
+			placement.placementSpacing = (type(Spring.GetBuildSpacing) == "function" and Spring.GetBuildSpacing()) or 0
+			placement.placementPattern = "single"
+			placement.queueFrontActive = false
+			placement.lastConstructionShortcut = "none"
+			placement.gridShortcutResult = "none"
 			menu.lastAction = "entered native placement"
 			latchSelectionDebugMessage("Placement: " .. tostring(option.name) .. " (native)")
 			ControllerCameraTestRefreshBuildMenuDebug()
@@ -2833,6 +2989,11 @@ function ControllerCameraTestEnterPlacementFromHighlight()
 	if ControllerCameraTestSetPlacementOption(option) then
 		placement.nativePreviewActive = false
 		placement.placementMode = "custom"
+		placement.placementSpacing = (type(Spring.GetBuildSpacing) == "function" and Spring.GetBuildSpacing()) or 0
+		placement.placementPattern = "single"
+		placement.queueFrontActive = false
+		placement.lastConstructionShortcut = "none"
+		placement.gridShortcutResult = "none"
 		menu.lastAction = "entered custom placement"
 	else
 		menu.lastAction = "placement failed"
@@ -2847,7 +3008,9 @@ function ControllerCameraTestHandlePlacementInput()
 	end
 
 	placement.queueActive = normalizedLeftTrigger > 0
+	placement.queueFrontActive = normalizedRightTrigger > 0
 	ControllerCameraTestUpdatePlacementAnalog()
+
 	if WasButtonPressed("B") then
 		ControllerCameraTestCancelPlacement("cancelled by B")
 	elseif WasButtonPressed("A") then
@@ -2860,9 +3023,17 @@ function ControllerCameraTestHandlePlacementInput()
 		ControllerCameraTestRotatePlacementFacing(1)
 	elseif WasButtonPressed("Y") then
 		ControllerCameraTestCancelPlacement("cancelled by Y")
+	elseif WasButtonPressed("LB") then
+		ControllerCameraTestTryConstructionShortcut("pattern", "prev")
+	elseif WasButtonPressed("RB") then
+		ControllerCameraTestTryConstructionShortcut("pattern", "next")
+	elseif WasButtonPressed("dpadUp") then
+		ControllerCameraTestTryConstructionShortcut("spacing", "inc")
+	elseif WasButtonPressed("dpadDown") then
+		ControllerCameraTestTryConstructionShortcut("spacing", "dec")
 	end
 
-	activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, D-pad/RS X rotate"
+	activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, D-pad L/R/RSX rotate, D-pad U/D spacing, LB/RB pattern"
 	return true
 end
 
@@ -2887,12 +3058,54 @@ function ControllerCameraTestHandleBuildMenuInput()
 	local categories = menu.radialCategories or { "Economy", "Combat", "Utility", "Build" }
 
 	if WasButtonPressed("B") then
-		ControllerCameraTestCloseBuildMenu("closed by B")
+		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+		if ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits) then
+			local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
+			if option then
+				ControllerCameraTestDequeueFactoryBuildOption(option)
+			else
+				menu.lastAction = "factory dequeue failed: no option"
+				menu.radialLastAction = "factory dequeue failed: no option"
+			end
+		else
+			ControllerCameraTestCloseBuildMenu("closed by B")
+		end
 	elseif WasButtonPressed("Y") then
 		ControllerCameraTestCloseBuildMenu("closed by Y")
 	elseif WasButtonPressed("A") then
-		ControllerCameraTestEnterPlacementFromHighlight()
-		ControllerCameraTestCloseBuildMenu("entered placement")
+		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+		if ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits) then
+			local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
+			if option then
+				local queueActive = normalizedLeftTrigger > 0
+				local queueFrontActive = normalizedRightTrigger > 0
+				local orderOptions = queueActive and { "shift" } or {}
+
+				local cmdToIssue = option.cmdID
+				local paramsToIssue = {}
+				local optionsToIssue = orderOptions
+
+				if queueFrontActive then
+					cmdToIssue = CMD.INSERT or 140
+					paramsToIssue = { 0, option.cmdID, 0 }
+					optionsToIssue = { "alt" }
+				end
+
+				ControllerCameraTestBuildPlacement.queueActive = queueActive
+				ControllerCameraTestBuildPlacement.queueFrontActive = queueFrontActive
+				local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(cmdToIssue, paramsToIssue, "Factory queue " .. tostring(option.name), "queue", optionsToIssue)
+				if ok then
+					menu.lastAction = queueFrontActive and "factory prepended (A)" or "factory queued (A)"
+					menu.radialLastAction = menu.lastAction
+				else
+					menu.lastAction = "factory queue failed (A)"
+					menu.radialLastAction = "factory queue failed (A)"
+				end
+			end
+		else
+			ControllerCameraTestEnterPlacementFromHighlight()
+			ControllerCameraTestCloseBuildMenu("entered placement")
+		end
 	elseif WasButtonPressed("X") then
 		ControllerCameraTestPlaceHighlightedBuildOption(false, "quick placed from radial")
 	elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadRight") then
@@ -3542,7 +3755,7 @@ end
 function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	fastPanActive = normalizedLeftTrigger > 0
 	lbCameraModifierActive = IsButtonDown("LB")
-	commandLayerActive = normalizedRightTrigger > 0
+	commandLayerActive = (normalizedRightTrigger > 0) and not ControllerCameraTestBuildPlacement.active
 	if not commandLayerActive and ControllerCameraTestTacticalMenu.open then
 		ControllerCameraTestTacticalMenu.open = false
 		ControllerCameraTestTacticalMenu.lastAction = "closed: RT released"
@@ -3687,6 +3900,31 @@ function widget:MousePress(x, y, button)
 	end
 
 	ensureDebugPanelInitialized()
+
+	-- 1. Compact / Full toggle button hit detection in header
+	local panelHeight = ControllerCameraTestDebugCompact and 120 or debugPanelHeight
+	local headerHeight = 22
+	local compX1 = debugPanelX + debugPanelWidth - 85
+	local compX2 = debugPanelX + debugPanelWidth - 15
+	local compY1 = debugPanelY + panelHeight - headerHeight + 2
+	local compY2 = debugPanelY + panelHeight - 2
+	if x >= compX1 and x <= compX2 and y >= compY1 and y <= compY2 then
+		ControllerCameraTestDebugCompact = not ControllerCameraTestDebugCompact
+		latchSelectionDebugMessage("Debug compact mode: " .. (ControllerCameraTestDebugCompact and "ON" or "OFF"))
+		return true
+	end
+
+	-- 2. Section headers click hit detection (only in full mode)
+	if not ControllerCameraTestDebugCompact then
+		for _, hb in ipairs(ControllerCameraTestDebugSectionHitboxes or {}) do
+			if x >= hb.x1 and x <= hb.x2 and y >= hb.y1 and y <= hb.y2 then
+				ControllerCameraTestDebugSections[hb.key] = not ControllerCameraTestDebugSections[hb.key]
+				latchSelectionDebugMessage("Section " .. tostring(hb.key) .. ": " .. (ControllerCameraTestDebugSections[hb.key] and "Expanded" or "Collapsed"))
+				return true
+			end
+		end
+	end
+
 	if isPointInDebugPanelResizeHandle(x, y) then
 		debugPanelResizing = true
 		debugPanelResizeStartMouseX = x
@@ -3728,13 +3966,14 @@ function ControllerCameraTestDrawBuildRadial()
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 
-	local radius = math.max(150, math.min(220, math.min(viewSizeX, viewSizeY) * 0.25))
+	local minView = math.min(viewSizeX, viewSizeY)
+	local radius = math.min(430, math.max(260, minView * 0.28))
 
 	local visibleOptions = menu.radialVisibleOptions or {}
 	local n = #visibleOptions
 
-	-- 1. Translucent backdrop (large dark circle around the reticle)
-	gl.Color(0, 0, 0, 0.72)
+	-- 1. Translucent backdrop (large dark circle around the reticle) - opacity halved from 0.72 to 0.36
+	gl.Color(0, 0, 0, 0.36)
 	local function drawCircle(x, y, r, segments)
 		segments = segments or 32
 		gl.BeginEnd(GL.TRIANGLE_FAN, function()
@@ -3748,9 +3987,9 @@ function ControllerCameraTestDrawBuildRadial()
 
 	drawCircle(cx, cy, radius * 1.3, 40)
 
-	-- Draw a thin ring
+	-- Draw a thin ring - opacity halved from 0.45 to 0.22
 	gl.LineWidth(2)
-	gl.Color(0.56, 0.84, 1, 0.45)
+	gl.Color(0.56, 0.84, 1, 0.22)
 	gl.BeginEnd(GL.LINE_LOOP, function()
 		for i = 0, 36 do
 			local theta = i * (2 * math.pi / 36)
@@ -3759,7 +3998,7 @@ function ControllerCameraTestDrawBuildRadial()
 	end)
 
 	-- 2. Draw each item
-	local iconSize = 48
+	local iconSize = math.min(120, math.max(72, minView * 0.075))
 	for i = 1, n do
 		local option = visibleOptions[i]
 		local angle = ((i - 1) * (2 * math.pi / n)) - (math.pi / 2)
@@ -3773,7 +4012,7 @@ function ControllerCameraTestDrawBuildRadial()
 			gl.Rect(x - iconSize/2 - 4, y - iconSize/2 - 4, x + iconSize/2 + 4, y + iconSize/2 + 4)
 			gl.Color(0.85, 0.95, 1, 1)
 		else
-			gl.Color(0.12, 0.18, 0.23, 0.85)
+			gl.Color(0.12, 0.18, 0.23, 0.42) -- opacity halved from 0.85 to 0.42
 			gl.Rect(x - iconSize/2 - 2, y - iconSize/2 - 2, x + iconSize/2 + 2, y + iconSize/2 + 2)
 			gl.Color(0.8, 0.8, 0.8, 0.9)
 		end
@@ -3797,21 +4036,21 @@ function ControllerCameraTestDrawBuildRadial()
 
 		if not hasIcon then
 			gl.Color(1, 1, 1, 1)
-			gl.Text(string.sub(option.name, 1, 4), x, y - 4, 10, "oc")
+			gl.Text(string.sub(option.name, 1, 4), x, y - 6, 12, "oc")
 		end
 
 		gl.Color(1, 0.84, 0, 1)
-		gl.Text(tostring(i), x - iconSize/2 + 4, y + iconSize/2 - 12, 10, "o")
+		gl.Text(tostring(i), x - iconSize/2 + 6, y + iconSize/2 - 16, 12, "o")
 	end
 
 	-- 3. Center display details
 	local currentOption = ControllerCameraTestGetRadialCurrentOption()
 	if currentOption then
-		gl.Color(0.2, 0.6, 1, 0.15)
+		gl.Color(0.2, 0.6, 1, 0.08) -- opacity halved from 0.15 to 0.08
 		drawCircle(cx, cy, radius * 0.45, 30)
 
 		gl.Color(0.82, 0.94, 1, 1)
-		gl.Text(currentOption.name or "unknown", cx, cy + 12, 15, "oc")
+		gl.Text(currentOption.name or "unknown", cx, cy + 16, 19, "oc")
 
 		local costText = ""
 		if currentOption.metalCost and currentOption.metalCost > 0 then
@@ -3823,14 +4062,14 @@ function ControllerCameraTestDrawBuildRadial()
 		end
 		if costText ~= "" then
 			gl.Color(1, 0.85, 0.3, 0.95)
-			gl.Text(costText, cx, cy - 10, 12, "oc")
+			gl.Text(costText, cx, cy - 12, 15, "oc")
 		end
 
 		if currentOption.tooltip and currentOption.tooltip ~= "" then
 			gl.Color(0.7, 0.7, 0.7, 0.8)
-			local tip = string.sub(currentOption.tooltip, 1, 26)
-			if #currentOption.tooltip > 26 then tip = tip .. "..." end
-			gl.Text(tip, cx, cy - 28, 10, "oc")
+			local tip = string.sub(currentOption.tooltip, 1, 35)
+			if #currentOption.tooltip > 35 then tip = tip .. "..." end
+			gl.Text(tip, cx, cy - 38, 12, "oc")
 		end
 	end
 
@@ -3839,13 +4078,13 @@ function ControllerCameraTestDrawBuildRadial()
 	local categoryStr = string.upper(menu.radialCategoryName or "Build")
 	local pageStr = "PAGE " .. tostring(menu.radialPage) .. "/" .. tostring(menu.radialPageCount)
 
-	gl.Text(categoryStr, cx, cy + radius * 0.7, 14, "oc")
+	gl.Text(categoryStr, cx, cy + radius * 0.65, 18, "oc")
 	gl.Color(0.8, 0.8, 0.8, 0.8)
-	gl.Text(pageStr, cx, cy - radius * 0.7, 12, "oc")
+	gl.Text(pageStr, cx, cy - radius * 0.65, 15, "oc")
 
 	gl.Color(0.6, 0.6, 0.6, 0.7)
-	gl.Text("LB", cx - 80, cy + radius * 0.7, 11, "oc")
-	gl.Text("RB", cx + 80, cy + radius * 0.7, 11, "oc")
+	gl.Text("LB", cx - radius * 0.4, cy + radius * 0.65, 14, "oc")
+	gl.Text("RB", cx + radius * 0.4, cy + radius * 0.65, 14, "oc")
 
 	gl.Color(1, 1, 1, 1)
 	gl.Texture(false)
@@ -3991,15 +4230,37 @@ function widget:DrawScreen()
 	local function drawLine(text, drawX, drawY)
 		gl.Text(text, drawX, drawY, 15, "o")
 	end
-	local function drawSection(section, drawX, drawY, maxChars, contentBottom)
+	local function drawSection(section, drawX, drawY, maxChars, contentBottom, columnWidth)
 		if drawY < contentBottom then
 			return drawY, false
 		end
 
+		local isExpanded = ControllerCameraTestDebugSections[section.key]
+		if isExpanded == nil then
+			isExpanded = true
+		end
+
+		local arrow = isExpanded and "▼ " or "▶ "
+		local displayTitle = arrow .. section.title
+
+		if section.key then
+			table.insert(ControllerCameraTestDebugSectionHitboxes, {
+				key = section.key,
+				x1 = drawX,
+				y1 = drawY - 3,
+				x2 = drawX + columnWidth,
+				y2 = drawY + 16,
+			})
+		end
+
 		gl.Color(0.62, 0.86, 1, 1)
-		drawLine(section.title, drawX, drawY)
+		drawLine(displayTitle, drawX, drawY)
 		gl.Color(1, 1, 1, 1)
 		drawY = drawY - 17
+
+		if not isExpanded then
+			return drawY - 6, true
+		end
 
 		for _, line in ipairs(section.lines) do
 			for _, wrappedLine in ipairs(WrapDebugLine(line, maxChars)) do
@@ -4019,12 +4280,12 @@ function widget:DrawScreen()
 	local panelLeft = debugPanelX
 	local panelBottom = debugPanelY
 	local panelWidth = debugPanelWidth
-	local panelHeight = debugPanelHeight
+	local panelHeight = ControllerCameraTestDebugCompact and 120 or debugPanelHeight
 	local panelRight = panelLeft + panelWidth
 	local panelTop = panelBottom + panelHeight
 	local padding = 8 -- Freed DEBUG_PANEL_PADDING upvalue
 	local headerHeight = 22 -- Freed DEBUG_PANEL_HEADER_HEIGHT upvalue
-	local useColumns = panelWidth >= 720
+	local useColumns = (not ControllerCameraTestDebugCompact) and (panelWidth >= 720)
 	local columnGap = 12
 	local columnWidth = useColumns
 		and ((panelWidth - (padding * 2) - columnGap) * 0.5)
@@ -4051,7 +4312,8 @@ function widget:DrawScreen()
 
 	local controllerSections = {
 		{
-			title = "Controller",
+			key = "Input",
+			title = "Input / Controller",
 			lines = {
 				"Widget: Controller Camera Test",
 				"API: " .. yesNo(apiAvailable),
@@ -4059,23 +4321,9 @@ function widget:DrawScreen()
 				"instanceId: " .. tostring(controllerInstanceId),
 				"Input: " .. (controllerMode and "controller" or "mouse"),
 				"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary),
-				"Reticle visible: " .. yesNo(reticleVisible),
-				"Debug panel: " .. yesNo(ControllerCameraTestSettings.debugPanelVisible),
-				"Help overlay: " .. yesNo(ControllerCameraTestSettings.helpOverlayVisible),
-			},
-		},
-		{
-			title = "Reticle",
-			lines = {
-				string.format("Screen: x=%.1f y=%.1f", screenCenterX, screenCenterY),
-				"World: " .. reticleWorldSummary,
-				"Target type: " .. reticleTargetType,
-				"Has world target: " .. yesNo(reticleHasWorldTarget),
-			},
-		},
-		{
-			title = "Axes",
-			lines = {
+				"Held: " .. heldButtonsSummary,
+				"Pressed recent: " .. pressedRecentlySummary,
+				"Released recent: " .. releasedRecentlySummary,
 				string.format("LS: x=%.3f y=%.3f", normalizedLeftX, normalizedLeftY),
 				string.format("RS: x=%.3f y=%.3f", normalizedRightX, normalizedRightY),
 				string.format("LT: %.3f", normalizedLeftTrigger),
@@ -4084,25 +4332,47 @@ function widget:DrawScreen()
 			},
 		},
 		{
-			title = "Buttons",
+			key = "Reticle",
+			title = "Reticle",
 			lines = {
-				"Held: " .. heldButtonsSummary,
-				"Pressed recent: " .. pressedRecentlySummary,
-				"Released recent: " .. releasedRecentlySummary,
-				"Cmd recent: " .. commandLayerPressedRecentlySummary,
+				"Reticle visible: " .. yesNo(reticleVisible),
+				string.format("Screen: x=%.1f y=%.1f", screenCenterX, screenCenterY),
+				"World: " .. reticleWorldSummary,
+				"Target type: " .. reticleTargetType,
+				"Has world target: " .. yesNo(reticleHasWorldTarget),
+			},
+		},
+		{
+			key = "Selection",
+			title = "Selection",
+			lines = {
 				"Selection test: " .. yesNo(selectionTestActive),
 				"Last selected unitID: " .. tostring(lastReticleSelectedUnitID),
 				"Selection result: " .. lastSelectionResult,
 				"Last B-button result: " .. tostring(lastBButtonResult),
 				"Last clear-selection result: " .. tostring(lastClearSelectionResult),
-				"Last command: " .. tostring(lastIssuedCommand),
 				"Selection msg: " .. selectionDebugMessage,
-				"Area active: " .. yesNo(ControllerCameraTestAreaSelect.active),
-				"Area radius: " .. tostring(math.floor(ControllerCameraTestAreaSelect.radius)),
-				"Area result: " .. tostring(ControllerCameraTestAreaSelect.lastResult) .. " count=" .. tostring(ControllerCameraTestAreaSelect.lastCount),
 				"Cycle: " .. tostring(ControllerCameraTestCycleDebug.lastResult) .. " count=" .. tostring(ControllerCameraTestCycleDebug.lastCount),
+			},
+		},
+		{
+			key = "Bookmarks",
+			title = "Bookmarks",
+			lines = {
 				"Bookmark: " .. tostring(ControllerCameraTestBookmarkDebug.lastResult),
+			},
+		},
+		{
+			key = "QuickGroups",
+			title = "Quick Groups",
+			lines = {
 				"Quick group: " .. tostring(ControllerCameraTestQuickGroups.lastResult) .. " slot=" .. tostring(ControllerCameraTestQuickGroups.lastSlot),
+			},
+		},
+		{
+			key = "Tuning",
+			title = "Tuning",
+			lines = {
 				"Tuning: " .. ControllerCameraTestCurrentSettingLabel(),
 				"Tuning action: " .. tostring(ControllerCameraTestTuning.lastAction),
 			},
@@ -4110,12 +4380,13 @@ function widget:DrawScreen()
 	}
 	local cameraSections = {
 		{
-			title = "Camera Controls",
+			key = "Camera",
+			title = "Camera",
 			lines = {
+				"Camera: " .. tostring(cameraState.name or cameraMode) .. " mode=" .. tostring(cameraState.mode or cameraModeId),
 				"RS Y mode: " .. rightStickYMode,
 				"LT boost pan+zoom: " .. activeInactive(fastPanActive),
 				"LB camera mod: " .. activeInactive(lbCameraModifierActive),
-				"RT command layer: " .. activeInactive(commandLayerActive),
 				"Pan active: " .. yesNo(panActive),
 				"Zoom active: " .. yesNo(zoomActive),
 				"Rotate active: " .. yesNo(rotationActive),
@@ -4127,21 +4398,25 @@ function widget:DrawScreen()
 				"Zoom method: " .. zoomMethod,
 				"Rotate method: " .. rotationMethod,
 				"Pitch method: " .. pitchMethod,
+				"px/py/pz: " .. formatNumber(cameraState.px) .. " / " .. formatNumber(cameraState.py) .. " / " .. formatNumber(cameraState.pz),
+				"dist: " .. formatNumber(cameraState.dist),
+				"height/old: " .. formatNumber(cameraState.height) .. " / " .. formatNumber(cameraState.oldHeight),
+				"rx/ry/rz: " .. formatNumber(cameraState.rx) .. " / " .. formatNumber(cameraState.ry) .. " / " .. formatNumber(cameraState.rz),
+				"dx/dy/dz: " .. formatNumber(cameraState.dx) .. " / " .. formatNumber(cameraState.dy) .. " / " .. formatNumber(cameraState.dz),
+				"fov: " .. formatNumber(cameraState.fov),
+				"Pitch field: " .. cameraPitchSummary,
 			},
 		},
 		{
-			title = "Command Layer",
+			key = "Commands",
+			title = "Commands",
 			lines = {
-				"Active: " .. activeInactive(commandLayerActive),
+				"RT command layer: " .. activeInactive(commandLayerActive),
 				"Layout: " .. activeButtonLayoutSummary,
 				"Normal preview: " .. normalPreviewSummary,
 				"Command preview: " .. commandPreviewSummary,
 				"Command action: " .. tostring(ControllerCameraTestLayerDebug.commandLayerAction),
 				"Normal utility: " .. tostring(ControllerCameraTestLayerDebug.normalUtilityAction),
-				"Area select: " .. tostring(ControllerCameraTestLayerDebug.areaSelect),
-				"Tactical open: " .. yesNo(ControllerCameraTestTacticalMenu.open),
-				"Tactical command: " .. tostring(ControllerCameraTestTacticalMenu.highlightedName),
-				"Tactical result: " .. tostring(ControllerCameraTestTacticalMenu.lastResult),
 				"Default cmd index: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdIndex),
 				"Default cmd ID: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdID),
 				"Default cmd type: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdType),
@@ -4150,6 +4425,7 @@ function widget:DrawScreen()
 				"Issued cmd ID: " .. tostring(ControllerCameraTestCommandDebug.issuedCmdID),
 				"Issued params count: " .. tostring(ControllerCameraTestCommandDebug.issuedParamsCount),
 				"Last command result: " .. tostring(ControllerCameraTestCommandDebug.lastResult),
+				"Last issued command: " .. tostring(lastIssuedCommand),
 				"Mex smart available: " .. tostring(ControllerCameraTestCommandDebug.mexSmartAvailable),
 				"Mex nearest spot: " .. tostring(ControllerCameraTestCommandDebug.mexNearestSpot),
 				"Mex building cmd ID: " .. tostring(ControllerCameraTestCommandDebug.mexBuildingCmdID),
@@ -4159,7 +4435,27 @@ function widget:DrawScreen()
 			},
 		},
 		{
-			title = "Build Menu",
+			key = "AreaSelect",
+			title = "Area Select",
+			lines = {
+				"Area active: " .. yesNo(ControllerCameraTestAreaSelect.active),
+				"Area radius: " .. tostring(math.floor(ControllerCameraTestAreaSelect.radius)),
+				"Area result: " .. tostring(ControllerCameraTestAreaSelect.lastResult) .. " count=" .. tostring(ControllerCameraTestAreaSelect.lastCount),
+				"Area select debug: " .. tostring(ControllerCameraTestLayerDebug.areaSelect),
+			},
+		},
+		{
+			key = "TacticalMenu",
+			title = "Tactical Menu",
+			lines = {
+				"Tactical open: " .. yesNo(ControllerCameraTestTacticalMenu.open),
+				"Tactical command: " .. tostring(ControllerCameraTestTacticalMenu.highlightedName),
+				"Tactical result: " .. tostring(ControllerCameraTestTacticalMenu.lastResult),
+			},
+		},
+		{
+			key = "BuildMenu",
+			title = "Build Menu / Placement",
 			lines = {
 				"Open: " .. yesNo(ControllerCameraTestBuildMenu.open),
 				"Option count: " .. tostring(ControllerCameraTestBuildMenu.optionCount),
@@ -4187,24 +4483,16 @@ function widget:DrawScreen()
 				"Native set cmd result: " .. tostring(ControllerCameraTestBuildPlacement.nativeSetActiveCommandResult or "none"),
 				"Native cmdDescIndex: " .. tostring(ControllerCameraTestBuildPlacement.cmdDescIndex or "none"),
 				"Placement mode: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none"),
-			},
-		},
-		{
-			title = "Camera State",
-			lines = {
-				"Camera: " .. tostring(cameraState.name or cameraMode) .. " mode=" .. tostring(cameraState.mode or cameraModeId),
-				"px/py/pz: " .. formatNumber(cameraState.px) .. " / " .. formatNumber(cameraState.py) .. " / " .. formatNumber(cameraState.pz),
-				"dist: " .. formatNumber(cameraState.dist),
-				"height/old: " .. formatNumber(cameraState.height) .. " / " .. formatNumber(cameraState.oldHeight),
-				"rx/ry/rz: " .. formatNumber(cameraState.rx) .. " / " .. formatNumber(cameraState.ry) .. " / " .. formatNumber(cameraState.rz),
-				"dx/dy/dz: " .. formatNumber(cameraState.dx) .. " / " .. formatNumber(cameraState.dy) .. " / " .. formatNumber(cameraState.dz),
-				"fov: " .. formatNumber(cameraState.fov),
-				"Pitch field: " .. cameraPitchSummary,
+				"Placement pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern),
+				"Placement spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
+				"Queue front active (RT): " .. yesNo(ControllerCameraTestBuildPlacement.queueFrontActive),
+				"Last construction shortcut: " .. tostring(ControllerCameraTestBuildPlacement.lastConstructionShortcut),
+				"Grid shortcut result: " .. tostring(ControllerCameraTestBuildPlacement.gridShortcutResult),
 			},
 		},
 	}
 
-gl.Color(0, 0, 0, 0.82)
+	gl.Color(0, 0, 0, 0.82)
 	gl.Rect(panelLeft, panelBottom, panelRight, panelTop)
 	gl.Color(0.06, 0.11, 0.15, 0.96)
 	gl.Rect(panelLeft, panelTop - headerHeight, panelRight, panelTop)
@@ -4217,28 +4505,56 @@ gl.Color(0, 0, 0, 0.82)
 	gl.Rect(panelRight - 1, panelBottom, panelRight, panelTop)
 	gl.Color(1, 1, 1, 1)
 
+	ControllerCameraTestDebugSectionHitboxes = {}
+
 	local textX = panelLeft + padding
 	local textY = panelTop - 15
 	gl.Text("Controller Debug", textX, textY, 15, "o")
+
+	-- Draw Toggle Button
+	local btnText = ControllerCameraTestDebugCompact and " [Full] " or "[Compact]"
+	gl.Color(0.2, 0.4, 0.6, 0.6)
+	gl.Rect(panelRight - 85, panelTop - headerHeight + 3, panelRight - 15, panelTop - 3)
+	gl.Color(1, 1, 1, 1)
+	gl.Text(btnText, panelRight - 80, panelTop - 15, 12, "o")
+
 	textY = panelTop - headerHeight - padding - 10
 
-	if useColumns then
-		local rightX = textX + columnWidth + columnGap
-		local leftY = textY
-		local rightY = textY
+	if ControllerCameraTestDebugCompact then
+		local compactLines = {
+			"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary) .. " | Held: " .. heldButtonsSummary .. " | Pressed: " .. pressedRecentlySummary,
+			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName),
+			"Placement: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none") .. " | Pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern) .. " | Spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
+			"Last Action: " .. tostring(ControllerCameraTestBuildMenu.lastAction or "none") .. " | Result: " .. tostring(ControllerCameraTestBuildMenu.radialLastAction or "none"),
+			"Selection Msg: " .. selectionDebugMessage .. " | Last cmd: " .. tostring(lastIssuedCommand)
+		}
 
-		for _, section in ipairs(controllerSections) do
-			leftY = drawSection(section, textX, leftY, maxChars, contentBottom)
-		end
-		for _, section in ipairs(cameraSections) do
-			rightY = drawSection(section, rightX, rightY, maxChars, contentBottom)
+		for _, line in ipairs(compactLines) do
+			if textY < contentBottom then
+				break
+			end
+			drawLine(line, textX, textY)
+			textY = textY - 17
 		end
 	else
-		for _, section in ipairs(controllerSections) do
-			textY = drawSection(section, textX, textY, maxChars, contentBottom)
-		end
-		for _, section in ipairs(cameraSections) do
-			textY = drawSection(section, textX, textY, maxChars, contentBottom)
+		if useColumns then
+			local rightX = textX + columnWidth + columnGap
+			local leftY = textY
+			local rightY = textY
+
+			for _, section in ipairs(controllerSections) do
+				leftY = drawSection(section, textX, leftY, maxChars, contentBottom, columnWidth)
+			end
+			for _, section in ipairs(cameraSections) do
+				rightY = drawSection(section, rightX, rightY, maxChars, contentBottom, columnWidth)
+			end
+		else
+			for _, section in ipairs(controllerSections) do
+				textY = drawSection(section, textX, textY, maxChars, contentBottom, columnWidth)
+			end
+			for _, section in ipairs(cameraSections) do
+				textY = drawSection(section, textX, textY, maxChars, contentBottom, columnWidth)
+			end
 		end
 	end
 
@@ -4259,12 +4575,22 @@ function widget:GetConfigData()
 			settings[key] = value
 		end
 	end
+
+	local savedSections = {}
+	if ControllerCameraTestDebugSections then
+		for k, v in pairs(ControllerCameraTestDebugSections) do
+			savedSections[k] = v
+		end
+	end
+
 	return {
 		panelX = debugPanelX,
 		panelY = debugPanelY,
 		panelWidth = debugPanelWidth,
 		panelHeight = debugPanelHeight,
 		settings = settings,
+		debugSections = savedSections,
+		debugCompact = ControllerCameraTestDebugCompact,
 	}
 end
 
@@ -4281,6 +4607,17 @@ function widget:SetConfigData(data)
 		end
 	end
 	ControllerCameraTestApplySettingsDefaults()
+
+	if type(data.debugSections) == "table" then
+		for k, v in pairs(data.debugSections) do
+			if ControllerCameraTestDebugSections[k] ~= nil then
+				ControllerCameraTestDebugSections[k] = v
+			end
+		end
+	end
+	if data.debugCompact ~= nil then
+		ControllerCameraTestDebugCompact = not not data.debugCompact
+	end
 
 	local panelX = tonumber(data.panelX)
 	local panelY = tonumber(data.panelY)
