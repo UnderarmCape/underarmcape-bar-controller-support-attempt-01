@@ -38,9 +38,13 @@ local DEBUG_EVENT_HOLD_SECONDS = 0.45
 local ZOOM_SPEED = 1200
 local ZOOM_SCALE_SPEED = 0.9
 local ROTATION_SPEED = 1.0
+local PITCH_SPEED = 0.8
 local MIN_SPRING_DISTANCE = 20
 local MIN_OVERHEAD_HEIGHT = 60
 local MIN_CAMERA_HEIGHT = 80
+local MIN_CAMERA_RX = 1.0
+local MAX_CAMERA_RX = 3.05
+local MAX_DIRECTION_PITCH_Y = 0.98
 
 local XboxController = {
 	axes = {
@@ -146,13 +150,18 @@ local activeAxesSummary = "none"
 local panActive = false
 local zoomActive = false
 local rotationActive = false
+local pitchActive = false
 local fastPanActive = false
+local lbCameraModifierActive = false
 local commandLayerActive = false
+local rightStickYMode = "zoom"
 local cameraMode = "unknown"
 local cameraModeId = "?"
 local cameraFieldSummary = "camera state unavailable"
+local cameraPitchSummary = "pitch field unavailable"
 local zoomMethod = "none"
 local rotationMethod = "none"
+local pitchMethod = "none"
 
 local mapSizeX = Game and Game.mapSizeX or 0
 local mapSizeZ = Game and Game.mapSizeZ or 0
@@ -202,10 +211,15 @@ local function resetControllerInputDebug()
 	panActive = false
 	zoomActive = false
 	rotationActive = false
+	pitchActive = false
 	fastPanActive = false
+	lbCameraModifierActive = false
 	commandLayerActive = false
+	rightStickYMode = "zoom"
+	cameraPitchSummary = "pitch field unavailable"
 	zoomMethod = "none"
 	rotationMethod = "none"
+	pitchMethod = "none"
 	clearButtonStateTracking()
 	clearDebugEventLatches()
 end
@@ -438,6 +452,33 @@ local function normalizeHorizontalVector(vector)
 	return x / length, z / length
 end
 
+local function rotateVectorAroundAxis(x, y, z, axisX, axisY, axisZ, angle)
+	local cosAmount = mathCos(angle)
+	local sinAmount = mathSin(angle)
+	local dot = (x * axisX) + (y * axisY) + (z * axisZ)
+	local oneMinusCos = 1 - cosAmount
+
+	return
+		(x * cosAmount) + (((axisY * z) - (axisZ * y)) * sinAmount) + (axisX * dot * oneMinusCos),
+		(y * cosAmount) + (((axisZ * x) - (axisX * z)) * sinAmount) + (axisY * dot * oneMinusCos),
+		(z * cosAmount) + (((axisX * y) - (axisY * x)) * sinAmount) + (axisZ * dot * oneMinusCos)
+end
+
+local function normalizeDirectionWithClampedY(x, y, z)
+	y = clamp(y, -MAX_DIRECTION_PITCH_Y, MAX_DIRECTION_PITCH_Y)
+
+	local horizontalLength = mathSqrt((x * x) + (z * z))
+	if horizontalLength <= 0.001 then
+		return x, y, z
+	end
+
+	local targetHorizontalLength = mathSqrt(mathMax(0, 1 - (y * y)))
+	return
+		(x / horizontalLength) * targetHorizontalLength,
+		y,
+		(z / horizontalLength) * targetHorizontalLength
+end
+
 local function getCameraPanDelta(leftX, leftY, distance)
 	local cameraVectors = spGetCameraVectors and spGetCameraVectors()
 
@@ -461,24 +502,34 @@ local function updateCameraDebug(cameraState)
 		cameraMode = "unknown"
 		cameraModeId = "?"
 		cameraFieldSummary = "camera state unavailable"
+		cameraPitchSummary = "pitch field unavailable"
 		return
 	end
 
 	cameraMode = tostring(cameraState.name or "unknown")
 	cameraModeId = tostring(cameraState.mode or "?")
 	cameraFieldSummary = string.format(
-		"px=%s py=%s pz=%s dist=%s height=%s ry=%s dx=%s dy=%s dz=%s fov=%s",
+		"px=%s py=%s pz=%s dist=%s height=%s rx=%s ry=%s dx=%s dy=%s dz=%s fov=%s",
 		formatNumber(cameraState.px),
 		formatNumber(cameraState.py),
 		formatNumber(cameraState.pz),
 		formatNumber(cameraState.dist),
 		formatNumber(cameraState.height),
+		formatNumber(cameraState.rx),
 		formatNumber(cameraState.ry),
 		formatNumber(cameraState.dx),
 		formatNumber(cameraState.dy),
 		formatNumber(cameraState.dz),
 		formatNumber(cameraState.fov)
 	)
+
+	if type(cameraState.rx) == "number" then
+		cameraPitchSummary = "rx=" .. formatNumber(cameraState.rx)
+	elseif type(cameraState.dy) == "number" then
+		cameraPitchSummary = "dy=" .. formatNumber(cameraState.dy)
+	else
+		cameraPitchSummary = "pitch field unavailable"
+	end
 end
 
 local function pollFirstController()
@@ -607,7 +658,51 @@ local function applyRotation(cameraState, rotationInput, dt)
 	return false
 end
 
-local function applyCameraInput(leftX, leftY, zoomInput, rotationInput, panMultiplier, zoomMultiplier, dt)
+local function applyPitch(cameraState, pitchInput, dt)
+	if pitchInput == 0 then
+		pitchMethod = "none"
+		return
+	end
+
+	local pitchAmount = pitchInput * PITCH_SPEED * (dt or 0)
+
+	if type(cameraState.rx) == "number" then
+		cameraState.rx = clamp(cameraState.rx + pitchAmount, MIN_CAMERA_RX, MAX_CAMERA_RX)
+		pitchMethod = "rx"
+		return true
+	end
+
+	if cameraState.name == "rot"
+		and type(cameraState.dx) == "number"
+		and type(cameraState.dy) == "number"
+		and type(cameraState.dz) == "number"
+	then
+		local rightX, rightZ = normalizeHorizontalVector({ cameraState.dx, cameraState.dy, cameraState.dz })
+		if not rightX then
+			pitchMethod = "unsupported"
+			return false
+		end
+
+		local newDx, newDy, newDz = rotateVectorAroundAxis(
+			cameraState.dx,
+			cameraState.dy,
+			cameraState.dz,
+			rightZ,
+			0,
+			-rightX,
+			pitchAmount
+		)
+
+		cameraState.dx, cameraState.dy, cameraState.dz = normalizeDirectionWithClampedY(newDx, newDy, newDz)
+		pitchMethod = "rot direction"
+		return true
+	end
+
+	pitchMethod = "unsupported"
+	return false
+end
+
+local function applyCameraInput(leftX, leftY, zoomInput, rotationInput, pitchInput, panMultiplier, zoomMultiplier, dt)
 	local cameraState = spGetCameraState and spGetCameraState()
 	if type(cameraState) ~= "table" or cameraState.px == nil or cameraState.pz == nil then
 		updateCameraDebug(cameraState)
@@ -622,6 +717,7 @@ local function applyCameraInput(leftX, leftY, zoomInput, rotationInput, panMulti
 
 	applyZoom(cameraState, zoomInput, zoomMultiplier, dt)
 	applyRotation(cameraState, rotationInput, dt)
+	applyPitch(cameraState, pitchInput, dt)
 
 	if mapSizeX > 0 then
 		cameraState.px = clamp(cameraState.px, 0, mapSizeX)
@@ -643,6 +739,7 @@ function widget:Update(dt)
 	panActive = false
 	zoomActive = false
 	rotationActive = false
+	pitchActive = false
 
 	if not apiAvailable then
 		resetControllerInputDebug()
@@ -676,6 +773,7 @@ function widget:Update(dt)
 	latchDebugButtonEvents(releasedButtonStates, releasedRecentlyExpirations)
 
 	fastPanActive = normalizedLeftTrigger > 0
+	lbCameraModifierActive = IsButtonDown("LB")
 	commandLayerActive = normalizedRightTrigger > 0
 	commandLayerPressedSummary = commandLayerActive
 		and getButtonStateSummary(pressedButtonStates, XboxController.commandLayerButtonOrder)
@@ -684,17 +782,21 @@ function widget:Update(dt)
 		latchDebugButtonEvents(pressedButtonStates, commandLayerPressedRecentlyExpirations, XboxController.commandLayerButtonOrder)
 	end
 	panActive = normalizedLeftX ~= 0 or normalizedLeftY ~= 0
-	local zoomInput = -normalizedRightY
+	rightStickYMode = lbCameraModifierActive and "pitch" or "zoom"
+	local zoomInput = lbCameraModifierActive and 0 or -normalizedRightY
+	local pitchInput = lbCameraModifierActive and -normalizedRightY or 0
 	zoomActive = zoomInput ~= 0
 	rotationActive = normalizedRightX ~= 0
+	pitchActive = pitchInput ~= 0
 
 	local panMultiplier = fastPanActive and FAST_PAN_MULTIPLIER or 1
 	zoomSpeedMultiplier = fastPanActive and FAST_ZOOM_MULTIPLIER or 1
-	if panActive or zoomActive or rotationActive then
-		applyCameraInput(normalizedLeftX, normalizedLeftY, zoomInput, normalizedRightX, panMultiplier, zoomSpeedMultiplier, dt)
+	if panActive or zoomActive or rotationActive or pitchActive then
+		applyCameraInput(normalizedLeftX, normalizedLeftY, zoomInput, normalizedRightX, pitchInput, panMultiplier, zoomSpeedMultiplier, dt)
 	elseif spGetCameraState then
 		zoomMethod = "none"
 		rotationMethod = "none"
+		pitchMethod = "none"
 		updateCameraDebug(spGetCameraState())
 	end
 end
@@ -724,7 +826,13 @@ function widget:DrawScreen()
 	glText(string.format("right stick: x=%.3f y=%.3f", normalizedRightX, normalizedRightY), x, y, 12, "o")
 	y = y - lineHeight
 
+	glText("Right Stick Y mode: " .. rightStickYMode, x, y, 12, "o")
+	y = y - lineHeight
+
 	glText(string.format("LT boost (pan + zoom): %s (LT=%.3f)", fastPanActive and "active" or "inactive", normalizedLeftTrigger), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("LB camera modifier active: " .. (lbCameraModifierActive and "yes" or "no"), x, y, 12, "o")
 	y = y - lineHeight
 
 	glText(string.format("RT Command Layer: %s (RT=%.3f)", commandLayerActive and "active" or "inactive", normalizedRightTrigger), x, y, 12, "o")
@@ -740,6 +848,9 @@ function widget:DrawScreen()
 	y = y - lineHeight
 
 	glText("rotation active: " .. (rotationActive and "yes" or "no"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("pitch active: " .. (pitchActive and "yes" or "no"), x, y, 12, "o")
 	y = y - lineHeight
 
 	glText("axes: " .. activeAxesSummary, x, y, 12, "o")
@@ -764,6 +875,9 @@ function widget:DrawScreen()
 	y = y - lineHeight
 
 	glText("zoom method: " .. zoomMethod .. " rotation method: " .. rotationMethod, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("pitch method: " .. pitchMethod .. " pitch field: " .. cameraPitchSummary, x, y, 12, "o")
 	y = y - lineHeight
 
 	glText(cameraFieldSummary, x, y, 12, "o")
