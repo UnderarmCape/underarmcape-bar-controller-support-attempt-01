@@ -51,11 +51,11 @@ ControllerCameraTestBuildMenu = ControllerCameraTestBuildMenu or {
 	lastAction = "none",
 	placementResult = "none",
 	placementParamsCount = 0,
-	radialCategories = { "All", "Economy", "Combat", "Utility", "Build" },
+	radialCategories = { "Economy", "Combat", "Utility", "Build" },
 	radialPage = 1,
 	radialPageCount = 1,
 	radialCategoryIndex = 1,
-	radialCategoryName = "All",
+	radialCategoryName = "Economy",
 	radialVisibleOptions = {},
 	radialStickArmed = true,
 	radialLastAngle = 0,
@@ -70,6 +70,10 @@ ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	lastIssuedCount = 0,
 	analogRotateArmed = true,
 	queueActive = false,
+	nativePreviewActive = false,
+	nativeSetActiveCommandResult = "none",
+	cmdDescIndex = nil,
+	placementMode = "none",
 }
 ControllerCameraTestAreaSelect = ControllerCameraTestAreaSelect or {
 	pressActive = false,
@@ -2239,6 +2243,7 @@ function ControllerCameraTestGatherBuildOptions()
 						cmdID = cmdID,
 						name = name,
 						index = index,
+						cmdDescIndex = index,
 						type = desc.type or "unknown",
 						action = action,
 						tooltip = desc.tooltip or "",
@@ -2254,6 +2259,27 @@ function ControllerCameraTestGatherBuildOptions()
 			end
 		end
 	end
+
+	local hasEco, hasCombat, hasUtility, hasBuild = false, false, false, false
+	for _, opt in ipairs(menu.options) do
+		if opt.category == "Economy" then hasEco = true
+		elseif opt.category == "Combat" then hasCombat = true
+		elseif opt.category == "Utility" then hasUtility = true
+		elseif opt.category == "Build" then hasBuild = true
+		end
+	end
+
+	local cats = {}
+	if hasEco then cats[#cats + 1] = "Economy" end
+	if hasCombat then cats[#cats + 1] = "Combat" end
+	if hasUtility then cats[#cats + 1] = "Utility" end
+	if hasBuild then cats[#cats + 1] = "Build" end
+
+	if #cats == 0 then
+		cats[#cats + 1] = "Build"
+	end
+
+	menu.radialCategories = cats
 
 	if menu.selectedIndex < 1 then
 		menu.selectedIndex = 1
@@ -2272,22 +2298,24 @@ function ControllerCameraTestRefreshRadialVisibleOptions()
 	local menu = ControllerCameraTestBuildMenu
 	menu.radialVisibleOptions = {}
 
-	local filterCat = menu.radialCategoryName or "All"
+	local filterCat = menu.radialCategoryName or (menu.radialCategories and menu.radialCategories[1]) or "Build"
 	local filtered = {}
 	for i, option in ipairs(menu.options) do
-		if filterCat == "All" or option.category == filterCat then
+		if option.category == filterCat then
 			filtered[#filtered + 1] = option
 			option.menuIndex = i
 		end
 	end
 
-	if #filtered == 0 and filterCat ~= "All" then
-		filterCat = "All"
+	if #filtered == 0 then
+		filterCat = (menu.radialCategories and menu.radialCategories[1]) or "Build"
 		menu.radialCategoryIndex = 1
-		menu.radialCategoryName = "All"
+		menu.radialCategoryName = filterCat
 		for i, option in ipairs(menu.options) do
-			filtered[#filtered + 1] = option
-			option.menuIndex = i
+			if option.category == filterCat then
+				filtered[#filtered + 1] = option
+				option.menuIndex = i
+			end
 		end
 	end
 
@@ -2364,9 +2392,9 @@ function ControllerCameraTestUpdateRadialStickSelection()
 		return
 	end
 
-	local dx = normalizedLeftX
-	local dy = -normalizedLeftY
-	local magnitude = math.sqrt(dx * dx + dy * dy)
+	local aimX = normalizedLeftX
+	local aimY = -normalizedLeftY
+	local magnitude = math.sqrt(aimX * aimX + aimY * aimY)
 	local visibleOptions = menu.radialVisibleOptions or {}
 	local visibleCount = #visibleOptions
 
@@ -2375,7 +2403,7 @@ function ControllerCameraTestUpdateRadialStickSelection()
 	end
 
 	if magnitude > 0.5 then
-		local angle = math.atan2(dx, dy)
+		local angle = math.atan2(aimX, aimY)
 		if angle < 0 then
 			angle = angle + 2 * math.pi
 		end
@@ -2412,7 +2440,7 @@ function ControllerCameraTestOpenBuildMenu()
 
 	menu.open = true
 	menu.radialCategoryIndex = 1
-	menu.radialCategoryName = "All"
+	menu.radialCategoryName = menu.radialCategories[1] or "Build"
 	menu.radialPage = 1
 	menu.radialStickArmed = true
 	menu.radialLastAngle = 0
@@ -2508,6 +2536,39 @@ function ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits)
 	return false
 end
 
+function ControllerCameraTestTrySetNativeBuildCommand(option)
+	local placement = ControllerCameraTestBuildPlacement
+	if not option or not option.cmdDescIndex then
+		placement.nativeSetActiveCommandResult = "failed: invalid option or cmdDescIndex"
+		return false
+	end
+	if type(Spring.SetActiveCommand) ~= "function" then
+		placement.nativeSetActiveCommandResult = "failed: SetActiveCommand API missing"
+		return false
+	end
+
+	local ok, res = pcall(Spring.SetActiveCommand, option.cmdDescIndex, 1)
+	if ok then
+		placement.nativeSetActiveCommandResult = "success"
+		placement.cmdDescIndex = option.cmdDescIndex
+		return true
+	else
+		placement.nativeSetActiveCommandResult = "failed: " .. tostring(res)
+		return false
+	end
+end
+
+function ControllerCameraTestClearNativeBuildCommand()
+	if type(Spring.SetActiveCommand) ~= "function" then
+		return false
+	end
+	local ok, res = pcall(Spring.SetActiveCommand, 0)
+	if not ok then
+		pcall(Spring.SetActiveCommand, nil)
+	end
+	return true
+end
+
 function ControllerCameraTestSetPlacementOption(option)
 	local placement = ControllerCameraTestBuildPlacement
 	if type(option) ~= "table" or type(option.cmdID) ~= "number" or option.cmdID >= 0 then
@@ -2521,6 +2582,9 @@ function ControllerCameraTestSetPlacementOption(option)
 	placement.active = true
 	placement.option = option
 	placement.facing = ControllerCameraTestGetBuildFacing() % 4
+	if type(Spring.SetBuildFacing) == "function" then
+		pcall(Spring.SetBuildFacing, placement.facing)
+	end
 	placement.analogRotateArmed = true
 	placement.lastResult = "placing " .. tostring(option.name)
 	latchSelectionDebugMessage("Placement: " .. tostring(option.name))
@@ -2529,18 +2593,28 @@ end
 
 function ControllerCameraTestCancelPlacement(reason)
 	local placement = ControllerCameraTestBuildPlacement
+	if placement.nativePreviewActive then
+		ControllerCameraTestClearNativeBuildCommand()
+		placement.nativePreviewActive = false
+	end
 	placement.active = false
 	placement.option = nil
 	placement.lastResult = reason or "cancelled"
 	placement.lastParamsCount = 0
 	placement.lastIssuedCount = 0
 	placement.queueActive = false
+	placement.placementMode = "none"
+	placement.cmdDescIndex = nil
+	placement.nativeSetActiveCommandResult = "none"
 	latchSelectionDebugMessage("Placement cancelled")
 end
 
 function ControllerCameraTestRotatePlacementFacing(delta)
 	local placement = ControllerCameraTestBuildPlacement
 	placement.facing = ((placement.facing or 0) + delta) % 4
+	if type(Spring.SetBuildFacing) == "function" then
+		pcall(Spring.SetBuildFacing, placement.facing)
+	end
 	placement.lastResult = "facing " .. tostring(placement.facing)
 	latchSelectionDebugMessage("Build facing: " .. tostring(placement.facing))
 end
@@ -2595,7 +2669,14 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 			menu.lastAction = source or "factory queued"
 			ControllerCameraTestBuildPlacement.lastResult = menu.placementResult
 			if exitPlacement then
+				if ControllerCameraTestBuildPlacement.nativePreviewActive then
+					ControllerCameraTestClearNativeBuildCommand()
+					ControllerCameraTestBuildPlacement.nativePreviewActive = false
+				end
 				ControllerCameraTestBuildPlacement.active = false
+				ControllerCameraTestBuildPlacement.placementMode = "none"
+				ControllerCameraTestBuildPlacement.cmdDescIndex = nil
+				ControllerCameraTestBuildPlacement.nativeSetActiveCommandResult = "none"
 			end
 		else
 			menu.placementResult = "factory queue failed"
@@ -2626,7 +2707,14 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 		ControllerCameraTestBuildPlacement.lastParamsCount = 4
 		ControllerCameraTestBuildPlacement.lastIssuedCount = #selectedUnits
 		if exitPlacement then
+			if ControllerCameraTestBuildPlacement.nativePreviewActive then
+				ControllerCameraTestClearNativeBuildCommand()
+				ControllerCameraTestBuildPlacement.nativePreviewActive = false
+			end
 			ControllerCameraTestBuildPlacement.active = false
+			ControllerCameraTestBuildPlacement.placementMode = "none"
+			ControllerCameraTestBuildPlacement.cmdDescIndex = nil
+			ControllerCameraTestBuildPlacement.nativeSetActiveCommandResult = "none"
 		end
 		ControllerCameraTestRefreshBuildMenuDebug()
 		return true
@@ -2667,7 +2755,14 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 		latchSelectionDebugMessage("Build placed: " .. tostring(option.name))
 		ControllerCameraTestSetCommandMarker(x, y, z, "Build", "build")
 		if exitPlacement then
+			if ControllerCameraTestBuildPlacement.nativePreviewActive then
+				ControllerCameraTestClearNativeBuildCommand()
+				ControllerCameraTestBuildPlacement.nativePreviewActive = false
+			end
 			ControllerCameraTestBuildPlacement.active = false
+			ControllerCameraTestBuildPlacement.placementMode = "none"
+			ControllerCameraTestBuildPlacement.cmdDescIndex = nil
+			ControllerCameraTestBuildPlacement.nativeSetActiveCommandResult = "none"
 		end
 		ControllerCameraTestRefreshBuildMenuDebug()
 		return true
@@ -2691,13 +2786,54 @@ end
 function ControllerCameraTestEnterPlacementFromHighlight()
 	local menu = ControllerCameraTestBuildMenu
 	local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
+	if not option then
+		menu.lastAction = "placement failed: no option"
+		ControllerCameraTestRefreshBuildMenuDebug()
+		return
+	end
+
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	if ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits) then
+		local placement = ControllerCameraTestBuildPlacement
+		placement.placementMode = "factory-queue"
 		ControllerCameraTestPlaceBuildOption(option, true, "factory queued from menu")
 		return
 	end
+
+	-- Try native placement first for buildings/structures (non-mobile units)
+	local placement = ControllerCameraTestBuildPlacement
+	placement.nativePreviewActive = false
+
+	local tryNative = false
+	local unitDef = option.unitDefID and UnitDefs and UnitDefs[option.unitDefID]
+	if unitDef and not unitDef.isMobile then
+		tryNative = true
+	end
+
+	if tryNative then
+		if ControllerCameraTestTrySetNativeBuildCommand(option) then
+			placement.active = true
+			placement.option = option
+			placement.facing = ControllerCameraTestGetBuildFacing() % 4
+			if type(Spring.SetBuildFacing) == "function" then
+				pcall(Spring.SetBuildFacing, placement.facing)
+			end
+			placement.analogRotateArmed = true
+			placement.nativePreviewActive = true
+			placement.lastResult = "native placement active"
+			placement.placementMode = "native"
+			menu.lastAction = "entered native placement"
+			latchSelectionDebugMessage("Placement: " .. tostring(option.name) .. " (native)")
+			ControllerCameraTestRefreshBuildMenuDebug()
+			return
+		end
+	end
+
+	-- Fallback to existing custom placement logic
 	if ControllerCameraTestSetPlacementOption(option) then
-		menu.lastAction = "entered placement"
+		placement.nativePreviewActive = false
+		placement.placementMode = "custom"
+		menu.lastAction = "entered custom placement"
 	else
 		menu.lastAction = "placement failed"
 	end
@@ -2748,7 +2884,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 		end
 	end
 
-	local categories = menu.radialCategories or { "All", "Economy", "Combat", "Utility", "Build" }
+	local categories = menu.radialCategories or { "Economy", "Combat", "Utility", "Build" }
 
 	if WasButtonPressed("B") then
 		ControllerCameraTestCloseBuildMenu("closed by B")
@@ -2759,10 +2895,10 @@ function ControllerCameraTestHandleBuildMenuInput()
 		ControllerCameraTestCloseBuildMenu("entered placement")
 	elseif WasButtonPressed("X") then
 		ControllerCameraTestPlaceHighlightedBuildOption(false, "quick placed from radial")
-	elseif WasButtonPressed("dpadUp") or WasButtonPressed("dpadLeft") then
-		ControllerCameraTestSetRadialHighlight(currentLocalIndex - 1, "dpad prev")
 	elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadRight") then
 		ControllerCameraTestSetRadialHighlight(currentLocalIndex + 1, "dpad next")
+	elseif WasButtonPressed("dpadUp") or WasButtonPressed("dpadLeft") then
+		ControllerCameraTestSetRadialHighlight(currentLocalIndex - 1, "dpad prev")
 	elseif WasButtonPressed("LB") then
 		if menu.radialPage > 1 then
 			menu.radialPage = menu.radialPage - 1
@@ -3628,7 +3764,7 @@ function ControllerCameraTestDrawBuildRadial()
 		local option = visibleOptions[i]
 		local angle = ((i - 1) * (2 * math.pi / n)) - (math.pi / 2)
 		local x = cx + radius * math.cos(angle)
-		local y = cy + radius * math.sin(angle)
+		local y = cy - radius * math.sin(angle)
 
 		local isSelected = (option.menuIndex == menu.selectedIndex)
 
@@ -3700,7 +3836,7 @@ function ControllerCameraTestDrawBuildRadial()
 
 	-- 4. Category/Page Indicator
 	gl.Color(0.56, 0.84, 1, 0.95)
-	local categoryStr = string.upper(menu.radialCategoryName or "All")
+	local categoryStr = string.upper(menu.radialCategoryName or "Build")
 	local pageStr = "PAGE " .. tostring(menu.radialPage) .. "/" .. tostring(menu.radialPageCount)
 
 	gl.Text(categoryStr, cx, cy + radius * 0.7, 14, "oc")
@@ -4041,11 +4177,16 @@ function widget:DrawScreen()
 				"Last action: " .. tostring(ControllerCameraTestBuildMenu.lastAction),
 				"Radial open: " .. yesNo(ControllerCameraTestBuildMenu.open),
 				"Radial category: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName),
+				"Radial category count: " .. tostring(ControllerCameraTestBuildMenu.radialCategories and #ControllerCameraTestBuildMenu.radialCategories or 0),
 				"Radial page: " .. tostring(ControllerCameraTestBuildMenu.radialPage) .. " / " .. tostring(ControllerCameraTestBuildMenu.radialPageCount),
 				"Radial visible count: " .. tostring(ControllerCameraTestBuildMenu.radialVisibleOptions and #ControllerCameraTestBuildMenu.radialVisibleOptions or 0),
 				"Radial selected local index: " .. tostring(currentLocalIndex or 1),
 				"Radial highlighted name: " .. tostring(ControllerCameraTestBuildMenu.highlightedName),
 				"Radial last action: " .. tostring(ControllerCameraTestBuildMenu.radialLastAction or "none"),
+				"Native placement active: " .. yesNo(ControllerCameraTestBuildPlacement.nativePreviewActive),
+				"Native set cmd result: " .. tostring(ControllerCameraTestBuildPlacement.nativeSetActiveCommandResult or "none"),
+				"Native cmdDescIndex: " .. tostring(ControllerCameraTestBuildPlacement.cmdDescIndex or "none"),
+				"Placement mode: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none"),
 			},
 		},
 		{
