@@ -20,6 +20,7 @@ local spGetCameraVectors = Spring.GetCameraVectors
 local spGetGroundHeight = Spring.GetGroundHeight
 local spGetMouseState = Spring.GetMouseState
 local spGetViewGeometry = Spring.GetViewGeometry
+local spTraceScreenRay = Spring.TraceScreenRay
 
 local glText = gl.Text
 
@@ -203,6 +204,11 @@ local controllerMode = false
 local reticleVisible = false
 local screenCenterX = 0
 local screenCenterY = 0
+local reticleTargetType = "unavailable"
+local reticleHasWorldTarget = false
+local reticleWorldX = nil
+local reticleWorldY = nil
+local reticleWorldZ = nil
 local viewSizeX = 0
 local viewSizeY = 0
 local lastMouseX = nil
@@ -247,6 +253,8 @@ local function clearDebugEventLatches()
 	commandPreviewSummary = "none"
 end
 
+local resetReticleWorldTarget
+
 local function resetControllerInputDebug()
 	normalizedLeftX = 0
 	normalizedLeftY = 0
@@ -280,6 +288,7 @@ local function resetControllerInputDebug()
 	pitchMethod = "none"
 	clearButtonStateTracking()
 	clearDebugEventLatches()
+	resetReticleWorldTarget()
 end
 
 local function updateScreenCenter(vsx, vsy)
@@ -289,9 +298,20 @@ local function updateScreenCenter(vsx, vsy)
 	screenCenterY = viewSizeY * 0.5
 end
 
+function resetReticleWorldTarget()
+	reticleTargetType = "unavailable"
+	reticleHasWorldTarget = false
+	reticleWorldX = nil
+	reticleWorldY = nil
+	reticleWorldZ = nil
+end
+
 local function setControllerMode(active)
 	controllerMode = active == true
 	reticleVisible = controllerMode
+	if not reticleVisible then
+		resetReticleWorldTarget()
+	end
 end
 
 local function noteControllerInput()
@@ -719,6 +739,40 @@ local function updateMouseInputMode()
 	lastMouseRight = rightButton
 end
 
+local function updateReticleWorldTarget()
+	if not reticleVisible or type(spTraceScreenRay) ~= "function" then
+		resetReticleWorldTarget()
+		return
+	end
+
+	local ok, targetType, worldPosition = pcall(spTraceScreenRay, screenCenterX, screenCenterY, true)
+	if not ok then
+		resetReticleWorldTarget()
+		reticleTargetType = "trace failed"
+		return
+	end
+
+	reticleTargetType = tostring(targetType or "unavailable")
+	if type(worldPosition) == "table" then
+		local worldX = tonumber(worldPosition[1])
+		local worldY = tonumber(worldPosition[2])
+		local worldZ = tonumber(worldPosition[3])
+
+		if worldX and worldY and worldZ then
+			reticleWorldX = worldX
+			reticleWorldY = worldY
+			reticleWorldZ = worldZ
+			reticleHasWorldTarget = true
+			return
+		end
+	end
+
+	reticleWorldX = nil
+	reticleWorldY = nil
+	reticleWorldZ = nil
+	reticleHasWorldTarget = false
+end
+
 local function applySpringZoom(cameraState, zoomInput, dt)
 	if type(cameraState.dist) ~= "number" then
 		return false
@@ -1025,6 +1079,8 @@ function widget:Update(dt)
 		pitchMethod = "none"
 		updateCameraDebug(spGetCameraState())
 	end
+
+	updateReticleWorldTarget()
 end
 
 function widget:MouseMove()
@@ -1065,7 +1121,20 @@ function widget:DrawScreen()
 	glText("reticle visible: " .. (reticleVisible and "yes" or "no"), x, y, 12, "o")
 	y = y - lineHeight
 
-	glText(string.format("screen center: x=%.1f y=%.1f", screenCenterX, screenCenterY), x, y, 12, "o")
+	glText(string.format("reticle screen: x=%.1f y=%.1f", screenCenterX, screenCenterY), x, y, 12, "o")
+	y = y - lineHeight
+
+	if reticleHasWorldTarget then
+		glText(string.format("reticle world: x=%.1f y=%.1f z=%.1f", reticleWorldX, reticleWorldY, reticleWorldZ), x, y, 12, "o")
+	else
+		glText("reticle world: unavailable", x, y, 12, "o")
+	end
+	y = y - lineHeight
+
+	glText("reticle target type: " .. reticleTargetType, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("reticle has world target: " .. (reticleHasWorldTarget and "yes" or "no"), x, y, 12, "o")
 	y = y - lineHeight
 
 	glText(string.format("left stick: x=%.3f y=%.3f", normalizedLeftX, normalizedLeftY), x, y, 12, "o")
