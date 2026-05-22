@@ -60,6 +60,7 @@ ControllerCameraTestBuildMenu = ControllerCameraTestBuildMenu or {
 	radialStickArmed = true,
 	radialLastAngle = 0,
 	radialLastAction = "none",
+	factoryQueueCounts = {},
 }
 ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	active = false,
@@ -2379,6 +2380,68 @@ function ControllerCameraTestRefreshRadialVisibleOptions()
 	ControllerCameraTestRefreshBuildMenuDebug()
 end
 
+function ControllerCameraTestGetFactoryQueueCounts()
+	local counts = {}
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if #selectedUnits == 0 then
+		return counts
+	end
+
+	for _, unitID in ipairs(selectedUnits) do
+		local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
+		if type(unitDef) == "table" and unitDef.isFactory then
+			local q = type(Spring.GetFactoryCommands) == "function" and Spring.GetFactoryCommands(unitID, -1)
+			if type(q) == "table" then
+				for i = 1, #q do
+					local cmd = q[i]
+					if cmd and type(cmd.id) == "number" and cmd.id < 0 then
+						counts[cmd.id] = (counts[cmd.id] or 0) + 1
+					end
+				end
+			end
+		end
+	end
+	return counts
+end
+
+function ControllerCameraTestRefreshFactoryQueueCounts()
+	ControllerCameraTestBuildMenu.factoryQueueCounts = ControllerCameraTestGetFactoryQueueCounts()
+end
+
+function ControllerCameraTestCanAffordBuildOption(option)
+	if not option then
+		return false, false, false, "no option"
+	end
+	if type(Spring.GetMyTeamID) ~= "function" or type(Spring.GetTeamResources) ~= "function" then
+		return true, true, true, "no api"
+	end
+
+	local myTeamID = Spring.GetMyTeamID()
+	local metalOk, metalLevel = pcall(Spring.GetTeamResources, myTeamID, "metal")
+	local energyOk, energyLevel = pcall(Spring.GetTeamResources, myTeamID, "energy")
+
+	local currentMetal = (metalOk and type(metalLevel) == "number") and metalLevel or 0
+	local currentEnergy = (energyOk and type(energyLevel) == "number") and energyLevel or 0
+
+	local mCost = option.metalCost or 0
+	local eCost = option.energyCost or 0
+
+	local metalAffordable = currentMetal >= mCost
+	local energyAffordable = currentEnergy >= eCost
+	local affordable = metalAffordable and energyAffordable
+
+	local reason = ""
+	if not metalAffordable and not energyAffordable then
+		reason = "both"
+	elseif not metalAffordable then
+		reason = "metal"
+	elseif not energyAffordable then
+		reason = "energy"
+	end
+
+	return affordable, metalAffordable, energyAffordable, reason
+end
+
 function ControllerCameraTestGetRadialCurrentOption()
 	local menu = ControllerCameraTestBuildMenu
 	if type(menu.radialVisibleOptions) == "table" and #menu.radialVisibleOptions > 0 then
@@ -2473,6 +2536,7 @@ function ControllerCameraTestOpenBuildMenu()
 	menu.radialLastAction = "none"
 
 	ControllerCameraTestRefreshRadialVisibleOptions()
+	ControllerCameraTestRefreshFactoryQueueCounts()
 
 	menu.lastAction = "opened"
 	menu.placementResult = "none"
@@ -2926,6 +2990,7 @@ function ControllerCameraTestDequeueFactoryBuildOption(option)
 	if ok then
 		menu.lastAction = queueActive and "factory dequeued 5 (B)" or "factory dequeued (B)"
 		menu.radialLastAction = menu.lastAction
+		ControllerCameraTestRefreshFactoryQueueCounts()
 		return true
 	else
 		menu.lastAction = "factory dequeue failed"
@@ -3097,6 +3162,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 				if ok then
 					menu.lastAction = queueFrontActive and "factory prepended (A)" or "factory queued (A)"
 					menu.radialLastAction = menu.lastAction
+					ControllerCameraTestRefreshFactoryQueueCounts()
 				else
 					menu.lastAction = "factory queue failed (A)"
 					menu.radialLastAction = "factory queue failed (A)"
@@ -3963,6 +4029,14 @@ function ControllerCameraTestDrawBuildRadial()
 		return
 	end
 
+	-- Throttled refresh of factory queue counts while radial is drawn
+	if Spring.GetGameFrame() % 15 == 0 then
+		ControllerCameraTestRefreshFactoryQueueCounts()
+	end
+
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	local isFactoryContext = ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits)
+
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 
@@ -4007,14 +4081,25 @@ function ControllerCameraTestDrawBuildRadial()
 
 		local isSelected = (option.menuIndex == menu.selectedIndex)
 
+		-- Check affordability
+		local affordable, mAff, eAff = ControllerCameraTestCanAffordBuildOption(option)
+
 		if isSelected then
 			gl.Color(0.2, 0.6, 1, 0.85)
 			gl.Rect(x - iconSize/2 - 4, y - iconSize/2 - 4, x + iconSize/2 + 4, y + iconSize/2 + 4)
 			gl.Color(0.85, 0.95, 1, 1)
 		else
-			gl.Color(0.12, 0.18, 0.23, 0.42) -- opacity halved from 0.85 to 0.42
+			if affordable then
+				gl.Color(0.12, 0.18, 0.23, 0.42)
+			else
+				gl.Color(0.32, 0.12, 0.12, 0.42) -- red background tint for unaffordable
+			end
 			gl.Rect(x - iconSize/2 - 2, y - iconSize/2 - 2, x + iconSize/2 + 2, y + iconSize/2 + 2)
-			gl.Color(0.8, 0.8, 0.8, 0.9)
+			if affordable then
+				gl.Color(0.8, 0.8, 0.8, 0.9)
+			else
+				gl.Color(0.68, 0.22, 0.22, 0.55) -- red border for unaffordable
+			end
 		end
 
 		gl.LineWidth(isSelected and 3 or 1.5)
@@ -4028,7 +4113,13 @@ function ControllerCameraTestDrawBuildRadial()
 		local hasIcon = false
 		if option.iconTexture then
 			gl.Texture(option.iconTexture)
-			gl.Color(1, 1, 1, 1)
+			if isSelected then
+				gl.Color(1, 1, 1, 1)
+			elseif affordable then
+				gl.Color(0.85, 0.85, 0.85, 0.9)
+			else
+				gl.Color(0.35, 0.3, 0.3, 0.42) -- dim texture for unaffordable
+			end
 			gl.TexRect(x - iconSize/2, y - iconSize/2, x + iconSize/2, y + iconSize/2)
 			gl.Texture(false)
 			hasIcon = true
@@ -4041,6 +4132,40 @@ function ControllerCameraTestDrawBuildRadial()
 
 		gl.Color(1, 0.84, 0, 1)
 		gl.Text(tostring(i), x - iconSize/2 + 6, y + iconSize/2 - 16, 12, "o")
+
+		-- Draw Factory Queue badge if needed
+		if isFactoryContext and option.cmdID and menu.factoryQueueCounts then
+			local qCount = menu.factoryQueueCounts[option.cmdID] or 0
+			if qCount > 0 then
+				local badgeText = "x" .. tostring(qCount)
+				local badgeW = 28
+				if qCount >= 10 then
+					badgeW = 36
+				end
+				if qCount >= 100 then
+					badgeW = 44
+				end
+				local bx2 = x + iconSize/2 + 3
+				local bx1 = bx2 - badgeW
+				local by2 = y + iconSize/2 + 3
+				local by1 = by2 - 18
+
+				-- Translucent dark glassmorphism badge
+				gl.Color(0.04, 0.08, 0.12, 0.88)
+				gl.Rect(bx1, by1, bx2, by2)
+				gl.Color(0.56, 0.84, 1, 0.7)
+				gl.LineWidth(1)
+				gl.BeginEnd(GL.LINE_LOOP, function()
+					gl.Vertex(bx1, by1)
+					gl.Vertex(bx2, by1)
+					gl.Vertex(bx2, by2)
+					gl.Vertex(bx1, by2)
+				end)
+
+				gl.Color(1, 0.95, 0.8, 1)
+				gl.Text(badgeText, (bx1 + bx2)/2, by1 + 3, 11, "oc")
+			end
+		end
 	end
 
 	-- 3. Center display details
@@ -4050,26 +4175,83 @@ function ControllerCameraTestDrawBuildRadial()
 		drawCircle(cx, cy, radius * 0.45, 30)
 
 		gl.Color(0.82, 0.94, 1, 1)
-		gl.Text(currentOption.name or "unknown", cx, cy + 16, 19, "oc")
+		gl.Text(currentOption.name or "unknown", cx, cy + 42, 16, "oc")
 
-		local costText = ""
-		if currentOption.metalCost and currentOption.metalCost > 0 then
-			costText = costText .. "M: " .. tostring(currentOption.metalCost)
-		end
-		if currentOption.energyCost and currentOption.energyCost > 0 then
-			if costText ~= "" then costText = costText .. "  " end
-			costText = costText .. "E: " .. tostring(currentOption.energyCost)
-		end
-		if costText ~= "" then
-			gl.Color(1, 0.85, 0.3, 0.95)
-			gl.Text(costText, cx, cy - 12, 15, "oc")
+		local mCost = currentOption.metalCost or 0
+		local eCost = currentOption.energyCost or 0
+		local aff, mAff, eAff = ControllerCameraTestCanAffordBuildOption(currentOption)
+
+		if mCost > 0 and eCost > 0 then
+			if mAff then
+				gl.Color(0.9, 0.8, 0.1, 1)
+			else
+				gl.Color(1, 0.25, 0.2, 1)
+			end
+			gl.Text("M: " .. tostring(mCost), cx - 36, cy + 22, 12, "oc")
+
+			if eAff then
+				gl.Color(0.9, 0.8, 0.1, 1)
+			else
+				gl.Color(1, 0.25, 0.2, 1)
+			end
+			gl.Text("E: " .. tostring(eCost), cx + 36, cy + 22, 12, "oc")
+		elseif mCost > 0 then
+			if mAff then
+				gl.Color(0.9, 0.8, 0.1, 1)
+			else
+				gl.Color(1, 0.25, 0.2, 1)
+			end
+			gl.Text("M: " .. tostring(mCost), cx, cy + 22, 12, "oc")
+		elseif eCost > 0 then
+			if eAff then
+				gl.Color(0.9, 0.8, 0.1, 1)
+			else
+				gl.Color(1, 0.25, 0.2, 1)
+			end
+			gl.Text("E: " .. tostring(eCost), cx, cy + 22, 12, "oc")
 		end
 
-		if currentOption.tooltip and currentOption.tooltip ~= "" then
-			gl.Color(0.7, 0.7, 0.7, 0.8)
-			local tip = string.sub(currentOption.tooltip, 1, 35)
-			if #currentOption.tooltip > 35 then tip = tip .. "..." end
-			gl.Text(tip, cx, cy - 38, 12, "oc")
+		if isFactoryContext then
+			local qCount = 0
+			if menu.factoryQueueCounts and currentOption.cmdID then
+				qCount = menu.factoryQueueCounts[currentOption.cmdID] or 0
+			end
+			if qCount > 0 then
+				gl.Color(0.4, 0.85, 1, 1)
+				gl.Text("Queued: " .. tostring(qCount), cx, cy + 4, 12, "oc")
+			end
+		else
+			if currentOption.tooltip and currentOption.tooltip ~= "" then
+				gl.Color(0.7, 0.7, 0.7, 0.8)
+				local tip = string.sub(currentOption.tooltip, 1, 28)
+				if #currentOption.tooltip > 28 then tip = tip .. "..." end
+				gl.Text(tip, cx, cy + 4, 11, "oc")
+			end
+		end
+
+		-- Draw context-specific controller hints
+		if isFactoryContext then
+			gl.Color(0.4, 1.0, 0.4, 0.9)
+			gl.Text("[A] +1", cx - 8, cy - 12, 11, "or")
+			gl.Color(0.2, 0.9, 0.7, 0.9)
+			gl.Text("[LT+A] +5", cx + 8, cy - 12, 11, "ol")
+
+			gl.Color(1.0, 0.4, 0.4, 0.9)
+			gl.Text("[B] -1", cx - 8, cy - 25, 11, "or")
+			gl.Color(1.0, 0.6, 0.2, 0.9)
+			gl.Text("[LT+B] -5", cx + 8, cy - 25, 11, "ol")
+
+			gl.Color(1.0, 0.9, 0.4, 0.9)
+			gl.Text("[Y] Close", cx, cy - 38, 11, "oc")
+		else
+			gl.Color(0.4, 1.0, 0.4, 0.9)
+			gl.Text("[A] Place", cx - 8, cy - 16, 11, "or")
+			gl.Color(0.4, 0.8, 1.0, 0.9)
+			gl.Text("[X] Stay", cx + 8, cy - 16, 11, "ol")
+			gl.Color(1.0, 0.4, 0.4, 0.9)
+			gl.Text("[B] Cancel", cx - 8, cy - 30, 11, "or")
+			gl.Color(1.0, 0.9, 0.4, 0.9)
+			gl.Text("[Y] Close", cx + 8, cy - 30, 11, "ol")
 		end
 	end
 
@@ -4106,19 +4288,20 @@ function ControllerCameraTestDrawHelpOverlay()
 	local maxChars = math.max(28, math.floor((width - 36) / 7.5))
 	local lines = {
 		"Controller Camera Test Help",
-		"Normal: LS pan | LT boost | RS X rotate | RS Y zoom | LB+RSY pitch",
-		"A tap select | A hold radius select | A double-tap same type / combat fallback",
-		"B clear/cancel | X smart move/mex/context | Y build menu | RB/LB cycle",
-		"D-pad recalls camera bookmarks | LT+D-pad stores camera bookmarks",
-		"Build radial: LS/D-pad select | LB/RB page/category | A place | X quick-place | B/Y close",
-		"RT: A visible combat/mobile | B stop | X attack | Y tactical menu",
-		"RT+D-pad Up guard/patrol | Down reclaim | Left/Right quick group or cycle",
-		"Tactical menu: D-pad/LB/RB choose | A/X confirm | B/Y cancel",
-		"Back/View tap toggles debug panel",
-		"Back/View + D-pad Left/Right selects setting | Up/Down adjusts",
-		"Back/View + A/B/X/Y stores quick group 1-4 | Back/View + LB/RB recalls groups",
-		"Start/Menu toggles this overlay",
-		"Selected setting: " .. ControllerCameraTestCurrentSettingLabel(),
+		"Camera/Move: LS pan | RS X rotate | RS Y zoom | LB+RS Y pitch | LT boost",
+		"Selection: A select | A hold area-select | A double-tap select-all-type | B clear",
+		"Context Actions: X smart context (move/attack/mex) | RT+B stop | RT+X attack",
+		"Combat Layers: RT+A combat-select | RT+Y tactical-menu | RT+Dpad guard/patrol/reclaim",
+		"Constructor Radial: Y open | LS/Dpad select | LB/RB page | Y close",
+		"   * A enter placement | X quick-place | B close radial",
+		"Factory Radial: Y open | LS/Dpad select | LB/RB page | Y close",
+		"   * A add 1 queue | LT+A add 5 queue | B remove 1 | LT+B remove 5",
+		"Placement Mode: A place | X place+stay | B cancel | LT queue | RT queue front",
+		"   * Dpad L/R or RS X rotate | Dpad U/D build spacing | LB/RB pattern",
+		"Bookmarks & Groups: Dpad recall cam | LT+Dpad store cam | Back+A/B/X/Y store group 1-4",
+		"Debug Panel: Back toggle panel | Click headers expand/collapse | Compact/Full button",
+		"Tuning Settings: Back+Dpad L/R select setting | Back+Dpad U/D adjust",
+		"Tuning Selection: " .. ControllerCameraTestCurrentSettingLabel(),
 	}
 
 	gl.Color(0, 0, 0, 0.86)
@@ -4131,7 +4314,7 @@ function ControllerCameraTestDrawHelpOverlay()
 
 	for i, line in ipairs(lines) do
 		local size = (i == 1) and 18 or 14
-		local colorIsHeader = i == 1 or i == 10
+		local colorIsHeader = i == 1
 		if colorIsHeader then
 			gl.Color(0.72, 0.9, 1, 1)
 		else
@@ -4307,6 +4490,24 @@ function widget:DrawScreen()
 		if option.menuIndex == ControllerCameraTestBuildMenu.selectedIndex then
 			currentLocalIndex = idx
 			break
+		end
+	end
+
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	local isFactoryRadialVal = ControllerCameraTestBuildMenu.open and ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits)
+	local isFactoryRadial = yesNo(isFactoryRadialVal)
+	local currentOption = ControllerCameraTestGetRadialCurrentOption()
+	local highlightedQueueCount = 0
+	if currentOption and currentOption.cmdID and ControllerCameraTestBuildMenu.factoryQueueCounts then
+		highlightedQueueCount = ControllerCameraTestBuildMenu.factoryQueueCounts[currentOption.cmdID] or 0
+	end
+	local hasQueueCounts = "no"
+	if ControllerCameraTestBuildMenu.factoryQueueCounts then
+		for _, count in pairs(ControllerCameraTestBuildMenu.factoryQueueCounts) do
+			if count > 0 then
+				hasQueueCounts = "yes"
+				break
+			end
 		end
 	end
 
@@ -4488,6 +4689,10 @@ function widget:DrawScreen()
 				"Queue front active (RT): " .. yesNo(ControllerCameraTestBuildPlacement.queueFrontActive),
 				"Last construction shortcut: " .. tostring(ControllerCameraTestBuildPlacement.lastConstructionShortcut),
 				"Grid shortcut result: " .. tostring(ControllerCameraTestBuildPlacement.gridShortcutResult),
+				"Factory radial: " .. tostring(isFactoryRadial),
+				"Highlighted queue count: " .. tostring(highlightedQueueCount),
+				"Last factory queue action: " .. tostring(ControllerCameraTestBuildMenu.radialLastAction or "none"),
+				"Factory queue counts known: " .. tostring(hasQueueCounts),
 			},
 		},
 	}
@@ -4523,7 +4728,7 @@ function widget:DrawScreen()
 	if ControllerCameraTestDebugCompact then
 		local compactLines = {
 			"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary) .. " | Held: " .. heldButtonsSummary .. " | Pressed: " .. pressedRecentlySummary,
-			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName),
+			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName) .. " (Q:" .. tostring(highlightedQueueCount) .. ")",
 			"Placement: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none") .. " | Pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern) .. " | Spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
 			"Last Action: " .. tostring(ControllerCameraTestBuildMenu.lastAction or "none") .. " | Result: " .. tostring(ControllerCameraTestBuildMenu.radialLastAction or "none"),
 			"Selection Msg: " .. selectionDebugMessage .. " | Last cmd: " .. tostring(lastIssuedCommand)
