@@ -1308,13 +1308,31 @@ function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift)
 	end
 	ControllerCameraTestCommandDebug.mexNearestSpot = "yes"
 
-	local dx = (nearestSpot.x or x) - x
-	local dz = (nearestSpot.z or z) - z
-	if ((dx * dx) + (dz * dz)) > (2000 * 2000) then
-		ControllerCameraTestCommandDebug.mexNearestSpot = "no"
-		ControllerCameraTestCommandDebug.mexActionResult = "not near metal spot"
-		return false
-	end
+	local controllerMexTriggerRadius = 80
+
+local spotX = nearestSpot.x or nearestSpot[1]
+local spotZ = nearestSpot.z or nearestSpot[3] or nearestSpot[2]
+
+if not spotX or not spotZ then
+	ControllerCameraTestCommandDebug.mexNearestSpot = "no"
+	ControllerCameraTestCommandDebug.mexActionResult = "mex spot position unavailable, falling back to Move"
+	return false
+end
+
+local dx = spotX - x
+local dz = spotZ - z
+local distSq = (dx * dx) + (dz * dz)
+local maxDistSq = controllerMexTriggerRadius * controllerMexTriggerRadius
+
+if distSq > maxDistSq then
+	ControllerCameraTestCommandDebug.mexNearestSpot = "no"
+	ControllerCameraTestCommandDebug.mexActionResult = string.format(
+		"not close enough to metal spot %.0f > %d, falling back to Move",
+		math.sqrt(distSq),
+		controllerMexTriggerRadius
+	)
+	return false
+end
 
 	if type(builder.ExtractorCanBeBuiltOnSpot) == "function" and not builder.ExtractorCanBeBuiltOnSpot(nearestSpot, selectedMex) then
 		ControllerCameraTestCommandDebug.mexActionResult = "spot unavailable"
