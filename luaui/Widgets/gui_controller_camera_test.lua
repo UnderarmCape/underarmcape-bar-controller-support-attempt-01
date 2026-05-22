@@ -25,13 +25,17 @@ local mathAbs = math.abs
 local mathMin = math.min
 local mathMax = math.max
 local mathSqrt = math.sqrt
+local mathCos = math.cos
+local mathSin = math.sin
 
 local DEADZONE = 8000
 local TRIGGER_DEADZONE = 3000
 local AXIS_MAX = 32767
 local PAN_SPEED = 1800
+local FAST_PAN_MULTIPLIER = 2.75
 local ZOOM_SPEED = 1200
 local ZOOM_SCALE_SPEED = 0.9
+local ROTATION_SPEED = 1.0
 local MIN_SPRING_DISTANCE = 20
 local MIN_OVERHEAD_HEIGHT = 60
 local MIN_CAMERA_HEIGHT = 80
@@ -109,20 +113,44 @@ local controllerName = "none"
 local controllerInstanceId = nil
 local normalizedLeftX = 0
 local normalizedLeftY = 0
+local normalizedRightX = 0
+local normalizedRightY = 0
 local normalizedLeftTrigger = 0
 local normalizedRightTrigger = 0
 local pressedButtonsSummary = "none"
 local activeAxesSummary = "none"
 local panActive = false
 local zoomActive = false
+local rotationActive = false
+local fastPanActive = false
+local commandLayerActive = false
 local cameraMode = "unknown"
 local cameraModeId = "?"
 local cameraFieldSummary = "camera state unavailable"
 local zoomMethod = "none"
+local rotationMethod = "none"
 
 local mapSizeX = Game and Game.mapSizeX or 0
 local mapSizeZ = Game and Game.mapSizeZ or 0
 local maxCameraDistance = mathMax(mapSizeX, mapSizeZ, 1000) * 1.5
+
+local function resetControllerInputDebug()
+	normalizedLeftX = 0
+	normalizedLeftY = 0
+	normalizedRightX = 0
+	normalizedRightY = 0
+	normalizedLeftTrigger = 0
+	normalizedRightTrigger = 0
+	pressedButtonsSummary = "none"
+	activeAxesSummary = "none"
+	panActive = false
+	zoomActive = false
+	rotationActive = false
+	fastPanActive = false
+	commandLayerActive = false
+	zoomMethod = "none"
+	rotationMethod = "none"
+end
 
 local function clamp(value, minValue, maxValue)
 	return mathMin(maxValue, mathMax(minValue, value))
@@ -307,13 +335,16 @@ local function updateCameraDebug(cameraState)
 	cameraMode = tostring(cameraState.name or "unknown")
 	cameraModeId = tostring(cameraState.mode or "?")
 	cameraFieldSummary = string.format(
-		"px=%s py=%s pz=%s dist=%s height=%s oldHeight=%s fov=%s",
+		"px=%s py=%s pz=%s dist=%s height=%s ry=%s dx=%s dy=%s dz=%s fov=%s",
 		formatNumber(cameraState.px),
 		formatNumber(cameraState.py),
 		formatNumber(cameraState.pz),
 		formatNumber(cameraState.dist),
 		formatNumber(cameraState.height),
-		formatNumber(cameraState.oldHeight),
+		formatNumber(cameraState.ry),
+		formatNumber(cameraState.dx),
+		formatNumber(cameraState.dy),
+		formatNumber(cameraState.dz),
 		formatNumber(cameraState.fov)
 	)
 end
@@ -412,20 +443,51 @@ local function applyZoom(cameraState, zoomInput, dt)
 	end
 end
 
-local function applyCameraInput(leftX, leftY, zoomInput, dt)
+local function applyRotation(cameraState, rotationInput, dt)
+	if rotationInput == 0 then
+		rotationMethod = "none"
+		return
+	end
+
+	local rotationAmount = rotationInput * ROTATION_SPEED * (dt or 0)
+
+	if type(cameraState.ry) == "number" then
+		cameraState.ry = cameraState.ry + rotationAmount
+		rotationMethod = "ry"
+		return true
+	end
+
+	if cameraState.name == "rot" and type(cameraState.dx) == "number" and type(cameraState.dz) == "number" then
+		local cosAmount = mathCos(rotationAmount)
+		local sinAmount = mathSin(rotationAmount)
+		local dx = cameraState.dx
+		local dz = cameraState.dz
+
+		cameraState.dx = (dx * cosAmount) - (dz * sinAmount)
+		cameraState.dz = (dx * sinAmount) + (dz * cosAmount)
+		rotationMethod = "rot direction"
+		return true
+	end
+
+	rotationMethod = "unsupported"
+	return false
+end
+
+local function applyCameraInput(leftX, leftY, zoomInput, rotationInput, panMultiplier, dt)
 	local cameraState = spGetCameraState and spGetCameraState()
 	if type(cameraState) ~= "table" or cameraState.px == nil or cameraState.pz == nil then
 		updateCameraDebug(cameraState)
 		return
 	end
 
-	local distance = PAN_SPEED * (dt or 0)
+	local distance = PAN_SPEED * (panMultiplier or 1) * (dt or 0)
 	local deltaX, deltaZ = getCameraPanDelta(leftX, leftY, distance)
 
 	cameraState.px = cameraState.px + deltaX
 	cameraState.pz = cameraState.pz + deltaZ
 
 	applyZoom(cameraState, zoomInput, dt)
+	applyRotation(cameraState, rotationInput, dt)
 
 	if mapSizeX > 0 then
 		cameraState.px = clamp(cameraState.px, 0, mapSizeX)
@@ -445,6 +507,7 @@ end
 function widget:Update(dt)
 	panActive = false
 	zoomActive = false
+	rotationActive = false
 
 	if not apiAvailable then
 		return
@@ -452,40 +515,38 @@ function widget:Update(dt)
 
 	local controller = pollFirstController()
 	if not controller then
-		normalizedLeftX = 0
-		normalizedLeftY = 0
-		normalizedLeftTrigger = 0
-		normalizedRightTrigger = 0
-		pressedButtonsSummary = "none"
-		activeAxesSummary = "none"
+		resetControllerInputDebug()
 		return
 	end
 
 	local state = pollControllerState(controller.instanceId)
 	if not state or type(state.axes) ~= "table" then
-		normalizedLeftX = 0
-		normalizedLeftY = 0
-		normalizedLeftTrigger = 0
-		normalizedRightTrigger = 0
-		pressedButtonsSummary = "none"
-		activeAxesSummary = "none"
+		resetControllerInputDebug()
 		return
 	end
 
 	normalizedLeftX = normalizeAxis(GetNamedAxis(state, "leftStickX"))
 	normalizedLeftY = normalizeAxis(GetNamedAxis(state, "leftStickY"))
+	normalizedRightX = normalizeAxis(GetNamedAxis(state, "rightStickX"))
+	normalizedRightY = normalizeAxis(GetNamedAxis(state, "rightStickY"))
 	normalizedLeftTrigger = normalizeTrigger(GetNamedAxis(state, "leftTrigger"))
 	normalizedRightTrigger = normalizeTrigger(GetNamedAxis(state, "rightTrigger"))
 	pressedButtonsSummary = getPressedButtonSummary(state)
 	activeAxesSummary = getActiveAxisSummary(state)
-	panActive = normalizedLeftX ~= 0 or normalizedLeftY ~= 0
-	local zoomInput = normalizedRightTrigger - normalizedLeftTrigger
-	zoomActive = zoomInput ~= 0
 
-	if panActive or zoomActive then
-		applyCameraInput(normalizedLeftX, normalizedLeftY, zoomInput, dt)
+	fastPanActive = normalizedLeftTrigger > 0
+	commandLayerActive = normalizedRightTrigger > 0
+	panActive = normalizedLeftX ~= 0 or normalizedLeftY ~= 0
+	local zoomInput = -normalizedRightY
+	zoomActive = zoomInput ~= 0
+	rotationActive = normalizedRightX ~= 0
+
+	local panMultiplier = fastPanActive and FAST_PAN_MULTIPLIER or 1
+	if panActive or zoomActive or rotationActive then
+		applyCameraInput(normalizedLeftX, normalizedLeftY, zoomInput, normalizedRightX, panMultiplier, dt)
 	elseif spGetCameraState then
 		zoomMethod = "none"
+		rotationMethod = "none"
 		updateCameraDebug(spGetCameraState())
 	end
 end
@@ -510,10 +571,22 @@ function widget:DrawScreen()
 	glText(string.format("left stick: x=%.3f y=%.3f", normalizedLeftX, normalizedLeftY), x, y, 12, "o")
 	y = y - lineHeight
 
+	glText(string.format("right stick: x=%.3f y=%.3f", normalizedRightX, normalizedRightY), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText(string.format("LT: %.3f fast-pan active: %s", normalizedLeftTrigger, fastPanActive and "yes" or "no"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText(string.format("RT Command Layer: %s (RT=%.3f)", commandLayerActive and "active" or "inactive", normalizedRightTrigger), x, y, 12, "o")
+	y = y - lineHeight
+
 	glText("pan active: " .. (panActive and "yes" or "no"), x, y, 12, "o")
 	y = y - lineHeight
 
-	glText(string.format("triggers: LT=%.3f RT=%.3f", normalizedLeftTrigger, normalizedRightTrigger), x, y, 12, "o")
+	glText("zoom active: " .. (zoomActive and "yes" or "no"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("rotation active: " .. (rotationActive and "yes" or "no"), x, y, 12, "o")
 	y = y - lineHeight
 
 	glText("axes: " .. activeAxesSummary, x, y, 12, "o")
@@ -522,10 +595,10 @@ function widget:DrawScreen()
 	glText("buttons: " .. pressedButtonsSummary, x, y, 12, "o")
 	y = y - lineHeight
 
-	glText("zoom active: " .. (zoomActive and "yes" or "no"), x, y, 12, "o")
+	glText("camera: " .. cameraMode .. " mode=" .. cameraModeId, x, y, 12, "o")
 	y = y - lineHeight
 
-	glText("camera: " .. cameraMode .. " mode=" .. cameraModeId .. " zoom=" .. zoomMethod, x, y, 12, "o")
+	glText("zoom method: " .. zoomMethod .. " rotation method: " .. rotationMethod, x, y, 12, "o")
 	y = y - lineHeight
 
 	glText(cameraFieldSummary, x, y, 12, "o")
