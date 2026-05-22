@@ -25,6 +25,22 @@ local spSelectUnitArray = Spring.SelectUnitArray
 local spGetSelectedUnits = Spring.GetSelectedUnits
 local spGiveOrderToUnit = Spring.GiveOrderToUnit
 local lastIssuedCommand = "none"
+ControllerCameraTestCommandDebug = ControllerCameraTestCommandDebug or {
+	defaultCmdIndex = "none",
+	defaultCmdID = "none",
+	defaultCmdType = "none",
+	defaultCmdName = "none",
+	isBuild = "no",
+	issuedCmdID = "none",
+	issuedParamsCount = 0,
+	lastResult = "none",
+	mexSmartAvailable = "no",
+	mexNearestSpot = "no",
+	mexBuildingCmdID = "none",
+	mexActionResult = "none",
+	mexApplyPreviewPath = "no",
+	mexFallbackGiveOrderPath = "no",
+}
 local spGetUnitPosition = Spring.GetUnitPosition
 local spGetUnitAllyTeam = Spring.GetUnitAllyTeam
 local spGetMyAllyTeamID = Spring.GetMyAllyTeamID
@@ -316,6 +332,15 @@ local function resetControllerInputDebug()
 	lastBButtonResult = "none"
 	lastClearSelectionResult = "none"
 	lastIssuedCommand = "none"
+	ControllerCameraTestCommandDebug.issuedCmdID = "none"
+	ControllerCameraTestCommandDebug.issuedParamsCount = 0
+	ControllerCameraTestCommandDebug.lastResult = "none"
+	ControllerCameraTestCommandDebug.mexSmartAvailable = "no"
+	ControllerCameraTestCommandDebug.mexNearestSpot = "no"
+	ControllerCameraTestCommandDebug.mexBuildingCmdID = "none"
+	ControllerCameraTestCommandDebug.mexActionResult = "none"
+	ControllerCameraTestCommandDebug.mexApplyPreviewPath = "no"
+	ControllerCameraTestCommandDebug.mexFallbackGiveOrderPath = "no"
 	clearButtonStateTracking()
 	clearDebugEventLatches()
 	resetReticleWorldTarget()
@@ -1001,71 +1026,226 @@ end
 local function issueOrderToSelection(cmdID, params, cmdName, targetName)
 	-- 1. Check if we actually have units selected
 	local selectedUnits = type(Spring.GetSelectedUnits) == "function" and Spring.GetSelectedUnits() or {}
+	local paramsCount = type(params) == "table" and #params or 0
+	ControllerCameraTestCommandDebug.issuedCmdID = tostring(cmdID)
+	ControllerCameraTestCommandDebug.issuedParamsCount = paramsCount
 	if #selectedUnits == 0 then
 		lastIssuedCommand = "none"
+		ControllerCameraTestCommandDebug.lastResult = "no selected units"
 		latchSelectionDebugMessage(tostring(cmdName) .. " skipped: no units selected")
 		return
 	end
 
 	-- 2. Use the universally safe LuaUI GiveOrder API
 	if type(Spring.GiveOrder) == "function" then
-		Spring.GiveOrder(cmdID, params, {})
+		local orderOk, orderResult = pcall(Spring.GiveOrder, cmdID, params, {})
+		if not orderOk or orderResult == false then
+			lastIssuedCommand = "none"
+			ControllerCameraTestCommandDebug.lastResult = "GiveOrder failed"
+			latchSelectionDebugMessage("Command failed: GiveOrder call failed")
+			return
+		end
 		lastIssuedCommand = tostring(cmdName) .. " (" .. tostring(targetName) .. ")"
+		ControllerCameraTestCommandDebug.lastResult = "issued via GiveOrder"
 		latchSelectionDebugMessage(tostring(cmdName) .. " ordered to " .. #selectedUnits .. " units")
 	else
 		lastIssuedCommand = "none"
+		ControllerCameraTestCommandDebug.lastResult = "GiveOrder unavailable"
 		latchSelectionDebugMessage("Command failed: GiveOrder API unavailable")
 	end
 end
 
+function ControllerCameraTestResetMexCommandDebug()
+	ControllerCameraTestCommandDebug.mexSmartAvailable = "no"
+	ControllerCameraTestCommandDebug.mexNearestSpot = "no"
+	ControllerCameraTestCommandDebug.mexBuildingCmdID = "none"
+	ControllerCameraTestCommandDebug.mexActionResult = "not attempted"
+	ControllerCameraTestCommandDebug.mexApplyPreviewPath = "no"
+	ControllerCameraTestCommandDebug.mexFallbackGiveOrderPath = "no"
+end
+
+function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z)
+	ControllerCameraTestResetMexCommandDebug()
+
+	local builder = WG and WG.resource_spot_builder
+	local finder = WG and WG["resource_spot_finder"]
+	if type(builder) ~= "table" or type(finder) ~= "table" then
+		ControllerCameraTestCommandDebug.mexActionResult = "WG mex APIs unavailable"
+		return false
+	end
+	if finder.isMetalMap then
+		ControllerCameraTestCommandDebug.mexActionResult = "metal map disabled"
+		return false
+	end
+	if type(builder.GetMexConstructors) ~= "function"
+		or type(builder.GetMexBuildings) ~= "function"
+		or type(builder.GetBestExtractorFromBuilders) ~= "function"
+		or type(builder.PreviewExtractorCommand) ~= "function"
+	then
+		ControllerCameraTestCommandDebug.mexActionResult = "builder API incomplete"
+		return false
+	end
+	if type(finder.GetClosestMexSpot) ~= "function" or type(finder.metalSpotsList) ~= "table" then
+		ControllerCameraTestCommandDebug.mexActionResult = "finder API incomplete"
+		return false
+	end
+
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if #selectedUnits == 0 then
+		ControllerCameraTestCommandDebug.mexActionResult = "no selected units"
+		return false
+	end
+
+	local mexConstructors = builder.GetMexConstructors()
+	local mexBuildings = builder.GetMexBuildings()
+	local selectedMex = builder.GetBestExtractorFromBuilders(selectedUnits, mexConstructors, mexBuildings)
+	if not selectedMex then
+		ControllerCameraTestCommandDebug.mexSmartAvailable = "no"
+		ControllerCameraTestCommandDebug.mexActionResult = "selected units cannot build mex"
+		return false
+	end
+
+	ControllerCameraTestCommandDebug.mexSmartAvailable = "yes"
+	ControllerCameraTestCommandDebug.mexBuildingCmdID = tostring(-selectedMex)
+
+	local nearestSpot = finder.GetClosestMexSpot(x, z)
+	if not nearestSpot then
+		ControllerCameraTestCommandDebug.mexActionResult = "no nearest spot"
+		return false
+	end
+	ControllerCameraTestCommandDebug.mexNearestSpot = "yes"
+
+	local dx = (nearestSpot.x or x) - x
+	local dz = (nearestSpot.z or z) - z
+	if ((dx * dx) + (dz * dz)) > (2000 * 2000) then
+		ControllerCameraTestCommandDebug.mexNearestSpot = "no"
+		ControllerCameraTestCommandDebug.mexActionResult = "not near metal spot"
+		return false
+	end
+
+	if type(builder.ExtractorCanBeBuiltOnSpot) == "function" and not builder.ExtractorCanBeBuiltOnSpot(nearestSpot, selectedMex) then
+		ControllerCameraTestCommandDebug.mexActionResult = "spot unavailable"
+		return false
+	end
+
+	local buildCmd = builder.PreviewExtractorCommand({ x, y, z }, selectedMex, nearestSpot)
+	if not buildCmd or #buildCmd == 0 then
+		ControllerCameraTestCommandDebug.mexActionResult = "preview failed"
+		return false
+	end
+
+	local cmdID = -buildCmd[1]
+	local params = { buildCmd[2], buildCmd[3], buildCmd[4], buildCmd[5] }
+	ControllerCameraTestCommandDebug.issuedCmdID = tostring(cmdID)
+	ControllerCameraTestCommandDebug.issuedParamsCount = #params
+
+	if type(builder.ApplyPreviewCmds) == "function" then
+		local _, _, _, shift = Spring.GetModKeyState()
+		local applyOk = pcall(builder.ApplyPreviewCmds, { buildCmd }, mexConstructors, shift)
+		if applyOk then
+			lastIssuedCommand = "Mex Build (" .. tostring(cmdID) .. ")"
+			ControllerCameraTestCommandDebug.mexApplyPreviewPath = "yes"
+			ControllerCameraTestCommandDebug.lastResult = "mex via ApplyPreviewCmds"
+			ControllerCameraTestCommandDebug.mexActionResult = "issued via ApplyPreviewCmds"
+			latchSelectionDebugMessage("X mex build: " .. tostring(cmdID))
+			return true
+		end
+	end
+
+	if type(spGiveOrderToUnit) ~= "function" then
+		ControllerCameraTestCommandDebug.mexActionResult = "fallback GiveOrderToUnit unavailable"
+		return false
+	end
+
+	local issuedCount = 0
+	for _, unitID in ipairs(selectedUnits) do
+		if mexConstructors[unitID] then
+			local orderOk = pcall(spGiveOrderToUnit, unitID, cmdID, params, {})
+			if orderOk then
+				issuedCount = issuedCount + 1
+			end
+		end
+	end
+
+	if issuedCount > 0 then
+		lastIssuedCommand = "Mex Build (" .. tostring(cmdID) .. ")"
+		ControllerCameraTestCommandDebug.mexFallbackGiveOrderPath = "yes"
+		ControllerCameraTestCommandDebug.lastResult = "mex via GiveOrderToUnit"
+		ControllerCameraTestCommandDebug.mexActionResult = "issued via GiveOrderToUnit"
+		latchSelectionDebugMessage("X mex build fallback: " .. tostring(cmdID))
+		return true
+	end
+
+	ControllerCameraTestCommandDebug.mexActionResult = "no selected mex constructors"
+	return false
+end
+
 local function attemptContextCommand()
-    local cmdID = 10 -- Fallback to Move (CMD.MOVE)
-    local cmdName = "Move"
-    local isBuild = false
+	local cmdID = 10 -- Fallback to Move (CMD.MOVE)
+	local cmdName = "Move"
 
-    -- 1. Ask the Ghost Mouse what the contextual action is
-    -- API strictly returns: cmdType, cmdID, cmdName, cmdTooltip
-    if type(Spring.GetDefaultCommand) == "function" then
-        local _, defID, defName = Spring.GetDefaultCommand() -- Shifted mapping: _ is type, defID is ID
-        if defID then
-            cmdID = defID
-            cmdName = defName or "Smart Action"
-            
-            -- In Spring, negative command IDs always denote a Build command
-            if cmdID < 0 then
-                isBuild = true
-            end
-        end
-    end
+	ControllerCameraTestResetMexCommandDebug()
+	ControllerCameraTestCommandDebug.defaultCmdIndex = "none"
+	ControllerCameraTestCommandDebug.defaultCmdID = "none"
+	ControllerCameraTestCommandDebug.defaultCmdType = "none"
+	ControllerCameraTestCommandDebug.defaultCmdName = "none"
+	ControllerCameraTestCommandDebug.issuedCmdID = "none"
+	ControllerCameraTestCommandDebug.issuedParamsCount = 0
+	ControllerCameraTestCommandDebug.lastResult = "pending"
 
-    -- 2. Figure out what parameter to pass
-    local ok, targetType, targetID = pcall(Spring.TraceScreenRay, screenCenterX, screenCenterY)
-    local params = {}
-    local targetString = "unknown"
+	if type(Spring.GetDefaultCommand) == "function" then
+		local cmdIndex, defaultCmdID, defaultCmdType, defaultCmdName = Spring.GetDefaultCommand()
+		ControllerCameraTestCommandDebug.defaultCmdIndex = tostring(cmdIndex)
+		ControllerCameraTestCommandDebug.defaultCmdID = tostring(defaultCmdID)
+		ControllerCameraTestCommandDebug.defaultCmdType = tostring(defaultCmdType)
+		ControllerCameraTestCommandDebug.defaultCmdName = tostring(defaultCmdName)
 
-    -- If aiming at a physical unit/feature, and it's NOT a build command, target the ID
-    if ok and (targetType == "unit" or targetType == "feature") and tonumber(targetID) and not isBuild then
-        params = { tonumber(targetID) }
-        targetString = targetType .. " " .. tostring(targetID)
-        
-    -- Otherwise, fallback to world coordinates
-    elseif reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
-        if isBuild then
-            -- Build commands REQUIRE 4 parameters: x, y, z, facing (0 = standard rotation)
-            params = { reticleWorldX, reticleWorldY, reticleWorldZ, 0 }
-            targetString = "build pos"
-        else
-            -- Move commands require 3 parameters: x, y, z
-            params = { reticleWorldX, reticleWorldY, reticleWorldZ }
-            targetString = "ground"
-        end
-    else
-        latchSelectionDebugMessage("X context failed: no target")
-        return
-    end
+		if type(defaultCmdID) == "number" then
+			cmdID = defaultCmdID
+			cmdName = defaultCmdName or "Smart Action"
+		end
+	end
 
-    -- 3. Fire it off!
-    issueOrderToSelection(cmdID, params, cmdName, targetString)
+	local isBuild = type(cmdID) == "number" and cmdID < 0
+	ControllerCameraTestCommandDebug.isBuild = isBuild and "yes" or "no"
+
+	local ok, targetType, targetID = pcall(Spring.TraceScreenRay, screenCenterX, screenCenterY)
+	local params = {}
+	local targetString = "unknown"
+
+	if isBuild then
+		if not reticleHasWorldTarget or not reticleWorldX or not reticleWorldY or not reticleWorldZ then
+			ControllerCameraTestCommandDebug.lastResult = "build failed: no world target"
+			latchSelectionDebugMessage("X build failed: no world target")
+			return
+		end
+
+		local facing = 0
+		if type(Spring.GetBuildFacing) == "function" then
+			local facingOk, buildFacing = pcall(Spring.GetBuildFacing)
+			if facingOk and type(buildFacing) == "number" then
+				facing = buildFacing
+			end
+		end
+		params = { reticleWorldX, reticleWorldY, reticleWorldZ, facing }
+		targetString = "build pos"
+	elseif cmdID == 10 and reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ
+		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ)
+	then
+		return
+	elseif ok and (targetType == "unit" or targetType == "feature") and tonumber(targetID) then
+		params = { tonumber(targetID) }
+		targetString = targetType .. " " .. tostring(targetID)
+	elseif reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
+		params = { reticleWorldX, reticleWorldY, reticleWorldZ }
+		targetString = "ground"
+	else
+		ControllerCameraTestCommandDebug.lastResult = "context failed: no target"
+		latchSelectionDebugMessage("X context failed: no target")
+		return
+	end
+
+	issueOrderToSelection(cmdID, params, cmdName, targetString)
 end
 
 local function attemptAttackCommand()
@@ -1718,6 +1898,20 @@ function widget:DrawScreen()
 				"Layout: " .. activeButtonLayoutSummary,
 				"Normal preview: " .. normalPreviewSummary,
 				"Command preview: " .. commandPreviewSummary,
+				"Default cmd index: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdIndex),
+				"Default cmd ID: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdID),
+				"Default cmd type: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdType),
+				"Default cmd name: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdName),
+				"Is build: " .. tostring(ControllerCameraTestCommandDebug.isBuild),
+				"Issued cmd ID: " .. tostring(ControllerCameraTestCommandDebug.issuedCmdID),
+				"Issued params count: " .. tostring(ControllerCameraTestCommandDebug.issuedParamsCount),
+				"Last command result: " .. tostring(ControllerCameraTestCommandDebug.lastResult),
+				"Mex smart available: " .. tostring(ControllerCameraTestCommandDebug.mexSmartAvailable),
+				"Mex nearest spot: " .. tostring(ControllerCameraTestCommandDebug.mexNearestSpot),
+				"Mex building cmd ID: " .. tostring(ControllerCameraTestCommandDebug.mexBuildingCmdID),
+				"Mex action result: " .. tostring(ControllerCameraTestCommandDebug.mexActionResult),
+				"Mex ApplyPreviewCmds: " .. tostring(ControllerCameraTestCommandDebug.mexApplyPreviewPath),
+				"Mex fallback GiveOrder: " .. tostring(ControllerCameraTestCommandDebug.mexFallbackGiveOrderPath),
 			},
 		},
 		{
