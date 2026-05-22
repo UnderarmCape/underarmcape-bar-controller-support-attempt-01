@@ -32,7 +32,7 @@ local mathCos = math.cos
 local mathSin = math.sin
 local mathPi = math.pi
 
-local DEADZONE = 8000
+local DEADZONE = 3000
 local TRIGGER_DEADZONE = 3000
 local AXIS_MAX = 32767
 local PAN_SPEED = 2800
