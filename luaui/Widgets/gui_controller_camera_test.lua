@@ -23,6 +23,7 @@ local spGetViewGeometry = Spring.GetViewGeometry
 local spTraceScreenRay = Spring.TraceScreenRay
 
 local glText = gl.Text
+local glRect = gl.Rect
 
 local mathAbs = math.abs
 local mathMin = math.min
@@ -53,6 +54,14 @@ local RETICLE_RADIUS = 11
 local RETICLE_GAP = 5
 local RETICLE_LINE_LENGTH = 11
 local RETICLE_SEGMENTS = 28
+local DEBUG_PANEL_MARGIN = 10
+local DEBUG_PANEL_PADDING = 8
+local DEBUG_PANEL_HEADER_HEIGHT = 22
+local DEBUG_PANEL_RESIZE_HANDLE = 14
+local DEBUG_PANEL_MIN_WIDTH = 280
+local DEBUG_PANEL_MIN_HEIGHT = 118
+local DEBUG_PANEL_DEFAULT_WIDTH = 650
+local DEBUG_PANEL_DEFAULT_HEIGHT = 150
 
 local XboxController = {
 	axes = {
@@ -217,6 +226,20 @@ local lastMouseLeft = false
 local lastMouseMiddle = false
 local lastMouseRight = false
 local mouseStateInitialized = false
+local debugPanelX = DEBUG_PANEL_MARGIN
+local debugPanelY = 0
+local debugPanelWidth = DEBUG_PANEL_DEFAULT_WIDTH
+local debugPanelHeight = DEBUG_PANEL_DEFAULT_HEIGHT
+local debugPanelInitialized = false
+local debugPanelDragging = false
+local debugPanelResizing = false
+local debugPanelDragOffsetX = 0
+local debugPanelDragOffsetY = 0
+local debugPanelResizeStartMouseX = 0
+local debugPanelResizeStartMouseY = 0
+local debugPanelResizeStartY = 0
+local debugPanelResizeStartWidth = 0
+local debugPanelResizeStartHeight = 0
 
 local mapSizeX = Game and Game.mapSizeX or 0
 local mapSizeZ = Game and Game.mapSizeZ or 0
@@ -355,6 +378,75 @@ local function normalizeTrigger(value)
 	end
 
 	return clamp((value - TRIGGER_DEADZONE) / (AXIS_MAX - TRIGGER_DEADZONE), 0, 1)
+end
+
+local function getDebugPanelScreenSize()
+	return viewSizeX > 0 and viewSizeX or 1280, viewSizeY > 0 and viewSizeY or 720
+end
+
+local function clampDebugPanelToScreen()
+	local screenWidth, screenHeight = getDebugPanelScreenSize()
+	local maxWidth = mathMax(DEBUG_PANEL_MIN_WIDTH, screenWidth - (DEBUG_PANEL_MARGIN * 2))
+	local maxHeight = mathMax(DEBUG_PANEL_MIN_HEIGHT, screenHeight - (DEBUG_PANEL_MARGIN * 2))
+
+	debugPanelWidth = clamp(debugPanelWidth, DEBUG_PANEL_MIN_WIDTH, maxWidth)
+	debugPanelHeight = clamp(debugPanelHeight, DEBUG_PANEL_MIN_HEIGHT, maxHeight)
+	debugPanelX = clamp(debugPanelX, DEBUG_PANEL_MARGIN, mathMax(DEBUG_PANEL_MARGIN, screenWidth - DEBUG_PANEL_MARGIN - debugPanelWidth))
+	debugPanelY = clamp(debugPanelY, DEBUG_PANEL_MARGIN, mathMax(DEBUG_PANEL_MARGIN, screenHeight - DEBUG_PANEL_MARGIN - debugPanelHeight))
+end
+
+local function resetDebugPanelToDefault()
+	local screenWidth, screenHeight = getDebugPanelScreenSize()
+	debugPanelWidth = mathMin(DEBUG_PANEL_DEFAULT_WIDTH, mathMax(DEBUG_PANEL_MIN_WIDTH, screenWidth - (DEBUG_PANEL_MARGIN * 2)))
+	debugPanelHeight = mathMin(DEBUG_PANEL_DEFAULT_HEIGHT, mathMax(DEBUG_PANEL_MIN_HEIGHT, screenHeight - (DEBUG_PANEL_MARGIN * 2)))
+	debugPanelX = DEBUG_PANEL_MARGIN
+	debugPanelY = screenHeight - DEBUG_PANEL_MARGIN - debugPanelHeight
+	debugPanelInitialized = true
+	clampDebugPanelToScreen()
+end
+
+local function ensureDebugPanelInitialized()
+	if not debugPanelInitialized then
+		resetDebugPanelToDefault()
+	else
+		clampDebugPanelToScreen()
+	end
+end
+
+local function isPointInDebugPanel(x, y)
+	ensureDebugPanelInitialized()
+	return x >= debugPanelX
+		and x <= debugPanelX + debugPanelWidth
+		and y >= debugPanelY
+		and y <= debugPanelY + debugPanelHeight
+end
+
+local function isPointInDebugPanelHeader(x, y)
+	return isPointInDebugPanel(x, y)
+		and y >= debugPanelY + debugPanelHeight - DEBUG_PANEL_HEADER_HEIGHT
+end
+
+local function isPointInDebugPanelResizeHandle(x, y)
+	return isPointInDebugPanel(x, y)
+		and x >= debugPanelX + debugPanelWidth - DEBUG_PANEL_RESIZE_HANDLE
+		and y <= debugPanelY + DEBUG_PANEL_RESIZE_HANDLE
+end
+
+local function updateDebugPanelDrag(x, y)
+	debugPanelX = x - debugPanelDragOffsetX
+	debugPanelY = y - debugPanelDragOffsetY
+	clampDebugPanelToScreen()
+end
+
+local function updateDebugPanelResize(x, y)
+	local top = debugPanelResizeStartY + debugPanelResizeStartHeight
+	local screenWidth = getDebugPanelScreenSize()
+	local maxWidth = mathMax(DEBUG_PANEL_MIN_WIDTH, screenWidth - DEBUG_PANEL_MARGIN - debugPanelX)
+	local maxHeight = mathMax(DEBUG_PANEL_MIN_HEIGHT, top - DEBUG_PANEL_MARGIN)
+	debugPanelWidth = clamp(debugPanelResizeStartWidth + (x - debugPanelResizeStartMouseX), DEBUG_PANEL_MIN_WIDTH, maxWidth)
+	debugPanelHeight = clamp(debugPanelResizeStartHeight - (y - debugPanelResizeStartMouseY), DEBUG_PANEL_MIN_HEIGHT, maxHeight)
+	debugPanelY = top - debugPanelHeight
+	clampDebugPanelToScreen()
 end
 
 local function GetAxis(state, axisId)
@@ -982,10 +1074,12 @@ end
 function widget:Initialize()
 	apiAvailable = type(spGetAvailableControllers) == "function" and type(spGetControllerState) == "function"
 	updateScreenCenter(spGetViewGeometry())
+	ensureDebugPanelInitialized()
 end
 
 function widget:ViewResize(vsx, vsy)
 	updateScreenCenter(vsx, vsy)
+	ensureDebugPanelInitialized()
 end
 
 function widget:Update(dt)
@@ -1083,128 +1177,203 @@ function widget:Update(dt)
 	updateReticleWorldTarget()
 end
 
-function widget:MouseMove()
+function widget:MouseMove(x, y)
 	noteMouseInput()
+
+	if debugPanelDragging then
+		updateDebugPanelDrag(x, y)
+		return true
+	end
+	if debugPanelResizing then
+		updateDebugPanelResize(x, y)
+		return true
+	end
 end
 
-function widget:MousePress()
+function widget:MousePress(x, y, button)
 	noteMouseInput()
+
+	if button ~= 1 then
+		return
+	end
+
+	ensureDebugPanelInitialized()
+	if isPointInDebugPanelResizeHandle(x, y) then
+		debugPanelResizing = true
+		debugPanelResizeStartMouseX = x
+		debugPanelResizeStartMouseY = y
+		debugPanelResizeStartY = debugPanelY
+		debugPanelResizeStartWidth = debugPanelWidth
+		debugPanelResizeStartHeight = debugPanelHeight
+		return true
+	end
+
+	if isPointInDebugPanelHeader(x, y) then
+		debugPanelDragging = true
+		debugPanelDragOffsetX = x - debugPanelX
+		debugPanelDragOffsetY = y - debugPanelY
+		return true
+	end
 end
 
 function widget:MouseRelease()
 	noteMouseInput()
+
+	if debugPanelDragging or debugPanelResizing then
+		debugPanelDragging = false
+		debugPanelResizing = false
+		return true
+	end
 end
 
 function widget:DrawScreen()
 	updateDebugLatchSummaries()
 	drawControllerReticle()
 
-	local x = 20
-	local y = 500
-	local lineHeight = 18
-
-	glText("Controller Camera Test", x, y, 14, "o")
-	y = y - lineHeight
-
-	glText("API: " .. (apiAvailable and "available" or "missing"), x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("Controller: " .. tostring(controllerName), x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("instanceId: " .. tostring(controllerInstanceId), x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("input mode: " .. (controllerMode and "controller" or "mouse"), x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("reticle visible: " .. (reticleVisible and "yes" or "no"), x, y, 12, "o")
-	y = y - lineHeight
-
-	glText(string.format("reticle screen: x=%.1f y=%.1f", screenCenterX, screenCenterY), x, y, 12, "o")
-	y = y - lineHeight
-
-	if reticleHasWorldTarget then
-		glText(string.format("reticle world: x=%.1f y=%.1f z=%.1f", reticleWorldX, reticleWorldY, reticleWorldZ), x, y, 12, "o")
-	else
-		glText("reticle world: unavailable", x, y, 12, "o")
+	local function yesNo(value)
+		return value and "yes" or "no"
 	end
-	y = y - lineHeight
+	local function activeInactive(value)
+		return value and "active" or "inactive"
+	end
+	local function shorten(text, maxChars)
+		text = tostring(text or "")
+		if #text <= maxChars then
+			return text
+		end
 
-	glText("reticle target type: " .. reticleTargetType, x, y, 12, "o")
-	y = y - lineHeight
+		return string.sub(text, 1, mathMax(1, maxChars - 2)) .. ".."
+	end
+	local function drawLine(text, drawX, drawY, maxChars)
+		glText(shorten(text, maxChars), drawX, drawY, 9, "o")
+	end
 
-	glText("reticle has world target: " .. (reticleHasWorldTarget and "yes" or "no"), x, y, 12, "o")
-	y = y - lineHeight
+	ensureDebugPanelInitialized()
 
-	glText(string.format("left stick: x=%.3f y=%.3f", normalizedLeftX, normalizedLeftY), x, y, 12, "o")
-	y = y - lineHeight
+	local panelLeft = debugPanelX
+	local panelBottom = debugPanelY
+	local panelWidth = debugPanelWidth
+	local panelHeight = debugPanelHeight
+	local panelRight = panelLeft + panelWidth
+	local panelTop = panelBottom + panelHeight
+	local padding = DEBUG_PANEL_PADDING
+	local headerHeight = DEBUG_PANEL_HEADER_HEIGHT
+	local lineHeight = 12
+	local useColumns = panelWidth >= 560
+	local columnGap = 12
+	local columnWidth = useColumns
+		and ((panelWidth - (padding * 2) - columnGap) * 0.5)
+		or (panelWidth - (padding * 2))
+	local maxChars = mathMax(18, math.floor(columnWidth / 5.2))
 
-	glText(string.format("right stick: x=%.3f y=%.3f", normalizedRightX, normalizedRightY), x, y, 12, "o")
-	y = y - lineHeight
+	local reticleWorldSummary = "none"
+	if reticleHasWorldTarget then
+		reticleWorldSummary = string.format("%.0f, %.0f, %.0f", reticleWorldX, reticleWorldY, reticleWorldZ)
+	end
 
-	glText("Right Stick Y mode: " .. rightStickYMode, x, y, 12, "o")
-	y = y - lineHeight
+	local leftLines = {
+		string.format("Controller: %s  id:%s", controllerName, tostring(controllerInstanceId)),
+		"Mode: " .. (controllerMode and "controller" or "mouse"),
+		string.format("LS: %.2f, %.2f", normalizedLeftX, normalizedLeftY),
+		string.format("RS: %.2f, %.2f  %s", normalizedRightX, normalizedRightY, rightStickYMode),
+		string.format("LT boost: %s %.2f", activeInactive(fastPanActive), normalizedLeftTrigger),
+		string.format("RT cmd: %s %.2f", activeInactive(commandLayerActive), normalizedRightTrigger),
+		"Buttons: " .. heldButtonsSummary,
+		"Recent: +" .. pressedRecentlySummary .. "  -" .. releasedRecentlySummary,
+	}
+	local rightLines = {
+		"Reticle: " .. yesNo(reticleVisible),
+		"World: " .. reticleWorldSummary,
+		"Target: " .. reticleTargetType,
+		"Camera: " .. cameraMode .. " " .. cameraModeId,
+		"Zoom: " .. zoomMethod,
+		"Rotate: " .. rotationMethod,
+		"Pitch: " .. pitchMethod,
+		"Pitch field: " .. cameraPitchSummary,
+	}
+	local bodyLineCount = useColumns and mathMax(#leftLines, #rightLines) or (#leftLines + #rightLines)
+	local maxBodyLines = mathMax(1, mathMin(bodyLineCount, math.floor((panelHeight - headerHeight - (padding * 2)) / lineHeight)))
 
-	glText(string.format("LT boost (pan + zoom): %s (LT=%.3f)", fastPanActive and "active" or "inactive", normalizedLeftTrigger), x, y, 12, "o")
-	y = y - lineHeight
+	gl.Color(0, 0, 0, 0.82)
+	glRect(panelLeft, panelBottom, panelRight, panelTop)
+	gl.Color(0.06, 0.11, 0.15, 0.96)
+	glRect(panelLeft, panelTop - headerHeight, panelRight, panelTop)
+	gl.Color(0.56, 0.84, 1, 0.62)
+	glRect(panelLeft, panelTop - headerHeight, panelRight, panelTop - headerHeight + 1)
+	gl.Color(0.76, 0.88, 0.96, 0.95)
+	glRect(panelLeft, panelTop - 1, panelRight, panelTop)
+	glRect(panelLeft, panelBottom, panelRight, panelBottom + 1)
+	glRect(panelLeft, panelBottom, panelLeft + 1, panelTop)
+	glRect(panelRight - 1, panelBottom, panelRight, panelTop)
+	gl.Color(1, 1, 1, 1)
 
-	glText("LB camera modifier active: " .. (lbCameraModifierActive and "yes" or "no"), x, y, 12, "o")
-	y = y - lineHeight
+	local textX = panelLeft + padding
+	local textY = panelTop - 15
+	glText("Controller Debug", textX, textY, 10, "o")
+	textY = panelTop - headerHeight - padding - 8
 
-	glText(string.format("RT Command Layer: %s (RT=%.3f)", commandLayerActive and "active" or "inactive", normalizedRightTrigger), x, y, 12, "o")
-	y = y - lineHeight
+	if useColumns then
+		local rightX = textX + columnWidth + columnGap
+		for i = 1, mathMin(maxBodyLines, mathMax(#leftLines, #rightLines)) do
+			local lineY = textY - ((i - 1) * lineHeight)
+			if leftLines[i] then
+				drawLine(leftLines[i], textX, lineY, maxChars)
+			end
+			if rightLines[i] then
+				drawLine(rightLines[i], rightX, lineY, maxChars)
+			end
+		end
+	else
+		local lines = {}
+		for _, line in ipairs(leftLines) do
+			lines[#lines + 1] = line
+		end
+		for _, line in ipairs(rightLines) do
+			lines[#lines + 1] = line
+		end
+		for i = 1, mathMin(maxBodyLines, #lines) do
+			drawLine(lines[i], textX, textY - ((i - 1) * lineHeight), maxChars)
+		end
+	end
 
-	glText("pan active: " .. (panActive and "yes" or "no"), x, y, 12, "o")
-	y = y - lineHeight
+	local handleRight = panelRight - 4
+	local handleBottom = panelBottom + 4
+	gl.Color(0.72, 0.86, 0.94, 0.75)
+	glRect(handleRight - 4, handleBottom, handleRight, handleBottom + 1)
+	glRect(handleRight - 8, handleBottom + 4, handleRight, handleBottom + 5)
+	glRect(handleRight - 12, handleBottom + 8, handleRight, handleBottom + 9)
+	gl.Color(1, 1, 1, 1)
+end
 
-	glText("zoom active: " .. (zoomActive and "yes" or "no"), x, y, 12, "o")
-	y = y - lineHeight
+function widget:GetConfigData()
+	ensureDebugPanelInitialized()
+	return {
+		panelX = debugPanelX,
+		panelY = debugPanelY,
+		panelWidth = debugPanelWidth,
+		panelHeight = debugPanelHeight,
+	}
+end
 
-	glText(string.format("zoom speed multiplier: %.1fx", zoomSpeedMultiplier), x, y, 12, "o")
-	y = y - lineHeight
+function widget:SetConfigData(data)
+	if type(data) ~= "table" then
+		return
+	end
 
-	glText("rotation active: " .. (rotationActive and "yes" or "no"), x, y, 12, "o")
-	y = y - lineHeight
+	local panelX = tonumber(data.panelX)
+	local panelY = tonumber(data.panelY)
+	local panelWidth = tonumber(data.panelWidth)
+	local panelHeight = tonumber(data.panelHeight)
+	if not panelX or not panelY or not panelWidth or not panelHeight then
+		return
+	end
 
-	glText("pitch active: " .. (pitchActive and "yes" or "no"), x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("axes: " .. activeAxesSummary, x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("held buttons: " .. heldButtonsSummary, x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("pressed recently: " .. pressedRecentlySummary, x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("released recently: " .. releasedRecentlySummary, x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("command layer: " .. (commandLayerActive and "active" or "inactive"), x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("button layout: " .. activeButtonLayoutSummary, x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("normal preview: " .. normalPreviewSummary, x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("command preview: " .. commandPreviewSummary, x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("command layer pressed recently: " .. commandLayerPressedRecentlySummary, x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("camera: " .. cameraMode .. " mode=" .. cameraModeId, x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("zoom method: " .. zoomMethod .. " rotation method: " .. rotationMethod, x, y, 12, "o")
-	y = y - lineHeight
-
-	glText("pitch method: " .. pitchMethod .. " pitch field: " .. cameraPitchSummary, x, y, 12, "o")
-	y = y - lineHeight
-
-	glText(cameraFieldSummary, x, y, 12, "o")
+	debugPanelX = panelX
+	debugPanelY = panelY
+	debugPanelWidth = panelWidth
+	debugPanelHeight = panelHeight
+	debugPanelInitialized = true
+	if viewSizeX > 0 and viewSizeY > 0 then
+		clampDebugPanelToScreen()
+	end
 end
