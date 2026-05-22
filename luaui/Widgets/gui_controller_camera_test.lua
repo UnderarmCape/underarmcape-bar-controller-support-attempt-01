@@ -139,9 +139,9 @@ local XboxController = {
 	commandLayerButtonOrder = { 0, 1, 2, 3, 9, 10, 11, 12, 13, 14 },
 	previewButtonOrder = { 0, 1, 2, 3, 9, 10, 11, 12, 13, 14 },
 	normalPreviewLabels = {
-		[0] = "A = Select / Confirm placeholder",
-		[1] = "B = Cancel / Back placeholder",
-		[2] = "X = Context Action placeholder",
+		[0] = "A = Select / Confirm",
+		[1] = "B = Clear Selection",
+		[2] = "X = Smart Action (Move/Build/Attack)",
 		[3] = "Y = Build / Menu placeholder",
 		[9] = "LB = Camera pitch modifier",
 		[10] = "RB = Cycle placeholder",
@@ -999,33 +999,73 @@ local function attemptClearSelection()
 end
 
 local function issueOrderToSelection(cmdID, params, cmdName, targetName)
-	if type(spGetSelectedUnits) ~= "function" or type(spGiveOrderToUnit) ~= "function" then
+	-- 1. Check if we actually have units selected
+	local selectedUnits = type(Spring.GetSelectedUnits) == "function" and Spring.GetSelectedUnits() or {}
+	if #selectedUnits == 0 then
 		lastIssuedCommand = "none"
-		latchSelectionDebugMessage(cmdName .. " failed: API unavailable")
+		latchSelectionDebugMessage(tostring(cmdName) .. " skipped: no units selected")
 		return
 	end
-	local selectedUnits = spGetSelectedUnits()
-	if not selectedUnits or #selectedUnits == 0 then
+
+	-- 2. Use the universally safe LuaUI GiveOrder API
+	if type(Spring.GiveOrder) == "function" then
+		Spring.GiveOrder(cmdID, params, {})
+		lastIssuedCommand = tostring(cmdName) .. " (" .. tostring(targetName) .. ")"
+		latchSelectionDebugMessage(tostring(cmdName) .. " ordered to " .. #selectedUnits .. " units")
+	else
 		lastIssuedCommand = "none"
-		latchSelectionDebugMessage(cmdName .. " skipped: no units selected")
-		return
+		latchSelectionDebugMessage("Command failed: GiveOrder API unavailable")
 	end
-	for i = 1, #selectedUnits do
-		local unitID = selectedUnits[i]
-		spGiveOrderToUnit(unitID, cmdID, params, {})
-	end
-	lastIssuedCommand = cmdName .. " (" .. targetName .. ")"
-	latchSelectionDebugMessage(cmdName .. " issued to " .. #selectedUnits .. " units")
 end
 
-local function attemptMoveCommand()
-	if not reticleHasWorldTarget or not reticleWorldX or not reticleWorldY or not reticleWorldZ then
-		latchSelectionDebugMessage("Move skipped: no world target")
-		return
-	end
-	local params = { reticleWorldX, reticleWorldY, reticleWorldZ }
-	local targetName = string.format("x=%.1f, y=%.1f, z=%.1f", reticleWorldX, reticleWorldY, reticleWorldZ)
-	issueOrderToSelection(CMD.MOVE, params, "Move", targetName)
+local function attemptContextCommand()
+    local cmdID = 10 -- Fallback to Move (CMD.MOVE)
+    local cmdName = "Move"
+    local isBuild = false
+
+    -- 1. Ask the Ghost Mouse what the contextual action is
+    -- API strictly returns: cmdType, cmdID, cmdName, cmdTooltip
+    if type(Spring.GetDefaultCommand) == "function" then
+        local _, defID, defName = Spring.GetDefaultCommand() -- Shifted mapping: _ is type, defID is ID
+        if defID then
+            cmdID = defID
+            cmdName = defName or "Smart Action"
+            
+            -- In Spring, negative command IDs always denote a Build command
+            if cmdID < 0 then
+                isBuild = true
+            end
+        end
+    end
+
+    -- 2. Figure out what parameter to pass
+    local ok, targetType, targetID = pcall(Spring.TraceScreenRay, screenCenterX, screenCenterY)
+    local params = {}
+    local targetString = "unknown"
+
+    -- If aiming at a physical unit/feature, and it's NOT a build command, target the ID
+    if ok and (targetType == "unit" or targetType == "feature") and tonumber(targetID) and not isBuild then
+        params = { tonumber(targetID) }
+        targetString = targetType .. " " .. tostring(targetID)
+        
+    -- Otherwise, fallback to world coordinates
+    elseif reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
+        if isBuild then
+            -- Build commands REQUIRE 4 parameters: x, y, z, facing (0 = standard rotation)
+            params = { reticleWorldX, reticleWorldY, reticleWorldZ, 0 }
+            targetString = "build pos"
+        else
+            -- Move commands require 3 parameters: x, y, z
+            params = { reticleWorldX, reticleWorldY, reticleWorldZ }
+            targetString = "ground"
+        end
+    else
+        latchSelectionDebugMessage("X context failed: no target")
+        return
+    end
+
+    -- 3. Fire it off!
+    issueOrderToSelection(cmdID, params, cmdName, targetString)
 end
 
 local function attemptAttackCommand()
@@ -1377,7 +1417,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer()
 		if commandLayerActive then
 			attemptAttackCommand()
 		else
-			attemptMoveCommand()
+			attemptContextCommand()
 		end
 	end
 	if WasButtonPressed("Y") then
