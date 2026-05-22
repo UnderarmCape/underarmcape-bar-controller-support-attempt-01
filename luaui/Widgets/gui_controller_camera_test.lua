@@ -160,6 +160,10 @@ ControllerCameraTestControlGroups = ControllerCameraTestControlGroups or {
 	lastAction = "none",
 	lastSlot = "none",
 	lastCount = 0,
+	leftPressActive = false,
+	leftPressStartTime = 0,
+	leftHoldTriggered = false,
+	leftInputState = "idle",
 }
 ControllerCameraTestVisualFeedback = ControllerCameraTestVisualFeedback or {
 	targetX = nil,
@@ -2943,14 +2947,75 @@ function ControllerCameraTestChangeControlGroupSlot(delta)
 	ControllerCameraTestSetControlGroupAction("active slot", groups.activeSlot, groups.slots[groups.activeSlot] and (groups.slots[groups.activeSlot].count or 0) or 0)
 end
 
-function ControllerCameraTestHandleControlGroupInput()
-	if not (IsButtonDown("RB") or WasButtonPressed("RB")) then
+function ControllerCameraTestStartControlGroupLeftPress()
+	local groups = ControllerCameraTestControlGroups
+	groups.leftPressActive = true
+	groups.leftPressStartTime = debugEventTime
+	groups.leftHoldTriggered = false
+	groups.leftInputState = "left tap pending"
+	ControllerCameraTestShowControlGroupOverlay(0.4)
+end
+
+function ControllerCameraTestResolveControlGroupLeftPress()
+	local groups = ControllerCameraTestControlGroups
+	if not groups.leftPressActive then
 		return false
 	end
 
+	local holdSeconds = 0.35
+	local elapsed = debugEventTime - (groups.leftPressStartTime or debugEventTime)
+	if not groups.leftHoldTriggered and elapsed >= holdSeconds then
+		ControllerCameraTestAssignControlGroup(groups.activeSlot)
+		groups.leftInputState = "assigned hold"
+	elseif not groups.leftHoldTriggered then
+		ControllerCameraTestRecallControlGroup(groups.activeSlot)
+		groups.leftInputState = "recalled tap"
+	else
+		groups.leftInputState = "assigned hold"
+	end
+
+	groups.leftPressActive = false
+	groups.leftPressStartTime = 0
+	groups.leftHoldTriggered = false
+	return true
+end
+
+function ControllerCameraTestUpdateControlGroupLeftHold()
 	local groups = ControllerCameraTestControlGroups
+	if not groups.leftPressActive then
+		return false
+	end
+
+	if not IsButtonDown("RB") or not IsButtonDown("dpadLeft") then
+		return ControllerCameraTestResolveControlGroupLeftPress()
+	end
+
+	local holdSeconds = 0.35
+	if not groups.leftHoldTriggered and (debugEventTime - (groups.leftPressStartTime or debugEventTime)) >= holdSeconds then
+		ControllerCameraTestAssignControlGroup(groups.activeSlot)
+		groups.leftHoldTriggered = true
+		groups.leftInputState = "assigned hold"
+	else
+		groups.leftInputState = groups.leftHoldTriggered and "assigned hold" or "holding left"
+	end
+	return true
+end
+
+function ControllerCameraTestHandleControlGroupInput()
+	local groups = ControllerCameraTestControlGroups
+	if not (IsButtonDown("RB") or WasButtonPressed("RB") or groups.leftPressActive) then
+		return false
+	end
+
 	groups.activeSlot = ControllerCameraTestNormalizeControlGroupSlot(groups.activeSlot or 1)
 	ControllerCameraTestShowControlGroupOverlay(IsButtonDown("RB") and 0.2 or 1.5)
+
+	if groups.leftPressActive then
+		ControllerCameraTestUpdateControlGroupLeftHold()
+		if groups.leftPressActive or not IsButtonDown("RB") then
+			return true
+		end
+	end
 
 	if IsButtonDown("RB") then
 		if WasButtonPressed("dpadUp") then
@@ -2958,15 +3023,20 @@ function ControllerCameraTestHandleControlGroupInput()
 		elseif WasButtonPressed("dpadDown") then
 			ControllerCameraTestChangeControlGroupSlot(-1)
 		elseif WasButtonPressed("dpadLeft") then
-			ControllerCameraTestAssignControlGroup(groups.activeSlot)
+			ControllerCameraTestStartControlGroupLeftPress()
+		elseif WasButtonReleased("dpadLeft") and groups.leftPressActive then
+			ControllerCameraTestResolveControlGroupLeftPress()
 		elseif WasButtonPressed("dpadRight") then
-			ControllerCameraTestRecallControlGroup(groups.activeSlot)
+			ControllerCameraTestSetControlGroupAction("RB+D-pad Right disabled", groups.activeSlot, groups.slots[groups.activeSlot] and (groups.slots[groups.activeSlot].count or 0) or 0)
+			groups.leftInputState = "right disabled"
 		elseif WasButtonPressed("B") then
 			ControllerCameraTestClearControlGroup(groups.activeSlot)
 		elseif WasButtonPressed("A") then
 			ControllerCameraTestSetControlGroupAction("RB+A disabled", groups.activeSlot, 0)
+			groups.leftInputState = "A disabled"
 		elseif WasButtonPressed("X") then
 			ControllerCameraTestSetControlGroupAction("RB+X disabled", groups.activeSlot, 0)
+			groups.leftInputState = "X disabled"
 		else
 			ControllerCameraTestLayerDebug.normalUtilityAction = "Control group mode"
 		end
@@ -4700,7 +4770,7 @@ end
 
 function ControllerCameraTestHandleNormalXInput(dt)
 	local drag = ControllerCameraTestDragCommand
-	local HOLD_SECONDS = 0.35
+	local HOLD_SECONDS = 0.14
 
 	if drag.active and WasButtonPressed("B") then
 		ControllerCameraTestCancelDrag("cancelled by B")
@@ -4742,7 +4812,8 @@ end
 
 function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 	local drag = ControllerCameraTestDragCommand
-	local HOLD_SECONDS = 0.35
+	local X_HOLD_SECONDS = 0.14
+	local A_HOLD_SECONDS = 0.35
 
 	if drag.active and WasButtonPressed("B") then
 		ControllerCameraTestCancelDrag("cancelled by B")
@@ -4759,7 +4830,7 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 	end
 
 	if drag.pressActive and drag.pressButton == "RT+X" and IsButtonDown("X") then
-		if not drag.active and (debugEventTime - drag.pressStartTime) >= HOLD_SECONDS then
+		if not drag.active and (debugEventTime - drag.pressStartTime) >= X_HOLD_SECONDS then
 			drag.active = true
 			drag.mode = "fightLine"
 			drag.lastResult = "active"
@@ -4789,7 +4860,7 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 	end
 
 	if drag.pressActive and drag.pressButton == "RT+A" and IsButtonDown("A") then
-		if not drag.active and (debugEventTime - drag.pressStartTime) >= HOLD_SECONDS then
+		if not drag.active and (debugEventTime - drag.pressStartTime) >= A_HOLD_SECONDS then
 			drag.active = true
 			drag.mode = "attackLine"
 			drag.lastResult = "active"
@@ -5459,7 +5530,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	elseif ControllerCameraTestAreaSelect.active then
 		activeButtonLayoutSummary = "Area select: release A to select, RS Y/D-pad changes radius"
 	elseif IsButtonDown("RB") then
-		activeButtonLayoutSummary = "Control Groups: RB+D-pad U/D slot, L type-assign, R recall, B clear, A/X reserved"
+		activeButtonLayoutSummary = "Control Groups: RB+D-pad U/D slot, tap L recall, hold L type-assign, B clear, R/A/X reserved"
 	else
 		activeButtonLayoutSummary = XboxController.normalLayoutSummary
 	end
@@ -5755,7 +5826,7 @@ function ControllerCameraTestDrawControlGroupOverlay()
 	end)
 
 	gl.Color(0.82, 0.92, 1, 1)
-	gl.Text("Controller Groups  RB+Dpad: slot/type-assign/recall  RB+B clear", left + 12, top - 18, 12, "o")
+	gl.Text("Controller Groups  RB+Dpad: U/D slot, tap L recall, hold L assign, B clear", left + 12, top - 18, 12, "o")
 
 	for slot = 1, 10 do
 		local x1 = left + 12 + ((slot - 1) * (slotSize + gap))
@@ -6107,7 +6178,7 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Selection: A select | A hold area-select units first | LT+A hold includes buildings",
 		"Double-tap A on unit: visible same type | LT+double-tap A on unit: all owned same type | empty/no selection: Commander focus",
 		"LT+double-tap A on empty reticle: select all idle units in current idle type",
-		"Context Actions: X context | RT+B stop | RT+X attack | RT+X hold Fight Line Drag | RT+A hold Attack Line Drag",
+		"Context Actions: X tap context | X hold fast Move Line Drag | RT+B stop | RT+X tap attack | RT+X hold fast Fight Line Drag | RT+A hold Attack Line Drag",
 		"Combat Layers: RT+A reserved/disabled | RT+Y tactical radial | LS/Dpad choose | A confirm | B/Y close",
 		"Queue Modifier: hold LT while confirming Move/Fight/Attack/Reclaim/Repair/Build to queue like Shift",
 		"Constructor Radial: Y open | LS/Dpad select | LB/RB page | Y close",
@@ -6117,8 +6188,8 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Placement Mode: A place | X place+stay | B cancel | LT queue | RT queue front",
 		"   * Dpad L/R or RS X rotate | Dpad U/D build spacing | LB/RB pattern | A/X hold Build Line/Grid Drag",
 		"Idle Cycling: Dpad L/R idle unit | LB+Dpad L/R idle type | Dpad U/D recall cam | LT+Dpad U/D store cam",
-		"Control Groups: hold RB overlay | RB+Dpad U/D slot | RB+Dpad L assign same type + auto-add | RB+Dpad R recall | RB+B clear",
-		"Control Groups: RB+A and RB+X are reserved/disabled",
+		"Control Groups: hold RB overlay | RB+Dpad U/D slot | RB+tap Dpad L recall | RB+hold Dpad L assign same type + auto-add",
+		"Control Groups: RB+B clear | RB+Dpad R, RB+A, RB+X are reserved/disabled",
 		"Legacy Groups: Back+A/B/X/Y store quick groups | Back+LB/RB cycle legacy groups",
 		"Debug Panel: Back toggle panel | Click headers expand/collapse | Compact/Full button | Tuning: Back+Dpad U/D/L/R",
 		"Tuning Selection: " .. ControllerCameraTestCurrentSettingLabel(),
@@ -6434,6 +6505,7 @@ function widget:DrawScreen()
 				"Group last action: " .. tostring(ControllerCameraTestControlGroups.lastAction),
 				"Group last slot: " .. tostring(ControllerCameraTestControlGroups.lastSlot),
 				"Group last count: " .. tostring(ControllerCameraTestControlGroups.lastCount),
+				"Group left input: " .. tostring(ControllerCameraTestControlGroups.leftInputState),
 			},
 		},
 		{
