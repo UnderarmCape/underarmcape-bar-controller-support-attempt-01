@@ -18,6 +18,8 @@ local spGetCameraState = Spring.GetCameraState
 local spSetCameraState = Spring.SetCameraState
 local spGetCameraVectors = Spring.GetCameraVectors
 local spGetGroundHeight = Spring.GetGroundHeight
+local spGetMouseState = Spring.GetMouseState
+local spGetViewGeometry = Spring.GetViewGeometry
 
 local glText = gl.Text
 
@@ -27,24 +29,29 @@ local mathMax = math.max
 local mathSqrt = math.sqrt
 local mathCos = math.cos
 local mathSin = math.sin
+local mathPi = math.pi
 
 local DEADZONE = 8000
 local TRIGGER_DEADZONE = 3000
 local AXIS_MAX = 32767
-local PAN_SPEED = 1800
+local PAN_SPEED = 2800
 local FAST_PAN_MULTIPLIER = 2.75
 local FAST_ZOOM_MULTIPLIER = 3.0
 local DEBUG_EVENT_HOLD_SECONDS = 0.45
-local ZOOM_SPEED = 1200
+local ZOOM_SPEED = 3200
 local ZOOM_SCALE_SPEED = 0.9
-local ROTATION_SPEED = 1.0
-local PITCH_SPEED = 0.8
+local ROTATION_SPEED = 3.0
+local PITCH_SPEED = 3.0
 local MIN_SPRING_DISTANCE = 20
 local MIN_OVERHEAD_HEIGHT = 60
 local MIN_CAMERA_HEIGHT = 80
 local MIN_CAMERA_RX = 1.0
 local MAX_CAMERA_RX = 3.05
 local MAX_DIRECTION_PITCH_Y = 0.98
+local RETICLE_RADIUS = 11
+local RETICLE_GAP = 5
+local RETICLE_LINE_LENGTH = 11
+local RETICLE_SEGMENTS = 28
 
 local XboxController = {
 	axes = {
@@ -127,6 +134,33 @@ local XboxController = {
 	},
 	buttonOrder = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 },
 	commandLayerButtonOrder = { 0, 1, 2, 3, 9, 10, 11, 12, 13, 14 },
+	previewButtonOrder = { 0, 1, 2, 3, 9, 10, 11, 12, 13, 14 },
+	normalPreviewLabels = {
+		[0] = "A = Select / Confirm placeholder",
+		[1] = "B = Cancel / Back placeholder",
+		[2] = "X = Context Action placeholder",
+		[3] = "Y = Build / Menu placeholder",
+		[9] = "LB = Camera pitch modifier",
+		[10] = "RB = Cycle placeholder",
+		[11] = "D-pad Up = Control group placeholder",
+		[12] = "D-pad Down = Control group placeholder",
+		[13] = "D-pad Left = Control group placeholder",
+		[14] = "D-pad Right = Control group placeholder",
+	},
+	commandPreviewLabels = {
+		[0] = "RT + A = Select all visible combat units placeholder",
+		[1] = "RT + B = Stop / cancel command mode placeholder",
+		[2] = "RT + X = Attack-move placeholder",
+		[3] = "RT + Y = Command wheel placeholder",
+		[9] = "RT + LB = Previous subgroup placeholder",
+		[10] = "RT + RB = Next subgroup placeholder",
+		[11] = "RT + D-pad Up = Control group / quick group placeholder",
+		[12] = "RT + D-pad Down = Control group / quick group placeholder",
+		[13] = "RT + D-pad Left = Control group / quick group placeholder",
+		[14] = "RT + D-pad Right = Control group / quick group placeholder",
+	},
+	normalLayoutSummary = "A Select, B Cancel, X Context, Y Build/Menu, LB Pitch, RB Cycle, D-pad Groups",
+	commandLayoutSummary = "RT+A Select combat, RT+B Stop/cancel, RT+X Attack-move, RT+Y Wheel, RT+LB/RB Subgroups, RT+D-pad Quick groups",
 }
 
 local apiAvailable = false
@@ -146,6 +180,9 @@ local commandLayerPressedSummary = "none"
 local pressedRecentlySummary = "none"
 local releasedRecentlySummary = "none"
 local commandLayerPressedRecentlySummary = "none"
+local activeButtonLayoutSummary = XboxController.normalLayoutSummary
+local normalPreviewSummary = "none"
+local commandPreviewSummary = "none"
 local activeAxesSummary = "none"
 local panActive = false
 local zoomActive = false
@@ -162,6 +199,18 @@ local cameraPitchSummary = "pitch field unavailable"
 local zoomMethod = "none"
 local rotationMethod = "none"
 local pitchMethod = "none"
+local controllerMode = false
+local reticleVisible = false
+local screenCenterX = 0
+local screenCenterY = 0
+local viewSizeX = 0
+local viewSizeY = 0
+local lastMouseX = nil
+local lastMouseY = nil
+local lastMouseLeft = false
+local lastMouseMiddle = false
+local lastMouseRight = false
+local mouseStateInitialized = false
 
 local mapSizeX = Game and Game.mapSizeX or 0
 local mapSizeZ = Game and Game.mapSizeZ or 0
@@ -175,6 +224,8 @@ local debugEventTime = 0
 local pressedRecentlyExpirations = {}
 local releasedRecentlyExpirations = {}
 local commandLayerPressedRecentlyExpirations = {}
+local normalPreviewExpiration = 0
+local commandPreviewExpiration = 0
 
 local function clearButtonStateTracking()
 	previousButtonStates = {}
@@ -190,6 +241,10 @@ local function clearDebugEventLatches()
 	pressedRecentlySummary = "none"
 	releasedRecentlySummary = "none"
 	commandLayerPressedRecentlySummary = "none"
+	normalPreviewExpiration = 0
+	commandPreviewExpiration = 0
+	normalPreviewSummary = "none"
+	commandPreviewSummary = "none"
 end
 
 local function resetControllerInputDebug()
@@ -207,6 +262,9 @@ local function resetControllerInputDebug()
 	pressedRecentlySummary = "none"
 	releasedRecentlySummary = "none"
 	commandLayerPressedRecentlySummary = "none"
+	activeButtonLayoutSummary = XboxController.normalLayoutSummary
+	normalPreviewSummary = "none"
+	commandPreviewSummary = "none"
 	activeAxesSummary = "none"
 	panActive = false
 	zoomActive = false
@@ -222,6 +280,26 @@ local function resetControllerInputDebug()
 	pitchMethod = "none"
 	clearButtonStateTracking()
 	clearDebugEventLatches()
+end
+
+local function updateScreenCenter(vsx, vsy)
+	viewSizeX = tonumber(vsx) or viewSizeX
+	viewSizeY = tonumber(vsy) or viewSizeY
+	screenCenterX = viewSizeX * 0.5
+	screenCenterY = viewSizeY * 0.5
+end
+
+local function setControllerMode(active)
+	controllerMode = active == true
+	reticleVisible = controllerMode
+end
+
+local function noteControllerInput()
+	setControllerMode(true)
+end
+
+local function noteMouseInput()
+	setControllerMode(false)
 end
 
 local function clamp(value, minValue, maxValue)
@@ -345,6 +423,16 @@ local function getButtonStateSummary(buttonStates, buttonOrder)
 	return table.concat(buttons, ", ")
 end
 
+local function hasButtonState(buttonStates, buttonOrder)
+	for _, buttonId in ipairs(buttonOrder or XboxController.buttonOrder) do
+		if buttonStates[buttonId] then
+			return true
+		end
+	end
+
+	return false
+end
+
 local function latchDebugButtonEvents(buttonStates, expirations, buttonOrder)
 	for _, buttonId in ipairs(buttonOrder or XboxController.buttonOrder) do
 		if buttonStates[buttonId] then
@@ -386,6 +474,38 @@ local function updateDebugLatchSummaries()
 	pressedRecentlySummary = getDebugLatchSummary(pressedRecentlyExpirations)
 	releasedRecentlySummary = getDebugLatchSummary(releasedRecentlyExpirations)
 	commandLayerPressedRecentlySummary = getDebugLatchSummary(commandLayerPressedRecentlyExpirations, XboxController.commandLayerButtonOrder)
+
+	if normalPreviewExpiration <= debugEventTime then
+		normalPreviewSummary = "none"
+	end
+	if commandPreviewExpiration <= debugEventTime then
+		commandPreviewSummary = "none"
+	end
+end
+
+local function getPreviewSummary(buttonStates, previewLabels)
+	local previews = {}
+
+	for _, buttonId in ipairs(XboxController.previewButtonOrder) do
+		if buttonStates[buttonId] and previewLabels[buttonId] then
+			previews[#previews + 1] = previewLabels[buttonId]
+		end
+	end
+
+	if #previews == 0 then
+		return nil
+	end
+
+	return table.concat(previews, "; ")
+end
+
+local function latchButtonPreview(buttonStates, previewLabels)
+	local preview = getPreviewSummary(buttonStates, previewLabels)
+	if not preview then
+		return nil
+	end
+
+	return preview, debugEventTime + DEBUG_EVENT_HOLD_SECONDS
 end
 
 local function getNormalizedDebugAxis(state, axisName)
@@ -565,6 +685,40 @@ local function pollControllerState(instanceId)
 	return state
 end
 
+local function updateMouseInputMode()
+	if type(spGetMouseState) ~= "function" then
+		return
+	end
+
+	local mouseX, mouseY, leftButton, middleButton, rightButton = spGetMouseState()
+	if mouseX == nil or mouseY == nil then
+		return
+	end
+
+	leftButton = leftButton == true
+	middleButton = middleButton == true
+	rightButton = rightButton == true
+
+	if mouseStateInitialized then
+		if mouseX ~= lastMouseX
+			or mouseY ~= lastMouseY
+			or leftButton ~= lastMouseLeft
+			or middleButton ~= lastMouseMiddle
+			or rightButton ~= lastMouseRight
+		then
+			noteMouseInput()
+		end
+	else
+		mouseStateInitialized = true
+	end
+
+	lastMouseX = mouseX
+	lastMouseY = mouseY
+	lastMouseLeft = leftButton
+	lastMouseMiddle = middleButton
+	lastMouseRight = rightButton
+end
+
 local function applySpringZoom(cameraState, zoomInput, dt)
 	if type(cameraState.dist) ~= "number" then
 		return false
@@ -730,12 +884,59 @@ local function applyCameraInput(leftX, leftY, zoomInput, rotationInput, pitchInp
 	updateCameraDebug(cameraState)
 end
 
+local function drawReticleCircle(cx, cy, radius)
+	gl.BeginEnd(GL.LINE_LOOP, function()
+		for i = 0, RETICLE_SEGMENTS - 1 do
+			local angle = (i / RETICLE_SEGMENTS) * mathPi * 2
+			gl.Vertex(cx + (mathCos(angle) * radius), cy + (mathSin(angle) * radius))
+		end
+	end)
+end
+
+local function drawReticleLines(cx, cy)
+	gl.BeginEnd(GL.LINES, function()
+		gl.Vertex(cx - RETICLE_GAP - RETICLE_LINE_LENGTH, cy)
+		gl.Vertex(cx - RETICLE_GAP, cy)
+		gl.Vertex(cx + RETICLE_GAP, cy)
+		gl.Vertex(cx + RETICLE_GAP + RETICLE_LINE_LENGTH, cy)
+		gl.Vertex(cx, cy - RETICLE_GAP - RETICLE_LINE_LENGTH)
+		gl.Vertex(cx, cy - RETICLE_GAP)
+		gl.Vertex(cx, cy + RETICLE_GAP)
+		gl.Vertex(cx, cy + RETICLE_GAP + RETICLE_LINE_LENGTH)
+	end)
+end
+
+local function drawControllerReticle()
+	if not reticleVisible then
+		return
+	end
+
+	gl.LineWidth(4)
+	gl.Color(0, 0, 0, 0.42)
+	drawReticleCircle(screenCenterX, screenCenterY, RETICLE_RADIUS)
+	drawReticleLines(screenCenterX, screenCenterY)
+
+	gl.LineWidth(2)
+	gl.Color(0.65, 0.92, 1, 0.78)
+	drawReticleCircle(screenCenterX, screenCenterY, RETICLE_RADIUS)
+	drawReticleLines(screenCenterX, screenCenterY)
+
+	gl.LineWidth(1)
+	gl.Color(1, 1, 1, 1)
+end
+
 function widget:Initialize()
 	apiAvailable = type(spGetAvailableControllers) == "function" and type(spGetControllerState) == "function"
+	updateScreenCenter(spGetViewGeometry())
+end
+
+function widget:ViewResize(vsx, vsy)
+	updateScreenCenter(vsx, vsy)
 end
 
 function widget:Update(dt)
 	debugEventTime = debugEventTime + (dt or 0)
+	updateMouseInputMode()
 	panActive = false
 	zoomActive = false
 	rotationActive = false
@@ -769,17 +970,42 @@ function widget:Update(dt)
 	pressedThisFrameSummary = getButtonStateSummary(pressedButtonStates)
 	releasedThisFrameSummary = getButtonStateSummary(releasedButtonStates)
 	activeAxesSummary = getActiveAxisSummary(state)
+	if normalizedLeftX ~= 0
+		or normalizedLeftY ~= 0
+		or normalizedRightX ~= 0
+		or normalizedRightY ~= 0
+		or normalizedLeftTrigger ~= 0
+		or normalizedRightTrigger ~= 0
+		or hasButtonState(pressedButtonStates)
+		or hasButtonState(releasedButtonStates)
+	then
+		noteControllerInput()
+	end
 	latchDebugButtonEvents(pressedButtonStates, pressedRecentlyExpirations)
 	latchDebugButtonEvents(releasedButtonStates, releasedRecentlyExpirations)
 
 	fastPanActive = normalizedLeftTrigger > 0
 	lbCameraModifierActive = IsButtonDown("LB")
 	commandLayerActive = normalizedRightTrigger > 0
+	activeButtonLayoutSummary = commandLayerActive
+		and XboxController.commandLayoutSummary
+		or XboxController.normalLayoutSummary
 	commandLayerPressedSummary = commandLayerActive
 		and getButtonStateSummary(pressedButtonStates, XboxController.commandLayerButtonOrder)
 		or "none"
 	if commandLayerActive then
 		latchDebugButtonEvents(pressedButtonStates, commandLayerPressedRecentlyExpirations, XboxController.commandLayerButtonOrder)
+		local commandPreview, commandExpiration = latchButtonPreview(pressedButtonStates, XboxController.commandPreviewLabels)
+		if commandPreview then
+			commandPreviewSummary = commandPreview
+			commandPreviewExpiration = commandExpiration
+		end
+	else
+		local normalPreview, normalExpiration = latchButtonPreview(pressedButtonStates, XboxController.normalPreviewLabels)
+		if normalPreview then
+			normalPreviewSummary = normalPreview
+			normalPreviewExpiration = normalExpiration
+		end
 	end
 	panActive = normalizedLeftX ~= 0 or normalizedLeftY ~= 0
 	rightStickYMode = lbCameraModifierActive and "pitch" or "zoom"
@@ -801,8 +1027,21 @@ function widget:Update(dt)
 	end
 end
 
+function widget:MouseMove()
+	noteMouseInput()
+end
+
+function widget:MousePress()
+	noteMouseInput()
+end
+
+function widget:MouseRelease()
+	noteMouseInput()
+end
+
 function widget:DrawScreen()
 	updateDebugLatchSummaries()
+	drawControllerReticle()
 
 	local x = 20
 	local y = 500
@@ -818,6 +1057,15 @@ function widget:DrawScreen()
 	y = y - lineHeight
 
 	glText("instanceId: " .. tostring(controllerInstanceId), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("input mode: " .. (controllerMode and "controller" or "mouse"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("reticle visible: " .. (reticleVisible and "yes" or "no"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText(string.format("screen center: x=%.1f y=%.1f", screenCenterX, screenCenterY), x, y, 12, "o")
 	y = y - lineHeight
 
 	glText(string.format("left stick: x=%.3f y=%.3f", normalizedLeftX, normalizedLeftY), x, y, 12, "o")
@@ -866,6 +1114,15 @@ function widget:DrawScreen()
 	y = y - lineHeight
 
 	glText("command layer: " .. (commandLayerActive and "active" or "inactive"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("button layout: " .. activeButtonLayoutSummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("normal preview: " .. normalPreviewSummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("command preview: " .. commandPreviewSummary, x, y, 12, "o")
 	y = y - lineHeight
 
 	glText("command layer pressed recently: " .. commandLayerPressedRecentlySummary, x, y, 12, "o")
