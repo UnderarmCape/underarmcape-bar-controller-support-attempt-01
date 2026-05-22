@@ -41,6 +41,23 @@ ControllerCameraTestCommandDebug = ControllerCameraTestCommandDebug or {
 	mexApplyPreviewPath = "no",
 	mexFallbackGiveOrderPath = "no",
 }
+ControllerCameraTestBuildMenu = ControllerCameraTestBuildMenu or {
+	open = false,
+	options = {},
+	selectedIndex = 1,
+	optionCount = 0,
+	highlightedName = "none",
+	highlightedCmdID = "none",
+	lastAction = "none",
+	placementResult = "none",
+	placementParamsCount = 0,
+}
+ControllerCameraTestLayerDebug = ControllerCameraTestLayerDebug or {
+	commandLayerAction = "none",
+	normalUtilityAction = "none",
+	areaSelect = "TODO",
+	modeSummary = "normal",
+}
 local spGetUnitPosition = Spring.GetUnitPosition
 local spGetUnitAllyTeam = Spring.GetUnitAllyTeam
 local spGetMyAllyTeamID = Spring.GetMyAllyTeamID
@@ -158,7 +175,7 @@ local XboxController = {
 		[0] = "A = Select / Confirm",
 		[1] = "B = Clear Selection",
 		[2] = "X = Smart Action (Move/Build/Attack)",
-		[3] = "Y = Build / Menu placeholder",
+		[3] = "Y = Controller Build Menu",
 		[9] = "LB = Camera pitch modifier",
 		[10] = "RB = Cycle placeholder",
 		[11] = "D-pad Up = Control group placeholder",
@@ -178,7 +195,7 @@ local XboxController = {
 		[13] = "RT + D-pad Left = Control group / quick group placeholder",
 		[14] = "RT + D-pad Right = Control group / quick group placeholder",
 	},
-	normalLayoutSummary = "A Select, B Cancel, X Context, Y Build/Menu, LB Pitch, RB Cycle, D-pad Groups",
+	normalLayoutSummary = "A Select, B Cancel, X Context, Y Build Menu, LB Pitch, RB Cycle, D-pad Groups",
 	commandLayoutSummary = "RT+A Select combat, RT+B Stop/cancel, RT+X Attack-move, RT+Y Wheel, RT+LB/RB Subgroups, RT+D-pad Quick groups",
 }
 
@@ -950,6 +967,7 @@ local function updateSelectionTestActive()
 	selectionTestActive = controllerMode
 		and reticleVisible
 		and not commandLayerActive
+		and not ControllerCameraTestBuildMenu.open
 		and type(spTraceScreenRay) == "function"
 		and type(spSelectUnitArray) == "function"
 end
@@ -1277,14 +1295,387 @@ local function attemptStopCommand()
 	issueOrderToSelection(CMD.STOP, {}, "Stop", "none")
 end
 
+function ControllerCameraTestRefreshBuildMenuDebug()
+	local menu = ControllerCameraTestBuildMenu
+	local options = type(menu.options) == "table" and menu.options or {}
+	local option = options[menu.selectedIndex]
+	menu.optionCount = #options
+	if option then
+		menu.highlightedName = option.name or "unnamed"
+		menu.highlightedCmdID = tostring(option.cmdID)
+	else
+		menu.highlightedName = "none"
+		menu.highlightedCmdID = "none"
+	end
+end
+
+function ControllerCameraTestGetBuildOptionSummary()
+	local menu = ControllerCameraTestBuildMenu
+	local options = type(menu.options) == "table" and menu.options or {}
+	if #options == 0 then
+		return "none"
+	end
+
+	local labels = {}
+	for i, option in ipairs(options) do
+		local marker = (i == menu.selectedIndex) and ">" or ""
+		labels[#labels + 1] = marker .. tostring(i) .. ":" .. tostring(option.name) .. " (" .. tostring(option.cmdID) .. ")"
+		if i >= 12 and i < #options then
+			labels[#labels + 1] = "...+" .. tostring(#options - i)
+			break
+		end
+	end
+	return table.concat(labels, ", ")
+end
+
+function ControllerCameraTestBuildOptionName(cmdID, desc)
+	local unitDefID = (type(cmdID) == "number") and -cmdID or nil
+	local unitDef = unitDefID and UnitDefs and UnitDefs[unitDefID]
+	if unitDef then
+		return unitDef.translatedHumanName or unitDef.humanName or unitDef.name or tostring(desc and desc.name or cmdID)
+	end
+	if desc and desc.name and desc.name ~= "" then
+		return desc.name
+	end
+	if desc and desc.action and desc.action ~= "" then
+		return desc.action
+	end
+	return "Build " .. tostring(unitDefID or cmdID)
+end
+
+function ControllerCameraTestGatherBuildOptions()
+	local menu = ControllerCameraTestBuildMenu
+	menu.options = {}
+	menu.optionCount = 0
+	menu.highlightedName = "none"
+	menu.highlightedCmdID = "none"
+
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if #selectedUnits == 0 then
+		menu.lastAction = "no selected units"
+		ControllerCameraTestRefreshBuildMenuDebug()
+		return 0
+	end
+
+	if type(Spring.GetActiveCmdDescs) ~= "function" then
+		menu.lastAction = "GetActiveCmdDescs unavailable"
+		ControllerCameraTestRefreshBuildMenuDebug()
+		return 0
+	end
+
+	local cmdDescs = Spring.GetActiveCmdDescs()
+	if type(cmdDescs) ~= "table" then
+		menu.lastAction = "no active command descriptions"
+		ControllerCameraTestRefreshBuildMenuDebug()
+		return 0
+	end
+
+	local seen = {}
+	for index, desc in ipairs(cmdDescs) do
+		if type(desc) == "table" and not desc.disabled then
+			local cmdID = tonumber(desc.id or desc.cmdID)
+			if cmdID and cmdID < 0 and not seen[cmdID] then
+				local action = tostring(desc.action or "")
+				if action == "" or string.sub(action, 1, 10) == "buildunit_" or (UnitDefs and UnitDefs[-cmdID]) then
+					seen[cmdID] = true
+					menu.options[#menu.options + 1] = {
+						cmdID = cmdID,
+						name = ControllerCameraTestBuildOptionName(cmdID, desc),
+						index = index,
+						type = desc.type or "unknown",
+						action = action,
+						tooltip = desc.tooltip or "",
+					}
+				end
+			end
+		end
+	end
+
+	if menu.selectedIndex < 1 then
+		menu.selectedIndex = 1
+	elseif menu.selectedIndex > #menu.options then
+		menu.selectedIndex = #menu.options
+	end
+	if menu.selectedIndex < 1 then
+		menu.selectedIndex = 1
+	end
+
+	ControllerCameraTestRefreshBuildMenuDebug()
+	return #menu.options
+end
+
+function ControllerCameraTestOpenBuildMenu()
+	local menu = ControllerCameraTestBuildMenu
+	local count = ControllerCameraTestGatherBuildOptions()
+	if count <= 0 then
+		menu.open = false
+		menu.lastAction = "no build options"
+		menu.placementResult = "none"
+		latchSelectionDebugMessage("Y build menu: no build options")
+		ControllerCameraTestRefreshBuildMenuDebug()
+		return
+	end
+
+	menu.open = true
+	menu.lastAction = "opened"
+	menu.placementResult = "none"
+	activeButtonLayoutSummary = "Build menu: A place, B close, Y close, D-pad navigate"
+	latchSelectionDebugMessage("Y build menu opened: " .. tostring(count) .. " options")
+	ControllerCameraTestRefreshBuildMenuDebug()
+end
+
+function ControllerCameraTestCloseBuildMenu(reason)
+	local menu = ControllerCameraTestBuildMenu
+	menu.open = false
+	menu.lastAction = reason or "closed"
+	activeButtonLayoutSummary = commandLayerActive
+		and XboxController.commandLayoutSummary
+		or XboxController.normalLayoutSummary
+	latchSelectionDebugMessage("Build menu closed")
+	ControllerCameraTestRefreshBuildMenuDebug()
+end
+
+function ControllerCameraTestToggleBuildMenu()
+	if ControllerCameraTestBuildMenu.open then
+		ControllerCameraTestCloseBuildMenu("closed by Y")
+	else
+		ControllerCameraTestOpenBuildMenu()
+	end
+end
+
+function ControllerCameraTestCycleBuildOption(delta)
+	local menu = ControllerCameraTestBuildMenu
+	local count = #menu.options
+	if count <= 0 then
+		menu.lastAction = "no options to navigate"
+		ControllerCameraTestRefreshBuildMenuDebug()
+		return
+	end
+
+	menu.selectedIndex = ((menu.selectedIndex - 1 + delta) % count) + 1
+	menu.lastAction = "highlight changed"
+	ControllerCameraTestRefreshBuildMenuDebug()
+	latchSelectionDebugMessage("Build option: " .. tostring(menu.highlightedName))
+end
+
+function ControllerCameraTestGetBuildFacing()
+	if type(Spring.GetBuildFacing) ~= "function" then
+		return 0
+	end
+	local facingOk, facing = pcall(Spring.GetBuildFacing)
+	if facingOk and type(facing) == "number" then
+		return facing
+	end
+	return 0
+end
+
+function ControllerCameraTestGetSnappedBuildPosition(cmdID, x, y, z, facing)
+	if type(Spring.Pos2BuildPos) ~= "function" or type(cmdID) ~= "number" then
+		return x, y, z
+	end
+
+	local unitDefID = -cmdID
+	local snapOk, sx, sy, sz = pcall(Spring.Pos2BuildPos, unitDefID, x, y, z, facing)
+	if snapOk and type(sx) == "number" and type(sy) == "number" and type(sz) == "number" then
+		return sx, sy, sz
+	end
+	return x, y, z
+end
+
+function ControllerCameraTestIsMexBuildCommand(cmdID)
+	local builder = WG and WG.resource_spot_builder
+	if type(builder) ~= "table" or type(builder.GetMexBuildings) ~= "function" then
+		return false
+	end
+
+	local mexBuildings = builder.GetMexBuildings()
+	return type(mexBuildings) == "table" and mexBuildings[-cmdID] ~= nil
+end
+
+function ControllerCameraTestPlaceHighlightedBuildOption()
+	local menu = ControllerCameraTestBuildMenu
+	local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
+	if not option or type(option.cmdID) ~= "number" or option.cmdID >= 0 then
+		menu.placementResult = "no highlighted build option"
+		menu.placementParamsCount = 0
+		menu.lastAction = "place failed"
+		latchSelectionDebugMessage("Build place failed: no highlighted option")
+		ControllerCameraTestRefreshBuildMenuDebug()
+		return
+	end
+
+	if not reticleHasWorldTarget or not reticleWorldX or not reticleWorldY or not reticleWorldZ then
+		menu.placementResult = "no world target"
+		menu.placementParamsCount = 0
+		menu.lastAction = "place failed"
+		latchSelectionDebugMessage("Build place failed: no world target")
+		ControllerCameraTestRefreshBuildMenuDebug()
+		return
+	end
+
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if #selectedUnits == 0 then
+		menu.placementResult = "no selected units"
+		menu.placementParamsCount = 0
+		menu.lastAction = "place failed"
+		latchSelectionDebugMessage("Build place failed: no units selected")
+		ControllerCameraTestRefreshBuildMenuDebug()
+		return
+	end
+
+	if ControllerCameraTestIsMexBuildCommand(option.cmdID)
+		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ)
+	then
+		menu.placementResult = "mex smart action"
+		menu.placementParamsCount = 4
+		menu.lastAction = "placed mex via BAR snap"
+		ControllerCameraTestRefreshBuildMenuDebug()
+		return
+	end
+
+	if type(spGiveOrderToUnit) ~= "function" then
+		menu.placementResult = "GiveOrderToUnit unavailable"
+		menu.placementParamsCount = 0
+		menu.lastAction = "place failed"
+		latchSelectionDebugMessage("Build place failed: order API unavailable")
+		ControllerCameraTestRefreshBuildMenuDebug()
+		return
+	end
+
+	local facing = ControllerCameraTestGetBuildFacing()
+	local x, y, z = ControllerCameraTestGetSnappedBuildPosition(option.cmdID, reticleWorldX, reticleWorldY, reticleWorldZ, facing)
+	local params = { x, y, z, facing }
+	local issuedCount = 0
+	for _, unitID in ipairs(selectedUnits) do
+		local orderOk, orderResult = pcall(spGiveOrderToUnit, unitID, option.cmdID, params, {})
+		if orderOk and orderResult ~= false then
+			issuedCount = issuedCount + 1
+		end
+	end
+
+	ControllerCameraTestCommandDebug.issuedCmdID = tostring(option.cmdID)
+	ControllerCameraTestCommandDebug.issuedParamsCount = #params
+	menu.placementParamsCount = #params
+	if issuedCount > 0 then
+		lastIssuedCommand = "Build menu: " .. tostring(option.name)
+		menu.placementResult = "issued to " .. tostring(issuedCount) .. " units"
+		menu.lastAction = "placed"
+		ControllerCameraTestCommandDebug.lastResult = "build menu GiveOrderToUnit"
+		latchSelectionDebugMessage("Build placed: " .. tostring(option.name))
+	else
+		menu.placementResult = "no orders accepted"
+		menu.lastAction = "place failed"
+		ControllerCameraTestCommandDebug.lastResult = "build menu failed"
+		latchSelectionDebugMessage("Build place failed: no orders accepted")
+	end
+	ControllerCameraTestRefreshBuildMenuDebug()
+end
+
+function ControllerCameraTestHandleBuildMenuInput()
+	local menu = ControllerCameraTestBuildMenu
+	if not menu.open then
+		return false
+	end
+
+	if WasButtonPressed("B") then
+		ControllerCameraTestCloseBuildMenu("closed by B")
+	elseif WasButtonPressed("Y") then
+		ControllerCameraTestCloseBuildMenu("closed by Y")
+	elseif WasButtonPressed("A") then
+		ControllerCameraTestPlaceHighlightedBuildOption()
+	elseif WasButtonPressed("dpadUp") then
+		ControllerCameraTestCycleBuildOption(-1)
+	elseif WasButtonPressed("dpadDown") then
+		ControllerCameraTestCycleBuildOption(1)
+	elseif WasButtonPressed("dpadLeft") then
+		ControllerCameraTestCycleBuildOption(-5)
+	elseif WasButtonPressed("dpadRight") then
+		ControllerCameraTestCycleBuildOption(5)
+	elseif WasButtonPressed("X") then
+		menu.lastAction = "X ignored while menu open"
+		latchSelectionDebugMessage("Build menu open: close with B before X context")
+	end
+
+	activeButtonLayoutSummary = "Build menu: A place, B close, Y close, D-pad navigate"
+	ControllerCameraTestRefreshBuildMenuDebug()
+	return true
+end
+
 local function attemptBuildMenu()
-	lastIssuedCommand = "Build Menu (Stub)"
-	latchSelectionDebugMessage("Build Menu triggered (Stub)")
+	ControllerCameraTestToggleBuildMenu()
+end
+
+function ControllerCameraTestSetLayerAction(message)
+	ControllerCameraTestLayerDebug.commandLayerAction = message
+	lastIssuedCommand = message
+	latchSelectionDebugMessage(message)
 end
 
 local function attemptCommandWheel()
-	lastIssuedCommand = "Command Wheel (Stub)"
-	latchSelectionDebugMessage("Command Wheel triggered (Stub)")
+	ControllerCameraTestSetLayerAction("RT+Y command menu placeholder")
+end
+
+function ControllerCameraTestSetNormalUtilityAction(message)
+	ControllerCameraTestLayerDebug.normalUtilityAction = message
+	lastIssuedCommand = message
+	latchSelectionDebugMessage(message)
+end
+
+function ControllerCameraTestHandleCommandLayerInput()
+	if WasButtonPressed("A") then
+		ControllerCameraTestSetLayerAction("RT+A select visible combat placeholder")
+	elseif WasButtonPressed("B") then
+		attemptStopCommand()
+		ControllerCameraTestLayerDebug.commandLayerAction = "RT+B stop"
+	elseif WasButtonPressed("X") then
+		attemptAttackCommand()
+		ControllerCameraTestLayerDebug.commandLayerAction = "RT+X attack/attack-move"
+	elseif WasButtonPressed("Y") then
+		attemptCommandWheel()
+	elseif WasButtonPressed("dpadUp") then
+		ControllerCameraTestSetLayerAction("RT+D-pad Up quick group placeholder")
+	elseif WasButtonPressed("dpadDown") then
+		ControllerCameraTestSetLayerAction("RT+D-pad Down quick group placeholder")
+	elseif WasButtonPressed("dpadLeft") then
+		ControllerCameraTestSetLayerAction("RT+D-pad Left quick group placeholder")
+	elseif WasButtonPressed("dpadRight") then
+		ControllerCameraTestSetLayerAction("RT+D-pad Right quick group placeholder")
+	elseif WasButtonPressed("LB") then
+		ControllerCameraTestSetLayerAction("RT+LB previous subgroup placeholder")
+	elseif WasButtonPressed("RB") then
+		ControllerCameraTestSetLayerAction("RT+RB next subgroup placeholder")
+	end
+end
+
+function ControllerCameraTestHandleNormalUtilityInput()
+	if WasButtonPressed("RB") then
+		ControllerCameraTestSetNormalUtilityAction("RB cycle selection placeholder")
+	elseif WasButtonPressed("dpadUp") then
+		ControllerCameraTestSetNormalUtilityAction("D-pad Up control group placeholder")
+	elseif WasButtonPressed("dpadDown") then
+		ControllerCameraTestSetNormalUtilityAction("D-pad Down control group placeholder")
+	elseif WasButtonPressed("dpadLeft") then
+		ControllerCameraTestSetNormalUtilityAction("D-pad Left camera bookmark placeholder")
+	elseif WasButtonPressed("dpadRight") then
+		ControllerCameraTestSetNormalUtilityAction("D-pad Right camera bookmark placeholder")
+	elseif WasButtonPressed("start") then
+		ControllerCameraTestSetNormalUtilityAction("Start/Menu placeholder")
+	elseif WasButtonPressed("back") then
+		ControllerCameraTestSetNormalUtilityAction("Back/View tactical overlay placeholder")
+	end
+end
+
+function ControllerCameraTestGetModeSummary()
+	if commandLayerActive then
+		return "command layer"
+	end
+	if ControllerCameraTestBuildMenu.open then
+		return "build menu"
+	end
+	if controllerMode then
+		return "normal"
+	end
+	return "mouse"
 end
 
 
@@ -1583,33 +1974,31 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer()
 	lbCameraModifierActive = IsButtonDown("LB")
 	commandLayerActive = normalizedRightTrigger > 0
 	updateSelectionTestActive()
-	if WasButtonPressed("A") then
-		attemptReticleSelection()
-	end
-	if WasButtonPressed("B") then
-		if commandLayerActive then
-			attemptStopCommand()
-		else
+
+	if commandLayerActive then
+		ControllerCameraTestHandleCommandLayerInput()
+	elseif ControllerCameraTestHandleBuildMenuInput() then
+		-- Build-menu input consumes normal A/B/Y/D-pad actions while it is open.
+	else
+		if WasButtonPressed("A") then
+			attemptReticleSelection()
+		end
+		if WasButtonPressed("B") then
 			attemptClearSelection()
 		end
-	end
-	if WasButtonPressed("X") then
-		if commandLayerActive then
-			attemptAttackCommand()
-		else
+		if WasButtonPressed("X") then
 			attemptContextCommand()
 		end
-	end
-	if WasButtonPressed("Y") then
-		if commandLayerActive then
-			attemptCommandWheel()
-		else
+		if WasButtonPressed("Y") then
 			attemptBuildMenu()
 		end
+		ControllerCameraTestHandleNormalUtilityInput()
 	end
+
+	ControllerCameraTestLayerDebug.modeSummary = ControllerCameraTestGetModeSummary()
 	activeButtonLayoutSummary = commandLayerActive
 		and XboxController.commandLayoutSummary
-		or XboxController.normalLayoutSummary
+		or (ControllerCameraTestBuildMenu.open and "Build menu: A place, B close, Y close, D-pad navigate" or XboxController.normalLayoutSummary)
 	commandLayerPressedSummary = commandLayerActive
 		and getButtonStateSummary(pressedButtonStates, XboxController.commandLayerButtonOrder)
 		or "none"
@@ -1834,6 +2223,7 @@ function widget:DrawScreen()
 				"Name: " .. tostring(controllerName),
 				"instanceId: " .. tostring(controllerInstanceId),
 				"Input: " .. (controllerMode and "controller" or "mouse"),
+				"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary),
 				"Reticle visible: " .. yesNo(reticleVisible),
 			},
 		},
@@ -1898,6 +2288,9 @@ function widget:DrawScreen()
 				"Layout: " .. activeButtonLayoutSummary,
 				"Normal preview: " .. normalPreviewSummary,
 				"Command preview: " .. commandPreviewSummary,
+				"Command action: " .. tostring(ControllerCameraTestLayerDebug.commandLayerAction),
+				"Normal utility: " .. tostring(ControllerCameraTestLayerDebug.normalUtilityAction),
+				"Area select: " .. tostring(ControllerCameraTestLayerDebug.areaSelect),
 				"Default cmd index: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdIndex),
 				"Default cmd ID: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdID),
 				"Default cmd type: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdType),
@@ -1912,6 +2305,20 @@ function widget:DrawScreen()
 				"Mex action result: " .. tostring(ControllerCameraTestCommandDebug.mexActionResult),
 				"Mex ApplyPreviewCmds: " .. tostring(ControllerCameraTestCommandDebug.mexApplyPreviewPath),
 				"Mex fallback GiveOrder: " .. tostring(ControllerCameraTestCommandDebug.mexFallbackGiveOrderPath),
+			},
+		},
+		{
+			title = "Build Menu",
+			lines = {
+				"Open: " .. yesNo(ControllerCameraTestBuildMenu.open),
+				"Option count: " .. tostring(ControllerCameraTestBuildMenu.optionCount),
+				"Highlight index: " .. tostring(ControllerCameraTestBuildMenu.selectedIndex) .. " / " .. tostring(ControllerCameraTestBuildMenu.optionCount),
+				"Highlight name: " .. tostring(ControllerCameraTestBuildMenu.highlightedName),
+				"Highlight cmdID: " .. tostring(ControllerCameraTestBuildMenu.highlightedCmdID),
+				"Options: " .. ControllerCameraTestGetBuildOptionSummary(),
+				"Placement result: " .. tostring(ControllerCameraTestBuildMenu.placementResult),
+				"Placement params: " .. tostring(ControllerCameraTestBuildMenu.placementParamsCount),
+				"Last action: " .. tostring(ControllerCameraTestBuildMenu.lastAction),
 			},
 		},
 		{
