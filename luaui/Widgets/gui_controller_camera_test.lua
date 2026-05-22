@@ -25,6 +25,7 @@ local spSelectUnitArray = Spring.SelectUnitArray
 local spGetSelectedUnits = Spring.GetSelectedUnits
 local spGiveOrderToUnit = Spring.GiveOrderToUnit
 local lastIssuedCommand = "none"
+local spGetUnitPosition = Spring.GetUnitPosition
 
 local glText = gl.Text
 local glRect = gl.Rect
@@ -1026,6 +1027,16 @@ local function attemptStopCommand()
 	issueOrderToSelection(CMD.STOP, {}, "Stop", "none")
 end
 
+local function attemptBuildMenu()
+	lastIssuedCommand = "Build Menu (Stub)"
+	latchSelectionDebugMessage("Build Menu triggered (Stub)")
+end
+
+local function attemptCommandWheel()
+	lastIssuedCommand = "Command Wheel (Stub)"
+	latchSelectionDebugMessage("Command Wheel triggered (Stub)")
+end
+
 
 local function applySpringZoom(cameraState, zoomInput, dt)
 	if type(cameraState.dist) ~= "number" then
@@ -1233,7 +1244,11 @@ local function drawControllerReticle()
 	drawReticleLines(screenCenterX, screenCenterY)
 
 	gl.LineWidth(2)
-	gl.Color(0.65, 0.92, 1, 0.78)
+	if reticleTargetType == "unit" then
+		gl.Color(1, 0.25, 0, 0.9) -- Target acquired (bright orange-red)
+	else
+		gl.Color(0.65, 0.92, 1, 0.78) -- Default blue/white
+	end
 	drawReticleCircle(screenCenterX, screenCenterY, RETICLE_RADIUS)
 	drawReticleLines(screenCenterX, screenCenterY)
 
@@ -1327,6 +1342,13 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer()
 			attemptAttackCommand()
 		else
 			attemptMoveCommand()
+		end
+	end
+	if WasButtonPressed("Y") then
+		if commandLayerActive then
+			attemptCommandWheel()
+		else
+			attemptBuildMenu()
 		end
 	end
 	activeButtonLayoutSummary = commandLayerActive
@@ -1714,4 +1736,29 @@ function widget:SetConfigData(data)
 	if viewSizeX > 0 and viewSizeY > 0 then
 		clampDebugPanelToScreen()
 	end
+end
+
+function widget:DrawWorld()
+	if not controllerMode or type(spGetSelectedUnits) ~= "function" or type(spGetUnitPosition) ~= "function" then
+		return
+	end
+
+	local selectedUnits = spGetSelectedUnits()
+	if not selectedUnits or #selectedUnits == 0 then
+		return
+	end
+
+	gl.LineWidth(2.5)
+	gl.Color(0.2, 1.0, 0.2, 0.8) -- Bright green
+
+	for i = 1, #selectedUnits do
+		local unitID = selectedUnits[i]
+		local x, y, z = spGetUnitPosition(unitID)
+		if x and y and z then
+			gl.DrawGroundCircle(x, y, z, 35, 32)
+		end
+	end
+
+	gl.Color(1, 1, 1, 1)
+	gl.LineWidth(1)
 end
