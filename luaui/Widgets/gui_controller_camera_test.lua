@@ -34,6 +34,7 @@ local AXIS_MAX = 32767
 local PAN_SPEED = 1800
 local FAST_PAN_MULTIPLIER = 2.75
 local FAST_ZOOM_MULTIPLIER = 3.0
+local DEBUG_EVENT_HOLD_SECONDS = 0.45
 local ZOOM_SPEED = 1200
 local ZOOM_SCALE_SPEED = 0.9
 local ROTATION_SPEED = 1.0
@@ -138,6 +139,9 @@ local heldButtonsSummary = "none"
 local pressedThisFrameSummary = "none"
 local releasedThisFrameSummary = "none"
 local commandLayerPressedSummary = "none"
+local pressedRecentlySummary = "none"
+local releasedRecentlySummary = "none"
+local commandLayerPressedRecentlySummary = "none"
 local activeAxesSummary = "none"
 local panActive = false
 local zoomActive = false
@@ -158,12 +162,25 @@ local previousButtonStates = {}
 local currentButtonStates = {}
 local pressedButtonStates = {}
 local releasedButtonStates = {}
+local debugEventTime = 0
+local pressedRecentlyExpirations = {}
+local releasedRecentlyExpirations = {}
+local commandLayerPressedRecentlyExpirations = {}
 
 local function clearButtonStateTracking()
 	previousButtonStates = {}
 	currentButtonStates = {}
 	pressedButtonStates = {}
 	releasedButtonStates = {}
+end
+
+local function clearDebugEventLatches()
+	pressedRecentlyExpirations = {}
+	releasedRecentlyExpirations = {}
+	commandLayerPressedRecentlyExpirations = {}
+	pressedRecentlySummary = "none"
+	releasedRecentlySummary = "none"
+	commandLayerPressedRecentlySummary = "none"
 end
 
 local function resetControllerInputDebug()
@@ -178,6 +195,9 @@ local function resetControllerInputDebug()
 	pressedThisFrameSummary = "none"
 	releasedThisFrameSummary = "none"
 	commandLayerPressedSummary = "none"
+	pressedRecentlySummary = "none"
+	releasedRecentlySummary = "none"
+	commandLayerPressedRecentlySummary = "none"
 	activeAxesSummary = "none"
 	panActive = false
 	zoomActive = false
@@ -187,6 +207,7 @@ local function resetControllerInputDebug()
 	zoomMethod = "none"
 	rotationMethod = "none"
 	clearButtonStateTracking()
+	clearDebugEventLatches()
 end
 
 local function clamp(value, minValue, maxValue)
@@ -290,12 +311,16 @@ local function updateButtonStates(state)
 	end
 end
 
+local function getButtonLabel(buttonId)
+	return XboxController.buttonLabels[buttonId] or tostring(buttonId)
+end
+
 local function getButtonStateSummary(buttonStates, buttonOrder)
 	local buttons = {}
 
 	for _, buttonId in ipairs(buttonOrder or XboxController.buttonOrder) do
 		if buttonStates[buttonId] then
-			buttons[#buttons + 1] = XboxController.buttonLabels[buttonId] or tostring(buttonId)
+			buttons[#buttons + 1] = getButtonLabel(buttonId)
 		end
 	end
 
@@ -304,6 +329,49 @@ local function getButtonStateSummary(buttonStates, buttonOrder)
 	end
 
 	return table.concat(buttons, ", ")
+end
+
+local function latchDebugButtonEvents(buttonStates, expirations, buttonOrder)
+	for _, buttonId in ipairs(buttonOrder or XboxController.buttonOrder) do
+		if buttonStates[buttonId] then
+			expirations[getButtonLabel(buttonId)] = debugEventTime + DEBUG_EVENT_HOLD_SECONDS
+		end
+	end
+end
+
+local function pruneDebugEventLatches(expirations)
+	for buttonName, expirationTime in pairs(expirations) do
+		if expirationTime <= debugEventTime then
+			expirations[buttonName] = nil
+		end
+	end
+end
+
+local function getDebugLatchSummary(expirations, buttonOrder)
+	local buttons = {}
+
+	for _, buttonId in ipairs(buttonOrder or XboxController.buttonOrder) do
+		local buttonName = getButtonLabel(buttonId)
+		if expirations[buttonName] ~= nil then
+			buttons[#buttons + 1] = buttonName
+		end
+	end
+
+	if #buttons == 0 then
+		return "none"
+	end
+
+	return table.concat(buttons, ", ")
+end
+
+local function updateDebugLatchSummaries()
+	pruneDebugEventLatches(pressedRecentlyExpirations)
+	pruneDebugEventLatches(releasedRecentlyExpirations)
+	pruneDebugEventLatches(commandLayerPressedRecentlyExpirations)
+
+	pressedRecentlySummary = getDebugLatchSummary(pressedRecentlyExpirations)
+	releasedRecentlySummary = getDebugLatchSummary(releasedRecentlyExpirations)
+	commandLayerPressedRecentlySummary = getDebugLatchSummary(commandLayerPressedRecentlyExpirations, XboxController.commandLayerButtonOrder)
 end
 
 local function getNormalizedDebugAxis(state, axisName)
@@ -571,6 +639,7 @@ function widget:Initialize()
 end
 
 function widget:Update(dt)
+	debugEventTime = debugEventTime + (dt or 0)
 	panActive = false
 	zoomActive = false
 	rotationActive = false
@@ -603,12 +672,17 @@ function widget:Update(dt)
 	pressedThisFrameSummary = getButtonStateSummary(pressedButtonStates)
 	releasedThisFrameSummary = getButtonStateSummary(releasedButtonStates)
 	activeAxesSummary = getActiveAxisSummary(state)
+	latchDebugButtonEvents(pressedButtonStates, pressedRecentlyExpirations)
+	latchDebugButtonEvents(releasedButtonStates, releasedRecentlyExpirations)
 
 	fastPanActive = normalizedLeftTrigger > 0
 	commandLayerActive = normalizedRightTrigger > 0
 	commandLayerPressedSummary = commandLayerActive
 		and getButtonStateSummary(pressedButtonStates, XboxController.commandLayerButtonOrder)
 		or "none"
+	if commandLayerActive then
+		latchDebugButtonEvents(pressedButtonStates, commandLayerPressedRecentlyExpirations, XboxController.commandLayerButtonOrder)
+	end
 	panActive = normalizedLeftX ~= 0 or normalizedLeftY ~= 0
 	local zoomInput = -normalizedRightY
 	zoomActive = zoomInput ~= 0
@@ -626,6 +700,8 @@ function widget:Update(dt)
 end
 
 function widget:DrawScreen()
+	updateDebugLatchSummaries()
+
 	local x = 20
 	local y = 500
 	local lineHeight = 18
@@ -672,16 +748,16 @@ function widget:DrawScreen()
 	glText("held buttons: " .. heldButtonsSummary, x, y, 12, "o")
 	y = y - lineHeight
 
-	glText("pressed this frame: " .. pressedThisFrameSummary, x, y, 12, "o")
+	glText("pressed recently: " .. pressedRecentlySummary, x, y, 12, "o")
 	y = y - lineHeight
 
-	glText("released this frame: " .. releasedThisFrameSummary, x, y, 12, "o")
+	glText("released recently: " .. releasedRecentlySummary, x, y, 12, "o")
 	y = y - lineHeight
 
 	glText("command layer: " .. (commandLayerActive and "active" or "inactive"), x, y, 12, "o")
 	y = y - lineHeight
 
-	glText("command layer buttons pressed this frame: " .. commandLayerPressedSummary, x, y, 12, "o")
+	glText("command layer pressed recently: " .. commandLayerPressedRecentlySummary, x, y, 12, "o")
 	y = y - lineHeight
 
 	glText("camera: " .. cameraMode .. " mode=" .. cameraModeId, x, y, 12, "o")
