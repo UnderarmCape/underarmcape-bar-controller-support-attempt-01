@@ -1236,16 +1236,75 @@ function widget:DrawScreen()
 	local function activeInactive(value)
 		return value and "active" or "inactive"
 	end
-	local function shorten(text, maxChars)
+	local function trimText(text)
+		return (tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+	end
+	local function WrapDebugLine(text, maxChars)
 		text = tostring(text or "")
+		maxChars = mathMax(8, maxChars)
 		if #text <= maxChars then
-			return text
+			return { text }
 		end
 
-		return string.sub(text, 1, mathMax(1, maxChars - 2)) .. ".."
+		local lines = {}
+		local remaining = text
+		local firstLine = true
+
+		while #remaining > 0 do
+			local lineMaxChars = firstLine and maxChars or mathMax(8, maxChars - 2)
+			if #remaining <= lineMaxChars then
+				lines[#lines + 1] = (firstLine and "" or "  ") .. remaining
+				break
+			end
+
+			local minBreak = mathMax(1, math.floor(lineMaxChars * 0.45))
+			local breakAt = nil
+			for i = lineMaxChars, minBreak, -1 do
+				local char = string.sub(remaining, i, i)
+				if char == " " or char == "," or char == "/" or char == ";" or char == "|" then
+					breakAt = i
+					break
+				end
+			end
+
+			breakAt = breakAt or lineMaxChars
+			local line = trimText(string.sub(remaining, 1, breakAt))
+			if line == "" then
+				line = string.sub(remaining, 1, lineMaxChars)
+				breakAt = lineMaxChars
+			end
+
+			lines[#lines + 1] = (firstLine and "" or "  ") .. line
+			remaining = trimText(string.sub(remaining, breakAt + 1))
+			firstLine = false
+		end
+
+		return lines
 	end
-	local function drawLine(text, drawX, drawY, maxChars)
-		glText(shorten(text, maxChars), drawX, drawY, 9, "o")
+	local function drawLine(text, drawX, drawY)
+		glText(text, drawX, drawY, 15, "o")
+	end
+	local function drawSection(section, drawX, drawY, maxChars, contentBottom)
+		if drawY < contentBottom then
+			return drawY, false
+		end
+
+		gl.Color(0.62, 0.86, 1, 1)
+		drawLine(section.title, drawX, drawY)
+		gl.Color(1, 1, 1, 1)
+		drawY = drawY - 17
+
+		for _, line in ipairs(section.lines) do
+			for _, wrappedLine in ipairs(WrapDebugLine(line, maxChars)) do
+				if drawY < contentBottom then
+					return drawY, false
+				end
+				drawLine(wrappedLine, drawX, drawY)
+				drawY = drawY - 17
+			end
+		end
+
+		return drawY - 6, true
 	end
 
 	ensureDebugPanelInitialized()
@@ -1258,41 +1317,105 @@ function widget:DrawScreen()
 	local panelTop = panelBottom + panelHeight
 	local padding = DEBUG_PANEL_PADDING
 	local headerHeight = DEBUG_PANEL_HEADER_HEIGHT
-	local lineHeight = 12
-	local useColumns = panelWidth >= 560
+	local useColumns = panelWidth >= 720
 	local columnGap = 12
 	local columnWidth = useColumns
 		and ((panelWidth - (padding * 2) - columnGap) * 0.5)
 		or (panelWidth - (padding * 2))
-	local maxChars = mathMax(18, math.floor(columnWidth / 5.2))
+	local maxChars = mathMax(12, math.floor(columnWidth / 7.8))
+	local contentBottom = panelBottom + padding + DEBUG_PANEL_RESIZE_HANDLE
+	local cameraState = spGetCameraState and spGetCameraState()
+	if type(cameraState) ~= "table" then
+		cameraState = {}
+	end
 
 	local reticleWorldSummary = "none"
 	if reticleHasWorldTarget then
-		reticleWorldSummary = string.format("%.0f, %.0f, %.0f", reticleWorldX, reticleWorldY, reticleWorldZ)
+		reticleWorldSummary = string.format("x=%.1f y=%.1f z=%.1f", reticleWorldX, reticleWorldY, reticleWorldZ)
 	end
 
-	local leftLines = {
-		string.format("Controller: %s  id:%s", controllerName, tostring(controllerInstanceId)),
-		"Mode: " .. (controllerMode and "controller" or "mouse"),
-		string.format("LS: %.2f, %.2f", normalizedLeftX, normalizedLeftY),
-		string.format("RS: %.2f, %.2f  %s", normalizedRightX, normalizedRightY, rightStickYMode),
-		string.format("LT boost: %s %.2f", activeInactive(fastPanActive), normalizedLeftTrigger),
-		string.format("RT cmd: %s %.2f", activeInactive(commandLayerActive), normalizedRightTrigger),
-		"Buttons: " .. heldButtonsSummary,
-		"Recent: +" .. pressedRecentlySummary .. "  -" .. releasedRecentlySummary,
+	local controllerSections = {
+		{
+			title = "Controller",
+			lines = {
+				"Widget: Controller Camera Test",
+				"API: " .. yesNo(apiAvailable),
+				"Name: " .. tostring(controllerName),
+				"instanceId: " .. tostring(controllerInstanceId),
+				"Input: " .. (controllerMode and "controller" or "mouse"),
+				"Reticle visible: " .. yesNo(reticleVisible),
+			},
+		},
+		{
+			title = "Reticle",
+			lines = {
+				string.format("Screen: x=%.1f y=%.1f", screenCenterX, screenCenterY),
+				"World: " .. reticleWorldSummary,
+				"Target type: " .. reticleTargetType,
+				"Has world target: " .. yesNo(reticleHasWorldTarget),
+			},
+		},
+		{
+			title = "Axes",
+			lines = {
+				string.format("LS: x=%.3f y=%.3f", normalizedLeftX, normalizedLeftY),
+				string.format("RS: x=%.3f y=%.3f", normalizedRightX, normalizedRightY),
+				string.format("LT: %.3f", normalizedLeftTrigger),
+				string.format("RT: %.3f", normalizedRightTrigger),
+				"Active axes: " .. activeAxesSummary,
+			},
+		},
+		{
+			title = "Buttons",
+			lines = {
+				"Held: " .. heldButtonsSummary,
+				"Pressed recent: " .. pressedRecentlySummary,
+				"Released recent: " .. releasedRecentlySummary,
+				"Cmd recent: " .. commandLayerPressedRecentlySummary,
+			},
+		},
 	}
-	local rightLines = {
-		"Reticle: " .. yesNo(reticleVisible),
-		"World: " .. reticleWorldSummary,
-		"Target: " .. reticleTargetType,
-		"Camera: " .. cameraMode .. " " .. cameraModeId,
-		"Zoom: " .. zoomMethod,
-		"Rotate: " .. rotationMethod,
-		"Pitch: " .. pitchMethod,
-		"Pitch field: " .. cameraPitchSummary,
+	local cameraSections = {
+		{
+			title = "Camera Controls",
+			lines = {
+				"RS Y mode: " .. rightStickYMode,
+				"LT boost pan+zoom: " .. activeInactive(fastPanActive),
+				"LB camera mod: " .. activeInactive(lbCameraModifierActive),
+				"RT command layer: " .. activeInactive(commandLayerActive),
+				"Pan active: " .. yesNo(panActive),
+				"Zoom active: " .. yesNo(zoomActive),
+				"Rotate active: " .. yesNo(rotationActive),
+				"Pitch active: " .. yesNo(pitchActive),
+				string.format("Zoom speed: %.1fx", zoomSpeedMultiplier),
+				"Zoom method: " .. zoomMethod,
+				"Rotate method: " .. rotationMethod,
+				"Pitch method: " .. pitchMethod,
+			},
+		},
+		{
+			title = "Command Layer",
+			lines = {
+				"Active: " .. activeInactive(commandLayerActive),
+				"Layout: " .. activeButtonLayoutSummary,
+				"Normal preview: " .. normalPreviewSummary,
+				"Command preview: " .. commandPreviewSummary,
+			},
+		},
+		{
+			title = "Camera State",
+			lines = {
+				"Camera: " .. tostring(cameraState.name or cameraMode) .. " mode=" .. tostring(cameraState.mode or cameraModeId),
+				"px/py/pz: " .. formatNumber(cameraState.px) .. " / " .. formatNumber(cameraState.py) .. " / " .. formatNumber(cameraState.pz),
+				"dist: " .. formatNumber(cameraState.dist),
+				"height/old: " .. formatNumber(cameraState.height) .. " / " .. formatNumber(cameraState.oldHeight),
+				"rx/ry/rz: " .. formatNumber(cameraState.rx) .. " / " .. formatNumber(cameraState.ry) .. " / " .. formatNumber(cameraState.rz),
+				"dx/dy/dz: " .. formatNumber(cameraState.dx) .. " / " .. formatNumber(cameraState.dy) .. " / " .. formatNumber(cameraState.dz),
+				"fov: " .. formatNumber(cameraState.fov),
+				"Pitch field: " .. cameraPitchSummary,
+			},
+		},
 	}
-	local bodyLineCount = useColumns and mathMax(#leftLines, #rightLines) or (#leftLines + #rightLines)
-	local maxBodyLines = mathMax(1, mathMin(bodyLineCount, math.floor((panelHeight - headerHeight - (padding * 2)) / lineHeight)))
 
 	gl.Color(0, 0, 0, 0.82)
 	glRect(panelLeft, panelBottom, panelRight, panelTop)
@@ -1309,30 +1432,26 @@ function widget:DrawScreen()
 
 	local textX = panelLeft + padding
 	local textY = panelTop - 15
-	glText("Controller Debug", textX, textY, 10, "o")
-	textY = panelTop - headerHeight - padding - 8
+	glText("Controller Debug", textX, textY, 15, "o")
+	textY = panelTop - headerHeight - padding - 10
 
 	if useColumns then
 		local rightX = textX + columnWidth + columnGap
-		for i = 1, mathMin(maxBodyLines, mathMax(#leftLines, #rightLines)) do
-			local lineY = textY - ((i - 1) * lineHeight)
-			if leftLines[i] then
-				drawLine(leftLines[i], textX, lineY, maxChars)
-			end
-			if rightLines[i] then
-				drawLine(rightLines[i], rightX, lineY, maxChars)
-			end
+		local leftY = textY
+		local rightY = textY
+
+		for _, section in ipairs(controllerSections) do
+			leftY = drawSection(section, textX, leftY, maxChars, contentBottom)
+		end
+		for _, section in ipairs(cameraSections) do
+			rightY = drawSection(section, rightX, rightY, maxChars, contentBottom)
 		end
 	else
-		local lines = {}
-		for _, line in ipairs(leftLines) do
-			lines[#lines + 1] = line
+		for _, section in ipairs(controllerSections) do
+			textY = drawSection(section, textX, textY, maxChars, contentBottom)
 		end
-		for _, line in ipairs(rightLines) do
-			lines[#lines + 1] = line
-		end
-		for i = 1, mathMin(maxBodyLines, #lines) do
-			drawLine(lines[i], textX, textY - ((i - 1) * lineHeight), maxChars)
+		for _, section in ipairs(cameraSections) do
+			textY = drawSection(section, textX, textY, maxChars, contentBottom)
 		end
 	end
 
