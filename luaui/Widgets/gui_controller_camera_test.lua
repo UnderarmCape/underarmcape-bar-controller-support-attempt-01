@@ -82,6 +82,27 @@ ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	gridShortcutResult = "none",
 	lastConstructionShortcut = "none",
 }
+ControllerCameraTestDragCommand = ControllerCameraTestDragCommand or {
+	active = false,
+	mode = "none",
+	cmdID = nil,
+	startX = nil,
+	startY = nil,
+	startZ = nil,
+	endX = nil,
+	endY = nil,
+	endZ = nil,
+	radius = 0,
+	shape = "none",
+	lastResult = "none",
+	lastMode = "none",
+	previewPoints = {},
+	pressStartTime = 0,
+	pressActive = false,
+	pressButton = nil,
+	nativeRouteUsed = false,
+}
+
 ControllerCameraTestAreaSelect = ControllerCameraTestAreaSelect or {
 	pressActive = false,
 	active = false,
@@ -398,59 +419,59 @@ local XboxController = {
 	commandLayoutSummary = "RT+A Select combat, RT+B Stop, RT+X Attack, RT+Y Tactical, RT+LB/RB Cycle, RT+D-pad Commands",
 }
 
-local apiAvailable = false
-local controllerName = "none"
-local controllerInstanceId = nil
-local normalizedLeftX = 0
-local normalizedLeftY = 0
-local normalizedRightX = 0
-local normalizedRightY = 0
-local normalizedLeftTrigger = 0
-local normalizedRightTrigger = 0
-local zoomSpeedMultiplier = 1
-local heldButtonsSummary = "none"
-local pressedThisFrameSummary = "none"
-local releasedThisFrameSummary = "none"
-local commandLayerPressedSummary = "none"
-local pressedRecentlySummary = "none"
-local releasedRecentlySummary = "none"
-local commandLayerPressedRecentlySummary = "none"
-local activeButtonLayoutSummary = XboxController.normalLayoutSummary
-local normalPreviewSummary = "none"
-local commandPreviewSummary = "none"
-local activeAxesSummary = "none"
-local panActive = false
-local zoomActive = false
-local rotationActive = false
-local pitchActive = false
-local fastPanActive = false
-local lbCameraModifierActive = false
-local commandLayerActive = false
-local rightStickYMode = "zoom"
-local cameraMode = "unknown"
-local cameraModeId = "?"
-local cameraFieldSummary = "camera state unavailable"
-local cameraPitchSummary = "pitch field unavailable"
-local zoomMethod = "none"
-local rotationMethod = "none"
-local pitchMethod = "none"
-local selectionTestActive = false
-local lastReticleSelectedUnitID = "none"
-local lastSelectionResult = "none"
-local lastBButtonResult = "none"
-local lastClearSelectionResult = "none"
-local selectionDebugMessage = "none"
-local selectionDebugExpiration = 0
-local controllerMode = false
-local reticleVisible = false
-local screenCenterX = 0
-local screenCenterY = 0
-local reticleTargetType = "unavailable"
-local reticleHasWorldTarget = false
-local reticleWorldX = nil
-local reticleWorldY = nil
-local reticleWorldZ = nil
-local reticleTargetAlignment = "none"
+apiAvailable = false
+controllerName = "none"
+controllerInstanceId = nil
+normalizedLeftX = 0
+normalizedLeftY = 0
+normalizedRightX = 0
+normalizedRightY = 0
+normalizedLeftTrigger = 0
+normalizedRightTrigger = 0
+zoomSpeedMultiplier = 1
+heldButtonsSummary = "none"
+pressedThisFrameSummary = "none"
+releasedThisFrameSummary = "none"
+commandLayerPressedSummary = "none"
+pressedRecentlySummary = "none"
+releasedRecentlySummary = "none"
+commandLayerPressedRecentlySummary = "none"
+activeButtonLayoutSummary = XboxController.normalLayoutSummary
+normalPreviewSummary = "none"
+commandPreviewSummary = "none"
+activeAxesSummary = "none"
+panActive = false
+zoomActive = false
+rotationActive = false
+pitchActive = false
+fastPanActive = false
+lbCameraModifierActive = false
+commandLayerActive = false
+rightStickYMode = "zoom"
+cameraMode = "unknown"
+cameraModeId = "?"
+cameraFieldSummary = "camera state unavailable"
+cameraPitchSummary = "pitch field unavailable"
+zoomMethod = "none"
+rotationMethod = "none"
+pitchMethod = "none"
+selectionTestActive = false
+lastReticleSelectedUnitID = "none"
+lastSelectionResult = "none"
+lastBButtonResult = "none"
+lastClearSelectionResult = "none"
+selectionDebugMessage = "none"
+selectionDebugExpiration = 0
+controllerMode = false
+reticleVisible = false
+screenCenterX = 0
+screenCenterY = 0
+reticleTargetType = "unavailable"
+reticleHasWorldTarget = false
+reticleWorldX = nil
+reticleWorldY = nil
+reticleWorldZ = nil
+reticleTargetAlignment = "none"
 local viewSizeX = 0
 local viewSizeY = 0
 local lastMouseX = nil
@@ -1434,6 +1455,405 @@ end
 	return false
 end
 
+local function ControllerCameraTestIssueBuildOrders(builders, unitDefID, buildPositions, useQueue, useQueueFront)
+	local cmdInsert = CMD.INSERT or 140
+	local firstOpts = useQueue and { "shift" } or {}
+	local restOpts = { "shift" }
+
+	if useQueueFront then
+		for i = #buildPositions, 1, -1 do
+			local bp = buildPositions[i]
+			local bx, by, bz, bfacing = bp[1], bp[2], bp[3], bp[4] or 0
+			for _, unitID in ipairs(builders) do
+				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, -unitDefID, 0, bx, by, bz, bfacing }, { "alt" })
+			end
+		end
+		return true
+	end
+
+	if type(Spring.GiveOrderArrayToUnitArray) == "function" then
+		local orders = {}
+		for i, bp in ipairs(buildPositions) do
+			local bx, by, bz, bfacing = bp[1], bp[2], bp[3], bp[4] or 0
+			local opts = (i == 1 and not useQueue) and {} or { "shift" }
+			table.insert(orders, { -unitDefID, { bx, by, bz, bfacing }, opts })
+		end
+		local ok, err = pcall(Spring.GiveOrderArrayToUnitArray, builders, orders, false)
+		if ok then
+			return true
+		end
+	end
+
+	for i, bp in ipairs(buildPositions) do
+		local bx, by, bz, bfacing = bp[1], bp[2], bp[3], bp[4] or 0
+		local opts = (i == 1 and not useQueue) and {} or { "shift" }
+		for _, unitID in ipairs(builders) do
+			pcall(spGiveOrderToUnit, unitID, -unitDefID, { bx, by, bz, bfacing }, opts)
+		end
+	end
+	return true
+end
+
+function ControllerCameraTestUpdateDragPreview()
+	local drag = ControllerCameraTestDragCommand
+	if not drag.active then
+		drag.previewPoints = {}
+		return
+	end
+
+	local startX, startY, startZ = drag.startX, drag.startY, drag.startZ
+	local endX, endY, endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+	if not endX or not startX then return end
+
+	drag.endX, drag.endY, drag.endZ = endX, endY, endZ
+
+	if drag.mode == "moveLine" or drag.mode == "fightLine" or drag.mode == "attackLine" then
+		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+		local mobileUnits = {}
+		for _, unitID in ipairs(selectedUnits) do
+			local unitDefID = Spring.GetUnitDefID(unitID)
+			local unitDef = unitDefID and UnitDefs[unitDefID]
+			if unitDef and not unitDef.isBuilding and not unitDef.isFactory then
+				table.insert(mobileUnits, unitID)
+			end
+		end
+
+		local N = #mobileUnits
+		local pts = {}
+		if N == 1 then
+			table.insert(pts, { endX, endY, endZ })
+		elseif N > 1 then
+			for i = 1, N do
+				local t = (i - 1) / (N - 1)
+				local x = startX + t * (endX - startX)
+				local z = startZ + t * (endZ - startZ)
+				local y = Spring.GetGroundHeight(x, z)
+				table.insert(pts, { x, y, z })
+			end
+		end
+		drag.previewPoints = pts
+
+	elseif drag.mode == "buildLine" or drag.mode == "buildGrid" or drag.mode == "buildBorder" then
+		local option = ControllerCameraTestBuildPlacement.option
+		if option and type(option.cmdID) == "number" and option.cmdID < 0 then
+			local unitDefID = -option.cmdID
+			local facing = ControllerCameraTestBuildPlacement.facing or 0
+			local spacing = ControllerCameraTestBuildPlacement.placementSpacing or 0
+
+			local bp = {
+				facing = facing,
+				units = {
+					{
+						blueprintUnitID = 1,
+						unitDefID = unitDefID,
+						position = { 0, 0, 0 },
+						facing = 0
+					}
+				}
+			}
+
+			local startPos = { startX, startY, startZ }
+			local endPos = { endX, endY, endZ }
+
+			local modeMap = {
+				buildLine = "LINE",
+				buildGrid = "GRID",
+				buildBorder = "BOX",
+				buildSplit = "SPLIT",
+			}
+			local apiMode = modeMap[drag.mode]
+			local buildPositions = {}
+
+			drag.nativeRouteUsed = false
+			if apiMode and WG["api_blueprint"] and WG["api_blueprint"].calculateBuildPositions then
+				local ok, res = pcall(WG["api_blueprint"].calculateBuildPositions, bp, apiMode, startPos, endPos, spacing)
+				if ok and type(res) == "table" and #res > 0 then
+					buildPositions = res
+					drag.nativeRouteUsed = true
+				end
+			end
+
+			if #buildPositions == 0 then
+				local unitDef = UnitDefs[unitDefID]
+				if unitDef then
+					local sizeX = unitDef.xsize * 8
+					local sizeZ = unitDef.zsize * 8
+					local bw, bh
+					if facing % 2 == 1 then bw, bh = sizeZ, sizeX else bw, bh = sizeX, sizeZ end
+
+					if drag.mode == "buildLine" then
+						local dx = endX - startX
+						local dz = endZ - startZ
+						local dist = math.sqrt(dx*dx + dz*dz)
+						local stepSize = math.max(bw, bh) + spacing * 16
+						if dist < 2 then
+							table.insert(buildPositions, { startX, startY, startZ, facing })
+						else
+							local vx, vz = dx / dist, dz / dist
+							local numBuildings = math.floor(dist / stepSize) + 1
+							if numBuildings > 100 then numBuildings = 100 end
+							for i = 0, numBuildings - 1 do
+								local x = startX + i * stepSize * vx
+								local z = startZ + i * stepSize * vz
+								local y = Spring.GetGroundHeight(x, z)
+								table.insert(buildPositions, { x, y, z, facing })
+							end
+						end
+					elseif drag.mode == "buildGrid" then
+						local dx = endX - startX
+						local dz = endZ - startZ
+						local stepX = bw + spacing * 16
+						local stepZ = bh + spacing * 16
+						local numX = math.floor(math.abs(dx) / stepX) + 1
+						local numZ = math.floor(math.abs(dz) / stepZ) + 1
+						if numX * numZ > 100 then
+							numX = 10
+							numZ = 10
+						end
+						local signX = dx >= 0 and 1 or -1
+						local signZ = dz >= 0 and 1 or -1
+						for ix = 0, numX - 1 do
+							for iz = 0, numZ - 1 do
+								local x = startX + ix * stepX * signX
+								local z = startZ + iz * stepZ * signZ
+								local y = Spring.GetGroundHeight(x, z)
+								table.insert(buildPositions, { x, y, z, facing })
+							end
+						end
+					elseif drag.mode == "buildBorder" or drag.mode == "buildSplit" then
+						table.insert(buildPositions, { startX, startY, startZ, facing })
+						table.insert(buildPositions, { endX, endY, endZ, facing })
+					end
+				end
+			end
+
+			drag.previewPoints = buildPositions
+		end
+	end
+end
+
+function ControllerCameraTestConfirmDragCommand(exitMode)
+	local drag = ControllerCameraTestDragCommand
+	if not drag.active then return end
+
+	local startX, startY, startZ = drag.startX, drag.startY, drag.startZ
+	local endX, endY, endZ = drag.endX or reticleWorldX, drag.endY or reticleWorldY, drag.endZ or reticleWorldZ
+
+	if not endX or not startX then
+		drag.active = false
+		drag.lastResult = "failed: no world target"
+		return
+	end
+
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if #selectedUnits == 0 then
+		drag.active = false
+		drag.lastResult = "failed: no selected units"
+		latchSelectionDebugMessage("Drag failed: no units selected")
+		return
+	end
+
+	local isQueue = IsButtonDown("LT") or (normalizedLeftTrigger and normalizedLeftTrigger > 0.1)
+	local isQueueFront = IsButtonDown("RT") or (normalizedRightTrigger and normalizedRightTrigger > 0.1)
+	local orderOptions = isQueue and { "shift" } or {}
+
+	if drag.mode == "moveLine" or drag.mode == "fightLine" or drag.mode == "attackLine" then
+		local mobileUnits = {}
+		for _, unitID in ipairs(selectedUnits) do
+			local unitDefID = Spring.GetUnitDefID(unitID)
+			local unitDef = unitDefID and UnitDefs[unitDefID]
+			if unitDef and not unitDef.isBuilding and not unitDef.isFactory then
+				table.insert(mobileUnits, unitID)
+			end
+		end
+
+		local N = #mobileUnits
+		if N == 0 then
+			drag.active = false
+			drag.lastResult = "failed: no selected mobile units"
+			latchSelectionDebugMessage("Drag failed: no mobile units")
+			return
+		end
+
+		local dx = endX - startX
+		local dz = endZ - startZ
+		local dist = math.sqrt(dx*dx + dz*dz)
+		if dist > 0.1 then
+			local vx, vz = dx / dist, dz / dist
+			local sortedUnits = {}
+			for _, unitID in ipairs(mobileUnits) do
+				local ux, uy, uz = Spring.GetUnitPosition(unitID)
+				if ux and uz then
+					local proj = (ux - startX) * vx + (uz - startZ) * vz
+					table.insert(sortedUnits, { unitID = unitID, proj = proj })
+				else
+					table.insert(sortedUnits, { unitID = unitID, proj = 0 })
+				end
+			end
+			table.sort(sortedUnits, function(a, b) return a.proj < b.proj end)
+			mobileUnits = {}
+			for _, item in ipairs(sortedUnits) do
+				table.insert(mobileUnits, item.unitID)
+			end
+		end
+
+		local points = {}
+		if N == 1 then
+			table.insert(points, { endX, endY, endZ })
+		else
+			for i = 1, N do
+				local t = (i - 1) / (N - 1)
+				local px = startX + t * (endX - startX)
+				local pz = startZ + t * (endZ - startZ)
+				local py = Spring.GetGroundHeight(px, pz)
+				table.insert(points, { px, py, pz })
+			end
+		end
+
+		local cmdID = CMD.MOVE
+		local cmdName = "Move Line"
+		if drag.mode == "fightLine" then
+			cmdID = CMD.FIGHT
+			cmdName = "Fight Line"
+		elseif drag.mode == "attackLine" then
+			cmdID = CMD.ATTACK
+			cmdName = "Attack Line"
+		end
+
+		local cmdInsert = CMD.INSERT or 140
+		if isQueueFront then
+			for i = #points, 1, -1 do
+				local pt = points[i]
+				local unitID = mobileUnits[i]
+				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, pt[1], pt[2], pt[3] }, { "alt" })
+			end
+		else
+			for i, pt in ipairs(points) do
+				local unitID = mobileUnits[i]
+				pcall(spGiveOrderToUnit, unitID, cmdID, { pt[1], pt[2], pt[3] }, orderOptions)
+			end
+		end
+
+		drag.lastResult = "issued " .. cmdName .. " to " .. tostring(N) .. " units"
+		latchSelectionDebugMessage(cmdName .. " confirmed!")
+		ControllerCameraTestSetCommandMarker(endX, endY, endZ, cmdName, "build")
+
+	elseif drag.mode == "reclaimArea" or drag.mode == "repairArea" or drag.mode == "attackArea" then
+		local dx = endX - startX
+		local dz = endZ - startZ
+		local r = math.sqrt(dx*dx + dz*dz)
+		if r < 10 then r = 120 end
+
+		local cmdID = CMD.RECLAIM
+		local cmdName = "Reclaim Area"
+		if drag.mode == "repairArea" then
+			cmdID = CMD.REPAIR
+			cmdName = "Repair Area"
+		elseif drag.mode == "attackArea" then
+			cmdID = CMD.ATTACK
+			cmdName = "Attack Area"
+		end
+
+		local params = { startX, startY, startZ, r }
+		local issued = 0
+
+		if isQueueFront then
+			local cmdInsert = CMD.INSERT or 140
+			for _, unitID in ipairs(selectedUnits) do
+				local ok, err = pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, startX, startY, startZ, r }, { "alt" })
+				if ok then issued = issued + 1 end
+			end
+		else
+			for _, unitID in ipairs(selectedUnits) do
+				local ok, err = pcall(spGiveOrderToUnit, unitID, cmdID, params, orderOptions)
+				if ok then issued = issued + 1 end
+			end
+		end
+
+		drag.lastResult = "issued " .. cmdName .. " to " .. tostring(issued) .. " units"
+		latchSelectionDebugMessage(cmdName .. " confirmed!")
+		ControllerCameraTestSetCommandMarker(startX, startY, startZ, cmdName, "build")
+	end
+
+	drag.lastMode = drag.mode
+	drag.active = false
+end
+
+function ControllerCameraTestConfirmDragBuild(exitMode)
+	local drag = ControllerCameraTestDragCommand
+	if not drag.active then return end
+
+	local startX, startY, startZ = drag.startX, drag.startY, drag.startZ
+	local endX, endY, endZ = drag.endX or reticleWorldX, drag.endY or reticleWorldY, drag.endZ or reticleWorldZ
+
+	if not endX or not startX then
+		drag.active = false
+		drag.lastResult = "failed: no world target"
+		return
+	end
+
+	local placement = ControllerCameraTestBuildPlacement
+	if not placement.option or type(placement.option.cmdID) ~= "number" then
+		drag.active = false
+		drag.lastResult = "failed: no build option"
+		return
+	end
+
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if #selectedUnits == 0 then
+		drag.active = false
+		drag.lastResult = "failed: no selected units"
+		latchSelectionDebugMessage("Build drag failed: no builders")
+		return
+	end
+
+	if drag.mode == "buildBorder" and not (WG["api_blueprint"] and WG["api_blueprint"].calculateBuildPositions) then
+		drag.active = false
+		drag.lastResult = "border unavailable: native route not found"
+		latchSelectionDebugMessage("Border build unavailable natively")
+		return
+	elseif drag.mode == "buildSplit" then
+		drag.active = false
+		drag.lastResult = "split unavailable: native route not found"
+		latchSelectionDebugMessage("Split build unavailable natively")
+		return
+	end
+
+	ControllerCameraTestUpdateDragPreview()
+	local points = drag.previewPoints or {}
+	if #points == 0 then
+		drag.active = false
+		drag.lastResult = "failed: no points"
+		latchSelectionDebugMessage("Build drag failed: no positions")
+		return
+	end
+
+	local unitDefID = -placement.option.cmdID
+	local useQueue = placement.queueActive
+	local useQueueFront = placement.queueFrontActive
+
+	ControllerCameraTestIssueBuildOrders(selectedUnits, unitDefID, points, useQueue, useQueueFront)
+
+	drag.lastResult = "placed " .. tostring(#points) .. " buildings"
+	latchSelectionDebugMessage("Placed " .. tostring(#points) .. " " .. placement.option.name)
+
+	drag.lastMode = drag.mode
+	drag.active = false
+
+	if exitMode then
+		ControllerCameraTestCancelPlacement("placed and exited")
+	end
+end
+
+function ControllerCameraTestCancelDrag(reason)
+	local drag = ControllerCameraTestDragCommand
+	drag.active = false
+	drag.pressActive = false
+	drag.lastResult = reason or "cancelled"
+	drag.previewPoints = {}
+	latchSelectionDebugMessage("Drag cancelled")
+end
+
 local function attemptContextCommand()
 	local cmdID = 10 -- Fallback to Move (CMD.MOVE)
 	local cmdName = "Move"
@@ -1944,14 +2364,30 @@ function ControllerCameraTestCycleQuickGroup(delta)
 end
 
 function ControllerCameraTestGetTacticalCommands()
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	local isFactory = ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits)
+
+	if isFactory then
+		return {
+			{ name = "Clear Queue", kind = "factory_clear" },
+			{ name = "Repeat Toggle", kind = "factory_repeat" },
+			{ name = "Stop", cmdID = CMD.STOP, kind = "none" },
+		}
+	end
+
 	return {
 		{ name = "Stop", cmdID = CMD.STOP, kind = "none" },
-		{ name = "Move", cmdID = CMD.MOVE, kind = "ground" },
-		{ name = "Attack", cmdID = CMD.ATTACK, kind = "attack" },
+		{ name = "Wait", cmdID = CMD.WAIT, kind = "none" },
+		{ name = "Repeat", kind = "repeat_toggle" },
+		{ name = "Move Line", kind = "drag_line", dragMode = "moveLine" },
+		{ name = "Fight Line", kind = "drag_line", dragMode = "fightLine" },
+		{ name = "Attack Line", kind = "drag_line", dragMode = "attackLine" },
+		{ name = "Reclaim Area", kind = "drag_area", dragMode = "reclaimArea" },
+		{ name = "Repair Area", kind = "drag_area", dragMode = "repairArea" },
+		{ name = "Attack Area", kind = "drag_area", dragMode = "attackArea" },
 		{ name = "Patrol", cmdID = CMD.PATROL, kind = "ground" },
 		{ name = "Guard", cmdID = CMD.GUARD, kind = "alliedUnit" },
-		{ name = "Reclaim", cmdID = CMD.RECLAIM, kind = "reclaim" },
-		{ name = "Repair", cmdID = CMD.REPAIR, kind = "repair" },
+		{ name = "Fire State", kind = "fire_state_cycle" },
 	}
 end
 
@@ -1984,6 +2420,62 @@ function ControllerCameraTestExecuteTacticalCommand(option)
 		ControllerCameraTestTacticalMenu.lastResult = "no tactical option"
 		return
 	end
+
+	if option.kind == "drag_line" or option.kind == "drag_area" then
+		local drag = ControllerCameraTestDragCommand
+		drag.active = true
+		drag.mode = option.dragMode
+		drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		drag.pressActive = false
+		drag.pressButton = nil
+		ControllerCameraTestTacticalMenu.lastResult = "started drag: " .. tostring(option.name)
+		latchSelectionDebugMessage(option.name .. " started")
+		ControllerCameraTestTacticalMenu.open = false
+		return
+	elseif option.kind == "repeat_toggle" then
+		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+		if #selectedUnits > 0 then
+			local firstUnit = selectedUnits[1]
+			local states = type(Spring.GetUnitStates) == "function" and Spring.GetUnitStates(firstUnit)
+			local currentRepeat = states and states["repeat"]
+			local nextVal = currentRepeat and 0 or 1
+			local ok, count = ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPEAT, { nextVal }, "Repeat", nextVal == 1 and "ON" or "OFF", {})
+			ControllerCameraTestTacticalMenu.lastResult = ok and ("toggled for " .. tostring(count)) or "failed"
+		end
+		ControllerCameraTestTacticalMenu.open = false
+		return
+	elseif option.kind == "fire_state_cycle" then
+		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+		if #selectedUnits > 0 then
+			local firstUnit = selectedUnits[1]
+			local states = type(Spring.GetUnitStates) == "function" and Spring.GetUnitStates(firstUnit)
+			local currentFireState = states and states.firestate or 2
+			local nextVal = (currentFireState + 1) % 3
+			local labels = { [0] = "Hold Fire", [1] = "Return Fire", [2] = "Fire At Will" }
+			local ok, count = ControllerCameraTestIssueOrderToSelectedUnits(CMD.FIRESTATE or 20, { nextVal }, "Fire State", labels[nextVal] or tostring(nextVal), {})
+			ControllerCameraTestTacticalMenu.lastResult = ok and (labels[nextVal] .. " for " .. tostring(count)) or "failed"
+		end
+		ControllerCameraTestTacticalMenu.open = false
+		return
+	elseif option.kind == "factory_clear" then
+		local ok, count = ControllerCameraTestIssueOrderToSelectedUnits(CMD.STOP, {}, "Clear Queue", "factory", {})
+		ControllerCameraTestTacticalMenu.lastResult = ok and ("cleared " .. tostring(count) .. " factories") or "failed"
+		ControllerCameraTestTacticalMenu.open = false
+		return
+	elseif option.kind == "factory_repeat" then
+		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+		if #selectedUnits > 0 then
+			local states = type(Spring.GetUnitStates) == "function" and Spring.GetUnitStates(selectedUnits[1])
+			local currentRepeat = states and states["repeat"]
+			local nextVal = currentRepeat and 0 or 1
+			local ok, count = ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPEAT, { nextVal }, "Repeat", nextVal == 1 and "ON" or "OFF", {})
+			ControllerCameraTestTacticalMenu.lastResult = ok and ("toggled repeat for " .. tostring(count)) or "failed"
+		end
+		ControllerCameraTestTacticalMenu.open = false
+		return
+	end
+
 	if type(option.cmdID) ~= "number" then
 		ControllerCameraTestTacticalMenu.lastResult = tostring(option.name) .. " unavailable"
 		latchSelectionDebugMessage(tostring(option.name) .. " unavailable")
@@ -2055,6 +2547,7 @@ function ControllerCameraTestExecuteTacticalCommand(option)
 	local ok, count = ControllerCameraTestIssueOrderToSelectedUnits(option.cmdID, params, option.name, targetName, {})
 	ControllerCameraTestTacticalMenu.lastResult = ok and ("issued to " .. tostring(count)) or "failed"
 	ControllerCameraTestLayerDebug.commandLayerAction = option.name .. " " .. ControllerCameraTestTacticalMenu.lastResult
+	ControllerCameraTestTacticalMenu.open = false
 end
 
 function ControllerCameraTestHandleTacticalMenuInput()
@@ -2779,7 +3272,7 @@ function ControllerCameraTestTryConstructionShortcut(actionName, direction)
 			end
 		end
 	elseif actionName == "pattern" then
-		local patterns = { "single", "line", "grid", "border" }
+		local patterns = { "single", "line", "grid", "border", "split" }
 		local currentIdx = 1
 		for idx, pat in ipairs(patterns) do
 			if pat == placement.placementPattern then
@@ -3101,7 +3594,7 @@ function ControllerCameraTestEnterPlacementFromHighlight()
 	ControllerCameraTestRefreshBuildMenuDebug()
 end
 
-function ControllerCameraTestHandlePlacementInput()
+function ControllerCameraTestHandlePlacementInput(dt)
 	local placement = ControllerCameraTestBuildPlacement
 	if not placement.active then
 		return false
@@ -3111,29 +3604,75 @@ function ControllerCameraTestHandlePlacementInput()
 	placement.queueFrontActive = normalizedRightTrigger > 0
 	ControllerCameraTestUpdatePlacementAnalog()
 
+	local drag = ControllerCameraTestDragCommand
+
 	if WasButtonPressed("B") then
-		ControllerCameraTestCancelPlacement("cancelled by B")
-	elseif WasButtonPressed("A") then
-		ControllerCameraTestPlaceBuildOption(placement.option, true, "placed and exited")
-	elseif WasButtonPressed("X") then
-		ControllerCameraTestPlaceBuildOption(placement.option, false, "placed and remained")
-	elseif WasButtonPressed("dpadLeft") then
-		ControllerCameraTestRotatePlacementFacing(-1)
-	elseif WasButtonPressed("dpadRight") then
-		ControllerCameraTestRotatePlacementFacing(1)
-	elseif WasButtonPressed("Y") then
-		ControllerCameraTestCancelPlacement("cancelled by Y")
-	elseif WasButtonPressed("LB") then
-		ControllerCameraTestTryConstructionShortcut("pattern", "prev")
-	elseif WasButtonPressed("RB") then
-		ControllerCameraTestTryConstructionShortcut("pattern", "next")
-	elseif WasButtonPressed("dpadUp") then
-		ControllerCameraTestTryConstructionShortcut("spacing", "inc")
-	elseif WasButtonPressed("dpadDown") then
-		ControllerCameraTestTryConstructionShortcut("spacing", "dec")
+		if drag.active then
+			ControllerCameraTestCancelDrag("cancelled by B")
+		else
+			ControllerCameraTestCancelPlacement("cancelled by B")
+		end
+	elseif WasButtonPressed("A") or WasButtonPressed("X") then
+		local button = WasButtonPressed("A") and "A" or "X"
+		local isExit = (button == "A")
+		if placement.placementPattern == "single" then
+			ControllerCameraTestPlaceBuildOption(placement.option, isExit, "placed and " .. (isExit and "exited" or "remained"))
+		else
+			if drag.active then
+				ControllerCameraTestConfirmDragBuild(isExit)
+			else
+				drag.active = true
+				drag.pressActive = true
+				drag.pressStartTime = debugEventTime
+				drag.pressButton = button
+				drag.mode = "build" .. (placement.placementPattern == "line" and "Line" or (placement.placementPattern == "grid" and "Grid" or (placement.placementPattern == "border" and "Border" or "Split")))
+				drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
+				drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+				drag.previewPoints = {}
+				latchSelectionDebugMessage(placement.placementPattern:gsub("^%l", string.upper) .. " drag build started")
+			end
+		end
 	end
 
-	activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, D-pad L/R/RSX rotate, D-pad U/D spacing, LB/RB pattern"
+	if drag.active and drag.pressActive and (drag.pressButton == "A" or drag.pressButton == "X") then
+		local btn = drag.pressButton
+		if IsButtonDown(btn) then
+			ControllerCameraTestUpdateDragPreview()
+		end
+		if WasButtonReleased(btn) then
+			if (debugEventTime - drag.pressStartTime) >= 0.35 then
+				local isExit = (btn == "A")
+				ControllerCameraTestConfirmDragBuild(isExit)
+			end
+			drag.pressActive = false
+		end
+	elseif drag.active then
+		ControllerCameraTestUpdateDragPreview()
+	end
+
+	if not drag.active then
+		if WasButtonPressed("dpadLeft") then
+			ControllerCameraTestRotatePlacementFacing(-1)
+		elseif WasButtonPressed("dpadRight") then
+			ControllerCameraTestRotatePlacementFacing(1)
+		elseif WasButtonPressed("Y") then
+			ControllerCameraTestCancelPlacement("cancelled by Y")
+		elseif WasButtonPressed("LB") then
+			ControllerCameraTestTryConstructionShortcut("pattern", "prev")
+		elseif WasButtonPressed("RB") then
+			ControllerCameraTestTryConstructionShortcut("pattern", "next")
+		elseif WasButtonPressed("dpadUp") then
+			ControllerCameraTestTryConstructionShortcut("spacing", "inc")
+		elseif WasButtonPressed("dpadDown") then
+			ControllerCameraTestTryConstructionShortcut("spacing", "dec")
+		end
+	end
+
+	if drag.active then
+		activeButtonLayoutSummary = "Drag Build: A/X second press or release confirms, B cancels"
+	else
+		activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, D-pad L/R/RSX rotate, D-pad U/D spacing, LB/RB pattern"
+	end
 	return true
 end
 
@@ -3313,6 +3852,120 @@ function ControllerCameraTestSelectAreaUnits()
 	ControllerCameraTestLayerDebug.areaSelect = area.lastResult
 end
 
+function ControllerCameraTestHandleNormalXInput(dt)
+	local drag = ControllerCameraTestDragCommand
+	local HOLD_SECONDS = 0.35
+
+	if drag.active and WasButtonPressed("B") then
+		ControllerCameraTestCancelDrag("cancelled by B")
+		return true
+	end
+
+	if WasButtonPressed("X") then
+		drag.pressActive = true
+		drag.pressStartTime = debugEventTime
+		drag.pressButton = "X"
+		drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		drag.active = false
+	end
+
+	if drag.pressActive and drag.pressButton == "X" and IsButtonDown("X") then
+		if not drag.active and (debugEventTime - drag.pressStartTime) >= HOLD_SECONDS then
+			drag.active = true
+			drag.mode = "moveLine"
+			drag.lastResult = "active"
+			latchSelectionDebugMessage("Move Line Drag started")
+		end
+		if drag.active then
+			ControllerCameraTestUpdateDragPreview()
+		end
+	end
+
+	if WasButtonReleased("X") and drag.pressActive and drag.pressButton == "X" then
+		if drag.active then
+			ControllerCameraTestConfirmDragCommand(false)
+		else
+			attemptContextCommand()
+		end
+		drag.pressActive = false
+	end
+
+	return drag.pressActive or drag.active
+end
+
+function ControllerCameraTestHandleCommandLayerDragInputs(dt)
+	local drag = ControllerCameraTestDragCommand
+	local HOLD_SECONDS = 0.35
+
+	if drag.active and WasButtonPressed("B") then
+		ControllerCameraTestCancelDrag("cancelled by B")
+		return true
+	end
+
+	if WasButtonPressed("X") then
+		drag.pressActive = true
+		drag.pressStartTime = debugEventTime
+		drag.pressButton = "RT+X"
+		drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		drag.active = false
+	end
+
+	if drag.pressActive and drag.pressButton == "RT+X" and IsButtonDown("X") then
+		if not drag.active and (debugEventTime - drag.pressStartTime) >= HOLD_SECONDS then
+			drag.active = true
+			drag.mode = "fightLine"
+			drag.lastResult = "active"
+			latchSelectionDebugMessage("Fight Line Drag started")
+		end
+		if drag.active then
+			ControllerCameraTestUpdateDragPreview()
+		end
+	end
+
+	if WasButtonReleased("X") and drag.pressActive and drag.pressButton == "RT+X" then
+		if drag.active then
+			ControllerCameraTestConfirmDragCommand(false)
+		else
+			attemptAttackCommand()
+		end
+		drag.pressActive = false
+	end
+
+	if WasButtonPressed("A") then
+		drag.pressActive = true
+		drag.pressStartTime = debugEventTime
+		drag.pressButton = "RT+A"
+		drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		drag.active = false
+	end
+
+	if drag.pressActive and drag.pressButton == "RT+A" and IsButtonDown("A") then
+		if not drag.active and (debugEventTime - drag.pressStartTime) >= HOLD_SECONDS then
+			drag.active = true
+			drag.mode = "attackLine"
+			drag.lastResult = "active"
+			latchSelectionDebugMessage("Attack Line Drag started")
+		end
+		if drag.active then
+			ControllerCameraTestUpdateDragPreview()
+		end
+	end
+
+	if WasButtonReleased("A") and drag.pressActive and drag.pressButton == "RT+A" then
+		if drag.active then
+			ControllerCameraTestConfirmDragCommand(false)
+		else
+			ControllerCameraTestSelectVisibleCombatUnits()
+		end
+		drag.pressActive = false
+	end
+
+	return drag.pressActive or drag.active
+end
+
 function ControllerCameraTestHandleNormalAInput(dt)
 	local area = ControllerCameraTestAreaSelect
 	local HOLD_SECONDS = 0.38
@@ -3375,8 +4028,12 @@ function ControllerCameraTestSetNormalUtilityAction(message)
 	latchSelectionDebugMessage(message)
 end
 
-function ControllerCameraTestHandleCommandLayerInput()
+function ControllerCameraTestHandleCommandLayerInput(dt)
 	if ControllerCameraTestHandleTacticalMenuInput() then
+		return
+	end
+
+	if ControllerCameraTestHandleCommandLayerDragInputs(dt) then
 		return
 	end
 
@@ -3869,8 +4526,8 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
 			ControllerCameraTestCancelAreaSelect("cancelled by RT layer")
 		end
-		ControllerCameraTestHandleCommandLayerInput()
-	elseif ControllerCameraTestHandlePlacementInput() then
+		ControllerCameraTestHandleCommandLayerInput(dt)
+	elseif ControllerCameraTestHandlePlacementInput(dt) then
 		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
 			ControllerCameraTestCancelAreaSelect("cancelled by placement")
 		end
@@ -3885,18 +4542,23 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		end
 	else
 		local areaBusy = ControllerCameraTestHandleNormalAInput(dt)
+		local xBusy = false
+		if not areaBusy then
+			xBusy = ControllerCameraTestHandleNormalXInput(dt)
+		end
+
 		if areaBusy and WasButtonPressed("B") then
 			ControllerCameraTestCancelAreaSelect("cancelled by B")
-		elseif not areaBusy and WasButtonPressed("B") then
+		elseif xBusy and WasButtonPressed("B") then
+			-- Handled inside X handler
+		elseif not areaBusy and not xBusy and WasButtonPressed("B") then
 			attemptClearSelection()
 		end
-		if not areaBusy and WasButtonPressed("X") then
-			attemptContextCommand()
-		end
-		if not areaBusy and WasButtonPressed("Y") then
+
+		if not areaBusy and not xBusy and WasButtonPressed("Y") then
 			attemptBuildMenu()
 		end
-		if not areaBusy then
+		if not areaBusy and not xBusy then
 			ControllerCameraTestHandleNormalUtilityInput()
 		end
 	end
@@ -3971,6 +4633,9 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 	end
 	ControllerCameraTestUpdateCameraControls(dt)
 	updateReticleWorldTarget()
+	if ControllerCameraTestDragCommand.active then
+		pcall(ControllerCameraTestUpdateDragPreview)
+	end
 	if controllerMode and reticleVisible and type(spWarpMouse) == "function" then spWarpMouse(screenCenterX, screenCenterY) end
 end
 
@@ -4349,18 +5014,17 @@ function ControllerCameraTestDrawHelpOverlay()
 	local lines = {
 		"Controller Camera Test Help",
 		"Camera/Move: LS pan | RS X rotate | RS Y zoom | LB+RS Y pitch | LT boost",
-		"Selection: A select | A hold area-select | A double-tap select-all-type | B clear",
-		"Context Actions: X smart context (move/attack/mex) | RT+B stop | RT+X attack",
-		"Combat Layers: RT+A combat-select | RT+Y tactical-menu | RT+Dpad guard/patrol/reclaim",
+		"Selection: A select | A hold area-select | A double-tap select-all-type | B clear | X hold Move Line Drag",
+		"Context Actions: X context | RT+B stop | RT+X attack | RT+X hold Fight Line Drag | RT+A hold Attack Line Drag",
+		"Combat Layers: RT+A combat-select | RT+Y tactical-menu | RT+Dpad Down Reclaim/Repair Area Drag",
 		"Constructor Radial: Y open | LS/Dpad select | LB/RB page | Y close",
 		"   * A enter placement | X quick-place | B close radial",
 		"Factory Radial: Y open | LS/Dpad select | LB/RB page | Y close",
 		"   * A add 1 queue | LT+A add 5 queue | B remove 1 | LT+B remove 5",
 		"Placement Mode: A place | X place+stay | B cancel | LT queue | RT queue front",
-		"   * Dpad L/R or RS X rotate | Dpad U/D build spacing | LB/RB pattern",
+		"   * Dpad L/R or RS X rotate | Dpad U/D build spacing | LB/RB pattern | A/X hold Build Line/Grid Drag",
 		"Bookmarks & Groups: Dpad recall cam | LT+Dpad store cam | Back+A/B/X/Y store group 1-4",
-		"Debug Panel: Back toggle panel | Click headers expand/collapse | Compact/Full button",
-		"Tuning Settings: Back+Dpad L/R select setting | Back+Dpad U/D adjust",
+		"Debug Panel: Back toggle panel | Click headers expand/collapse | Compact/Full button | Tuning: Back+Dpad U/D/L/R",
 		"Tuning Selection: " .. ControllerCameraTestCurrentSettingLabel(),
 	}
 
@@ -4768,6 +5432,13 @@ function widget:DrawScreen()
 				"Factory progress known: " .. tostring(factoryProgressKnown),
 				"Factory progress cmdID: " .. tostring(factoryProgressCmdID),
 				"Factory progress value: " .. tostring(factoryProgressValue),
+				"Drag active: " .. yesNo(ControllerCameraTestDragCommand.active),
+				"Drag mode: " .. tostring(ControllerCameraTestDragCommand.mode),
+				"Drag start: " .. (ControllerCameraTestDragCommand.startX and string.format("%.0f, %.0f, %.0f", ControllerCameraTestDragCommand.startX, ControllerCameraTestDragCommand.startY, ControllerCameraTestDragCommand.startZ) or "nil"),
+				"Drag end: " .. (ControllerCameraTestDragCommand.endX and string.format("%.0f, %.0f, %.0f", ControllerCameraTestDragCommand.endX, ControllerCameraTestDragCommand.endY, ControllerCameraTestDragCommand.endZ) or "nil"),
+				"Drag preview points count: " .. tostring(ControllerCameraTestDragCommand.previewPoints and #ControllerCameraTestDragCommand.previewPoints or 0),
+				"Drag last result: " .. tostring(ControllerCameraTestDragCommand.lastResult),
+				"Drag native route used: " .. yesNo(ControllerCameraTestDragCommand.nativeRouteUsed),
 			},
 		},
 	}
@@ -4805,6 +5476,7 @@ function widget:DrawScreen()
 			"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary) .. " | Held: " .. heldButtonsSummary .. " | Pressed: " .. pressedRecentlySummary,
 			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName) .. " (Q:" .. tostring(highlightedQueueCount) .. (factoryProgressKnown == "yes" and " P:" .. factoryProgressValue or "") .. ")",
 			"Placement: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none") .. " | Pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern) .. " | Spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
+			"Drag: Act=" .. yesNo(ControllerCameraTestDragCommand.active) .. " Mode=" .. tostring(ControllerCameraTestDragCommand.mode) .. " Pts=" .. tostring(ControllerCameraTestDragCommand.previewPoints and #ControllerCameraTestDragCommand.previewPoints or 0) .. " Res=" .. tostring(ControllerCameraTestDragCommand.lastResult) .. " Route=" .. (ControllerCameraTestDragCommand.nativeRouteUsed and "Native" or "Fallback"),
 			"Last Action: " .. tostring(ControllerCameraTestBuildMenu.lastAction or "none") .. " | Result: " .. tostring(ControllerCameraTestBuildMenu.radialLastAction or "none"),
 			"Selection Msg: " .. selectionDebugMessage .. " | Last cmd: " .. tostring(lastIssuedCommand)
 		}
@@ -4972,6 +5644,58 @@ function widget:DrawWorld()
 			44 + ((1 - alpha) * 32),
 			28
 		)
+	end
+
+	-- Drag command previews
+	local drag = ControllerCameraTestDragCommand
+	if drag and drag.active and drag.startX then
+		local startX, startY, startZ = drag.startX, drag.startY, drag.startZ
+		local endX = drag.endX or reticleWorldX
+		local endY = drag.endY or reticleWorldY
+		local endZ = drag.endZ or reticleWorldZ
+
+		if endX and startX then
+			gl.LineWidth(3.0)
+			if drag.mode == "reclaimArea" or drag.mode == "repairArea" or drag.mode == "attackArea" then
+				local dx = endX - startX
+				local dz = endZ - startZ
+				local r = math.sqrt(dx*dx + dz*dz)
+				if r < 10 then r = 120 end
+
+				if drag.mode == "reclaimArea" then
+					gl.Color(0.2, 0.8, 0.8, 0.65)
+				elseif drag.mode == "repairArea" then
+					gl.Color(0.2, 0.9, 0.3, 0.65)
+				else
+					gl.Color(1.0, 0.2, 0.2, 0.65)
+				end
+				gl.DrawGroundCircle(startX, startY, startZ, r, 64)
+				gl.DrawGroundCircle(startX, startY, startZ, 12, 16)
+			else
+				if drag.mode == "moveLine" then
+					gl.Color(0.2, 0.8, 0.9, 0.7)
+				elseif drag.mode == "fightLine" then
+					gl.Color(1.0, 0.5, 0.1, 0.7)
+				elseif drag.mode == "attackLine" then
+					gl.Color(1.0, 0.1, 0.1, 0.8)
+				else -- buildLine, buildGrid, buildBorder, buildSplit
+					gl.Color(1.0, 0.85, 0.2, 0.7)
+				end
+
+				gl.BeginEnd(GL.LINE_STRIP, function()
+					gl.Vertex(startX, startY, startZ)
+					gl.Vertex(endX, endY, endZ)
+				end)
+
+				local pts = drag.previewPoints or {}
+				for _, pt in ipairs(pts) do
+					if pt[1] and pt[3] then
+						local py = pt[2] or Spring.GetGroundHeight(pt[1], pt[3])
+						gl.DrawGroundCircle(pt[1], py, pt[3], 24, 16)
+					end
+				end
+			end
+		end
 	end
 
 	gl.Color(1, 1, 1, 1)
