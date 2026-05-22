@@ -33,6 +33,7 @@ local TRIGGER_DEADZONE = 3000
 local AXIS_MAX = 32767
 local PAN_SPEED = 1800
 local FAST_PAN_MULTIPLIER = 2.75
+local FAST_ZOOM_MULTIPLIER = 3.0
 local ZOOM_SPEED = 1200
 local ZOOM_SCALE_SPEED = 0.9
 local ROTATION_SPEED = 1.0
@@ -66,27 +67,41 @@ local XboxController = {
 		"rightTrigger",
 	},
 	buttons = {
+		A = 0,
 		a = 0,
+		B = 1,
 		b = 1,
+		X = 2,
 		x = 2,
+		Y = 3,
 		y = 3,
 		back = 4,
 		view = 4,
+		["Back/View"] = 4,
 		guide = 5,
 		start = 6,
 		menu = 6,
+		["Start/Menu"] = 6,
 		leftStick = 7,
 		leftStickClick = 7,
+		["Left Stick Click"] = 7,
 		rightStick = 8,
 		rightStickClick = 8,
+		["Right Stick Click"] = 8,
+		LB = 9,
 		lb = 9,
 		leftBumper = 9,
+		RB = 10,
 		rb = 10,
 		rightBumper = 10,
 		dpadUp = 11,
+		["D-pad Up"] = 11,
 		dpadDown = 12,
+		["D-pad Down"] = 12,
 		dpadLeft = 13,
+		["D-pad Left"] = 13,
 		dpadRight = 14,
+		["D-pad Right"] = 14,
 	},
 	buttonLabels = {
 		[0] = "A",
@@ -106,6 +121,7 @@ local XboxController = {
 		[14] = "D-pad Right",
 	},
 	buttonOrder = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 },
+	commandLayerButtonOrder = { 0, 1, 2, 3, 9, 10, 11, 12, 13, 14 },
 }
 
 local apiAvailable = false
@@ -117,7 +133,11 @@ local normalizedRightX = 0
 local normalizedRightY = 0
 local normalizedLeftTrigger = 0
 local normalizedRightTrigger = 0
-local pressedButtonsSummary = "none"
+local zoomSpeedMultiplier = 1
+local heldButtonsSummary = "none"
+local pressedThisFrameSummary = "none"
+local releasedThisFrameSummary = "none"
+local commandLayerPressedSummary = "none"
 local activeAxesSummary = "none"
 local panActive = false
 local zoomActive = false
@@ -134,6 +154,18 @@ local mapSizeX = Game and Game.mapSizeX or 0
 local mapSizeZ = Game and Game.mapSizeZ or 0
 local maxCameraDistance = mathMax(mapSizeX, mapSizeZ, 1000) * 1.5
 
+local previousButtonStates = {}
+local currentButtonStates = {}
+local pressedButtonStates = {}
+local releasedButtonStates = {}
+
+local function clearButtonStateTracking()
+	previousButtonStates = {}
+	currentButtonStates = {}
+	pressedButtonStates = {}
+	releasedButtonStates = {}
+end
+
 local function resetControllerInputDebug()
 	normalizedLeftX = 0
 	normalizedLeftY = 0
@@ -141,7 +173,11 @@ local function resetControllerInputDebug()
 	normalizedRightY = 0
 	normalizedLeftTrigger = 0
 	normalizedRightTrigger = 0
-	pressedButtonsSummary = "none"
+	zoomSpeedMultiplier = 1
+	heldButtonsSummary = "none"
+	pressedThisFrameSummary = "none"
+	releasedThisFrameSummary = "none"
+	commandLayerPressedSummary = "none"
 	activeAxesSummary = "none"
 	panActive = false
 	zoomActive = false
@@ -150,6 +186,7 @@ local function resetControllerInputDebug()
 	commandLayerActive = false
 	zoomMethod = "none"
 	rotationMethod = "none"
+	clearButtonStateTracking()
 end
 
 local function clamp(value, minValue, maxValue)
@@ -226,20 +263,47 @@ local function GetNamedButton(state, buttonName)
 	return GetButton(state, buttonId)
 end
 
-local function getPressedButtonSummary(state)
-	local pressed = {}
+local function IsButtonDown(buttonName)
+	local buttonId = XboxController.buttons[buttonName]
+	return buttonId ~= nil and currentButtonStates[buttonId] == true
+end
 
+local function WasButtonPressed(buttonName)
+	local buttonId = XboxController.buttons[buttonName]
+	return buttonId ~= nil and pressedButtonStates[buttonId] == true
+end
+
+local function WasButtonReleased(buttonName)
+	local buttonId = XboxController.buttons[buttonName]
+	return buttonId ~= nil and releasedButtonStates[buttonId] == true
+end
+
+local function updateButtonStates(state)
 	for _, buttonId in ipairs(XboxController.buttonOrder) do
-		if GetButton(state, buttonId) then
-			pressed[#pressed + 1] = XboxController.buttonLabels[buttonId] or tostring(buttonId)
+		local isDown = GetButton(state, buttonId)
+		local wasDown = currentButtonStates[buttonId] == true
+
+		previousButtonStates[buttonId] = wasDown
+		currentButtonStates[buttonId] = isDown
+		pressedButtonStates[buttonId] = isDown and not wasDown
+		releasedButtonStates[buttonId] = wasDown and not isDown
+	end
+end
+
+local function getButtonStateSummary(buttonStates, buttonOrder)
+	local buttons = {}
+
+	for _, buttonId in ipairs(buttonOrder or XboxController.buttonOrder) do
+		if buttonStates[buttonId] then
+			buttons[#buttons + 1] = XboxController.buttonLabels[buttonId] or tostring(buttonId)
 		end
 	end
 
-	if #pressed == 0 then
+	if #buttons == 0 then
 		return "none"
 	end
 
-	return table.concat(pressed, ", ")
+	return table.concat(buttons, ", ")
 end
 
 local function getNormalizedDebugAxis(state, axisName)
@@ -420,11 +484,13 @@ local function applyFallbackHeightZoom(cameraState, zoomInput, dt)
 	return true
 end
 
-local function applyZoom(cameraState, zoomInput, dt)
+local function applyZoom(cameraState, zoomInput, zoomMultiplier, dt)
 	if zoomInput == 0 then
 		zoomMethod = "none"
 		return
 	end
+
+	zoomInput = zoomInput * (zoomMultiplier or 1)
 
 	if cameraState.mode == 2 or cameraState.name == "spring" then
 		if applySpringZoom(cameraState, zoomInput, dt) then
@@ -473,7 +539,7 @@ local function applyRotation(cameraState, rotationInput, dt)
 	return false
 end
 
-local function applyCameraInput(leftX, leftY, zoomInput, rotationInput, panMultiplier, dt)
+local function applyCameraInput(leftX, leftY, zoomInput, rotationInput, panMultiplier, zoomMultiplier, dt)
 	local cameraState = spGetCameraState and spGetCameraState()
 	if type(cameraState) ~= "table" or cameraState.px == nil or cameraState.pz == nil then
 		updateCameraDebug(cameraState)
@@ -486,7 +552,7 @@ local function applyCameraInput(leftX, leftY, zoomInput, rotationInput, panMulti
 	cameraState.px = cameraState.px + deltaX
 	cameraState.pz = cameraState.pz + deltaZ
 
-	applyZoom(cameraState, zoomInput, dt)
+	applyZoom(cameraState, zoomInput, zoomMultiplier, dt)
 	applyRotation(cameraState, rotationInput, dt)
 
 	if mapSizeX > 0 then
@@ -510,6 +576,7 @@ function widget:Update(dt)
 	rotationActive = false
 
 	if not apiAvailable then
+		resetControllerInputDebug()
 		return
 	end
 
@@ -531,19 +598,26 @@ function widget:Update(dt)
 	normalizedRightY = normalizeAxis(GetNamedAxis(state, "rightStickY"))
 	normalizedLeftTrigger = normalizeTrigger(GetNamedAxis(state, "leftTrigger"))
 	normalizedRightTrigger = normalizeTrigger(GetNamedAxis(state, "rightTrigger"))
-	pressedButtonsSummary = getPressedButtonSummary(state)
+	updateButtonStates(state)
+	heldButtonsSummary = getButtonStateSummary(currentButtonStates)
+	pressedThisFrameSummary = getButtonStateSummary(pressedButtonStates)
+	releasedThisFrameSummary = getButtonStateSummary(releasedButtonStates)
 	activeAxesSummary = getActiveAxisSummary(state)
 
 	fastPanActive = normalizedLeftTrigger > 0
 	commandLayerActive = normalizedRightTrigger > 0
+	commandLayerPressedSummary = commandLayerActive
+		and getButtonStateSummary(pressedButtonStates, XboxController.commandLayerButtonOrder)
+		or "none"
 	panActive = normalizedLeftX ~= 0 or normalizedLeftY ~= 0
 	local zoomInput = -normalizedRightY
 	zoomActive = zoomInput ~= 0
 	rotationActive = normalizedRightX ~= 0
 
 	local panMultiplier = fastPanActive and FAST_PAN_MULTIPLIER or 1
+	zoomSpeedMultiplier = fastPanActive and FAST_ZOOM_MULTIPLIER or 1
 	if panActive or zoomActive or rotationActive then
-		applyCameraInput(normalizedLeftX, normalizedLeftY, zoomInput, normalizedRightX, panMultiplier, dt)
+		applyCameraInput(normalizedLeftX, normalizedLeftY, zoomInput, normalizedRightX, panMultiplier, zoomSpeedMultiplier, dt)
 	elseif spGetCameraState then
 		zoomMethod = "none"
 		rotationMethod = "none"
@@ -574,7 +648,7 @@ function widget:DrawScreen()
 	glText(string.format("right stick: x=%.3f y=%.3f", normalizedRightX, normalizedRightY), x, y, 12, "o")
 	y = y - lineHeight
 
-	glText(string.format("LT: %.3f fast-pan active: %s", normalizedLeftTrigger, fastPanActive and "yes" or "no"), x, y, 12, "o")
+	glText(string.format("LT boost (pan + zoom): %s (LT=%.3f)", fastPanActive and "active" or "inactive", normalizedLeftTrigger), x, y, 12, "o")
 	y = y - lineHeight
 
 	glText(string.format("RT Command Layer: %s (RT=%.3f)", commandLayerActive and "active" or "inactive", normalizedRightTrigger), x, y, 12, "o")
@@ -586,13 +660,28 @@ function widget:DrawScreen()
 	glText("zoom active: " .. (zoomActive and "yes" or "no"), x, y, 12, "o")
 	y = y - lineHeight
 
+	glText(string.format("zoom speed multiplier: %.1fx", zoomSpeedMultiplier), x, y, 12, "o")
+	y = y - lineHeight
+
 	glText("rotation active: " .. (rotationActive and "yes" or "no"), x, y, 12, "o")
 	y = y - lineHeight
 
 	glText("axes: " .. activeAxesSummary, x, y, 12, "o")
 	y = y - lineHeight
 
-	glText("buttons: " .. pressedButtonsSummary, x, y, 12, "o")
+	glText("held buttons: " .. heldButtonsSummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("pressed this frame: " .. pressedThisFrameSummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("released this frame: " .. releasedThisFrameSummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("command layer: " .. (commandLayerActive and "active" or "inactive"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("command layer buttons pressed this frame: " .. commandLayerPressedSummary, x, y, 12, "o")
 	y = y - lineHeight
 
 	glText("camera: " .. cameraMode .. " mode=" .. cameraModeId, x, y, 12, "o")
