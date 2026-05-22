@@ -53,13 +53,6 @@ local RETICLE_RADIUS = 11
 local RETICLE_GAP = 5
 local RETICLE_LINE_LENGTH = 11
 local RETICLE_SEGMENTS = 28
-local DEBUG_PAGE_COUNT = 4
-local DEBUG_PAGE_NAMES = {
-	[1] = "Core Controls",
-	[2] = "Reticle / World Target",
-	[3] = "Buttons / Command Layer",
-	[4] = "Camera State",
-}
 
 local XboxController = {
 	axes = {
@@ -204,23 +197,9 @@ local cameraMode = "unknown"
 local cameraModeId = "?"
 local cameraFieldSummary = "camera state unavailable"
 local cameraPitchSummary = "pitch field unavailable"
-local cameraPxSummary = "-"
-local cameraPySummary = "-"
-local cameraPzSummary = "-"
-local cameraDistSummary = "-"
-local cameraHeightSummary = "-"
-local cameraOldHeightSummary = "-"
-local cameraRxSummary = "-"
-local cameraRySummary = "-"
-local cameraRzSummary = "-"
-local cameraDxSummary = "-"
-local cameraDySummary = "-"
-local cameraDzSummary = "-"
-local cameraFovSummary = "-"
 local zoomMethod = "none"
 local rotationMethod = "none"
 local pitchMethod = "none"
-local debugPageIndex = 1
 local controllerMode = false
 local reticleVisible = false
 local screenCenterX = 0
@@ -303,21 +282,7 @@ local function resetControllerInputDebug()
 	lbCameraModifierActive = false
 	commandLayerActive = false
 	rightStickYMode = "zoom"
-	cameraFieldSummary = "camera state unavailable"
 	cameraPitchSummary = "pitch field unavailable"
-	cameraPxSummary = "-"
-	cameraPySummary = "-"
-	cameraPzSummary = "-"
-	cameraDistSummary = "-"
-	cameraHeightSummary = "-"
-	cameraOldHeightSummary = "-"
-	cameraRxSummary = "-"
-	cameraRySummary = "-"
-	cameraRzSummary = "-"
-	cameraDxSummary = "-"
-	cameraDySummary = "-"
-	cameraDzSummary = "-"
-	cameraFovSummary = "-"
 	zoomMethod = "none"
 	rotationMethod = "none"
 	pitchMethod = "none"
@@ -367,25 +332,6 @@ local function formatNumber(value)
 	end
 
 	return string.format("%.1f", value)
-end
-
-local function resetDebugPageIfInvalid()
-	if type(debugPageIndex) ~= "number" or debugPageIndex < 1 or debugPageIndex > DEBUG_PAGE_COUNT then
-		debugPageIndex = 1
-	end
-end
-
-local function getDebugPageName()
-	resetDebugPageIfInvalid()
-	return DEBUG_PAGE_NAMES[debugPageIndex] or DEBUG_PAGE_NAMES[1]
-end
-
-local function advanceDebugPage()
-	resetDebugPageIfInvalid()
-	debugPageIndex = debugPageIndex + 1
-	if debugPageIndex > DEBUG_PAGE_COUNT then
-		debugPageIndex = 1
-	end
 end
 
 local function normalizeAxis(value)
@@ -697,52 +643,24 @@ local function updateCameraDebug(cameraState)
 		cameraModeId = "?"
 		cameraFieldSummary = "camera state unavailable"
 		cameraPitchSummary = "pitch field unavailable"
-		cameraPxSummary = "-"
-		cameraPySummary = "-"
-		cameraPzSummary = "-"
-		cameraDistSummary = "-"
-		cameraHeightSummary = "-"
-		cameraOldHeightSummary = "-"
-		cameraRxSummary = "-"
-		cameraRySummary = "-"
-		cameraRzSummary = "-"
-		cameraDxSummary = "-"
-		cameraDySummary = "-"
-		cameraDzSummary = "-"
-		cameraFovSummary = "-"
 		return
 	end
 
 	cameraMode = tostring(cameraState.name or "unknown")
 	cameraModeId = tostring(cameraState.mode or "?")
-	cameraPxSummary = formatNumber(cameraState.px)
-	cameraPySummary = formatNumber(cameraState.py)
-	cameraPzSummary = formatNumber(cameraState.pz)
-	cameraDistSummary = formatNumber(cameraState.dist)
-	cameraHeightSummary = formatNumber(cameraState.height)
-	cameraOldHeightSummary = formatNumber(cameraState.oldHeight)
-	cameraRxSummary = formatNumber(cameraState.rx)
-	cameraRySummary = formatNumber(cameraState.ry)
-	cameraRzSummary = formatNumber(cameraState.rz)
-	cameraDxSummary = formatNumber(cameraState.dx)
-	cameraDySummary = formatNumber(cameraState.dy)
-	cameraDzSummary = formatNumber(cameraState.dz)
-	cameraFovSummary = formatNumber(cameraState.fov)
 	cameraFieldSummary = string.format(
-		"px=%s py=%s pz=%s dist=%s height=%s oldHeight=%s rx=%s ry=%s rz=%s dx=%s dy=%s dz=%s fov=%s",
-		cameraPxSummary,
-		cameraPySummary,
-		cameraPzSummary,
-		cameraDistSummary,
-		cameraHeightSummary,
-		cameraOldHeightSummary,
-		cameraRxSummary,
-		cameraRySummary,
-		cameraRzSummary,
-		cameraDxSummary,
-		cameraDySummary,
-		cameraDzSummary,
-		cameraFovSummary
+		"px=%s py=%s pz=%s dist=%s height=%s rx=%s ry=%s dx=%s dy=%s dz=%s fov=%s",
+		formatNumber(cameraState.px),
+		formatNumber(cameraState.py),
+		formatNumber(cameraState.pz),
+		formatNumber(cameraState.dist),
+		formatNumber(cameraState.height),
+		formatNumber(cameraState.rx),
+		formatNumber(cameraState.ry),
+		formatNumber(cameraState.dx),
+		formatNumber(cameraState.dy),
+		formatNumber(cameraState.dz),
+		formatNumber(cameraState.fov)
 	)
 
 	if type(cameraState.rx) == "number" then
@@ -1123,9 +1041,6 @@ function widget:Update(dt)
 	fastPanActive = normalizedLeftTrigger > 0
 	lbCameraModifierActive = IsButtonDown("LB")
 	commandLayerActive = normalizedRightTrigger > 0
-	if commandLayerActive and WasButtonPressed("Back/View") then
-		advanceDebugPage()
-	end
 	activeButtonLayoutSummary = commandLayerActive
 		and XboxController.commandLayoutSummary
 		or XboxController.normalLayoutSummary
@@ -1187,88 +1102,109 @@ function widget:DrawScreen()
 	local x = 20
 	local y = 500
 	local lineHeight = 18
-	local function yesNo(value)
-		return value and "yes" or "no"
-	end
-	local function activeInactive(value)
-		return value and "active" or "inactive"
-	end
-	local function drawLine(text)
-		glText(text, x, y, 12, "o")
-		y = y - lineHeight
-	end
 
-	resetDebugPageIfInvalid()
-	glText(string.format(
-		"Controller Camera Test - Debug Page %d/%d: %s",
-		debugPageIndex,
-		DEBUG_PAGE_COUNT,
-		getDebugPageName()
-	), x, y, 14, "o")
+	glText("Controller Camera Test", x, y, 14, "o")
 	y = y - lineHeight
 
-	if debugPageIndex == 1 then
-		drawLine("API: " .. (apiAvailable and "available" or "missing"))
-		drawLine("Controller: " .. tostring(controllerName))
-		drawLine("instanceId: " .. tostring(controllerInstanceId))
-		drawLine("input mode: " .. (controllerMode and "controller" or "mouse"))
-		drawLine(string.format("left stick: x=%.3f y=%.3f", normalizedLeftX, normalizedLeftY))
-		drawLine(string.format("right stick: x=%.3f y=%.3f mode=%s", normalizedRightX, normalizedRightY, rightStickYMode))
-		drawLine(string.format(
-			"LT boost: %s (LT=%.3f, pan %.1fx, zoom %.1fx)",
-			activeInactive(fastPanActive),
-			normalizedLeftTrigger,
-			fastPanActive and FAST_PAN_MULTIPLIER or 1,
-			zoomSpeedMultiplier
-		))
-		drawLine(string.format("RT command layer: %s (RT=%.3f)", activeInactive(commandLayerActive), normalizedRightTrigger))
-		drawLine(string.format(
-			"pan/zoom/rotate/pitch: %s/%s/%s/%s",
-			yesNo(panActive),
-			yesNo(zoomActive),
-			yesNo(rotationActive),
-			yesNo(pitchActive)
-		))
-		drawLine("LB camera modifier active: " .. yesNo(lbCameraModifierActive))
-		drawLine("zoom method: " .. zoomMethod)
-		drawLine("rotation method: " .. rotationMethod)
-		drawLine("pitch method: " .. pitchMethod)
-		drawLine("axes: " .. activeAxesSummary)
-	elseif debugPageIndex == 2 then
-		drawLine("input mode: " .. (controllerMode and "controller" or "mouse"))
-		drawLine("reticle visible: " .. yesNo(reticleVisible))
-		drawLine(string.format("reticle screen: x=%.1f y=%.1f", screenCenterX, screenCenterY))
-		if reticleHasWorldTarget then
-			drawLine(string.format("reticle world: x=%.1f y=%.1f z=%.1f", reticleWorldX, reticleWorldY, reticleWorldZ))
-		else
-			drawLine("reticle world: unavailable")
-		end
-		drawLine("reticle target type: " .. reticleTargetType)
-		drawLine("reticle has world target: " .. yesNo(reticleHasWorldTarget))
-		drawLine("center-screen ray status: " .. (reticleHasWorldTarget and "hit" or reticleTargetType))
-	elseif debugPageIndex == 3 then
-		drawLine("held buttons: " .. heldButtonsSummary)
-		drawLine("pressed recently: " .. pressedRecentlySummary)
-		drawLine("released recently: " .. releasedRecentlySummary)
-		drawLine("command layer: " .. activeInactive(commandLayerActive))
-		drawLine("command layer pressed recently: " .. commandLayerPressedRecentlySummary)
-		drawLine("button layout: " .. activeButtonLayoutSummary)
-		drawLine("normal preview: " .. normalPreviewSummary)
-		drawLine("command preview: " .. commandPreviewSummary)
-		drawLine("page switch: RT + Back/View")
-	elseif debugPageIndex == 4 then
-		drawLine("camera: " .. cameraMode .. " mode=" .. cameraModeId)
-		drawLine("px/py/pz: " .. cameraPxSummary .. " / " .. cameraPySummary .. " / " .. cameraPzSummary)
-		drawLine("dist: " .. cameraDistSummary)
-		drawLine("height/oldHeight: " .. cameraHeightSummary .. " / " .. cameraOldHeightSummary)
-		drawLine("rx/ry/rz: " .. cameraRxSummary .. " / " .. cameraRySummary .. " / " .. cameraRzSummary)
-		drawLine("dx/dy/dz: " .. cameraDxSummary .. " / " .. cameraDySummary .. " / " .. cameraDzSummary)
-		drawLine("fov: " .. cameraFovSummary)
-		drawLine(string.format("zoom speed multiplier: %.1fx", zoomSpeedMultiplier))
-		drawLine("zoom method: " .. zoomMethod)
-		drawLine("rotation method: " .. rotationMethod)
-		drawLine("pitch method: " .. pitchMethod)
-		drawLine("pitch field: " .. cameraPitchSummary)
-		drawLine(cameraFieldSummary)
+	glText("API: " .. (apiAvailable and "available" or "missing"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("Controller: " .. tostring(controllerName), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("instanceId: " .. tostring(controllerInstanceId), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("input mode: " .. (controllerMode and "controller" or "mouse"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("reticle visible: " .. (reticleVisible and "yes" or "no"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText(string.format("reticle screen: x=%.1f y=%.1f", screenCenterX, screenCenterY), x, y, 12, "o")
+	y = y - lineHeight
+
+	if reticleHasWorldTarget then
+		glText(string.format("reticle world: x=%.1f y=%.1f z=%.1f", reticleWorldX, reticleWorldY, reticleWorldZ), x, y, 12, "o")
+	else
+		glText("reticle world: unavailable", x, y, 12, "o")
 	end
+	y = y - lineHeight
+
+	glText("reticle target type: " .. reticleTargetType, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("reticle has world target: " .. (reticleHasWorldTarget and "yes" or "no"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText(string.format("left stick: x=%.3f y=%.3f", normalizedLeftX, normalizedLeftY), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText(string.format("right stick: x=%.3f y=%.3f", normalizedRightX, normalizedRightY), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("Right Stick Y mode: " .. rightStickYMode, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText(string.format("LT boost (pan + zoom): %s (LT=%.3f)", fastPanActive and "active" or "inactive", normalizedLeftTrigger), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("LB camera modifier active: " .. (lbCameraModifierActive and "yes" or "no"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText(string.format("RT Command Layer: %s (RT=%.3f)", commandLayerActive and "active" or "inactive", normalizedRightTrigger), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("pan active: " .. (panActive and "yes" or "no"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("zoom active: " .. (zoomActive and "yes" or "no"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText(string.format("zoom speed multiplier: %.1fx", zoomSpeedMultiplier), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("rotation active: " .. (rotationActive and "yes" or "no"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("pitch active: " .. (pitchActive and "yes" or "no"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("axes: " .. activeAxesSummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("held buttons: " .. heldButtonsSummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("pressed recently: " .. pressedRecentlySummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("released recently: " .. releasedRecentlySummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("command layer: " .. (commandLayerActive and "active" or "inactive"), x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("button layout: " .. activeButtonLayoutSummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("normal preview: " .. normalPreviewSummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("command preview: " .. commandPreviewSummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("command layer pressed recently: " .. commandLayerPressedRecentlySummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("camera: " .. cameraMode .. " mode=" .. cameraModeId, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("zoom method: " .. zoomMethod .. " rotation method: " .. rotationMethod, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText("pitch method: " .. pitchMethod .. " pitch field: " .. cameraPitchSummary, x, y, 12, "o")
+	y = y - lineHeight
+
+	glText(cameraFieldSummary, x, y, 12, "o")
 end
