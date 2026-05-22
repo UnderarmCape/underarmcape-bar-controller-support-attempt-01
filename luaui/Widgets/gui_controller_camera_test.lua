@@ -26,6 +26,9 @@ local spGetSelectedUnits = Spring.GetSelectedUnits
 local spGiveOrderToUnit = Spring.GiveOrderToUnit
 local lastIssuedCommand = "none"
 local spGetUnitPosition = Spring.GetUnitPosition
+local spGetUnitAllyTeam = Spring.GetUnitAllyTeam
+local spGetMyAllyTeamID = Spring.GetMyAllyTeamID
+local spWarpMouse = Spring.WarpMouse
 
 local glText = gl.Text
 local glRect = gl.Rect
@@ -215,6 +218,7 @@ local reticleHasWorldTarget = false
 local reticleWorldX = nil
 local reticleWorldY = nil
 local reticleWorldZ = nil
+local reticleTargetAlignment = "none"
 local viewSizeX = 0
 local viewSizeY = 0
 local lastMouseX = nil
@@ -330,6 +334,7 @@ function resetReticleWorldTarget()
 	reticleWorldX = nil
 	reticleWorldY = nil
 	reticleWorldZ = nil
+	reticleTargetAlignment = "none"
 end
 
 local function setControllerMode(active)
@@ -831,17 +836,23 @@ local function updateMouseInputMode()
 	middleButton = middleButton == true
 	rightButton = rightButton == true
 
-	if mouseStateInitialized then
-		if mouseX ~= lastMouseX
-			or mouseY ~= lastMouseY
-			or leftButton ~= lastMouseLeft
-			or middleButton ~= lastMouseMiddle
-			or rightButton ~= lastMouseRight
-		then
+	if controllerMode then
+		if math.abs(mouseX - screenCenterX) > 5 or math.abs(mouseY - screenCenterY) > 5 then
 			noteMouseInput()
 		end
 	else
-		mouseStateInitialized = true
+		if mouseStateInitialized then
+			if mouseX ~= lastMouseX
+				or mouseY ~= lastMouseY
+				or leftButton ~= lastMouseLeft
+				or middleButton ~= lastMouseMiddle
+				or rightButton ~= lastMouseRight
+			then
+				noteMouseInput()
+			end
+		else
+			mouseStateInitialized = true
+		end
 	end
 
 	lastMouseX = mouseX
@@ -857,15 +868,34 @@ local function updateReticleWorldTarget()
 		return
 	end
 
-	local ok, targetType, worldPosition = pcall(spTraceScreenRay, screenCenterX, screenCenterY, true)
-	if not ok then
-		resetReticleWorldTarget()
+	-- 1. Standard trace to see what we are aiming at
+	local okTarget, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
+	if okTarget then
+		reticleTargetType = tostring(targetType or "unavailable")
+
+		-- Check team alignment if it's a unit
+		if reticleTargetType == "unit" and tonumber(targetID) then
+			local unitID = tonumber(targetID)
+			local myAllyTeam = (type(spGetMyAllyTeamID) == "function") and spGetMyAllyTeamID() or -1
+			local unitAllyTeam = (type(spGetUnitAllyTeam) == "function") and spGetUnitAllyTeam(unitID) or -2
+
+			if myAllyTeam == unitAllyTeam then
+				reticleTargetAlignment = "ally"
+			else
+				reticleTargetAlignment = "enemy"
+			end
+		else
+			reticleTargetAlignment = "none"
+		end
+	else
 		reticleTargetType = "trace failed"
-		return
+		reticleTargetAlignment = "none"
 	end
 
-	reticleTargetType = tostring(targetType or "unavailable")
-	if type(worldPosition) == "table" then
+	-- 2. Ground-only trace for movement coordinates
+	local okGround, _, worldPosition = pcall(spTraceScreenRay, screenCenterX, screenCenterY, true)
+
+	if okGround and type(worldPosition) == "table" then
 		local worldX = tonumber(worldPosition[1])
 		local worldY = tonumber(worldPosition[2])
 		local worldZ = tonumber(worldPosition[3])
@@ -1233,10 +1263,11 @@ local function drawReticleLines(cx, cy)
 end
 
 local function drawControllerReticle()
-	local RETICLE_RADIUS = 11
 	if not reticleVisible then
 		return
 	end
+
+	local RETICLE_RADIUS = 16
 
 	gl.LineWidth(4)
 	gl.Color(0, 0, 0, 0.42)
@@ -1244,11 +1275,16 @@ local function drawControllerReticle()
 	drawReticleLines(screenCenterX, screenCenterY)
 
 	gl.LineWidth(2)
-	if reticleTargetType == "unit" then
-		gl.Color(1, 0.25, 0, 0.9) -- Target acquired (bright orange-red)
+
+	-- Apply colors based on unit alignment
+	if reticleTargetAlignment == "enemy" then
+		gl.Color(1.0, 0.2, 0.2, 0.9) -- Red for Enemies
+	elseif reticleTargetAlignment == "ally" then
+		gl.Color(0.2, 1.0, 0.2, 0.9) -- Green for Allies & Self
 	else
-		gl.Color(0.65, 0.92, 1, 0.78) -- Default blue/white
+		gl.Color(0.65, 0.92, 1.0, 0.78) -- Default Blue/White for Ground
 	end
+
 	drawReticleCircle(screenCenterX, screenCenterY, RETICLE_RADIUS)
 	drawReticleLines(screenCenterX, screenCenterY)
 
@@ -1404,6 +1440,7 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 	ControllerCameraTestUpdateControllerModeAndCommandLayer()
 	ControllerCameraTestUpdateCameraControls(dt)
 	updateReticleWorldTarget()
+	if controllerMode and reticleVisible and type(spWarpMouse) == "function" then spWarpMouse(screenCenterX, screenCenterY) end
 end
 
 function widget:Update(dt)
