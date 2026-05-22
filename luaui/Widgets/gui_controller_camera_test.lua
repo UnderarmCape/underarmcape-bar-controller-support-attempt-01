@@ -22,25 +22,16 @@ local spGetMouseState = Spring.GetMouseState
 local spGetViewGeometry = Spring.GetViewGeometry
 local spTraceScreenRay = Spring.TraceScreenRay
 local spSelectUnitArray = Spring.SelectUnitArray
+local spGetSelectedUnits = Spring.GetSelectedUnits
+local spGiveOrderToUnit = Spring.GiveOrderToUnit
+local lastIssuedCommand = "none"
 
 local glText = gl.Text
 local glRect = gl.Rect
 
-local mathAbs = math.abs
-local mathMin = math.min
-local mathMax = math.max
-local mathSqrt = math.sqrt
-local mathCos = math.cos
-local mathSin = math.sin
-local mathPi = math.pi
-
-local DEADZONE = 3000
-local TRIGGER_DEADZONE = 3000
-local AXIS_MAX = 32767
 local PAN_SPEED = 2800
 local FAST_PAN_MULTIPLIER = 2.75
 local FAST_ZOOM_MULTIPLIER = 3.0
-local DEBUG_EVENT_HOLD_SECONDS = 0.45
 local ZOOM_SPEED = 3200
 local ZOOM_SCALE_SPEED = 0.9
 local ROTATION_SPEED = 3.0
@@ -51,10 +42,6 @@ local MIN_CAMERA_HEIGHT = 80
 local MIN_CAMERA_RX = 1.0
 local MAX_CAMERA_RX = 3.05
 local MAX_DIRECTION_PITCH_Y = 0.98
-local RETICLE_RADIUS = 11
-local RETICLE_GAP = 5
-local RETICLE_LINE_LENGTH = 11
-local RETICLE_SEGMENTS = 28
 local DEBUG_PANEL_MARGIN = 10
 local DEBUG_PANEL_PADDING = 8
 local DEBUG_PANEL_HEADER_HEIGHT = 22
@@ -63,7 +50,7 @@ local DEBUG_PANEL_MIN_WIDTH = 280
 local DEBUG_PANEL_MIN_HEIGHT = 118
 local DEBUG_PANEL_DEFAULT_WIDTH = 650
 local DEBUG_PANEL_DEFAULT_HEIGHT = 150
-local SELECTION_DEBUG_HOLD_SECONDS = 1.2
+
 
 local XboxController = {
 	axes = {
@@ -214,6 +201,8 @@ local pitchMethod = "none"
 local selectionTestActive = false
 local lastReticleSelectedUnitID = "none"
 local lastSelectionResult = "none"
+local lastBButtonResult = "none"
+local lastClearSelectionResult = "none"
 local selectionDebugMessage = "none"
 local selectionDebugExpiration = 0
 local controllerMode = false
@@ -250,7 +239,7 @@ local debugPanelResizeStartHeight = 0
 
 local mapSizeX = Game and Game.mapSizeX or 0
 local mapSizeZ = Game and Game.mapSizeZ or 0
-local maxCameraDistance = mathMax(mapSizeX, mapSizeZ, 1000) * 1.5
+local maxCameraDistance = math.max(mapSizeX, mapSizeZ, 1000) * 1.5
 
 local previousButtonStates = {}
 local currentButtonStates = {}
@@ -319,6 +308,9 @@ local function resetControllerInputDebug()
 	rotationMethod = "none"
 	pitchMethod = "none"
 	selectionTestActive = false
+	lastBButtonResult = "none"
+	lastClearSelectionResult = "none"
+	lastIssuedCommand = "none"
 	clearButtonStateTracking()
 	clearDebugEventLatches()
 	resetReticleWorldTarget()
@@ -356,6 +348,7 @@ local function noteMouseInput()
 end
 
 local function clamp(value, minValue, maxValue)
+	local mathMin, mathMax = math.min, math.max
 	return mathMin(maxValue, mathMax(minValue, value))
 end
 
@@ -368,6 +361,9 @@ local function formatNumber(value)
 end
 
 local function normalizeAxis(value)
+	local DEADZONE = 3000
+	local AXIS_MAX = 32767
+	local mathAbs = math.abs
 	value = tonumber(value) or 0
 
 	local magnitude = mathAbs(value)
@@ -381,6 +377,8 @@ local function normalizeAxis(value)
 end
 
 local function normalizeTrigger(value)
+	local TRIGGER_DEADZONE = 3000
+	local AXIS_MAX = 32767
 	value = tonumber(value) or 0
 
 	if value < TRIGGER_DEADZONE then
@@ -395,6 +393,7 @@ local function getDebugPanelScreenSize()
 end
 
 local function clampDebugPanelToScreen()
+	local mathMax = math.max
 	local screenWidth, screenHeight = getDebugPanelScreenSize()
 	local maxWidth = mathMax(DEBUG_PANEL_MIN_WIDTH, screenWidth - (DEBUG_PANEL_MARGIN * 2))
 	local maxHeight = mathMax(DEBUG_PANEL_MIN_HEIGHT, screenHeight - (DEBUG_PANEL_MARGIN * 2))
@@ -406,6 +405,7 @@ local function clampDebugPanelToScreen()
 end
 
 local function resetDebugPanelToDefault()
+	local mathMin, mathMax = math.min, math.max
 	local screenWidth, screenHeight = getDebugPanelScreenSize()
 	debugPanelWidth = mathMin(DEBUG_PANEL_DEFAULT_WIDTH, mathMax(DEBUG_PANEL_MIN_WIDTH, screenWidth - (DEBUG_PANEL_MARGIN * 2)))
 	debugPanelHeight = mathMin(DEBUG_PANEL_DEFAULT_HEIGHT, mathMax(DEBUG_PANEL_MIN_HEIGHT, screenHeight - (DEBUG_PANEL_MARGIN * 2)))
@@ -449,6 +449,7 @@ local function updateDebugPanelDrag(x, y)
 end
 
 local function updateDebugPanelResize(x, y)
+	local mathMax = math.max
 	local top = debugPanelResizeStartY + debugPanelResizeStartHeight
 	local screenWidth = getDebugPanelScreenSize()
 	local maxWidth = mathMax(DEBUG_PANEL_MIN_WIDTH, screenWidth - DEBUG_PANEL_MARGIN - debugPanelX)
@@ -556,6 +557,7 @@ local function hasButtonState(buttonStates, buttonOrder)
 end
 
 local function latchDebugButtonEvents(buttonStates, expirations, buttonOrder)
+	local DEBUG_EVENT_HOLD_SECONDS = 0.45
 	for _, buttonId in ipairs(buttonOrder or XboxController.buttonOrder) do
 		if buttonStates[buttonId] then
 			expirations[getButtonLabel(buttonId)] = debugEventTime + DEBUG_EVENT_HOLD_SECONDS
@@ -625,6 +627,7 @@ local function getPreviewSummary(buttonStates, previewLabels)
 end
 
 local function latchButtonPreview(buttonStates, previewLabels)
+	local DEBUG_EVENT_HOLD_SECONDS = 0.45
 	local preview = getPreviewSummary(buttonStates, previewLabels)
 	if not preview then
 		return nil
@@ -682,6 +685,7 @@ local function getFirstController(controllers)
 end
 
 local function normalizeHorizontalVector(vector)
+	local mathSqrt = math.sqrt
 	if type(vector) ~= "table" then
 		return nil, nil
 	end
@@ -698,6 +702,7 @@ local function normalizeHorizontalVector(vector)
 end
 
 local function rotateVectorAroundAxis(x, y, z, axisX, axisY, axisZ, angle)
+	local mathCos, mathSin = math.cos, math.sin
 	local cosAmount = mathCos(angle)
 	local sinAmount = mathSin(angle)
 	local dot = (x * axisX) + (y * axisY) + (z * axisZ)
@@ -710,6 +715,7 @@ local function rotateVectorAroundAxis(x, y, z, axisX, axisY, axisZ, angle)
 end
 
 local function normalizeDirectionWithClampedY(x, y, z)
+	local mathSqrt, mathMax = math.sqrt, math.max
 	y = clamp(y, -MAX_DIRECTION_PITCH_Y, MAX_DIRECTION_PITCH_Y)
 
 	local horizontalLength = mathSqrt((x * x) + (z * z))
@@ -879,6 +885,7 @@ local function updateReticleWorldTarget()
 end
 
 local function latchSelectionDebugMessage(message)
+	local SELECTION_DEBUG_HOLD_SECONDS = 1.2
 	selectionDebugMessage = message
 	selectionDebugExpiration = debugEventTime + SELECTION_DEBUG_HOLD_SECONDS
 end
@@ -934,6 +941,92 @@ local function attemptReticleSelection()
 	latchSelectionDebugMessage("A selected unit " .. tostring(unitID))
 end
 
+local function attemptClearSelection()
+	if commandLayerActive then
+		lastBButtonResult = "RT active"
+		latchSelectionDebugMessage("B ignored: RT command layer active")
+		return
+	end
+
+	if type(spSelectUnitArray) ~= "function" then
+		lastBButtonResult = "unavailable"
+		lastClearSelectionResult = "failed"
+		latchSelectionDebugMessage("B clear: select API unavailable")
+		return
+	end
+
+	local selectOk = pcall(spSelectUnitArray, {})
+	if selectOk then
+		lastBButtonResult = "cleared"
+		lastClearSelectionResult = "success"
+		latchSelectionDebugMessage("B: selection cleared")
+	else
+		lastBButtonResult = "failed"
+		lastClearSelectionResult = "failed"
+		latchSelectionDebugMessage("B clear: API call failed")
+	end
+end
+
+local function issueOrderToSelection(cmdID, params, cmdName, targetName)
+	if type(spGetSelectedUnits) ~= "function" or type(spGiveOrderToUnit) ~= "function" then
+		lastIssuedCommand = "none"
+		latchSelectionDebugMessage(cmdName .. " failed: API unavailable")
+		return
+	end
+	local selectedUnits = spGetSelectedUnits()
+	if not selectedUnits or #selectedUnits == 0 then
+		lastIssuedCommand = "none"
+		latchSelectionDebugMessage(cmdName .. " skipped: no units selected")
+		return
+	end
+	for i = 1, #selectedUnits do
+		local unitID = selectedUnits[i]
+		spGiveOrderToUnit(unitID, cmdID, params, {})
+	end
+	lastIssuedCommand = cmdName .. " (" .. targetName .. ")"
+	latchSelectionDebugMessage(cmdName .. " issued to " .. #selectedUnits .. " units")
+end
+
+local function attemptMoveCommand()
+	if not reticleHasWorldTarget or not reticleWorldX or not reticleWorldY or not reticleWorldZ then
+		latchSelectionDebugMessage("Move skipped: no world target")
+		return
+	end
+	local params = { reticleWorldX, reticleWorldY, reticleWorldZ }
+	local targetName = string.format("x=%.1f, y=%.1f, z=%.1f", reticleWorldX, reticleWorldY, reticleWorldZ)
+	issueOrderToSelection(CMD.MOVE, params, "Move", targetName)
+end
+
+local function attemptAttackCommand()
+	if type(spTraceScreenRay) ~= "function" then
+		latchSelectionDebugMessage("Attack failed: API unavailable")
+		return
+	end
+	local ok, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
+	if not ok then
+		latchSelectionDebugMessage("Attack failed: trace failed")
+		return
+	end
+
+	if targetType == "unit" and tonumber(targetID) then
+		local unitID = tonumber(targetID)
+		issueOrderToSelection(CMD.ATTACK, { unitID }, "Attack", "unit " .. tostring(unitID))
+	else
+		if not reticleHasWorldTarget or not reticleWorldX or not reticleWorldY or not reticleWorldZ then
+			latchSelectionDebugMessage("Attack skipped: no world target")
+			return
+		end
+		local params = { reticleWorldX, reticleWorldY, reticleWorldZ }
+		local targetName = string.format("x=%.1f, y=%.1f, z=%.1f", reticleWorldX, reticleWorldY, reticleWorldZ)
+		issueOrderToSelection(CMD.ATTACK, params, "Attack-Move", targetName)
+	end
+end
+
+local function attemptStopCommand()
+	issueOrderToSelection(CMD.STOP, {}, "Stop", "none")
+end
+
+
 local function applySpringZoom(cameraState, zoomInput, dt)
 	if type(cameraState.dist) ~= "number" then
 		return false
@@ -957,6 +1050,7 @@ local function applyOverheadZoom(cameraState, zoomInput, dt)
 end
 
 local function applyFallbackHeightZoom(cameraState, zoomInput, dt)
+	local mathMax = math.max
 	if type(cameraState.py) ~= "number" then
 		return false
 	end
@@ -998,6 +1092,7 @@ local function applyZoom(cameraState, zoomInput, zoomMultiplier, dt)
 end
 
 local function applyRotation(cameraState, rotationInput, dt)
+	local mathCos, mathSin = math.cos, math.sin
 	if rotationInput == 0 then
 		rotationMethod = "none"
 		return
@@ -1028,6 +1123,7 @@ local function applyRotation(cameraState, rotationInput, dt)
 end
 
 local function applyPitch(cameraState, pitchInput, dt)
+	local mathCos, mathSin = math.cos, math.sin
 	if pitchInput == 0 then
 		pitchMethod = "none"
 		return
@@ -1100,6 +1196,8 @@ local function applyCameraInput(leftX, leftY, zoomInput, rotationInput, pitchInp
 end
 
 local function drawReticleCircle(cx, cy, radius)
+	local RETICLE_SEGMENTS = 28
+	local mathCos, mathSin, mathPi = math.cos, math.sin, math.pi
 	gl.BeginEnd(GL.LINE_LOOP, function()
 		for i = 0, RETICLE_SEGMENTS - 1 do
 			local angle = (i / RETICLE_SEGMENTS) * mathPi * 2
@@ -1109,6 +1207,8 @@ local function drawReticleCircle(cx, cy, radius)
 end
 
 local function drawReticleLines(cx, cy)
+	local RETICLE_GAP = 5
+	local RETICLE_LINE_LENGTH = 11
 	gl.BeginEnd(GL.LINES, function()
 		gl.Vertex(cx - RETICLE_GAP - RETICLE_LINE_LENGTH, cy)
 		gl.Vertex(cx - RETICLE_GAP, cy)
@@ -1122,6 +1222,7 @@ local function drawReticleLines(cx, cy)
 end
 
 local function drawControllerReticle()
+	local RETICLE_RADIUS = 11
 	if not reticleVisible then
 		return
 	end
@@ -1213,6 +1314,20 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer()
 	updateSelectionTestActive()
 	if WasButtonPressed("A") then
 		attemptReticleSelection()
+	end
+	if WasButtonPressed("B") then
+		if commandLayerActive then
+			attemptStopCommand()
+		else
+			attemptClearSelection()
+		end
+	end
+	if WasButtonPressed("X") then
+		if commandLayerActive then
+			attemptAttackCommand()
+		else
+			attemptMoveCommand()
+		end
 	end
 	activeButtonLayoutSummary = commandLayerActive
 		and XboxController.commandLayoutSummary
@@ -1323,6 +1438,7 @@ function widget:MouseRelease()
 end
 
 function widget:DrawScreen()
+	local mathMax, mathPi = math.max, math.pi
 	updateDebugLatchSummaries()
 	drawControllerReticle()
 
@@ -1378,7 +1494,7 @@ function widget:DrawScreen()
 		return lines
 	end
 	local function drawLine(text, drawX, drawY)
-		glText(text, drawX, drawY, 15, "o")
+		gl.Text(text, drawX, drawY, 15, "o")
 	end
 	local function drawSection(section, drawX, drawY, maxChars, contentBottom)
 		if drawY < contentBottom then
@@ -1411,15 +1527,15 @@ function widget:DrawScreen()
 	local panelHeight = debugPanelHeight
 	local panelRight = panelLeft + panelWidth
 	local panelTop = panelBottom + panelHeight
-	local padding = DEBUG_PANEL_PADDING
-	local headerHeight = DEBUG_PANEL_HEADER_HEIGHT
+	local padding = 8 -- Freed DEBUG_PANEL_PADDING upvalue
+	local headerHeight = 22 -- Freed DEBUG_PANEL_HEADER_HEIGHT upvalue
 	local useColumns = panelWidth >= 720
 	local columnGap = 12
 	local columnWidth = useColumns
 		and ((panelWidth - (padding * 2) - columnGap) * 0.5)
 		or (panelWidth - (padding * 2))
 	local maxChars = mathMax(12, math.floor(columnWidth / 7.8))
-	local contentBottom = panelBottom + padding + DEBUG_PANEL_RESIZE_HANDLE
+	local contentBottom = panelBottom + padding + 14 -- Freed DEBUG_PANEL_RESIZE_HANDLE upvalue
 	local cameraState = spGetCameraState and spGetCameraState()
 	if type(cameraState) ~= "table" then
 		cameraState = {}
@@ -1471,6 +1587,9 @@ function widget:DrawScreen()
 				"Selection test: " .. yesNo(selectionTestActive),
 				"Last selected unitID: " .. tostring(lastReticleSelectedUnitID),
 				"Selection result: " .. lastSelectionResult,
+				"Last B-button result: " .. tostring(lastBButtonResult),
+				"Last clear-selection result: " .. tostring(lastClearSelectionResult),
+				"Last command: " .. tostring(lastIssuedCommand),
 				"Selection msg: " .. selectionDebugMessage,
 			},
 		},
@@ -1517,22 +1636,22 @@ function widget:DrawScreen()
 		},
 	}
 
-	gl.Color(0, 0, 0, 0.82)
-	glRect(panelLeft, panelBottom, panelRight, panelTop)
+gl.Color(0, 0, 0, 0.82)
+	gl.Rect(panelLeft, panelBottom, panelRight, panelTop)
 	gl.Color(0.06, 0.11, 0.15, 0.96)
-	glRect(panelLeft, panelTop - headerHeight, panelRight, panelTop)
+	gl.Rect(panelLeft, panelTop - headerHeight, panelRight, panelTop)
 	gl.Color(0.56, 0.84, 1, 0.62)
-	glRect(panelLeft, panelTop - headerHeight, panelRight, panelTop - headerHeight + 1)
+	gl.Rect(panelLeft, panelTop - headerHeight, panelRight, panelTop - headerHeight + 1)
 	gl.Color(0.76, 0.88, 0.96, 0.95)
-	glRect(panelLeft, panelTop - 1, panelRight, panelTop)
-	glRect(panelLeft, panelBottom, panelRight, panelBottom + 1)
-	glRect(panelLeft, panelBottom, panelLeft + 1, panelTop)
-	glRect(panelRight - 1, panelBottom, panelRight, panelTop)
+	gl.Rect(panelLeft, panelTop - 1, panelRight, panelTop)
+	gl.Rect(panelLeft, panelBottom, panelRight, panelBottom + 1)
+	gl.Rect(panelLeft, panelBottom, panelLeft + 1, panelTop)
+	gl.Rect(panelRight - 1, panelBottom, panelRight, panelTop)
 	gl.Color(1, 1, 1, 1)
 
 	local textX = panelLeft + padding
 	local textY = panelTop - 15
-	glText("Controller Debug", textX, textY, 15, "o")
+	gl.Text("Controller Debug", textX, textY, 15, "o")
 	textY = panelTop - headerHeight - padding - 10
 
 	if useColumns then
@@ -1558,9 +1677,9 @@ function widget:DrawScreen()
 	local handleRight = panelRight - 4
 	local handleBottom = panelBottom + 4
 	gl.Color(0.72, 0.86, 0.94, 0.75)
-	glRect(handleRight - 4, handleBottom, handleRight, handleBottom + 1)
-	glRect(handleRight - 8, handleBottom + 4, handleRight, handleBottom + 5)
-	glRect(handleRight - 12, handleBottom + 8, handleRight, handleBottom + 9)
+	gl.Rect(handleRight - 4, handleBottom, handleRight, handleBottom + 1)
+	gl.Rect(handleRight - 8, handleBottom + 4, handleRight, handleBottom + 5)
+	gl.Rect(handleRight - 12, handleBottom + 8, handleRight, handleBottom + 9)
 	gl.Color(1, 1, 1, 1)
 end
 
