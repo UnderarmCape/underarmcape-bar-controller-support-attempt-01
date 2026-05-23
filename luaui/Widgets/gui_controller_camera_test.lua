@@ -203,7 +203,7 @@ ControllerCameraTestInputSmoothing = ControllerCameraTestInputSmoothing or {
 ControllerCameraTestSelectedStatus = ControllerCameraTestSelectedStatus or {
 	mode = "hidden",
 	lastResult = "none",
-	vanillaCommandPanelHideRoute = "unavailable",
+	vanillaCommandPanelStatus = "untouched",
 }
 ControllerCameraTestLayerDebug = ControllerCameraTestLayerDebug or {
 	commandLayerAction = "none",
@@ -237,7 +237,7 @@ local spWarpMouse = Spring.WarpMouse
 local glText = gl.Text
 local glRect = gl.Rect
 
-local PAN_SPEED = 2800
+local PAN_SPEED = 1400
 local FAST_PAN_MULTIPLIER = 2.75
 local FAST_ZOOM_MULTIPLIER = 3.0
 local ZOOM_SPEED = 3200
@@ -259,36 +259,58 @@ local DEBUG_PANEL_MIN_HEIGHT = 118
 local DEBUG_PANEL_DEFAULT_WIDTH = 650
 local DEBUG_PANEL_DEFAULT_HEIGHT = 150
 
-ControllerCameraTestSettings = ControllerCameraTestSettings or {
-	panSpeed = PAN_SPEED,
-	fastPanMultiplier = FAST_PAN_MULTIPLIER,
-	zoomSpeed = ZOOM_SPEED,
-	zoomBoostMultiplier = FAST_ZOOM_MULTIPLIER,
-	rotationSpeed = ROTATION_SPEED,
-	pitchSpeed = PITCH_SPEED,
-	stickDeadzone = 3000,
-	triggerDeadzone = 3000,
-	areaSelectRadius = 320,
-	reticleSize = 16,
-	xHoldSeconds = 0.14,
-	aHoldSeconds = 0.38,
-	controlGroupAssignHoldSeconds = 0.35,
-	radialScale = 1,
-	cameraSmoothing = 0.12,
-	stickCurve = 1.35,
-	triggerCurve = 1.15,
-	singlePathSpacing = 96,
-	singlePathInterval = 0.10,
-	compactSelectedStatus = true,
-	hideCompactStatusWhenRadialOpen = true,
-	debugPanelVisible = true,
-	helpOverlayVisible = false,
-}
+function ControllerCameraTestGetDefaultSettings()
+	return {
+		panSpeed = PAN_SPEED,
+		fastPanMultiplier = FAST_PAN_MULTIPLIER,
+		zoomSpeed = ZOOM_SPEED,
+		zoomBoostMultiplier = FAST_ZOOM_MULTIPLIER,
+		rotationSpeed = ROTATION_SPEED,
+		pitchSpeed = PITCH_SPEED,
+		stickDeadzone = 3000,
+		triggerDeadzone = 3000,
+		areaSelectRadius = 320,
+		reticleSize = 16,
+		xHoldSeconds = 0.14,
+		aHoldSeconds = 0.38,
+		controlGroupAssignHoldSeconds = 0.35,
+		radialScale = 1,
+		cameraSmoothing = 0.06,
+		stickCurve = 1.175,
+		triggerCurve = 1.075,
+		singlePathSpacing = 96,
+		singlePathInterval = 0.10,
+		compactSelectedStatus = true,
+		hideCompactStatusWhenRadialOpen = true,
+		placementPopupEnabled = true,
+		preferNativeBlueprint = true,
+		debugPanelVisible = true,
+		helpOverlayVisible = false,
+	}
+end
+
+ControllerCameraTestSettings = ControllerCameraTestSettings or ControllerCameraTestGetDefaultSettings()
 ControllerCameraTestTuning = ControllerCameraTestTuning or {
 	selectedIndex = 1,
 	backHeld = false,
 	backComboUsed = false,
 	lastAction = "none",
+}
+ControllerCameraTestSettingsUI = ControllerCameraTestSettingsUI or {
+	open = false,
+	categoryIndex = 1,
+	selectedIndex = 1,
+	lastAction = "none",
+	lastCategory = "Camera",
+}
+ControllerCameraTestBindings = ControllerCameraTestBindings or {
+	actions = {},
+	captureAction = nil,
+	conflictAction = nil,
+	lastAction = "defaults active",
+	triggerDown = { LT = false, RT = false },
+	triggerPressed = { LT = false, RT = false },
+	triggerReleased = { LT = false, RT = false },
 }
 ControllerCameraTestQuickGroups = ControllerCameraTestQuickGroups or {
 	slots = {},
@@ -332,7 +354,13 @@ end
 
 function ControllerCameraTestApplySettingsDefaults()
 	local settings = ControllerCameraTestSettings
-	settings.panSpeed = ControllerCameraTestClampSetting("panSpeed", settings.panSpeed or PAN_SPEED)
+	local defaults = ControllerCameraTestGetDefaultSettings()
+	for key, value in pairs(defaults) do
+		if settings[key] == nil then
+			settings[key] = value
+		end
+	end
+	settings.panSpeed = ControllerCameraTestClampSetting("panSpeed", settings.panSpeed or defaults.panSpeed)
 	settings.fastPanMultiplier = ControllerCameraTestClampSetting("fastPanMultiplier", settings.fastPanMultiplier or FAST_PAN_MULTIPLIER)
 	settings.zoomSpeed = ControllerCameraTestClampSetting("zoomSpeed", settings.zoomSpeed or ZOOM_SPEED)
 	settings.zoomBoostMultiplier = ControllerCameraTestClampSetting("zoomBoostMultiplier", settings.zoomBoostMultiplier or FAST_ZOOM_MULTIPLIER)
@@ -346,13 +374,15 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.aHoldSeconds = ControllerCameraTestClampSetting("aHoldSeconds", settings.aHoldSeconds or 0.38)
 	settings.controlGroupAssignHoldSeconds = ControllerCameraTestClampSetting("controlGroupAssignHoldSeconds", settings.controlGroupAssignHoldSeconds or 0.35)
 	settings.radialScale = ControllerCameraTestClampSetting("radialScale", settings.radialScale or 1)
-	settings.cameraSmoothing = ControllerCameraTestClampSetting("cameraSmoothing", settings.cameraSmoothing or 0.12)
-	settings.stickCurve = ControllerCameraTestClampSetting("stickCurve", settings.stickCurve or 1.35)
-	settings.triggerCurve = ControllerCameraTestClampSetting("triggerCurve", settings.triggerCurve or 1.15)
+	settings.cameraSmoothing = ControllerCameraTestClampSetting("cameraSmoothing", settings.cameraSmoothing or defaults.cameraSmoothing)
+	settings.stickCurve = ControllerCameraTestClampSetting("stickCurve", settings.stickCurve or defaults.stickCurve)
+	settings.triggerCurve = ControllerCameraTestClampSetting("triggerCurve", settings.triggerCurve or defaults.triggerCurve)
 	settings.singlePathSpacing = ControllerCameraTestClampSetting("singlePathSpacing", settings.singlePathSpacing or 96)
 	settings.singlePathInterval = ControllerCameraTestClampSetting("singlePathInterval", settings.singlePathInterval or 0.10)
 	settings.compactSelectedStatus = settings.compactSelectedStatus ~= false
 	settings.hideCompactStatusWhenRadialOpen = settings.hideCompactStatusWhenRadialOpen ~= false
+	settings.placementPopupEnabled = settings.placementPopupEnabled ~= false
+	settings.preferNativeBlueprint = settings.preferNativeBlueprint ~= false
 	settings.debugPanelVisible = settings.debugPanelVisible ~= false
 	settings.helpOverlayVisible = settings.helpOverlayVisible == true
 	ControllerCameraTestAreaSelect.radius = settings.areaSelectRadius
@@ -414,29 +444,12 @@ end
 
 function ControllerCameraTestResetSettingsToDefaults()
 	local settings = ControllerCameraTestSettings
-	settings.panSpeed = PAN_SPEED
-	settings.fastPanMultiplier = FAST_PAN_MULTIPLIER
-	settings.zoomSpeed = ZOOM_SPEED
-	settings.zoomBoostMultiplier = FAST_ZOOM_MULTIPLIER
-	settings.rotationSpeed = ROTATION_SPEED
-	settings.pitchSpeed = PITCH_SPEED
-	settings.stickDeadzone = 3000
-	settings.triggerDeadzone = 3000
-	settings.areaSelectRadius = 320
-	settings.reticleSize = 16
-	settings.xHoldSeconds = 0.14
-	settings.aHoldSeconds = 0.38
-	settings.controlGroupAssignHoldSeconds = 0.35
-	settings.radialScale = 1
-	settings.cameraSmoothing = 0.12
-	settings.stickCurve = 1.35
-	settings.triggerCurve = 1.15
-	settings.singlePathSpacing = 96
-	settings.singlePathInterval = 0.10
-	settings.compactSelectedStatus = true
-	settings.hideCompactStatusWhenRadialOpen = true
+	for key, value in pairs(ControllerCameraTestGetDefaultSettings()) do
+		settings[key] = value
+	end
 	ControllerCameraTestApplySettingsDefaults()
 	ControllerCameraTestTuning.lastAction = "controller settings reset to code defaults"
+	ControllerCameraTestSettingsUI.lastAction = "all settings reset to code defaults"
 	latchSelectionDebugMessage("Controller settings reset to code defaults")
 end
 
@@ -1411,8 +1424,334 @@ local function attemptClearSelection()
 	end
 end
 
+function ControllerCameraTestBindingDefinitions()
+	return {
+		{ action = "select", label = "Select / Area Select", default = "A", group = "Core" },
+		{ action = "cancel", label = "Cancel / Clear", default = "B", group = "Core" },
+		{ action = "smartAction", label = "Smart Action", default = "X", group = "Core" },
+		{ action = "buildRadial", label = "Build / Factory Radial", default = "Y", group = "Core" },
+		{ action = "commandLayer", label = "Command Layer", default = "RT", group = "Modifiers" },
+		{ action = "queueModifier", label = "Queue Modifier", default = "LT", group = "Modifiers" },
+		{ action = "controlGroupModifier", label = "Group Modifier", default = "RB", group = "Modifiers" },
+		{ action = "pitchModifier", label = "Pitch / Idle Type Modifier", default = "LB", group = "Modifiers" },
+		{ action = "radialSelect", label = "Radial Select", default = "A", group = "Radials" },
+		{ action = "radialCancel", label = "Radial Cancel", default = "B", group = "Radials" },
+		{ action = "radialQuick", label = "Radial Quick Place", default = "X", group = "Radials" },
+		{ action = "radialClose", label = "Radial Close", default = "Y", group = "Radials" },
+		{ action = "radialPrevPage", label = "Radial Previous Page", default = "LB", group = "Radials" },
+		{ action = "radialNextPage", label = "Radial Next Page", default = "RB", group = "Radials" },
+		{ action = "place", label = "Place / Confirm", default = "A", group = "Placement" },
+		{ action = "placeStay", label = "Place and Stay", default = "X", group = "Placement" },
+		{ action = "cancelPlacement", label = "Cancel Placement", default = "B", group = "Placement" },
+		{ action = "rotateBuildingLeft", label = "Rotate Building Left", default = "dpadLeft", group = "Placement" },
+		{ action = "rotateBuildingRight", label = "Rotate Building Right", default = "dpadRight", group = "Placement" },
+		{ action = "spacingUp", label = "Increase Spacing", default = "dpadUp", group = "Placement" },
+		{ action = "spacingDown", label = "Decrease Spacing", default = "dpadDown", group = "Placement" },
+		{ action = "patternPrev", label = "Previous Pattern", default = "LB", group = "Placement" },
+		{ action = "patternNext", label = "Next Pattern", default = "RB", group = "Placement" },
+		{ action = "tacticalSelect", label = "Tactical Select", default = "A", group = "Tactical" },
+		{ action = "tacticalCancel", label = "Tactical Cancel", default = "B", group = "Tactical" },
+		{ action = "tacticalClose", label = "Tactical Close", default = "Y", group = "Tactical" },
+		{ action = "commandUp", label = "Command Guard / Patrol", default = "dpadUp", group = "Tactical" },
+		{ action = "commandDown", label = "Command Reclaim", default = "dpadDown", group = "Tactical" },
+		{ action = "commandLeft", label = "Command Cycle Previous", default = "dpadLeft", group = "Tactical" },
+		{ action = "commandRight", label = "Command Cycle Next", default = "dpadRight", group = "Tactical" },
+		{ action = "idlePrev", label = "Previous Idle Unit", default = "dpadLeft", group = "Idle / Groups" },
+		{ action = "idleNext", label = "Next Idle Unit", default = "dpadRight", group = "Idle / Groups" },
+		{ action = "groupSlotUp", label = "Next Group Slot", default = "dpadUp", group = "Idle / Groups" },
+		{ action = "groupSlotDown", label = "Previous Group Slot", default = "dpadDown", group = "Idle / Groups" },
+		{ action = "groupRecallOrAssign", label = "Recall / Assign Group", default = "dpadLeft", group = "Idle / Groups" },
+		{ action = "groupClear", label = "Clear Group", default = "B", group = "Idle / Groups" },
+	}
+end
+
+function ControllerCameraTestEnsureBindings()
+	local bindings = ControllerCameraTestBindings
+	bindings.defaults = bindings.defaults or {}
+	bindings.actions = bindings.actions or {}
+	for _, def in ipairs(ControllerCameraTestBindingDefinitions()) do
+		bindings.defaults[def.action] = def.default
+		if type(bindings.actions[def.action]) ~= "string" then
+			bindings.actions[def.action] = def.default
+		end
+	end
+end
+
+function ControllerCameraTestGetBinding(actionName)
+	ControllerCameraTestEnsureBindings()
+	return ControllerCameraTestBindings.actions[actionName] or ControllerCameraTestBindings.defaults[actionName]
+end
+
+function ControllerCameraTestBindingLabel(buttonName)
+	local labels = {
+		back = "Back/View",
+		start = "Start/Menu",
+		dpadUp = "D-pad Up",
+		dpadDown = "D-pad Down",
+		dpadLeft = "D-pad Left",
+		dpadRight = "D-pad Right",
+	}
+	return labels[buttonName] or tostring(buttonName or "Unbound")
+end
+
+function ControllerCameraTestSetBinding(actionName, buttonName)
+	ControllerCameraTestEnsureBindings()
+	local conflict = nil
+	for otherAction, assigned in pairs(ControllerCameraTestBindings.actions) do
+		if otherAction ~= actionName and assigned == buttonName then
+			conflict = otherAction
+			break
+		end
+	end
+	ControllerCameraTestBindings.actions[actionName] = buttonName
+	ControllerCameraTestBindings.conflictAction = conflict
+	ControllerCameraTestBindings.lastAction = "bound " .. tostring(actionName) .. " to "
+		.. ControllerCameraTestBindingLabel(buttonName)
+		.. (conflict and ("; shared with " .. tostring(conflict)) or "")
+	latchSelectionDebugMessage(ControllerCameraTestBindings.lastAction)
+end
+
+function ControllerCameraTestResetBinding(actionName)
+	ControllerCameraTestEnsureBindings()
+	ControllerCameraTestBindings.actions[actionName] = ControllerCameraTestBindings.defaults[actionName]
+	ControllerCameraTestBindings.lastAction = "reset " .. tostring(actionName) .. " to "
+		.. ControllerCameraTestBindingLabel(ControllerCameraTestBindings.actions[actionName])
+	latchSelectionDebugMessage(ControllerCameraTestBindings.lastAction)
+end
+
+function ControllerCameraTestResetAllBindings()
+	ControllerCameraTestEnsureBindings()
+	for actionName, buttonName in pairs(ControllerCameraTestBindings.defaults) do
+		ControllerCameraTestBindings.actions[actionName] = buttonName
+	end
+	ControllerCameraTestBindings.captureAction = nil
+	ControllerCameraTestBindings.conflictAction = nil
+	ControllerCameraTestBindings.lastAction = "all bindings reset to defaults"
+	latchSelectionDebugMessage(ControllerCameraTestBindings.lastAction)
+end
+
+function ControllerCameraTestUpdateBindingTriggerEdges()
+	local state = ControllerCameraTestBindings
+	local nowLT = (normalizedLeftTrigger or 0) > 0.35
+	local nowRT = (normalizedRightTrigger or 0) > 0.35
+	state.triggerPressed.LT = nowLT and not state.triggerDown.LT
+	state.triggerPressed.RT = nowRT and not state.triggerDown.RT
+	state.triggerReleased.LT = state.triggerDown.LT and not nowLT
+	state.triggerReleased.RT = state.triggerDown.RT and not nowRT
+	state.triggerDown.LT = nowLT
+	state.triggerDown.RT = nowRT
+end
+
+function ControllerCameraTestBindingDown(buttonName)
+	if buttonName == "LT" or buttonName == "RT" then
+		return ControllerCameraTestBindings.triggerDown[buttonName] == true
+	end
+	return IsButtonDown(buttonName)
+end
+
+function ControllerCameraTestBindingPressed(buttonName)
+	if buttonName == "LT" or buttonName == "RT" then
+		return ControllerCameraTestBindings.triggerPressed[buttonName] == true
+	end
+	return WasButtonPressed(buttonName)
+end
+
+function ControllerCameraTestBindingReleased(buttonName)
+	if buttonName == "LT" or buttonName == "RT" then
+		return ControllerCameraTestBindings.triggerReleased[buttonName] == true
+	end
+	return WasButtonReleased(buttonName)
+end
+
+function ControllerCameraTestActionDown(actionName)
+	return ControllerCameraTestBindingDown(ControllerCameraTestGetBinding(actionName))
+end
+
+function ControllerCameraTestActionPressed(actionName)
+	return ControllerCameraTestBindingPressed(ControllerCameraTestGetBinding(actionName))
+end
+
+function ControllerCameraTestActionReleased(actionName)
+	return ControllerCameraTestBindingReleased(ControllerCameraTestGetBinding(actionName))
+end
+
+function ControllerCameraTestGetSettingsUICategories()
+	return {
+		{ key = "Camera", items = {
+			{ key = "panSpeed", label = "Pan speed", step = 50, decimals = 0 },
+			{ key = "fastPanMultiplier", label = "LT pan boost", step = 0.25, decimals = 2 },
+			{ key = "zoomSpeed", label = "Zoom speed", step = 100, decimals = 0 },
+			{ key = "zoomBoostMultiplier", label = "LT zoom boost", step = 0.25, decimals = 2 },
+			{ key = "rotationSpeed", label = "Rotation speed", step = 0.25, decimals = 2 },
+			{ key = "pitchSpeed", label = "Pitch speed", step = 0.25, decimals = 2 },
+			{ key = "cameraSmoothing", label = "Camera smoothing", step = 0.01, decimals = 2 },
+			{ key = "stickCurve", label = "Stick curve", step = 0.025, decimals = 3 },
+			{ key = "triggerCurve", label = "Trigger curve", step = 0.025, decimals = 3 },
+		} },
+		{ key = "Input", items = {
+			{ key = "stickDeadzone", label = "Stick deadzone", step = 250, decimals = 0 },
+			{ key = "triggerDeadzone", label = "Trigger deadzone", step = 250, decimals = 0 },
+			{ key = "xHoldSeconds", label = "X hold seconds", step = 0.01, decimals = 2 },
+			{ key = "aHoldSeconds", label = "A hold seconds", step = 0.01, decimals = 2 },
+			{ key = "controlGroupAssignHoldSeconds", label = "Group assign hold", step = 0.01, decimals = 2 },
+			{ key = "singlePathSpacing", label = "Path waypoint spacing", step = 8, decimals = 0 },
+			{ key = "singlePathInterval", label = "Path issue interval", step = 0.01, decimals = 2 },
+		} },
+		{ key = "Radials", items = {
+			{ key = "radialScale", label = "Radial scale", step = 0.05, decimals = 2 },
+			{ key = "compactSelectedStatus", label = "Compact status panel", type = "bool" },
+			{ key = "hideCompactStatusWhenRadialOpen", label = "Hide status with radial", type = "bool" },
+		} },
+		{ key = "Selection", items = {
+			{ key = "areaSelectRadius", label = "Area select radius", step = 40, decimals = 0 },
+		} },
+		{ key = "Placement", items = {
+			{ key = "placementPopupEnabled", label = "Placement popup", type = "bool" },
+			{ key = "preferNativeBlueprint", label = "Prefer native blueprint", type = "bool" },
+		} },
+		{ key = "UI", items = {
+			{ key = "reticleSize", label = "Reticle size", step = 1, decimals = 0 },
+			{ key = "debugPanelVisible", label = "Debug panel visible", type = "bool" },
+			{ key = "helpOverlayVisible", label = "Help overlay visible", type = "bool" },
+		} },
+		{ key = "Bindings", bindings = true, items = ControllerCameraTestBindingDefinitions() },
+	}
+end
+
+function ControllerCameraTestGetSettingsUICategory()
+	local ui = ControllerCameraTestSettingsUI
+	local categories = ControllerCameraTestGetSettingsUICategories()
+	ui.categoryIndex = math.max(1, math.min(#categories, tonumber(ui.categoryIndex) or 1))
+	local category = categories[ui.categoryIndex]
+	ui.selectedIndex = math.max(1, math.min(#category.items, tonumber(ui.selectedIndex) or 1))
+	ui.lastCategory = category.key
+	return category
+end
+
+function ControllerCameraTestToggleSettingsUI(forceOpen)
+	local ui = ControllerCameraTestSettingsUI
+	ui.open = forceOpen == nil and not ui.open or forceOpen
+	ui.bindingCaptureAction = nil
+	ControllerCameraTestBindings.captureAction = nil
+	ui.lastAction = ui.open and "settings opened" or "settings closed"
+	if ui.open then
+		ControllerCameraTestEnsureBindings()
+		ControllerCameraTestCycleDebug.lbPressActive = false
+		ControllerCameraTestCycleDebug.lbHadPitchMotion = false
+		ControllerCameraTestControlGroups.leftPressActive = false
+		if ControllerCameraTestDragCommand.active then
+			ControllerCameraTestCancelDrag("cancelled by settings")
+		end
+		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
+			ControllerCameraTestCancelAreaSelect("cancelled by settings")
+		end
+	end
+	latchSelectionDebugMessage(ui.lastAction)
+end
+
+function ControllerCameraTestAdjustSettingFromUI(settingKey, delta, step)
+	local current = ControllerCameraTestSettings[settingKey]
+	if type(current) == "boolean" then
+		ControllerCameraTestSettings[settingKey] = not current
+	else
+		ControllerCameraTestSettings[settingKey] = ControllerCameraTestClampSetting(settingKey, (tonumber(current) or 0) + ((step or 1) * delta))
+	end
+	ControllerCameraTestApplySettingsDefaults()
+	ControllerCameraTestSettingsUI.lastAction = "changed " .. tostring(settingKey)
+end
+
+function ControllerCameraTestResetSettingToDefault(settingKey)
+	local defaults = ControllerCameraTestGetDefaultSettings()
+	if defaults[settingKey] ~= nil then
+		ControllerCameraTestSettings[settingKey] = defaults[settingKey]
+		ControllerCameraTestApplySettingsDefaults()
+		ControllerCameraTestSettingsUI.lastAction = "reset " .. tostring(settingKey)
+	end
+end
+
+function ControllerCameraTestResetSettingsCategory(category)
+	if category.bindings then
+		ControllerCameraTestResetAllBindings()
+	else
+		for _, item in ipairs(category.items) do
+			ControllerCameraTestResetSettingToDefault(item.key)
+		end
+	end
+	ControllerCameraTestSettingsUI.lastAction = "reset " .. tostring(category.key)
+end
+
+function ControllerCameraTestGetPressedBindingInput()
+	for _, buttonName in ipairs({ "A", "X", "Y", "back", "start", "LB", "RB", "dpadUp", "dpadDown", "dpadLeft", "dpadRight" }) do
+		if WasButtonPressed(buttonName) then
+			return buttonName
+		end
+	end
+	if ControllerCameraTestBindings.triggerPressed.LT then return "LT" end
+	if ControllerCameraTestBindings.triggerPressed.RT then return "RT" end
+	return nil
+end
+
+function ControllerCameraTestHandleSettingsUIInput()
+	local ui = ControllerCameraTestSettingsUI
+	if not ui.open then
+		return false
+	end
+	local category = ControllerCameraTestGetSettingsUICategory()
+	if ControllerCameraTestBindings.captureAction then
+		if WasButtonPressed("B") then
+			ControllerCameraTestBindings.captureAction = nil
+			ui.lastAction = "binding capture cancelled"
+		else
+			local captured = ControllerCameraTestGetPressedBindingInput()
+			if captured then
+				ControllerCameraTestSetBinding(ControllerCameraTestBindings.captureAction, captured)
+				ControllerCameraTestBindings.captureAction = nil
+				ui.lastAction = ControllerCameraTestBindings.lastAction
+			end
+		end
+		return true
+	end
+	if WasButtonPressed("B") then
+		ControllerCameraTestToggleSettingsUI(false)
+	elseif WasButtonPressed("LB") then
+		ui.categoryIndex = ((ui.categoryIndex - 2) % #ControllerCameraTestGetSettingsUICategories()) + 1
+		ui.selectedIndex = 1
+	elseif WasButtonPressed("RB") then
+		ui.categoryIndex = (ui.categoryIndex % #ControllerCameraTestGetSettingsUICategories()) + 1
+		ui.selectedIndex = 1
+	elseif WasButtonPressed("dpadUp") then
+		ui.selectedIndex = ((ui.selectedIndex - 2) % #category.items) + 1
+	elseif WasButtonPressed("dpadDown") then
+		ui.selectedIndex = (ui.selectedIndex % #category.items) + 1
+	elseif WasButtonPressed("dpadLeft") and not category.bindings then
+		local item = category.items[ui.selectedIndex]
+		ControllerCameraTestAdjustSettingFromUI(item.key, -1, item.step)
+	elseif WasButtonPressed("dpadRight") and not category.bindings then
+		local item = category.items[ui.selectedIndex]
+		ControllerCameraTestAdjustSettingFromUI(item.key, 1, item.step)
+	elseif WasButtonPressed("A") then
+		local item = category.items[ui.selectedIndex]
+		if category.bindings then
+			ControllerCameraTestBindings.captureAction = item.action
+			ui.lastAction = "press a controller input for " .. tostring(item.label)
+		elseif item.type == "bool" then
+			ControllerCameraTestAdjustSettingFromUI(item.key, 1, 1)
+		end
+	elseif WasButtonPressed("X") then
+		local item = category.items[ui.selectedIndex]
+		if category.bindings then
+			ControllerCameraTestResetBinding(item.action)
+		else
+			ControllerCameraTestResetSettingToDefault(item.key)
+		end
+	elseif WasButtonPressed("Y") then
+		ControllerCameraTestResetSettingsCategory(category)
+	end
+	return true
+end
+
 function ControllerCameraTestIsQueueModifierActive()
-	return (normalizedLeftTrigger or 0) > 0.35
+	return ControllerCameraTestActionDown("queueModifier")
 end
 
 function ControllerCameraTestGetCommandOptions(extraOptions)
@@ -1850,7 +2189,7 @@ function ControllerCameraTestUpdateDragPreview()
 			drag.nativeRouteName = "unavailable"
 			drag.nativePreviewResult = "not attempted"
 			drag.customGridFallback = "yes"
-			if apiMode and type(api.calculateBuildPositions) == "function" then
+			if ControllerCameraTestSettings.preferNativeBlueprint ~= false and apiMode and type(api.calculateBuildPositions) == "function" then
 				local ok, res = pcall(api.calculateBuildPositions, bp, apiMode, startPos, endPos, spacing)
 				if ok and type(res) == "table" and #res > 0 then
 					buildPositions = res
@@ -3272,7 +3611,7 @@ function ControllerCameraTestUpdateControlGroupLeftHold()
 		return false
 	end
 
-	if not IsButtonDown("RB") or not IsButtonDown("dpadLeft") then
+	if not ControllerCameraTestActionDown("controlGroupModifier") or not ControllerCameraTestActionDown("groupRecallOrAssign") then
 		return ControllerCameraTestResolveControlGroupLeftPress()
 	end
 
@@ -3289,38 +3628,38 @@ end
 
 function ControllerCameraTestHandleControlGroupInput()
 	local groups = ControllerCameraTestControlGroups
-	if not (IsButtonDown("RB") or WasButtonPressed("RB") or groups.leftPressActive) then
+	if not (ControllerCameraTestActionDown("controlGroupModifier") or ControllerCameraTestActionPressed("controlGroupModifier") or groups.leftPressActive) then
 		return false
 	end
 
 	groups.activeSlot = ControllerCameraTestNormalizeControlGroupSlot(groups.activeSlot or 1)
-	ControllerCameraTestShowControlGroupOverlay(IsButtonDown("RB") and 0.2 or 1.5)
+	ControllerCameraTestShowControlGroupOverlay(ControllerCameraTestActionDown("controlGroupModifier") and 0.2 or 1.5)
 
 	if groups.leftPressActive then
 		ControllerCameraTestUpdateControlGroupLeftHold()
-		if groups.leftPressActive or not IsButtonDown("RB") then
+		if groups.leftPressActive or not ControllerCameraTestActionDown("controlGroupModifier") then
 			return true
 		end
 	end
 
-	if IsButtonDown("RB") then
-		if WasButtonPressed("dpadUp") then
+	if ControllerCameraTestActionDown("controlGroupModifier") then
+		if ControllerCameraTestActionPressed("groupSlotUp") then
 			ControllerCameraTestChangeControlGroupSlot(1)
-		elseif WasButtonPressed("dpadDown") then
+		elseif ControllerCameraTestActionPressed("groupSlotDown") then
 			ControllerCameraTestChangeControlGroupSlot(-1)
-		elseif WasButtonPressed("dpadLeft") then
+		elseif ControllerCameraTestActionPressed("groupRecallOrAssign") then
 			ControllerCameraTestStartControlGroupLeftPress()
-		elseif WasButtonReleased("dpadLeft") and groups.leftPressActive then
+		elseif ControllerCameraTestActionReleased("groupRecallOrAssign") and groups.leftPressActive then
 			ControllerCameraTestResolveControlGroupLeftPress()
 		elseif WasButtonPressed("dpadRight") then
 			ControllerCameraTestSetControlGroupAction("RB+D-pad Right disabled", groups.activeSlot, groups.slots[groups.activeSlot] and (groups.slots[groups.activeSlot].count or 0) or 0)
 			groups.leftInputState = "right disabled"
-		elseif WasButtonPressed("B") then
+		elseif ControllerCameraTestActionPressed("groupClear") then
 			ControllerCameraTestClearControlGroup(groups.activeSlot)
-		elseif WasButtonPressed("A") then
+		elseif ControllerCameraTestActionPressed("select") then
 			ControllerCameraTestSetControlGroupAction("RB+A disabled", groups.activeSlot, 0)
 			groups.leftInputState = "A disabled"
-		elseif WasButtonPressed("X") then
+		elseif ControllerCameraTestActionPressed("smartAction") then
 			ControllerCameraTestSetControlGroupAction("RB+X disabled", groups.activeSlot, 0)
 			groups.leftInputState = "X disabled"
 		else
@@ -3681,15 +4020,15 @@ function ControllerCameraTestHandleTacticalMenuInput()
 
 	ControllerCameraTestUpdateTacticalStickSelection()
 
-	if WasButtonPressed("B") or WasButtonPressed("Y") then
+	if ControllerCameraTestActionPressed("tacticalCancel") or ControllerCameraTestActionPressed("tacticalClose") then
 		menu.open = false
 		menu.lastAction = "cancelled"
 		latchSelectionDebugMessage("Tactical menu cancelled")
-	elseif WasButtonPressed("dpadUp") or WasButtonPressed("dpadLeft") or WasButtonPressed("LB") then
+	elseif WasButtonPressed("dpadUp") or WasButtonPressed("dpadLeft") or ControllerCameraTestActionPressed("radialPrevPage") then
 		ControllerCameraTestCycleTacticalCommand(-1)
-	elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadRight") or WasButtonPressed("RB") then
+	elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadRight") or ControllerCameraTestActionPressed("radialNextPage") then
 		ControllerCameraTestCycleTacticalCommand(1)
-	elseif WasButtonPressed("A") or WasButtonPressed("X") then
+	elseif ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("radialQuick") then
 		local commands = ControllerCameraTestGetTacticalCommands()
 		ControllerCameraTestExecuteTacticalCommand(commands[menu.selectedIndex])
 	end
@@ -4467,6 +4806,9 @@ function ControllerCameraTestPlacementPatternLabel(pattern)
 end
 
 function ControllerCameraTestShowPlacementPatternPopup(pattern, reason)
+	if ControllerCameraTestSettings.placementPopupEnabled == false then
+		return
+	end
 	local placement = ControllerCameraTestBuildPlacement
 	local label = ControllerCameraTestPlacementPatternLabel(pattern)
 	local text = "Placement: " .. label
@@ -4786,15 +5128,15 @@ function ControllerCameraTestHandlePlacementInput(dt)
 
 	local drag = ControllerCameraTestDragCommand
 
-	if WasButtonPressed("B") then
+	if ControllerCameraTestActionPressed("cancelPlacement") then
 		if drag.active then
 			ControllerCameraTestCancelDrag("cancelled by B")
 		else
 			ControllerCameraTestCancelPlacement("cancelled by B")
 		end
-	elseif WasButtonPressed("A") or WasButtonPressed("X") then
-		local button = WasButtonPressed("A") and "A" or "X"
-		local isExit = (button == "A")
+	elseif ControllerCameraTestActionPressed("place") or ControllerCameraTestActionPressed("placeStay") then
+		local button = ControllerCameraTestActionPressed("place") and "place" or "placeStay"
+		local isExit = (button == "place")
 		if placement.placementPattern == "single" then
 			ControllerCameraTestPlaceBuildOption(placement.option, isExit, "placed and " .. (isExit and "exited" or "remained"))
 		else
@@ -4815,14 +5157,14 @@ function ControllerCameraTestHandlePlacementInput(dt)
 		end
 	end
 
-	if drag.active and drag.pressActive and (drag.pressButton == "A" or drag.pressButton == "X") then
+	if drag.active and drag.pressActive and (drag.pressButton == "place" or drag.pressButton == "placeStay") then
 		local btn = drag.pressButton
-		if IsButtonDown(btn) then
+		if ControllerCameraTestActionDown(btn) then
 			ControllerCameraTestUpdateDragPreview()
 		end
-		if WasButtonReleased(btn) then
+		if ControllerCameraTestActionReleased(btn) then
 			if (debugEventTime - drag.pressStartTime) >= 0.35 then
-				local isExit = (btn == "A")
+				local isExit = (btn == "place")
 				ControllerCameraTestConfirmDragBuild(isExit)
 			end
 			drag.pressActive = false
@@ -4833,19 +5175,19 @@ function ControllerCameraTestHandlePlacementInput(dt)
 
 	if drag.active then
 		local changed = false
-		if WasButtonPressed("dpadLeft") then
+		if ControllerCameraTestActionPressed("rotateBuildingLeft") then
 			ControllerCameraTestRotatePlacementFacing(-1)
 			changed = true
-		elseif WasButtonPressed("dpadRight") then
+		elseif ControllerCameraTestActionPressed("rotateBuildingRight") then
 			ControllerCameraTestRotatePlacementFacing(1)
 			changed = true
-		elseif WasButtonPressed("LB") then
+		elseif ControllerCameraTestActionPressed("patternPrev") then
 			changed = ControllerCameraTestTryConstructionShortcut("pattern", "prev")
-		elseif WasButtonPressed("RB") then
+		elseif ControllerCameraTestActionPressed("patternNext") then
 			changed = ControllerCameraTestTryConstructionShortcut("pattern", "next")
-		elseif WasButtonPressed("dpadUp") then
+		elseif ControllerCameraTestActionPressed("spacingUp") then
 			changed = ControllerCameraTestTryConstructionShortcut("spacing", "inc")
-		elseif WasButtonPressed("dpadDown") then
+		elseif ControllerCameraTestActionPressed("spacingDown") then
 			changed = ControllerCameraTestTryConstructionShortcut("spacing", "dec")
 		end
 		if changed then
@@ -4855,19 +5197,19 @@ function ControllerCameraTestHandlePlacementInput(dt)
 	end
 
 	if not drag.active then
-		if WasButtonPressed("dpadLeft") then
+		if ControllerCameraTestActionPressed("rotateBuildingLeft") then
 			ControllerCameraTestRotatePlacementFacing(-1)
-		elseif WasButtonPressed("dpadRight") then
+		elseif ControllerCameraTestActionPressed("rotateBuildingRight") then
 			ControllerCameraTestRotatePlacementFacing(1)
-		elseif WasButtonPressed("Y") then
+		elseif ControllerCameraTestActionPressed("radialClose") then
 			ControllerCameraTestCancelPlacement("cancelled by Y")
-		elseif WasButtonPressed("LB") then
+		elseif ControllerCameraTestActionPressed("patternPrev") then
 			ControllerCameraTestTryConstructionShortcut("pattern", "prev")
-		elseif WasButtonPressed("RB") then
+		elseif ControllerCameraTestActionPressed("patternNext") then
 			ControllerCameraTestTryConstructionShortcut("pattern", "next")
-		elseif WasButtonPressed("dpadUp") then
+		elseif ControllerCameraTestActionPressed("spacingUp") then
 			ControllerCameraTestTryConstructionShortcut("spacing", "inc")
-		elseif WasButtonPressed("dpadDown") then
+		elseif ControllerCameraTestActionPressed("spacingDown") then
 			ControllerCameraTestTryConstructionShortcut("spacing", "dec")
 		end
 	end
@@ -4900,7 +5242,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 
 	local categories = menu.radialCategories or { "Economy", "Combat", "Utility", "Build" }
 
-	if WasButtonPressed("B") then
+	if ControllerCameraTestActionPressed("radialCancel") then
 		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 		if ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits) then
 			local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
@@ -4913,9 +5255,9 @@ function ControllerCameraTestHandleBuildMenuInput()
 		else
 			ControllerCameraTestCloseBuildMenu("closed by B")
 		end
-	elseif WasButtonPressed("Y") then
+	elseif ControllerCameraTestActionPressed("radialClose") then
 		ControllerCameraTestCloseBuildMenu("closed by Y")
-	elseif WasButtonPressed("A") then
+	elseif ControllerCameraTestActionPressed("radialSelect") then
 		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 		if ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits) then
 			local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
@@ -4951,13 +5293,13 @@ function ControllerCameraTestHandleBuildMenuInput()
 			ControllerCameraTestEnterPlacementFromHighlight()
 			ControllerCameraTestCloseBuildMenu("entered placement")
 		end
-	elseif WasButtonPressed("X") then
+	elseif ControllerCameraTestActionPressed("radialQuick") then
 		ControllerCameraTestPlaceHighlightedBuildOption(false, "quick placed from radial")
 	elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadRight") then
 		ControllerCameraTestSetRadialHighlight(currentLocalIndex + 1, "dpad next")
 	elseif WasButtonPressed("dpadUp") or WasButtonPressed("dpadLeft") then
 		ControllerCameraTestSetRadialHighlight(currentLocalIndex - 1, "dpad prev")
-	elseif WasButtonPressed("LB") then
+	elseif ControllerCameraTestActionPressed("radialPrevPage") then
 		if menu.radialPage > 1 then
 			menu.radialPage = menu.radialPage - 1
 			ControllerCameraTestRefreshRadialVisibleOptions()
@@ -4971,7 +5313,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 			end
 		end
 		menu.lastAction = "category/page prev"
-	elseif WasButtonPressed("RB") then
+	elseif ControllerCameraTestActionPressed("radialNextPage") then
 		if menu.radialPage < menu.radialPageCount then
 			menu.radialPage = menu.radialPage + 1
 			ControllerCameraTestRefreshRadialVisibleOptions()
@@ -5088,15 +5430,15 @@ function ControllerCameraTestHandleNormalXInput(dt)
 	local drag = ControllerCameraTestDragCommand
 	local HOLD_SECONDS = ControllerCameraTestSettings.xHoldSeconds or 0.14
 
-	if drag.active and WasButtonPressed("B") then
+	if drag.active and ControllerCameraTestActionPressed("cancel") then
 		ControllerCameraTestCancelDrag("cancelled by B")
 		return true
 	end
 
-	if WasButtonPressed("X") then
+	if ControllerCameraTestActionPressed("smartAction") then
 		drag.pressActive = true
 		drag.pressStartTime = debugEventTime
-		drag.pressButton = "X"
+		drag.pressButton = "smartAction"
 		drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
 		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
 		drag.active = false
@@ -5104,7 +5446,7 @@ function ControllerCameraTestHandleNormalXInput(dt)
 		drag.singleUnitPathUnitID = nil
 	end
 
-	if drag.pressActive and drag.pressButton == "X" and IsButtonDown("X") then
+	if drag.pressActive and drag.pressButton == "smartAction" and ControllerCameraTestActionDown("smartAction") then
 		if not drag.active and (debugEventTime - drag.pressStartTime) >= HOLD_SECONDS then
 			local mobileUnits = ControllerCameraTestGetSelectedMobileUnits()
 			local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
@@ -5122,7 +5464,7 @@ function ControllerCameraTestHandleNormalXInput(dt)
 		end
 	end
 
-	if WasButtonReleased("X") and drag.pressActive and drag.pressButton == "X" then
+	if ControllerCameraTestActionReleased("smartAction") and drag.pressActive and drag.pressButton == "smartAction" then
 		if drag.singleUnitPathActive then
 			ControllerCameraTestFinishSingleUnitPath()
 		elseif drag.active then
@@ -5141,12 +5483,12 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 	local X_HOLD_SECONDS = ControllerCameraTestSettings.xHoldSeconds or 0.14
 	local A_HOLD_SECONDS = 0.35
 
-	if drag.active and WasButtonPressed("B") then
+	if drag.active and ControllerCameraTestActionPressed("cancel") then
 		ControllerCameraTestCancelDrag("cancelled by B")
 		return true
 	end
 
-	if WasButtonPressed("X") then
+	if ControllerCameraTestActionPressed("smartAction") then
 		drag.pressActive = true
 		drag.pressStartTime = debugEventTime
 		drag.pressButton = "RT+X"
@@ -5155,7 +5497,7 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 		drag.active = false
 	end
 
-	if drag.pressActive and drag.pressButton == "RT+X" and IsButtonDown("X") then
+	if drag.pressActive and drag.pressButton == "RT+X" and ControllerCameraTestActionDown("smartAction") then
 		if not drag.active and (debugEventTime - drag.pressStartTime) >= X_HOLD_SECONDS then
 			drag.active = true
 			drag.mode = "fightLine"
@@ -5167,7 +5509,7 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 		end
 	end
 
-	if WasButtonReleased("X") and drag.pressActive and drag.pressButton == "RT+X" then
+	if ControllerCameraTestActionReleased("smartAction") and drag.pressActive and drag.pressButton == "RT+X" then
 		if drag.active then
 			ControllerCameraTestConfirmDragCommand(false)
 		else
@@ -5176,7 +5518,7 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 		drag.pressActive = false
 	end
 
-	if WasButtonPressed("A") then
+	if ControllerCameraTestActionPressed("select") then
 		drag.pressActive = true
 		drag.pressStartTime = debugEventTime
 		drag.pressButton = "RT+A"
@@ -5185,7 +5527,7 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 		drag.active = false
 	end
 
-	if drag.pressActive and drag.pressButton == "RT+A" and IsButtonDown("A") then
+	if drag.pressActive and drag.pressButton == "RT+A" and ControllerCameraTestActionDown("select") then
 		if not drag.active and (debugEventTime - drag.pressStartTime) >= A_HOLD_SECONDS then
 			drag.active = true
 			drag.mode = "attackLine"
@@ -5197,7 +5539,7 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 		end
 	end
 
-	if WasButtonReleased("A") and drag.pressActive and drag.pressButton == "RT+A" then
+	if ControllerCameraTestActionReleased("select") and drag.pressActive and drag.pressButton == "RT+A" then
 		if drag.active then
 			ControllerCameraTestConfirmDragCommand(false)
 		else
@@ -5215,7 +5557,7 @@ function ControllerCameraTestHandleNormalAInput(dt)
 	local area = ControllerCameraTestAreaSelect
 	local HOLD_SECONDS = ControllerCameraTestSettings.aHoldSeconds or 0.38
 
-	if WasButtonPressed("A") then
+	if ControllerCameraTestActionPressed("select") then
 		area.pressActive = true
 		area.active = false
 		area.pressStartTime = debugEventTime
@@ -5223,7 +5565,7 @@ function ControllerCameraTestHandleNormalAInput(dt)
 		ControllerCameraTestLayerDebug.areaSelect = area.lastResult
 	end
 
-	if area.pressActive and IsButtonDown("A") then
+	if area.pressActive and ControllerCameraTestActionDown("select") then
 		if not area.active and (debugEventTime - area.pressStartTime) >= HOLD_SECONDS then
 			area.active = true
 			area.lastResult = "active"
@@ -5236,7 +5578,7 @@ function ControllerCameraTestHandleNormalAInput(dt)
 		end
 	end
 
-	if WasButtonReleased("A") and area.pressActive then
+	if ControllerCameraTestActionReleased("select") and area.pressActive then
 		if area.active then
 			ControllerCameraTestSelectAreaUnits()
 		elseif (debugEventTime - (area.lastTapTime or -10)) <= 0.35 then
@@ -5307,37 +5649,37 @@ function ControllerCameraTestHandleCommandLayerInput(dt)
 		return
 	end
 
-	if WasButtonPressed("A") then
+	if ControllerCameraTestActionPressed("select") then
 		ControllerCameraTestLayerDebug.commandLayerAction = "RT+A select-all disabled"
 		ControllerCameraTestCycleDebug.lastResult = "RT+A select-all disabled"
 		latchSelectionDebugMessage("RT+A reserved: select-all disabled")
-	elseif WasButtonPressed("B") then
+	elseif ControllerCameraTestActionPressed("cancel") then
 		attemptStopCommand()
 		ControllerCameraTestLayerDebug.commandLayerAction = "RT+B stop"
-	elseif WasButtonPressed("X") then
+	elseif ControllerCameraTestActionPressed("smartAction") then
 		attemptAttackCommand()
 		ControllerCameraTestLayerDebug.commandLayerAction = "RT+X attack/attack-move"
-	elseif WasButtonPressed("Y") then
+	elseif ControllerCameraTestActionPressed("buildRadial") then
 		ControllerCameraTestToggleTacticalMenu()
 		ControllerCameraTestLayerDebug.commandLayerAction = "RT+Y tactical menu"
-	elseif WasButtonPressed("dpadUp") then
+	elseif ControllerCameraTestActionPressed("commandUp") then
 		ControllerCameraTestIssueGuardOrPatrol()
-	elseif WasButtonPressed("dpadDown") then
+	elseif ControllerCameraTestActionPressed("commandDown") then
 		ControllerCameraTestIssueReclaimOrStop()
-	elseif WasButtonPressed("dpadLeft") then
+	elseif ControllerCameraTestActionPressed("commandLeft") then
 		if not ControllerCameraTestCycleQuickGroup(-1) then
 			ControllerCameraTestCycleSelection(-1)
 			ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Left cycle selection"
 		end
-	elseif WasButtonPressed("dpadRight") then
+	elseif ControllerCameraTestActionPressed("commandRight") then
 		if not ControllerCameraTestCycleQuickGroup(1) then
 			ControllerCameraTestCycleSelection(1)
 			ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Right cycle selection"
 		end
-	elseif WasButtonPressed("LB") then
+	elseif ControllerCameraTestActionPressed("pitchModifier") then
 		ControllerCameraTestCycleSelection(-1)
 		ControllerCameraTestLayerDebug.commandLayerAction = "RT+LB previous selection"
-	elseif WasButtonPressed("RB") then
+	elseif ControllerCameraTestActionPressed("controlGroupModifier") then
 		ControllerCameraTestCycleSelection(1)
 		ControllerCameraTestLayerDebug.commandLayerAction = "RT+RB next selection"
 	end
@@ -5354,11 +5696,11 @@ function ControllerCameraTestUpdateLBTapState()
 		return
 	end
 
-	if WasButtonPressed("LB") then
+	if ControllerCameraTestActionPressed("pitchModifier") then
 		ControllerCameraTestCycleDebug.lbPressActive = true
 		ControllerCameraTestCycleDebug.lbHadPitchMotion = false
 	end
-	if IsButtonDown("LB") and math.abs(normalizedRightY) > 0.2 then
+	if ControllerCameraTestActionDown("pitchModifier") and math.abs(normalizedRightY) > 0.2 then
 		ControllerCameraTestCycleDebug.lbHadPitchMotion = true
 	end
 end
@@ -5389,13 +5731,13 @@ end
 function ControllerCameraTestHandleNormalUtilityInput()
 	if ControllerCameraTestHandleControlGroupInput() then
 		return true
-	elseif IsButtonDown("LB") and WasButtonPressed("dpadLeft") then
+	elseif ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestActionPressed("idlePrev") then
 		ControllerCameraTestCycleDebug.lbHadPitchMotion = true
 		ControllerCameraTestCycleIdleUnitType(-1)
-	elseif IsButtonDown("LB") and WasButtonPressed("dpadRight") then
+	elseif ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestActionPressed("idleNext") then
 		ControllerCameraTestCycleDebug.lbHadPitchMotion = true
 		ControllerCameraTestCycleIdleUnitType(1)
-	elseif WasButtonReleased("LB") and ControllerCameraTestCycleDebug.lbPressActive then
+	elseif ControllerCameraTestActionReleased("pitchModifier") and ControllerCameraTestCycleDebug.lbPressActive then
 		if not ControllerCameraTestCycleDebug.lbHadPitchMotion then
 			ControllerCameraTestCycleSelection(-1)
 			ControllerCameraTestLayerDebug.normalUtilityAction = "LB tap cycle selection"
@@ -5406,9 +5748,9 @@ function ControllerCameraTestHandleNormalUtilityInput()
 		ControllerCameraTestHandleBookmarkButton("up")
 	elseif WasButtonPressed("dpadDown") then
 		ControllerCameraTestHandleBookmarkButton("down")
-	elseif WasButtonPressed("dpadLeft") then
+	elseif ControllerCameraTestActionPressed("idlePrev") then
 		ControllerCameraTestCycleIdleUnit(-1)
-	elseif WasButtonPressed("dpadRight") then
+	elseif ControllerCameraTestActionPressed("idleNext") then
 		ControllerCameraTestCycleIdleUnit(1)
 	elseif WasButtonPressed("start") then
 		ControllerCameraTestSetNormalUtilityAction("Start/Menu reserved")
@@ -5417,6 +5759,9 @@ function ControllerCameraTestHandleNormalUtilityInput()
 end
 
 function ControllerCameraTestGetModeSummary()
+	if ControllerCameraTestSettingsUI.open then
+		return "settings"
+	end
 	if commandLayerActive then
 		if ControllerCameraTestTacticalMenu.open then
 			return "tactical menu"
@@ -5435,7 +5780,7 @@ function ControllerCameraTestGetModeSummary()
 	if ControllerCameraTestTuning.backHeld then
 		return "back modifier"
 	end
-	if IsButtonDown("RB") then
+	if ControllerCameraTestActionDown("controlGroupModifier") then
 		return "control groups"
 	end
 	if ControllerCameraTestSettings.helpOverlayVisible then
@@ -5674,6 +6019,7 @@ end
 
 function widget:Initialize()
 	apiAvailable = type(spGetAvailableControllers) == "function" and type(spGetControllerState) == "function"
+	ControllerCameraTestEnsureBindings()
 	updateScreenCenter(spGetViewGeometry())
 	ensureDebugPanelInitialized()
 end
@@ -5719,6 +6065,7 @@ function ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	normalizedLeftTrigger = normalizeTrigger(GetNamedAxis(state, "leftTrigger"))
 	normalizedRightTrigger = normalizeTrigger(GetNamedAxis(state, "rightTrigger"))
 	updateButtonStates(state)
+	ControllerCameraTestUpdateBindingTriggerEdges()
 	heldButtonsSummary = getButtonStateSummary(currentButtonStates)
 	pressedThisFrameSummary = getButtonStateSummary(pressedButtonStates)
 	releasedThisFrameSummary = getButtonStateSummary(releasedButtonStates)
@@ -5740,8 +6087,15 @@ end
 
 function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	fastPanActive = normalizedLeftTrigger > 0
-	lbCameraModifierActive = IsButtonDown("LB")
-	commandLayerActive = (normalizedRightTrigger > 0) and not ControllerCameraTestBuildPlacement.active
+	lbCameraModifierActive = ControllerCameraTestActionDown("pitchModifier")
+	commandLayerActive = ControllerCameraTestActionDown("commandLayer") and not ControllerCameraTestBuildPlacement.active
+	if ControllerCameraTestSettingsUI.open then
+		commandLayerActive = false
+		ControllerCameraTestHandleSettingsUIInput()
+		ControllerCameraTestLayerDebug.modeSummary = "settings"
+		activeButtonLayoutSummary = "Settings: D-pad adjust, LB/RB category, A edit, B close, X/Y reset"
+		return
+	end
 	if not commandLayerActive and ControllerCameraTestTacticalMenu.open then
 		ControllerCameraTestTacticalMenu.open = false
 		ControllerCameraTestTacticalMenu.lastAction = "closed: RT released"
@@ -5779,15 +6133,15 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 				xBusy = ControllerCameraTestHandleNormalXInput(dt)
 			end
 
-			if areaBusy and WasButtonPressed("B") then
+			if areaBusy and ControllerCameraTestActionPressed("cancel") then
 				ControllerCameraTestCancelAreaSelect("cancelled by B")
-			elseif xBusy and WasButtonPressed("B") then
+			elseif xBusy and ControllerCameraTestActionPressed("cancel") then
 				-- Handled inside X handler
-			elseif not areaBusy and not xBusy and WasButtonPressed("B") then
+			elseif not areaBusy and not xBusy and ControllerCameraTestActionPressed("cancel") then
 				attemptClearSelection()
 			end
 
-			if not areaBusy and not xBusy and WasButtonPressed("Y") then
+			if not areaBusy and not xBusy and ControllerCameraTestActionPressed("buildRadial") then
 				attemptBuildMenu()
 			end
 			if not areaBusy and not xBusy then
@@ -5806,7 +6160,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		activeButtonLayoutSummary = "Build menu: A placement, X quick-place, B/Y close, D-pad/LB/RB navigate"
 	elseif ControllerCameraTestAreaSelect.active then
 		activeButtonLayoutSummary = "Area select: release A to select, RS Y/D-pad changes radius"
-	elseif IsButtonDown("RB") then
+	elseif ControllerCameraTestActionDown("controlGroupModifier") then
 		activeButtonLayoutSummary = "Control Groups: RB+D-pad U/D slot, tap L recall, hold L type-assign, B clear, R/A/X reserved"
 	else
 		activeButtonLayoutSummary = XboxController.normalLayoutSummary
@@ -5841,7 +6195,7 @@ function ControllerCameraTestApplyInputCurve(value, exponent)
 end
 
 function ControllerCameraTestSmoothAxis(current, target, dt)
-	local response = math.max(0.01, tonumber(ControllerCameraTestSettings.cameraSmoothing) or 0.12)
+	local response = math.max(0.01, tonumber(ControllerCameraTestSettings.cameraSmoothing) or 0.06)
 	local alpha = 1 - math.exp(-math.max(0, dt or 0) / response)
 	local value = (tonumber(current) or 0) + ((tonumber(target) or 0) - (tonumber(current) or 0)) * alpha
 	return math.abs(value) < 0.001 and 0 or value
@@ -5852,7 +6206,7 @@ function ControllerCameraTestUpdateSmoothedCameraInputs(dt, menuOpen, areaActive
 	if menuOpen then
 		smooth.panX, smooth.panY, smooth.rotateX, smooth.pitchY, smooth.zoomY = 0, 0, 0, 0, 0
 	else
-		local curve = ControllerCameraTestSettings.stickCurve or 1.35
+		local curve = ControllerCameraTestSettings.stickCurve or 1.175
 		smooth.panX = ControllerCameraTestSmoothAxis(smooth.panX, ControllerCameraTestApplyInputCurve(normalizedLeftX, curve), dt)
 		smooth.panY = ControllerCameraTestSmoothAxis(smooth.panY, ControllerCameraTestApplyInputCurve(normalizedLeftY, curve), dt)
 		smooth.rotateX = ControllerCameraTestSmoothAxis(smooth.rotateX, ControllerCameraTestApplyInputCurve(normalizedRightX, curve), dt)
@@ -5860,13 +6214,13 @@ function ControllerCameraTestUpdateSmoothedCameraInputs(dt, menuOpen, areaActive
 		smooth.pitchY = ControllerCameraTestSmoothAxis(smooth.pitchY, (lbCameraModifierActive and not areaActive) and yInput or 0, dt)
 		smooth.zoomY = ControllerCameraTestSmoothAxis(smooth.zoomY, (not lbCameraModifierActive and not areaActive) and yInput or 0, dt)
 	end
-	local triggerInput = ControllerCameraTestApplyInputCurve(normalizedLeftTrigger or 0, ControllerCameraTestSettings.triggerCurve or 1.15)
+	local triggerInput = ControllerCameraTestApplyInputCurve(normalizedLeftTrigger or 0, ControllerCameraTestSettings.triggerCurve or 1.075)
 	smooth.leftTrigger = ControllerCameraTestSmoothAxis(smooth.leftTrigger, triggerInput, dt)
 end
 
 function ControllerCameraTestUpdateCameraControls(dt)
 	local placementActive = ControllerCameraTestBuildPlacement.active
-	local menuOpen = (ControllerCameraTestBuildMenu.open and not placementActive) or ControllerCameraTestTacticalMenu.open
+	local menuOpen = (ControllerCameraTestBuildMenu.open and not placementActive) or ControllerCameraTestTacticalMenu.open or ControllerCameraTestSettingsUI.open
 	local areaActive = ControllerCameraTestAreaSelect.active
 	ControllerCameraTestUpdateSmoothedCameraInputs(dt, menuOpen, areaActive)
 	local smooth = ControllerCameraTestInputSmoothing
@@ -5900,15 +6254,15 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 
 	ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
-	if ControllerCameraTestBuildMenu.open then
+	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestBuildMenu.open then
 		ControllerCameraTestUpdateRadialStickSelection()
 	end
-	if ControllerCameraTestTacticalMenu.open then
+	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestTacticalMenu.open then
 		ControllerCameraTestUpdateTacticalStickSelection()
 	end
 	ControllerCameraTestUpdateCameraControls(dt)
 	updateReticleWorldTarget()
-	if ControllerCameraTestDragCommand.active then
+	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestDragCommand.active then
 		pcall(ControllerCameraTestUpdateDragPreview)
 	end
 	if controllerMode and reticleVisible and type(spWarpMouse) == "function" then spWarpMouse(screenCenterX, screenCenterY) end
@@ -5921,6 +6275,52 @@ end
 function widget:KeyPress(key, mods, isRepeat)
 	if isRepeat or type(KEYSYMS) ~= "table" then
 		return false
+	end
+	if key == KEYSYMS.END then
+		ControllerCameraTestToggleSettingsUI()
+		return true
+	end
+	if ControllerCameraTestSettingsUI.open then
+		local ui = ControllerCameraTestSettingsUI
+		local category = ControllerCameraTestGetSettingsUICategory()
+		if key == KEYSYMS.ESCAPE then
+			if ControllerCameraTestBindings.captureAction then
+				ControllerCameraTestBindings.captureAction = nil
+				ui.lastAction = "binding capture cancelled"
+			else
+				ControllerCameraTestToggleSettingsUI(false)
+			end
+			return true
+		elseif key == KEYSYMS.UP then
+			ui.selectedIndex = ((ui.selectedIndex - 2) % #category.items) + 1
+			return true
+		elseif key == KEYSYMS.DOWN then
+			ui.selectedIndex = (ui.selectedIndex % #category.items) + 1
+			return true
+		elseif key == KEYSYMS.LEFT and not category.bindings then
+			local item = category.items[ui.selectedIndex]
+			ControllerCameraTestAdjustSettingFromUI(item.key, -1, item.step)
+			return true
+		elseif key == KEYSYMS.RIGHT and not category.bindings then
+			local item = category.items[ui.selectedIndex]
+			ControllerCameraTestAdjustSettingFromUI(item.key, 1, item.step)
+			return true
+		elseif key == KEYSYMS.TAB then
+			local delta = mods and mods.shift and -1 or 1
+			local categories = ControllerCameraTestGetSettingsUICategories()
+			ui.categoryIndex = ((ui.categoryIndex - 1 + delta) % #categories) + 1
+			ui.selectedIndex = 1
+			return true
+		elseif key == KEYSYMS.RETURN or key == KEYSYMS.ENTER then
+			local item = category.items[ui.selectedIndex]
+			if category.bindings then
+				ControllerCameraTestBindings.captureAction = item.action
+				ui.lastAction = "press a controller input for " .. tostring(item.label)
+			elseif item.type == "bool" then
+				ControllerCameraTestAdjustSettingFromUI(item.key, 1, 1)
+			end
+			return true
+		end
 	end
 	if key == KEYSYMS.PAGEUP then
 		ControllerCameraTestSettings.debugPanelVisible = not ControllerCameraTestSettings.debugPanelVisible
@@ -6038,9 +6438,10 @@ function ControllerCameraTestDrawTacticalRadial()
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 	local minView = math.min(viewSizeX, viewSizeY)
-	local radius = math.min(330, math.max(210, minView * 0.22))
-	local itemW = math.min(142, math.max(104, minView * 0.11))
-	local itemH = 40
+	local radialScale = ControllerCameraTestSettings.radialScale or 1
+	local radius = math.min(430, math.max(160, minView * 0.22 * radialScale))
+	local itemW = math.min(180, math.max(86, minView * 0.11 * radialScale))
+	local itemH = 40 * radialScale
 
 	gl.Color(0, 0, 0, 0.46)
 	ControllerCameraTestDrawCircle2D(cx, cy, radius * 1.28, 42)
@@ -6197,7 +6598,7 @@ end
 function ControllerCameraTestBuildCompactSelectedStatus()
 	local status = ControllerCameraTestSelectedStatus
 	status.mode = "hidden"
-	if not controllerMode or ControllerCameraTestSettings.compactSelectedStatus == false then
+	if not controllerMode or ControllerCameraTestSettingsUI.open or ControllerCameraTestSettings.compactSelectedStatus == false then
 		status.lastResult = "hidden: mouse mode or disabled"
 		return nil
 	end
@@ -6216,7 +6617,7 @@ function ControllerCameraTestBuildCompactSelectedStatus()
 	status.unitID = info.unitID
 	status.unitDefID = info.unitDefID
 	status.name = info.name
-	status.vanillaCommandPanelHideRoute = "unavailable"
+	status.vanillaCommandPanelStatus = "untouched"
 
 	if info.mode == "factory" then
 		if status.refreshUnitID ~= info.unitID or debugEventTime >= (status.nextRefreshTime or 0) then
@@ -6334,7 +6735,7 @@ end
 
 function ControllerCameraTestDrawControlGroupOverlay()
 	local groups = ControllerCameraTestControlGroups
-	if not (IsButtonDown("RB") or (groups.visibleUntil or 0) > debugEventTime) then
+	if not (ControllerCameraTestActionDown("controlGroupModifier") or (groups.visibleUntil or 0) > debugEventTime) then
 		return
 	end
 
@@ -6440,7 +6841,8 @@ function ControllerCameraTestDrawBuildRadial()
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 
 	local minView = math.min(viewSizeX, viewSizeY)
-	local radius = math.min(430, math.max(260, minView * 0.28))
+	local radialScale = ControllerCameraTestSettings.radialScale or 1
+	local radius = math.min(520, math.max(200, minView * 0.28 * radialScale))
 
 	local visibleOptions = menu.radialVisibleOptions or {}
 	local n = #visibleOptions
@@ -6471,7 +6873,7 @@ function ControllerCameraTestDrawBuildRadial()
 	end)
 
 	-- 2. Draw each item
-	local iconSize = math.min(120, math.max(72, minView * 0.075))
+	local iconSize = math.min(145, math.max(56, minView * 0.075 * radialScale))
 	for i = 1, n do
 		local option = visibleOptions[i]
 		local angle = ((i - 1) * (2 * math.pi / n)) - (math.pi / 2)
@@ -6692,6 +7094,109 @@ function ControllerCameraTestDrawBuildRadial()
 	gl.LineWidth(1)
 end
 
+function ControllerCameraTestFormatSettingsUIValue(item)
+	if item.type == "bool" then
+		return ControllerCameraTestSettings[item.key] and "ON" or "OFF"
+	end
+	local value = tonumber(ControllerCameraTestSettings[item.key]) or 0
+	if item.decimals == 0 then
+		return string.format("%.0f", value)
+	end
+	return string.format("%." .. tostring(item.decimals or 2) .. "f", value)
+end
+
+function ControllerCameraTestDrawSettingsUI()
+	local ui = ControllerCameraTestSettingsUI
+	if not ui.open then
+		return
+	end
+	local categories = ControllerCameraTestGetSettingsUICategories()
+	local category = ControllerCameraTestGetSettingsUICategory()
+	local width = math.min(720, math.max(500, viewSizeX - 80))
+	local height = math.min(570, math.max(420, viewSizeY - 90))
+	local left = math.max(20, (viewSizeX - width) * 0.5)
+	local bottom = math.max(20, (viewSizeY - height) * 0.5)
+	local right = left + width
+	local top = bottom + height
+	local headerY = top - 34
+	local rowHeight = 27
+
+	gl.Color(0.01, 0.025, 0.04, 0.94)
+	gl.Rect(left, bottom, right, top)
+	gl.Color(0.07, 0.12, 0.17, 0.98)
+	gl.Rect(left, headerY, right, top)
+	gl.Color(0.58, 0.84, 1, 0.92)
+	gl.LineWidth(1.5)
+	gl.BeginEnd(GL.LINE_LOOP, function()
+		gl.Vertex(left, bottom)
+		gl.Vertex(right, bottom)
+		gl.Vertex(right, top)
+		gl.Vertex(left, top)
+	end)
+	gl.Color(0.84, 0.95, 1, 1)
+	gl.Text("Controller Settings", left + 18, top - 23, 18, "o")
+	gl.Color(0.72, 0.84, 0.92, 0.92)
+	gl.Text("End/Esc close   Home reset all defaults", right - 18, top - 22, 11, "ro")
+
+	local tabX = left + 16
+	for index, cat in ipairs(categories) do
+		local tabW = math.max(62, (#cat.key * 7) + 18)
+		if index == ui.categoryIndex then
+			gl.Color(0.16, 0.40, 0.62, 0.88)
+			gl.Rect(tabX, headerY - 37, tabX + tabW, headerY - 8)
+		end
+		gl.Color(index == ui.categoryIndex and 1 or 0.68, index == ui.categoryIndex and 0.95 or 0.78, 1, 1)
+		gl.Text(cat.key, tabX + 9, headerY - 27, 12, "o")
+		tabX = tabX + tabW + 5
+	end
+
+	local listTop = headerY - 62
+	local visibleRows = math.max(5, math.floor((height - 144) / rowHeight))
+	local firstRow = math.max(1, math.min(ui.selectedIndex - math.floor(visibleRows / 2), #category.items - visibleRows + 1))
+	local lastRow = math.min(#category.items, firstRow + visibleRows - 1)
+	local drawY = listTop
+	for index = firstRow, lastRow do
+		local item = category.items[index]
+		local selected = index == ui.selectedIndex
+		if selected then
+			gl.Color(0.13, 0.30, 0.44, 0.9)
+			gl.Rect(left + 18, drawY - 7, right - 18, drawY + 18)
+		end
+		gl.Color(selected and 0.94 or 0.79, selected and 0.98 or 0.84, selected and 1 or 0.9, 1)
+		gl.Text(category.bindings and item.label or item.label, left + 30, drawY, 14, "o")
+		if category.bindings then
+			gl.Color(0.65, 0.9, 1, 1)
+			gl.Text(ControllerCameraTestBindingLabel(ControllerCameraTestGetBinding(item.action)), right - 34, drawY, 14, "ro")
+		else
+			local value = ControllerCameraTestFormatSettingsUIValue(item)
+			gl.Color(item.type == "bool" and (ControllerCameraTestSettings[item.key] and 0.44 or 0.94) or 0.65,
+				item.type == "bool" and (ControllerCameraTestSettings[item.key] and 1 or 0.62) or 0.9,
+				item.type == "bool" and 0.64 or 1, 1)
+			gl.Text(value, right - 34, drawY, 14, "ro")
+		end
+		drawY = drawY - rowHeight
+	end
+
+	local footer = category.bindings
+		and "A/Enter capture  X reset binding  Y reset all bindings  B/Esc close"
+		or "D-pad/arrows adjust  A toggle  X reset selected  Y reset category  LB/RB or Tab change tab"
+	gl.Color(0.68, 0.84, 0.96, 0.95)
+	gl.Text(footer, left + 18, bottom + 35, 12, "o")
+	if ControllerCameraTestBindings.captureAction then
+		gl.Color(0.10, 0.23, 0.30, 0.95)
+		gl.Rect(left + 20, bottom + 55, right - 20, bottom + 91)
+		gl.Color(1, 0.92, 0.48, 1)
+		gl.Text("Listening: press a controller input for " .. tostring(ControllerCameraTestBindings.captureAction) .. " (B cancels)", left + 34, bottom + 69, 14, "o")
+	elseif category.bindings and ControllerCameraTestBindings.conflictAction then
+		gl.Color(1, 0.76, 0.36, 0.95)
+		gl.Text("Shared binding warning: also used by " .. tostring(ControllerCameraTestBindings.conflictAction), left + 20, bottom + 62, 12, "o")
+	end
+	gl.Color(0.76, 0.86, 0.95, 0.95)
+	gl.Text("Last: " .. tostring(ui.lastAction or ControllerCameraTestBindings.lastAction), left + 18, bottom + 15, 11, "o")
+	gl.Color(1, 1, 1, 1)
+	gl.LineWidth(1)
+end
+
 function ControllerCameraTestDrawHelpOverlay()
 	local screenWidth = viewSizeX > 0 and viewSizeX or 1280
 	local screenHeight = viewSizeY > 0 and viewSizeY or 720
@@ -6725,8 +7230,10 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Control Groups: hold RB overlay | RB+Dpad U/D slot | RB+tap Dpad L recall | RB+hold Dpad L assign same type + auto-add",
 		"Control Groups: RB+B clear | RB+Dpad R, RB+A, RB+X are reserved/disabled",
 		"Status: controller mode shows compact factory/constructor activity panel; Y opens its radial",
-		"Debug Panel: Page Up toggle | Help: Page Down toggle | Click headers expand/collapse | Compact/Full button",
-		"Settings: saved ControllerCameraTestSettings override edited defaults after reload; Home resets code defaults",
+		"System UI: End Controller Settings | Page Up Debug | Page Down Help | Home Reset Settings Defaults",
+		"Settings UI: D-pad/arrows adjust | LB/RB or Tab categories | A/Enter select | B/Escape close | X/Y reset",
+		"Bindings tab: A capture next input | B cancel capture | X reset binding | Y reset all bindings",
+		"Settings: saved ControllerCameraTestSettings override edited defaults after reload; Home applies code defaults",
 		"Tuning Selection: " .. ControllerCameraTestCurrentSettingLabel(),
 	}
 
@@ -6775,18 +7282,26 @@ function widget:DrawScreen()
 	local mathMax, mathPi = math.max, math.pi
 	updateDebugLatchSummaries()
 	drawControllerReticle()
-	if ControllerCameraTestBuildMenu.open then
+	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestBuildMenu.open then
 		ControllerCameraTestDrawBuildRadial()
 	end
-	if ControllerCameraTestTacticalMenu.open then
+	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestTacticalMenu.open then
 		ControllerCameraTestDrawTacticalRadial()
 	end
-	ControllerCameraTestDrawQueueIndicator()
-	ControllerCameraTestDrawPlacementPatternPopup()
+	if not ControllerCameraTestSettingsUI.open then
+		ControllerCameraTestDrawQueueIndicator()
+		ControllerCameraTestDrawPlacementPatternPopup()
+	end
 	ControllerCameraTestDrawCompactSelectedStatusPanel()
-	ControllerCameraTestDrawControlGroupOverlay()
+	if not ControllerCameraTestSettingsUI.open then
+		ControllerCameraTestDrawControlGroupOverlay()
+	end
 	if ControllerCameraTestSettings.helpOverlayVisible then
 		ControllerCameraTestDrawHelpOverlay()
+	end
+	ControllerCameraTestDrawSettingsUI()
+	if ControllerCameraTestSettingsUI.open then
+		return
 	end
 	if not ControllerCameraTestSettings.debugPanelVisible then
 		return
@@ -7058,8 +7573,12 @@ function widget:DrawScreen()
 			lines = {
 				"Tuning: " .. ControllerCameraTestCurrentSettingLabel(),
 				"Tuning action: " .. tostring(ControllerCameraTestTuning.lastAction),
-				"Settings menu pending: sensitivities ready, binding remap later",
+				"Settings UI: End | Reset all settings: Home",
 				"Settings source: saved config; Home resets code defaults",
+				"Settings UI open: " .. yesNo(ControllerCameraTestSettingsUI.open),
+				"Settings category: " .. tostring(ControllerCameraTestSettingsUI.lastCategory),
+				"Binding capture: " .. tostring(ControllerCameraTestBindings.captureAction or "none"),
+				"Binding result: " .. tostring(ControllerCameraTestBindings.lastAction),
 				string.format("Thresholds X/A/group: %.2f / %.2f / %.2f", ControllerCameraTestSettings.xHoldSeconds, ControllerCameraTestSettings.aHoldSeconds, ControllerCameraTestSettings.controlGroupAssignHoldSeconds),
 				string.format("Radial scale groundwork: %.2f", ControllerCameraTestSettings.radialScale),
 			},
@@ -7207,7 +7726,7 @@ function widget:DrawScreen()
 				"Native preview result: " .. tostring(ControllerCameraTestDragCommand.nativePreviewResult),
 				"Custom grid fallback: " .. tostring(ControllerCameraTestDragCommand.customGridFallback),
 				"Compact selected status: " .. tostring(ControllerCameraTestSelectedStatus.mode),
-				"Vanilla command panel hide route: " .. tostring(ControllerCameraTestSelectedStatus.vanillaCommandPanelHideRoute),
+				"Vanilla command panel: " .. tostring(ControllerCameraTestSelectedStatus.vanillaCommandPanelStatus),
 			},
 		},
 	}
@@ -7244,7 +7763,7 @@ function widget:DrawScreen()
 		local compactLines = {
 			"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary) .. " | Held: " .. heldButtonsSummary .. " | Pressed: " .. pressedRecentlySummary,
 			"Idle: " .. tostring(ControllerCameraTestIdleCycle.lastTypeName) .. " x" .. tostring(ControllerCameraTestIdleCycle.lastCount) .. " | Group " .. ControllerCameraTestGetControlGroupDisplaySlot(activeGroupSlot) .. " " .. tostring(activeGroupType) .. " x" .. tostring(activeGroupCount) .. " | A2: " .. tostring(ControllerCameraTestAreaSelect.doubleTapAction),
-			"Queue: " .. yesNo(ControllerCameraTestIsQueueModifierActive()) .. " | Tactical: " .. yesNo(ControllerCameraTestTacticalMenu.open) .. " | Build: " .. yesNo(ControllerCameraTestBuildMenu.open),
+			"Queue: " .. yesNo(ControllerCameraTestIsQueueModifierActive()) .. " | Settings: " .. yesNo(ControllerCameraTestSettingsUI.open) .. " | Tactical: " .. yesNo(ControllerCameraTestTacticalMenu.open) .. " | Build: " .. yesNo(ControllerCameraTestBuildMenu.open),
 			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName) .. " (Q:" .. tostring(highlightedQueueCount) .. (factoryProgressKnown == "yes" and " P:" .. factoryProgressValue or "") .. ")",
 			"Placement: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none") .. " | Pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern) .. " | Spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
 			"Drag: Act=" .. yesNo(ControllerCameraTestDragCommand.active) .. " Mode=" .. tostring(ControllerCameraTestDragCommand.mode) .. " Pts=" .. tostring(ControllerCameraTestDragCommand.previewPoints and #ControllerCameraTestDragCommand.previewPoints or 0) .. " Path=" .. tostring(ControllerCameraTestDragCommand.singleUnitWaypointCount or 0) .. " Route=" .. (ControllerCameraTestDragCommand.nativeRouteUsed and "Native" or "Fallback"),
@@ -7292,6 +7811,7 @@ end
 
 function widget:GetConfigData()
 	ensureDebugPanelInitialized()
+	ControllerCameraTestEnsureBindings()
 	local settings = {}
 	for key, value in pairs(ControllerCameraTestSettings) do
 		if type(value) ~= "table" then
@@ -7314,6 +7834,7 @@ function widget:GetConfigData()
 		settings = settings,
 		debugSections = savedSections,
 		debugCompact = ControllerCameraTestDebugCompact,
+		bindings = ControllerCameraTestBindings.actions,
 	}
 end
 
@@ -7330,6 +7851,17 @@ function widget:SetConfigData(data)
 		end
 	end
 	ControllerCameraTestApplySettingsDefaults()
+	ControllerCameraTestEnsureBindings()
+	if type(data.bindings) == "table" then
+		for _, def in ipairs(ControllerCameraTestBindingDefinitions()) do
+			local saved = data.bindings[def.action]
+			if type(saved) == "string"
+				and (saved == "LT" or saved == "RT" or XboxController.buttons[saved] ~= nil)
+			then
+				ControllerCameraTestBindings.actions[def.action] = saved
+			end
+		end
+	end
 
 	if type(data.debugSections) == "table" then
 		for k, v in pairs(data.debugSections) do
