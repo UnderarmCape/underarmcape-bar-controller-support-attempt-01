@@ -110,6 +110,15 @@ ControllerCameraTestDragCommand = ControllerCameraTestDragCommand or {
 	nativeRouteName = "unavailable",
 	nativePreviewResult = "none",
 	customGridFallback = "yes",
+	singleUnitPathActive = false,
+	singleUnitPathUnitID = nil,
+	singleUnitPathPoints = {},
+	singleUnitLastPointX = nil,
+	singleUnitLastPointY = nil,
+	singleUnitLastPointZ = nil,
+	singleUnitLastIssueTime = 0,
+	singleUnitPathResult = "none",
+	singleUnitWaypointCount = 0,
 }
 
 ControllerCameraTestAreaSelect = ControllerCameraTestAreaSelect or {
@@ -177,6 +186,24 @@ ControllerCameraTestVisualFeedback = ControllerCameraTestVisualFeedback or {
 	label = "none",
 	kind = "generic",
 	expireTime = 0,
+}
+ControllerCameraTestPlacementPopup = ControllerCameraTestPlacementPopup or {
+	text = "none",
+	expireTime = 0,
+	lastResult = "none",
+}
+ControllerCameraTestInputSmoothing = ControllerCameraTestInputSmoothing or {
+	panX = 0,
+	panY = 0,
+	rotateX = 0,
+	pitchY = 0,
+	zoomY = 0,
+	leftTrigger = 0,
+}
+ControllerCameraTestSelectedStatus = ControllerCameraTestSelectedStatus or {
+	mode = "hidden",
+	lastResult = "none",
+	vanillaCommandPanelHideRoute = "unavailable",
 }
 ControllerCameraTestLayerDebug = ControllerCameraTestLayerDebug or {
 	commandLayerAction = "none",
@@ -247,6 +274,13 @@ ControllerCameraTestSettings = ControllerCameraTestSettings or {
 	aHoldSeconds = 0.38,
 	controlGroupAssignHoldSeconds = 0.35,
 	radialScale = 1,
+	cameraSmoothing = 0.12,
+	stickCurve = 1.35,
+	triggerCurve = 1.15,
+	singlePathSpacing = 96,
+	singlePathInterval = 0.10,
+	compactSelectedStatus = true,
+	hideCompactStatusWhenRadialOpen = true,
 	debugPanelVisible = true,
 	helpOverlayVisible = false,
 }
@@ -283,6 +317,11 @@ function ControllerCameraTestClampSetting(name, value)
 		aHoldSeconds = { 0.2, 0.8 },
 		controlGroupAssignHoldSeconds = { 0.2, 0.8 },
 		radialScale = { 0.75, 1.5 },
+		cameraSmoothing = { 0.02, 0.4 },
+		stickCurve = { 1, 2.2 },
+		triggerCurve = { 1, 2.2 },
+		singlePathSpacing = { 40, 240 },
+		singlePathInterval = { 0.04, 0.3 },
 	}
 	local range = ranges[name]
 	if not range then
@@ -307,6 +346,13 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.aHoldSeconds = ControllerCameraTestClampSetting("aHoldSeconds", settings.aHoldSeconds or 0.38)
 	settings.controlGroupAssignHoldSeconds = ControllerCameraTestClampSetting("controlGroupAssignHoldSeconds", settings.controlGroupAssignHoldSeconds or 0.35)
 	settings.radialScale = ControllerCameraTestClampSetting("radialScale", settings.radialScale or 1)
+	settings.cameraSmoothing = ControllerCameraTestClampSetting("cameraSmoothing", settings.cameraSmoothing or 0.12)
+	settings.stickCurve = ControllerCameraTestClampSetting("stickCurve", settings.stickCurve or 1.35)
+	settings.triggerCurve = ControllerCameraTestClampSetting("triggerCurve", settings.triggerCurve or 1.15)
+	settings.singlePathSpacing = ControllerCameraTestClampSetting("singlePathSpacing", settings.singlePathSpacing or 96)
+	settings.singlePathInterval = ControllerCameraTestClampSetting("singlePathInterval", settings.singlePathInterval or 0.10)
+	settings.compactSelectedStatus = settings.compactSelectedStatus ~= false
+	settings.hideCompactStatusWhenRadialOpen = settings.hideCompactStatusWhenRadialOpen ~= false
 	settings.debugPanelVisible = settings.debugPanelVisible ~= false
 	settings.helpOverlayVisible = settings.helpOverlayVisible == true
 	ControllerCameraTestAreaSelect.radius = settings.areaSelectRadius
@@ -328,6 +374,11 @@ function ControllerCameraTestSettingDefinitions()
 		{ key = "aHoldSeconds", label = "A hold seconds", step = 0.02, decimals = 2 },
 		{ key = "controlGroupAssignHoldSeconds", label = "Group hold seconds", step = 0.02, decimals = 2 },
 		{ key = "radialScale", label = "Radial scale", step = 0.05, decimals = 2 },
+		{ key = "cameraSmoothing", label = "Camera smoothing", step = 0.01, decimals = 2 },
+		{ key = "stickCurve", label = "Stick curve", step = 0.05, decimals = 2 },
+		{ key = "triggerCurve", label = "Trigger curve", step = 0.05, decimals = 2 },
+		{ key = "singlePathSpacing", label = "Path spacing", step = 8, decimals = 0 },
+		{ key = "singlePathInterval", label = "Path interval", step = 0.01, decimals = 2 },
 	}
 end
 
@@ -359,6 +410,34 @@ function ControllerCameraTestAdjustTuningSetting(delta)
 		ControllerCameraTestAreaSelect.radius = settings.areaSelectRadius
 	end
 	ControllerCameraTestTuning.lastAction = "adjusted " .. ControllerCameraTestCurrentSettingLabel()
+end
+
+function ControllerCameraTestResetSettingsToDefaults()
+	local settings = ControllerCameraTestSettings
+	settings.panSpeed = PAN_SPEED
+	settings.fastPanMultiplier = FAST_PAN_MULTIPLIER
+	settings.zoomSpeed = ZOOM_SPEED
+	settings.zoomBoostMultiplier = FAST_ZOOM_MULTIPLIER
+	settings.rotationSpeed = ROTATION_SPEED
+	settings.pitchSpeed = PITCH_SPEED
+	settings.stickDeadzone = 3000
+	settings.triggerDeadzone = 3000
+	settings.areaSelectRadius = 320
+	settings.reticleSize = 16
+	settings.xHoldSeconds = 0.14
+	settings.aHoldSeconds = 0.38
+	settings.controlGroupAssignHoldSeconds = 0.35
+	settings.radialScale = 1
+	settings.cameraSmoothing = 0.12
+	settings.stickCurve = 1.35
+	settings.triggerCurve = 1.15
+	settings.singlePathSpacing = 96
+	settings.singlePathInterval = 0.10
+	settings.compactSelectedStatus = true
+	settings.hideCompactStatusWhenRadialOpen = true
+	ControllerCameraTestApplySettingsDefaults()
+	ControllerCameraTestTuning.lastAction = "controller settings reset to code defaults"
+	latchSelectionDebugMessage("Controller settings reset to code defaults")
 end
 
 ControllerCameraTestApplySettingsDefaults()
@@ -1592,11 +1671,113 @@ function ControllerCameraTestClearNativeBlueprintPreview()
 	end
 end
 
+function ControllerCameraTestGetSelectedMobileUnits()
+	local mobileUnits = {}
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	for _, unitID in ipairs(selectedUnits) do
+		local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
+		if type(unitDef) == "table" and not unitDef.isBuilding and not unitDef.isFactory then
+			mobileUnits[#mobileUnits + 1] = unitID
+		end
+	end
+	return mobileUnits
+end
+
+function ControllerCameraTestIssueSingleUnitPathPoint(isFirst)
+	local drag = ControllerCameraTestDragCommand
+	if not drag.singleUnitPathActive or not drag.singleUnitPathUnitID
+		or not reticleHasWorldTarget or not reticleWorldX or not reticleWorldY or not reticleWorldZ
+	then
+		return false
+	end
+	if not isFirst then
+		local dx = reticleWorldX - (drag.singleUnitLastPointX or reticleWorldX)
+		local dz = reticleWorldZ - (drag.singleUnitLastPointZ or reticleWorldZ)
+		local spacing = ControllerCameraTestSettings.singlePathSpacing or 96
+		local interval = ControllerCameraTestSettings.singlePathInterval or 0.10
+		if ((dx * dx) + (dz * dz)) < (spacing * spacing)
+			or (debugEventTime - (drag.singleUnitLastIssueTime or 0)) < interval
+		then
+			return false
+		end
+	end
+	if type(spGiveOrderToUnit) ~= "function" or not CMD or type(CMD.MOVE) ~= "number" then
+		drag.singleUnitPathResult = "move API unavailable"
+		return false
+	end
+
+	local options = {}
+	if not isFirst or ControllerCameraTestIsQueueModifierActive() then
+		options = { "shift" }
+	end
+	local ok, result = pcall(spGiveOrderToUnit, drag.singleUnitPathUnitID, CMD.MOVE, { reticleWorldX, reticleWorldY, reticleWorldZ }, options)
+	if not ok or result == false then
+		drag.singleUnitPathResult = "waypoint rejected"
+		return false
+	end
+
+	drag.singleUnitPathPoints[#drag.singleUnitPathPoints + 1] = { reticleWorldX, reticleWorldY, reticleWorldZ }
+	drag.previewPoints = drag.singleUnitPathPoints
+	drag.singleUnitLastPointX, drag.singleUnitLastPointY, drag.singleUnitLastPointZ = reticleWorldX, reticleWorldY, reticleWorldZ
+	drag.singleUnitLastIssueTime = debugEventTime
+	drag.singleUnitWaypointCount = #drag.singleUnitPathPoints
+	drag.singleUnitPathResult = "recording " .. tostring(drag.singleUnitWaypointCount) .. " waypoints"
+	ControllerCameraTestCommandDebug.issuedCmdID = tostring(CMD.MOVE)
+	ControllerCameraTestCommandDebug.issuedParamsCount = 3
+	ControllerCameraTestCommandDebug.lastOptions = ControllerCameraTestCommandOptionsSummary(options)
+	ControllerCameraTestCommandDebug.lastResult = "single path waypoint accepted"
+	return true
+end
+
+function ControllerCameraTestStartSingleUnitPath(unitID)
+	local drag = ControllerCameraTestDragCommand
+	drag.active = true
+	drag.mode = "singleMovePath"
+	drag.singleUnitPathActive = true
+	drag.singleUnitPathUnitID = unitID
+	drag.singleUnitPathPoints = {}
+	drag.singleUnitLastPointX, drag.singleUnitLastPointY, drag.singleUnitLastPointZ = nil, nil, nil
+	drag.singleUnitLastIssueTime = -10
+	drag.singleUnitWaypointCount = 0
+	drag.singleUnitPathResult = "started"
+	drag.previewPoints = drag.singleUnitPathPoints
+	drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
+	drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+	ControllerCameraTestIssueSingleUnitPathPoint(true)
+	latchSelectionDebugMessage("Single-unit move path started")
+end
+
+function ControllerCameraTestUpdateSingleUnitPath()
+	local drag = ControllerCameraTestDragCommand
+	if drag.singleUnitPathActive then
+		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		ControllerCameraTestIssueSingleUnitPathPoint(false)
+	end
+end
+
+function ControllerCameraTestFinishSingleUnitPath()
+	local drag = ControllerCameraTestDragCommand
+	local count = drag.singleUnitWaypointCount or 0
+	drag.singleUnitPathActive = false
+	drag.active = false
+	drag.pressActive = false
+	drag.lastMode = "singleMovePath"
+	drag.lastResult = "single path issued " .. tostring(count) .. " waypoints"
+	drag.singleUnitPathResult = drag.lastResult
+	lastIssuedCommand = drag.lastResult
+	latchSelectionDebugMessage(drag.lastResult)
+end
+
 function ControllerCameraTestUpdateDragPreview()
 	local drag = ControllerCameraTestDragCommand
 	if not drag.active then
 		ControllerCameraTestClearNativeBlueprintPreview()
 		drag.previewPoints = {}
+		return
+	end
+
+	if drag.mode == "singleMovePath" then
+		ControllerCameraTestUpdateSingleUnitPath()
 		return
 	end
 
@@ -1654,12 +1835,14 @@ function ControllerCameraTestUpdateDragPreview()
 			local startPos = { startX, startY, startZ }
 			local endPos = { endX, endY, endZ }
 
-			local modeMap = {
-				buildLine = "LINE",
-				buildGrid = "GRID",
-				buildBorder = "BOX",
-				buildSplit = "SPLIT",
-			}
+			local api = type(WG) == "table" and WG["api_blueprint"] or nil
+			local nativeModes = type(api) == "table" and api.BUILD_MODES or nil
+			local modeMap = nativeModes and {
+				buildLine = nativeModes.LINE,
+				buildGrid = nativeModes.GRID,
+				buildBorder = nativeModes.BOX,
+				buildSplit = nativeModes.SPLIT,
+			} or {}
 			local apiMode = modeMap[drag.mode]
 			local buildPositions = {}
 
@@ -1667,23 +1850,23 @@ function ControllerCameraTestUpdateDragPreview()
 			drag.nativeRouteName = "unavailable"
 			drag.nativePreviewResult = "not attempted"
 			drag.customGridFallback = "yes"
-			if apiMode and WG["api_blueprint"] and WG["api_blueprint"].calculateBuildPositions then
-				local ok, res = pcall(WG["api_blueprint"].calculateBuildPositions, bp, apiMode, startPos, endPos, spacing)
+			if apiMode and type(api.calculateBuildPositions) == "function" then
+				local ok, res = pcall(api.calculateBuildPositions, bp, apiMode, startPos, endPos, spacing)
 				if ok and type(res) == "table" and #res > 0 then
 					buildPositions = res
 					drag.nativeRouteUsed = true
 					drag.nativeRouteName = "api_blueprint.calculateBuildPositions"
 					drag.nativePreviewResult = "positions calculated"
 					drag.customGridFallback = "no"
-					if type(WG["api_blueprint"].setActiveBlueprint) == "function"
-						and type(WG["api_blueprint"].setBlueprintPositions) == "function"
+					if type(api.setActiveBlueprint) == "function"
+						and type(api.setBlueprintPositions) == "function"
 					then
 						local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
-						if type(WG["api_blueprint"].setActiveBuilders) == "function" then
-							pcall(WG["api_blueprint"].setActiveBuilders, selectedUnits)
+						if type(api.setActiveBuilders) == "function" then
+							pcall(api.setActiveBuilders, selectedUnits)
 						end
-						local previewOk = pcall(WG["api_blueprint"].setActiveBlueprint, bp)
-						local posOk = pcall(WG["api_blueprint"].setBlueprintPositions, buildPositions)
+						local previewOk = pcall(api.setActiveBlueprint, bp)
+						local posOk = pcall(api.setBlueprintPositions, buildPositions)
 						if previewOk and posOk then
 							drag.nativePreviewResult = "native preview active"
 						end
@@ -1971,8 +2154,13 @@ end
 
 function ControllerCameraTestCancelDrag(reason)
 	local drag = ControllerCameraTestDragCommand
+	if drag.singleUnitPathActive then
+		drag.singleUnitPathResult = reason or "single path cancelled"
+	end
 	drag.active = false
 	drag.pressActive = false
+	drag.singleUnitPathActive = false
+	drag.singleUnitPathUnitID = nil
 	drag.lastResult = reason or "cancelled"
 	drag.previewPoints = {}
 	ControllerCameraTestClearNativeBlueprintPreview()
@@ -4213,6 +4401,7 @@ function ControllerCameraTestTryConstructionShortcut(actionName, direction)
 				end
 				placement.lastConstructionShortcut = "spacing inc"
 				placement.gridShortcutResult = "success"
+				ControllerCameraTestShowPlacementPatternPopup(placement.placementPattern, "spacing")
 				return true
 			end
 		elseif direction == "dec" then
@@ -4223,6 +4412,7 @@ function ControllerCameraTestTryConstructionShortcut(actionName, direction)
 				end
 				placement.lastConstructionShortcut = "spacing dec"
 				placement.gridShortcutResult = "success"
+				ControllerCameraTestShowPlacementPatternPopup(placement.placementPattern, "spacing")
 				return true
 			end
 		end
@@ -4244,7 +4434,8 @@ function ControllerCameraTestTryConstructionShortcut(actionName, direction)
 
 		placement.placementPattern = patterns[currentIdx]
 		placement.lastConstructionShortcut = "pattern " .. direction
-		placement.gridShortcutResult = "shortcut unavailable"
+		placement.gridShortcutResult = "pattern selected"
+		ControllerCameraTestShowPlacementPatternPopup(placement.placementPattern, "pattern")
 		return true
 	end
 
@@ -4264,6 +4455,30 @@ function ControllerCameraTestDragModeForPlacementPattern(pattern)
 	return "buildLine"
 end
 
+function ControllerCameraTestPlacementPatternLabel(pattern)
+	local labels = {
+		single = "Single",
+		line = "Line",
+		grid = "Grid",
+		border = "Border",
+		split = "Split",
+	}
+	return labels[pattern] or tostring(pattern or "Single")
+end
+
+function ControllerCameraTestShowPlacementPatternPopup(pattern, reason)
+	local placement = ControllerCameraTestBuildPlacement
+	local label = ControllerCameraTestPlacementPatternLabel(pattern)
+	local text = "Placement: " .. label
+	if reason == "drag" then
+		text = "Build " .. label
+	elseif reason == "spacing" then
+		text = "Spacing: " .. tostring(placement.placementSpacing or 0) .. " (" .. label .. ")"
+	end
+	ControllerCameraTestPlacementPopup.text = text
+	ControllerCameraTestPlacementPopup.lastResult = text
+	ControllerCameraTestPlacementPopup.expireTime = debugEventTime + 1.25
+end
 
 function ControllerCameraTestUpdatePlacementAnalog()
 	local placement = ControllerCameraTestBuildPlacement
@@ -4271,12 +4486,8 @@ function ControllerCameraTestUpdatePlacementAnalog()
 		return
 	end
 
-	if math.abs(normalizedRightX) < 0.28 then
-		placement.analogRotateArmed = true
-	elseif placement.analogRotateArmed and math.abs(normalizedRightX) > 0.72 then
-		ControllerCameraTestRotatePlacementFacing(normalizedRightX > 0 and 1 or -1)
-		placement.analogRotateArmed = false
-	end
+	-- Right stick remains camera control during placement; facing is explicit on D-pad L/R.
+	placement.analogRotateArmed = true
 end
 
 function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
@@ -4598,6 +4809,7 @@ function ControllerCameraTestHandlePlacementInput(dt)
 				drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
 				drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
 				drag.previewPoints = {}
+				ControllerCameraTestShowPlacementPatternPopup(placement.placementPattern, "drag")
 				latchSelectionDebugMessage(placement.placementPattern:gsub("^%l", string.upper) .. " drag build started")
 			end
 		end
@@ -4621,7 +4833,13 @@ function ControllerCameraTestHandlePlacementInput(dt)
 
 	if drag.active then
 		local changed = false
-		if WasButtonPressed("LB") then
+		if WasButtonPressed("dpadLeft") then
+			ControllerCameraTestRotatePlacementFacing(-1)
+			changed = true
+		elseif WasButtonPressed("dpadRight") then
+			ControllerCameraTestRotatePlacementFacing(1)
+			changed = true
+		elseif WasButtonPressed("LB") then
 			changed = ControllerCameraTestTryConstructionShortcut("pattern", "prev")
 		elseif WasButtonPressed("RB") then
 			changed = ControllerCameraTestTryConstructionShortcut("pattern", "next")
@@ -4655,9 +4873,9 @@ function ControllerCameraTestHandlePlacementInput(dt)
 	end
 
 	if drag.active then
-		activeButtonLayoutSummary = "Drag Build: A/X second press or release confirms, B cancels"
+		activeButtonLayoutSummary = "Drag Build: A/X confirm, B cancel, RS X camera, D-pad L/R facing, U/D spacing, LB/RB pattern"
 	else
-		activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, D-pad L/R/RSX rotate, D-pad U/D spacing, LB/RB pattern"
+		activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, RS X camera, D-pad L/R facing, U/D spacing, LB/RB pattern"
 	end
 	return true
 end
@@ -4882,22 +5100,32 @@ function ControllerCameraTestHandleNormalXInput(dt)
 		drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
 		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
 		drag.active = false
+		drag.singleUnitPathActive = false
+		drag.singleUnitPathUnitID = nil
 	end
 
 	if drag.pressActive and drag.pressButton == "X" and IsButtonDown("X") then
 		if not drag.active and (debugEventTime - drag.pressStartTime) >= HOLD_SECONDS then
-			drag.active = true
-			drag.mode = "moveLine"
-			drag.lastResult = "active"
-			latchSelectionDebugMessage("Move Line Drag started")
+			local mobileUnits = ControllerCameraTestGetSelectedMobileUnits()
+			local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+			if #selectedUnits == 1 and #mobileUnits == 1 and reticleHasWorldTarget then
+				ControllerCameraTestStartSingleUnitPath(mobileUnits[1])
+			else
+				drag.active = true
+				drag.mode = "moveLine"
+				drag.lastResult = "active"
+				latchSelectionDebugMessage("Move Line Drag started")
+			end
 		end
-		if drag.active then
+		if drag.active and drag.mode ~= "singleMovePath" then
 			ControllerCameraTestUpdateDragPreview()
 		end
 	end
 
 	if WasButtonReleased("X") and drag.pressActive and drag.pressButton == "X" then
-		if drag.active then
+		if drag.singleUnitPathActive then
+			ControllerCameraTestFinishSingleUnitPath()
+		elseif drag.active then
 			ControllerCameraTestConfirmDragCommand(false)
 		else
 			attemptContextCommand()
@@ -5573,7 +5801,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.open and "Tactical: A/X confirm, B/Y cancel, D-pad/LB/RB choose"
 			or XboxController.commandLayoutSummary
 	elseif ControllerCameraTestBuildPlacement.active then
-		activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, D-pad/RS X rotate"
+		activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, RS X camera, D-pad L/R facing"
 	elseif ControllerCameraTestBuildMenu.open then
 		activeButtonLayoutSummary = "Build menu: A placement, X quick-place, B/Y close, D-pad/LB/RB navigate"
 	elseif ControllerCameraTestAreaSelect.active then
@@ -5602,23 +5830,60 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	end
 end
 
+function ControllerCameraTestApplyInputCurve(value, exponent)
+	value = tonumber(value) or 0
+	exponent = tonumber(exponent) or 1
+	if value == 0 then
+		return 0
+	end
+	local sign = value < 0 and -1 or 1
+	return sign * (math.abs(value) ^ exponent)
+end
+
+function ControllerCameraTestSmoothAxis(current, target, dt)
+	local response = math.max(0.01, tonumber(ControllerCameraTestSettings.cameraSmoothing) or 0.12)
+	local alpha = 1 - math.exp(-math.max(0, dt or 0) / response)
+	local value = (tonumber(current) or 0) + ((tonumber(target) or 0) - (tonumber(current) or 0)) * alpha
+	return math.abs(value) < 0.001 and 0 or value
+end
+
+function ControllerCameraTestUpdateSmoothedCameraInputs(dt, menuOpen, areaActive)
+	local smooth = ControllerCameraTestInputSmoothing
+	if menuOpen then
+		smooth.panX, smooth.panY, smooth.rotateX, smooth.pitchY, smooth.zoomY = 0, 0, 0, 0, 0
+	else
+		local curve = ControllerCameraTestSettings.stickCurve or 1.35
+		smooth.panX = ControllerCameraTestSmoothAxis(smooth.panX, ControllerCameraTestApplyInputCurve(normalizedLeftX, curve), dt)
+		smooth.panY = ControllerCameraTestSmoothAxis(smooth.panY, ControllerCameraTestApplyInputCurve(normalizedLeftY, curve), dt)
+		smooth.rotateX = ControllerCameraTestSmoothAxis(smooth.rotateX, ControllerCameraTestApplyInputCurve(normalizedRightX, curve), dt)
+		local yInput = ControllerCameraTestApplyInputCurve(-normalizedRightY, curve)
+		smooth.pitchY = ControllerCameraTestSmoothAxis(smooth.pitchY, (lbCameraModifierActive and not areaActive) and yInput or 0, dt)
+		smooth.zoomY = ControllerCameraTestSmoothAxis(smooth.zoomY, (not lbCameraModifierActive and not areaActive) and yInput or 0, dt)
+	end
+	local triggerInput = ControllerCameraTestApplyInputCurve(normalizedLeftTrigger or 0, ControllerCameraTestSettings.triggerCurve or 1.15)
+	smooth.leftTrigger = ControllerCameraTestSmoothAxis(smooth.leftTrigger, triggerInput, dt)
+end
+
 function ControllerCameraTestUpdateCameraControls(dt)
-	local menuOpen = ControllerCameraTestBuildMenu.open or ControllerCameraTestTacticalMenu.open
-	panActive = (not menuOpen) and (normalizedLeftX ~= 0 or normalizedLeftY ~= 0)
 	local placementActive = ControllerCameraTestBuildPlacement.active
+	local menuOpen = (ControllerCameraTestBuildMenu.open and not placementActive) or ControllerCameraTestTacticalMenu.open
 	local areaActive = ControllerCameraTestAreaSelect.active
+	ControllerCameraTestUpdateSmoothedCameraInputs(dt, menuOpen, areaActive)
+	local smooth = ControllerCameraTestInputSmoothing
+	panActive = (not menuOpen) and (smooth.panX ~= 0 or smooth.panY ~= 0)
 	rightStickYMode = areaActive and "area radius" or (lbCameraModifierActive and "pitch" or "zoom")
-	local zoomInput = (lbCameraModifierActive or areaActive or menuOpen) and 0 or -normalizedRightY
-	local pitchInput = (lbCameraModifierActive and not areaActive and not menuOpen) and -normalizedRightY or 0
-	local rotationInput = (placementActive or menuOpen) and 0 or normalizedRightX
+	local zoomInput = menuOpen and 0 or smooth.zoomY
+	local pitchInput = menuOpen and 0 or smooth.pitchY
+	local rotationInput = menuOpen and 0 or smooth.rotateX
 	zoomActive = zoomInput ~= 0
 	rotationActive = rotationInput ~= 0
 	pitchActive = pitchInput ~= 0
 
-	local panMultiplier = fastPanActive and ControllerCameraTestSettings.fastPanMultiplier or 1
-	zoomSpeedMultiplier = fastPanActive and ControllerCameraTestSettings.zoomBoostMultiplier or 1
+	local boostInput = smooth.leftTrigger or 0
+	local panMultiplier = 1 + (((ControllerCameraTestSettings.fastPanMultiplier or 1) - 1) * boostInput)
+	zoomSpeedMultiplier = 1 + (((ControllerCameraTestSettings.zoomBoostMultiplier or 1) - 1) * boostInput)
 	if panActive or zoomActive or rotationActive or pitchActive then
-		applyCameraInput(menuOpen and 0 or normalizedLeftX, menuOpen and 0 or normalizedLeftY, zoomInput, rotationInput, pitchInput, panMultiplier, zoomSpeedMultiplier, dt)
+		applyCameraInput(menuOpen and 0 or smooth.panX, menuOpen and 0 or smooth.panY, zoomInput, rotationInput, pitchInput, panMultiplier, zoomSpeedMultiplier, dt)
 	elseif spGetCameraState then
 		zoomMethod = "none"
 		rotationMethod = "none"
@@ -5666,6 +5931,9 @@ function widget:KeyPress(key, mods, isRepeat)
 		ControllerCameraTestSettings.helpOverlayVisible = not ControllerCameraTestSettings.helpOverlayVisible
 		ControllerCameraTestTuning.lastAction = "Page Down help overlay " .. (ControllerCameraTestSettings.helpOverlayVisible and "shown" or "hidden")
 		latchSelectionDebugMessage("Help overlay " .. (ControllerCameraTestSettings.helpOverlayVisible and "shown" or "hidden"))
+		return true
+	elseif key == KEYSYMS.HOME then
+		ControllerCameraTestResetSettingsToDefaults()
 		return true
 	end
 	return false
@@ -5864,6 +6132,204 @@ function ControllerCameraTestDrawQueueIndicator()
 	gl.Text("QUEUE", cx, cy + 35, 12, "oc")
 	gl.LineWidth(1)
 	gl.Color(1, 1, 1, 1)
+end
+
+function ControllerCameraTestDrawPlacementPatternPopup()
+	local popup = ControllerCameraTestPlacementPopup
+	if not popup or (popup.expireTime or 0) <= debugEventTime then
+		return
+	end
+	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
+	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
+	local alpha = math.min(1, math.max(0, (popup.expireTime - debugEventTime) * 2))
+	local width = math.max(150, (#tostring(popup.text) * 8) + 28)
+	local bottom = math.max(38, cy - 116)
+	gl.Color(0.02, 0.04, 0.06, 0.84 * alpha)
+	gl.Rect(cx - (width / 2), bottom, cx + (width / 2), bottom + 30)
+	gl.Color(0.58, 0.84, 1, 0.88 * alpha)
+	gl.LineWidth(1.5)
+	gl.BeginEnd(GL.LINE_LOOP, function()
+		gl.Vertex(cx - (width / 2), bottom)
+		gl.Vertex(cx + (width / 2), bottom)
+		gl.Vertex(cx + (width / 2), bottom + 30)
+		gl.Vertex(cx - (width / 2), bottom + 30)
+	end)
+	gl.Color(0.92, 0.97, 1, alpha)
+	gl.Text(tostring(popup.text), cx, bottom + 9, 13, "oc")
+	gl.Color(1, 1, 1, 1)
+	gl.LineWidth(1)
+end
+
+function ControllerCameraTestGetReadableUnitName(unitDef)
+	if type(unitDef) ~= "table" then
+		return "Unit"
+	end
+	return unitDef.translatedHumanName or unitDef.humanName or unitDef.name or "Unit"
+end
+
+function ControllerCameraTestGetSelectedPrimaryUnitInfo()
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	local constructorInfo = nil
+	for _, unitID in ipairs(selectedUnits) do
+		local unitDefID, unitDef = ControllerCameraTestGetUnitDef(unitID)
+		if type(unitDef) == "table" then
+			local info = {
+				unitID = unitID,
+				unitDefID = unitDefID,
+				unitDef = unitDef,
+				name = ControllerCameraTestGetReadableUnitName(unitDef),
+			}
+			if unitDef.isFactory then
+				info.mode = "factory"
+				return info
+			end
+			if not constructorInfo and (unitDef.isBuilder or unitDef.builder or unitDef.canAssist
+				or (type(unitDef.buildOptions) == "table" and #unitDef.buildOptions > 0))
+			then
+				info.mode = "constructor"
+				constructorInfo = info
+			end
+		end
+	end
+	return constructorInfo
+end
+
+function ControllerCameraTestBuildCompactSelectedStatus()
+	local status = ControllerCameraTestSelectedStatus
+	status.mode = "hidden"
+	if not controllerMode or ControllerCameraTestSettings.compactSelectedStatus == false then
+		status.lastResult = "hidden: mouse mode or disabled"
+		return nil
+	end
+	if ControllerCameraTestSettings.hideCompactStatusWhenRadialOpen
+		and (ControllerCameraTestBuildMenu.open or ControllerCameraTestTacticalMenu.open)
+	then
+		status.lastResult = "hidden: radial open"
+		return nil
+	end
+	local info = ControllerCameraTestGetSelectedPrimaryUnitInfo()
+	if not info then
+		status.lastResult = "none selected"
+		return nil
+	end
+	status.mode = info.mode
+	status.unitID = info.unitID
+	status.unitDefID = info.unitDefID
+	status.name = info.name
+	status.vanillaCommandPanelHideRoute = "unavailable"
+
+	if info.mode == "factory" then
+		if status.refreshUnitID ~= info.unitID or debugEventTime >= (status.nextRefreshTime or 0) then
+			ControllerCameraTestRefreshFactoryQueueCounts()
+			ControllerCameraTestRefreshFactoryQueueProgress()
+			status.refreshUnitID = info.unitID
+			status.nextRefreshTime = debugEventTime + 0.12
+		end
+		status.progress = tonumber(ControllerCameraTestBuildMenu.factoryProgressValue)
+		status.currentCmdID = tonumber(ControllerCameraTestBuildMenu.factoryProgressCmdID)
+		status.repeatState = "unknown"
+		if type(Spring.GetUnitStates) == "function" then
+			local ok, states = pcall(Spring.GetUnitStates, info.unitID)
+			if ok and type(states) == "table" and states["repeat"] ~= nil then
+				status.repeatState = states["repeat"] and "on" or "off"
+			end
+		end
+		status.queueItems = {}
+		for cmdID, count in pairs(ControllerCameraTestBuildMenu.factoryQueueCounts or {}) do
+			local unitDef = UnitDefs and UnitDefs[-cmdID]
+			status.queueItems[#status.queueItems + 1] = {
+				cmdID = cmdID,
+				unitDefID = -cmdID,
+				name = ControllerCameraTestGetReadableUnitName(unitDef),
+				count = count,
+			}
+		end
+		table.sort(status.queueItems, function(a, b)
+			return tostring(a.name) < tostring(b.name)
+		end)
+		status.lastResult = "factory"
+	else
+		status.progress = nil
+		status.currentCmdID = nil
+		status.queueItems = nil
+		status.currentAction = "idle"
+		if type(Spring.GetCommandQueue) == "function" then
+			local ok, queue = pcall(Spring.GetCommandQueue, info.unitID, 1)
+			if ok and type(queue) == "table" and queue[1] then
+				status.currentAction = "command " .. tostring(queue[1].id or "active")
+			end
+		end
+		status.lastResult = "constructor"
+	end
+	return status
+end
+
+function ControllerCameraTestDrawCompactSelectedStatusPanel()
+	local status = ControllerCameraTestBuildCompactSelectedStatus()
+	if not status then
+		return
+	end
+	local screenWidth = viewSizeX > 0 and viewSizeX or 1280
+	local left = math.max(14, screenWidth - 310)
+	local right = screenWidth - 16
+	local bottom = 50
+	local top = status.mode == "factory" and 154 or 124
+	gl.Color(0.02, 0.04, 0.06, 0.82)
+	gl.Rect(left, bottom, right, top)
+	gl.Color(0.56, 0.84, 1, 0.7)
+	gl.LineWidth(1)
+	gl.BeginEnd(GL.LINE_LOOP, function()
+		gl.Vertex(left, bottom)
+		gl.Vertex(right, bottom)
+		gl.Vertex(right, top)
+		gl.Vertex(left, top)
+	end)
+	gl.Color(0.82, 0.94, 1, 1)
+	gl.Text(status.mode == "factory" and "Factory Status" or "Constructor Status", left + 12, top - 19, 13, "o")
+	gl.Color(1, 1, 1, 0.96)
+	gl.Text(tostring(status.name), left + 12, top - 39, 13, "o")
+
+	if status.mode == "factory" then
+		local currentDefID = status.currentCmdID and -status.currentCmdID or nil
+		local currentDef = currentDefID and UnitDefs and UnitDefs[currentDefID] or nil
+		local buildText = currentDef and ControllerCameraTestGetReadableUnitName(currentDef) or "Idle"
+		if currentDefID then
+			gl.Texture("#" .. tostring(currentDefID))
+			gl.Color(1, 1, 1, 0.92)
+			gl.TexRect(left + 12, bottom + 25, left + 50, bottom + 63)
+			gl.Texture(false)
+		end
+		local progressText = status.progress and (" " .. tostring(math.floor(status.progress * 100 + 0.5)) .. "%") or ""
+		gl.Color(0.92, 0.96, 1, 0.95)
+		gl.Text("Building: " .. buildText .. progressText, left + 58, bottom + 52, 11, "o")
+		gl.Text("Repeat: " .. tostring(status.repeatState) .. "  Queue:", left + 58, bottom + 34, 10, "o")
+		local iconX = left + 164
+		for i = 1, math.min(3, #(status.queueItems or {})) do
+			local item = status.queueItems[i]
+			gl.Texture("#" .. tostring(item.unitDefID))
+			gl.Color(1, 1, 1, 0.88)
+			gl.TexRect(iconX, bottom + 21, iconX + 26, bottom + 47)
+			gl.Texture(false)
+			gl.Color(1, 0.92, 0.42, 1)
+			gl.Text("x" .. tostring(item.count), iconX + 13, bottom + 10, 9, "oc")
+			iconX = iconX + 34
+		end
+		gl.Color(0.66, 0.9, 1, 0.95)
+		gl.Text("Y: Factory radial", left + 12, bottom + 7, 10, "o")
+	else
+		gl.Color(0.92, 0.96, 1, 0.95)
+		gl.Text("Action: " .. tostring(status.currentAction or "idle"), left + 12, bottom + 38, 11, "o")
+		local placementText = ControllerCameraTestBuildPlacement.active
+			and ("Pattern: " .. ControllerCameraTestPlacementPatternLabel(ControllerCameraTestBuildPlacement.placementPattern)
+				.. "  Space: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing or 0))
+			or "Ready for construction"
+		gl.Text(placementText, left + 12, bottom + 23, 11, "o")
+		gl.Color(0.66, 0.9, 1, 0.95)
+		gl.Text("Y: Build radial", left + 12, bottom + 7, 10, "o")
+	end
+	gl.Texture(false)
+	gl.Color(1, 1, 1, 1)
+	gl.LineWidth(1)
 end
 
 function ControllerCameraTestDrawControlGroupOverlay()
@@ -6246,7 +6712,7 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Double-tap A on unit: visible same type | LT+double-tap A on unit: all owned same type | empty: no action",
 		"Back/View + double-tap A: focus Commander | Start/Menu: reserved",
 		"LT+double-tap A on empty reticle: select all idle units in current idle type",
-		"Context Actions: X tap context | X hold fast Move Line Drag | RT+B stop | RT+X tap attack | RT+X hold fast Fight Line Drag | RT+A hold Attack Line Drag",
+		"Context Actions: X tap context | X hold one unit draw queued path | X hold many units line/spread | RT+B stop | RT+X attack/fight",
 		"Combat Layers: RT+A reserved/disabled | RT+Y tactical radial | LS/Dpad choose | A confirm | B/Y close",
 		"Queue Modifier: hold LT while confirming Move/Fight/Attack/Reclaim/Repair/Build to queue like Shift",
 		"Constructor Radial: Y open | LS/Dpad select | LB/RB page | Y close",
@@ -6254,12 +6720,13 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Factory Radial: Y open | LS/Dpad select | LB/RB page | Y close",
 		"   * A add 1 queue | LT+A add 5 queue | B remove 1 | LT+B remove 5",
 		"Placement Mode: A place | X place+stay | B cancel | LT queue | RT queue front",
-		"   * Dpad L/R or RS X rotate | Dpad U/D build spacing | LB/RB pattern | A/X hold Build Line/Grid Drag",
+		"   * RS X camera rotate | Dpad L/R building facing | Dpad U/D spacing | LB/RB pattern | A/X hold Line/Grid",
 		"Idle Cycling: Dpad L/R idle unit | LB+Dpad L/R idle type | Dpad U/D recall cam | LT+Dpad U/D store cam",
 		"Control Groups: hold RB overlay | RB+Dpad U/D slot | RB+tap Dpad L recall | RB+hold Dpad L assign same type + auto-add",
 		"Control Groups: RB+B clear | RB+Dpad R, RB+A, RB+X are reserved/disabled",
+		"Status: controller mode shows compact factory/constructor activity panel; Y opens its radial",
 		"Debug Panel: Page Up toggle | Help: Page Down toggle | Click headers expand/collapse | Compact/Full button",
-		"Settings: sensitivities/thresholds persist; full settings menu and binding remap pending",
+		"Settings: saved ControllerCameraTestSettings override edited defaults after reload; Home resets code defaults",
 		"Tuning Selection: " .. ControllerCameraTestCurrentSettingLabel(),
 	}
 
@@ -6315,6 +6782,8 @@ function widget:DrawScreen()
 		ControllerCameraTestDrawTacticalRadial()
 	end
 	ControllerCameraTestDrawQueueIndicator()
+	ControllerCameraTestDrawPlacementPatternPopup()
+	ControllerCameraTestDrawCompactSelectedStatusPanel()
 	ControllerCameraTestDrawControlGroupOverlay()
 	if ControllerCameraTestSettings.helpOverlayVisible then
 		ControllerCameraTestDrawHelpOverlay()
@@ -6590,6 +7059,7 @@ function widget:DrawScreen()
 				"Tuning: " .. ControllerCameraTestCurrentSettingLabel(),
 				"Tuning action: " .. tostring(ControllerCameraTestTuning.lastAction),
 				"Settings menu pending: sensitivities ready, binding remap later",
+				"Settings source: saved config; Home resets code defaults",
 				string.format("Thresholds X/A/group: %.2f / %.2f / %.2f", ControllerCameraTestSettings.xHoldSeconds, ControllerCameraTestSettings.aHoldSeconds, ControllerCameraTestSettings.controlGroupAssignHoldSeconds),
 				string.format("Radial scale groundwork: %.2f", ControllerCameraTestSettings.radialScale),
 			},
@@ -6611,6 +7081,7 @@ function widget:DrawScreen()
 				string.format("Zoom speed: %.1fx", zoomSpeedMultiplier),
 				string.format("Pan speed setting: %.0f", ControllerCameraTestSettings.panSpeed),
 				string.format("Rotate/Pitch: %.2f / %.2f", ControllerCameraTestSettings.rotationSpeed, ControllerCameraTestSettings.pitchSpeed),
+				string.format("Smoothing/curves: %.2f / %.2f / %.2f", ControllerCameraTestSettings.cameraSmoothing, ControllerCameraTestSettings.stickCurve, ControllerCameraTestSettings.triggerCurve),
 				string.format("Deadzones stick/trigger: %.0f / %.0f", ControllerCameraTestSettings.stickDeadzone, ControllerCameraTestSettings.triggerDeadzone),
 				"Zoom method: " .. zoomMethod,
 				"Rotate method: " .. rotationMethod,
@@ -6635,6 +7106,9 @@ function widget:DrawScreen()
 				"Command action: " .. tostring(ControllerCameraTestLayerDebug.commandLayerAction),
 				"Normal utility: " .. tostring(ControllerCameraTestLayerDebug.normalUtilityAction),
 				"Queue modifier active: " .. yesNo(ControllerCameraTestIsQueueModifierActive()),
+				"Single path active: " .. yesNo(ControllerCameraTestDragCommand.singleUnitPathActive),
+				"Single path waypoints: " .. tostring(ControllerCameraTestDragCommand.singleUnitWaypointCount or 0),
+				"Single path result: " .. tostring(ControllerCameraTestDragCommand.singleUnitPathResult),
 				"Default cmd index: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdIndex),
 				"Default cmd ID: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdID),
 				"Default cmd type: " .. tostring(ControllerCameraTestCommandDebug.defaultCmdType),
@@ -6709,6 +7183,8 @@ function widget:DrawScreen()
 				"Placement mode: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none"),
 				"Placement pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern),
 				"Placement spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
+				"Placement input: RS X camera, D-pad L/R facing",
+				"Placement popup: " .. tostring(ControllerCameraTestPlacementPopup.lastResult),
 				"Queue front active (RT): " .. yesNo(ControllerCameraTestBuildPlacement.queueFrontActive),
 				"Last construction shortcut: " .. tostring(ControllerCameraTestBuildPlacement.lastConstructionShortcut),
 				"Grid shortcut result: " .. tostring(ControllerCameraTestBuildPlacement.gridShortcutResult),
@@ -6727,9 +7203,11 @@ function widget:DrawScreen()
 				"Drag preview points count: " .. tostring(ControllerCameraTestDragCommand.previewPoints and #ControllerCameraTestDragCommand.previewPoints or 0),
 				"Drag last result: " .. tostring(ControllerCameraTestDragCommand.lastResult),
 				"Drag native route used: " .. yesNo(ControllerCameraTestDragCommand.nativeRouteUsed),
-				"Native blueprint route: " .. tostring(ControllerCameraTestDragCommand.nativeRouteName),
+				"Native blueprint preview route: " .. tostring(ControllerCameraTestDragCommand.nativeRouteName),
 				"Native preview result: " .. tostring(ControllerCameraTestDragCommand.nativePreviewResult),
 				"Custom grid fallback: " .. tostring(ControllerCameraTestDragCommand.customGridFallback),
+				"Compact selected status: " .. tostring(ControllerCameraTestSelectedStatus.mode),
+				"Vanilla command panel hide route: " .. tostring(ControllerCameraTestSelectedStatus.vanillaCommandPanelHideRoute),
 			},
 		},
 	}
@@ -6769,7 +7247,7 @@ function widget:DrawScreen()
 			"Queue: " .. yesNo(ControllerCameraTestIsQueueModifierActive()) .. " | Tactical: " .. yesNo(ControllerCameraTestTacticalMenu.open) .. " | Build: " .. yesNo(ControllerCameraTestBuildMenu.open),
 			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName) .. " (Q:" .. tostring(highlightedQueueCount) .. (factoryProgressKnown == "yes" and " P:" .. factoryProgressValue or "") .. ")",
 			"Placement: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none") .. " | Pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern) .. " | Spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
-			"Drag: Act=" .. yesNo(ControllerCameraTestDragCommand.active) .. " Mode=" .. tostring(ControllerCameraTestDragCommand.mode) .. " Pts=" .. tostring(ControllerCameraTestDragCommand.previewPoints and #ControllerCameraTestDragCommand.previewPoints or 0) .. " Res=" .. tostring(ControllerCameraTestDragCommand.lastResult) .. " Route=" .. (ControllerCameraTestDragCommand.nativeRouteUsed and "Native" or "Fallback"),
+			"Drag: Act=" .. yesNo(ControllerCameraTestDragCommand.active) .. " Mode=" .. tostring(ControllerCameraTestDragCommand.mode) .. " Pts=" .. tostring(ControllerCameraTestDragCommand.previewPoints and #ControllerCameraTestDragCommand.previewPoints or 0) .. " Path=" .. tostring(ControllerCameraTestDragCommand.singleUnitWaypointCount or 0) .. " Route=" .. (ControllerCameraTestDragCommand.nativeRouteUsed and "Native" or "Fallback"),
 			"Last Action: " .. tostring(ControllerCameraTestBuildMenu.lastAction or "none") .. " | Result: " .. tostring(ControllerCameraTestBuildMenu.radialLastAction or "none"),
 			"Selection Msg: " .. selectionDebugMessage .. " | Last cmd: " .. tostring(lastIssuedCommand)
 		}
@@ -6957,7 +7435,10 @@ function widget:DrawWorld()
 
 	-- Drag command previews
 	local drag = ControllerCameraTestDragCommand
-	if drag and drag.active and drag.startX then
+	if drag and drag.active and drag.startX
+		and not (drag.nativeRouteUsed and drag.nativePreviewResult == "native preview active"
+			and string.sub(tostring(drag.mode), 1, 5) == "build")
+	then
 		local startX, startY, startZ = drag.startX, drag.startY, drag.startZ
 		local endX = drag.endX or reticleWorldX
 		local endY = drag.endY or reticleWorldY
@@ -6981,7 +7462,7 @@ function widget:DrawWorld()
 				gl.DrawGroundCircle(startX, startY, startZ, r, 64)
 				gl.DrawGroundCircle(startX, startY, startZ, 12, 16)
 			else
-				if drag.mode == "moveLine" then
+				if drag.mode == "moveLine" or drag.mode == "singleMovePath" then
 					gl.Color(0.2, 0.8, 0.9, 0.7)
 				elseif drag.mode == "fightLine" then
 					gl.Color(1.0, 0.5, 0.1, 0.7)
