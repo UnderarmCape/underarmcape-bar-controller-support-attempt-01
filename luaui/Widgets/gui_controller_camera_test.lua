@@ -1,3 +1,6 @@
+--------------------------------------------------------------------------------
+-- SECTION: Widget info and Spring/gl references
+--------------------------------------------------------------------------------
 local widget = widget ---@type Widget
 
 function widget:GetInfo()
@@ -25,6 +28,9 @@ local spSelectUnitArray = Spring.SelectUnitArray
 local spGetSelectedUnits = Spring.GetSelectedUnits
 local spGiveOrderToUnit = Spring.GiveOrderToUnit
 local lastIssuedCommand = "none"
+--------------------------------------------------------------------------------
+-- SECTION: State tables and settings defaults
+--------------------------------------------------------------------------------
 ControllerCameraTestCommandDebug = ControllerCameraTestCommandDebug or {
 	defaultCmdIndex = "none",
 	defaultCmdID = "none",
@@ -462,6 +468,9 @@ end
 ControllerCameraTestApplySettingsDefaults()
 
 
+--------------------------------------------------------------------------------
+-- SECTION: Input polling and button helpers
+--------------------------------------------------------------------------------
 local XboxController = {
 	axes = {
 		leftStickX = 0,
@@ -1291,6 +1300,9 @@ local function updateMouseInputMode()
 	lastMouseRight = rightButton
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Reticle/world target helpers
+--------------------------------------------------------------------------------
 local function updateReticleWorldTarget()
 	if not reticleVisible or type(spTraceScreenRay) ~= "function" then
 		resetReticleWorldTarget()
@@ -1350,6 +1362,9 @@ local function latchSelectionDebugMessage(message)
 	selectionDebugExpiration = debugEventTime + SELECTION_DEBUG_HOLD_SECONDS
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Selection and area select
+--------------------------------------------------------------------------------
 local function updateSelectionTestActive()
 	selectionTestActive = controllerMode
 		and reticleVisible
@@ -1430,6 +1445,9 @@ local function attemptClearSelection()
 	end
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Binding system
+--------------------------------------------------------------------------------
 function ControllerCameraTestBindingDefinitions()
 	return {
 		{ action = "select", label = "Select / Area Select", default = "A", group = "Core" },
@@ -1581,6 +1599,9 @@ function ControllerCameraTestActionReleased(actionName)
 	return ControllerCameraTestBindingReleased(ControllerCameraTestGetBinding(actionName))
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Settings UI
+--------------------------------------------------------------------------------
 function ControllerCameraTestGetSettingsUICategories()
 	return {
 		{ key = "Camera", items = {
@@ -1756,6 +1777,9 @@ function ControllerCameraTestHandleSettingsUIInput()
 	return true
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Command issuing
+--------------------------------------------------------------------------------
 function ControllerCameraTestIsQueueModifierActive()
 	return ControllerCameraTestActionDown("queueModifier")
 end
@@ -2028,6 +2052,9 @@ function ControllerCameraTestGetSelectedMobileUnits()
 	return mobileUnits
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Drag/path commands
+--------------------------------------------------------------------------------
 function ControllerCameraTestIssueSingleUnitPathPoint(isFirst)
 	local drag = ControllerCameraTestDragCommand
 	if not drag.singleUnitPathActive or not drag.singleUnitPathUnitID
@@ -2619,6 +2646,9 @@ function ControllerCameraTestSetCommandMarker(x, y, z, label, kind)
 	marker.expireTime = debugEventTime + 1.0
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Selection utilities and allied target helpers
+--------------------------------------------------------------------------------
 function ControllerCameraTestGetReticleTargetInfo()
 	local info = {
 		targetType = reticleTargetType,
@@ -2745,6 +2775,9 @@ function ControllerCameraTestSelectUnits(units, label)
 	return true
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Selection orders and issuing utility
+--------------------------------------------------------------------------------
 function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, targetName, options)
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	params = type(params) == "table" and params or {}
@@ -3165,6 +3198,9 @@ function ControllerCameraTestUnitTypeName(unitDefID)
 	return unitDef.translatedHumanName or unitDef.humanName or unitDef.name or tostring(unitDefID)
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Idle cycling
+--------------------------------------------------------------------------------
 function ControllerCameraTestCycleIdleUnit(delta)
 	local units = ControllerCameraTestGetIdleCycleUnits()
 	if #units == 0 then
@@ -3453,6 +3489,9 @@ function ControllerCameraTestCycleQuickGroup(delta)
 	return false
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Control groups
+--------------------------------------------------------------------------------
 function ControllerCameraTestNormalizeControlGroupSlot(slot)
 	slot = tonumber(slot) or 1
 	slot = ((slot - 1) % 10) + 1
@@ -3768,6 +3807,9 @@ function ControllerCameraTestAppendTacticalCommand(commands, option)
 	commands[#commands + 1] = option
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Tactical radial
+--------------------------------------------------------------------------------
 function ControllerCameraTestGetTacticalCommands()
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	local isFactory = ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits)
@@ -4344,6 +4386,9 @@ function ControllerCameraTestRefreshRadialVisibleOptions()
 	ControllerCameraTestRefreshBuildMenuDebug()
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Factory radial helpers
+--------------------------------------------------------------------------------
 function ControllerCameraTestGetFactoryQueueCounts()
 	local counts = {}
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
@@ -4529,6 +4574,9 @@ function ControllerCameraTestUpdateRadialStickSelection()
 	end
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Build radial
+--------------------------------------------------------------------------------
 function ControllerCameraTestOpenBuildMenu()
 	local menu = ControllerCameraTestBuildMenu
 	local count = ControllerCameraTestGatherBuildOptions()
@@ -6700,6 +6748,9 @@ function ControllerCameraTestGetSelectedPrimaryUnitInfo()
 	return constructorInfo
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Compact selected status panel
+--------------------------------------------------------------------------------
 function ControllerCameraTestBuildCompactSelectedStatus()
 	local status = ControllerCameraTestSelectedStatus
 	status.mode = "hidden"
@@ -7302,6 +7353,9 @@ function ControllerCameraTestDrawSettingsUI()
 	gl.LineWidth(1)
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Debug/help UI drawing
+--------------------------------------------------------------------------------
 function ControllerCameraTestDrawHelpOverlay()
 	local screenWidth = viewSizeX > 0 and viewSizeX or 1280
 	local screenHeight = viewSizeY > 0 and viewSizeY or 720
@@ -8018,6 +8072,9 @@ function widget:UnitGiven(unitID, unitDefID, unitTeam)
 	ControllerCameraTestAutoAddFinishedUnitToGroups(unitID, unitDefID, unitTeam)
 end
 
+--------------------------------------------------------------------------------
+-- SECTION: Widget lifecycle
+--------------------------------------------------------------------------------
 function widget:DrawWorld()
 	if not controllerMode then
 		return
