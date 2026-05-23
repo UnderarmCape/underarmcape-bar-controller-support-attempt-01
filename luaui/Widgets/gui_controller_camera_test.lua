@@ -303,6 +303,12 @@ ControllerCameraTestSettingsUI = ControllerCameraTestSettingsUI or {
 	lastAction = "none",
 	lastCategory = "Camera",
 }
+ControllerCameraTestKeyDebug = ControllerCameraTestKeyDebug or {
+	rawKey = "none",
+	label = "none",
+	matchedAction = "none",
+	lastUIToggle = "none",
+}
 ControllerCameraTestBindings = ControllerCameraTestBindings or {
 	actions = {},
 	captureAction = nil,
@@ -6272,46 +6278,137 @@ function widget:Update(dt)
 	ControllerCameraTestUpdateControllerFrame(dt)
 end
 
-function widget:KeyPress(key, mods, isRepeat)
-	if isRepeat or type(KEYSYMS) ~= "table" then
+function ControllerCameraTestNormalizeKeyName(value)
+	return string.lower(tostring(value or "")):gsub("[%s_%-]", "")
+end
+
+function ControllerCameraTestKeyMatches(key, label, candidates)
+	local normalizedLabel = ControllerCameraTestNormalizeKeyName(label)
+	for _, candidate in ipairs(candidates or {}) do
+		if type(candidate) == "number" and key == candidate then
+			return true
+		end
+		local candidateText = tostring(candidate)
+		local normalizedCandidate = ControllerCameraTestNormalizeKeyName(candidateText)
+		if normalizedLabel ~= "" and normalizedLabel == normalizedCandidate then
+			return true
+		end
+		if type(KEYSYMS) == "table" then
+			local keySym = KEYSYMS[candidateText] or KEYSYMS[string.upper(candidateText)]
+			if keySym ~= nil and key == keySym then
+				return true
+			end
+		end
+		if type(Spring.GetKeyCode) == "function" then
+			local ok, keyCode = pcall(Spring.GetKeyCode, candidateText)
+			if ok and keyCode ~= nil and key == keyCode then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+function ControllerCameraTestRecordKeyAction(key, label, action)
+	ControllerCameraTestKeyDebug.rawKey = tostring(key or "nil")
+	ControllerCameraTestKeyDebug.label = tostring(label or "")
+	ControllerCameraTestKeyDebug.matchedAction = tostring(action or "none")
+end
+
+function ControllerCameraTestRecordUIToggleAction(action)
+	ControllerCameraTestKeyDebug.lastUIToggle = tostring(action)
+	ControllerCameraTestTuning.lastAction = tostring(action)
+	latchSelectionDebugMessage(tostring(action))
+end
+
+function ControllerCameraTestToggleDebugPanel(source)
+	ControllerCameraTestSettings.debugPanelVisible = not ControllerCameraTestSettings.debugPanelVisible
+	ControllerCameraTestRecordUIToggleAction(tostring(source) .. " debug panel "
+		.. (ControllerCameraTestSettings.debugPanelVisible and "shown" or "hidden"))
+end
+
+function ControllerCameraTestToggleHelpOverlay(source)
+	ControllerCameraTestSettings.helpOverlayVisible = not ControllerCameraTestSettings.helpOverlayVisible
+	ControllerCameraTestRecordUIToggleAction(tostring(source) .. " help overlay "
+		.. (ControllerCameraTestSettings.helpOverlayVisible and "shown" or "hidden"))
+end
+
+function ControllerCameraTestToggleSettingsFromInput(source)
+	ControllerCameraTestToggleSettingsUI()
+	ControllerCameraTestRecordUIToggleAction(tostring(source) .. " settings "
+		.. (ControllerCameraTestSettingsUI.open and "shown" or "hidden"))
+end
+
+function ControllerCameraTestResetSettingsFromInput(source)
+	ControllerCameraTestResetSettingsToDefaults()
+	ControllerCameraTestRecordUIToggleAction(tostring(source) .. " reset settings defaults")
+end
+
+function widget:KeyPress(key, mods, isRepeat, label, unicode)
+	ControllerCameraTestRecordKeyAction(key, label, isRepeat and "repeat ignored" or "unmatched")
+	if isRepeat then
 		return false
 	end
-	if key == KEYSYMS.END then
-		ControllerCameraTestToggleSettingsUI()
+
+	if ControllerCameraTestKeyMatches(key, label, { "END", "End", "end", 279 }) then
+		ControllerCameraTestRecordKeyAction(key, label, "toggle settings")
+		ControllerCameraTestToggleSettingsFromInput("End")
+		return true
+	elseif ControllerCameraTestKeyMatches(key, label, { "PAGEUP", "PageUp", "pageup", "PGUP", "pgup", "PRIOR", "prior", 280 }) then
+		ControllerCameraTestRecordKeyAction(key, label, "toggle debug")
+		ControllerCameraTestToggleDebugPanel("Page Up")
+		return true
+	elseif ControllerCameraTestKeyMatches(key, label, { "PAGEDOWN", "PageDown", "pagedown", "PGDN", "pgdn", "NEXT", "next", 281 }) then
+		ControllerCameraTestRecordKeyAction(key, label, "toggle help")
+		ControllerCameraTestToggleHelpOverlay("Page Down")
+		return true
+	elseif ControllerCameraTestKeyMatches(key, label, { "HOME", "Home", "home", 278 }) then
+		ControllerCameraTestRecordKeyAction(key, label, "reset settings")
+		ControllerCameraTestResetSettingsFromInput("Home")
 		return true
 	end
+
 	if ControllerCameraTestSettingsUI.open then
 		local ui = ControllerCameraTestSettingsUI
 		local category = ControllerCameraTestGetSettingsUICategory()
-		if key == KEYSYMS.ESCAPE then
+		if ControllerCameraTestKeyMatches(key, label, { "ESCAPE", "Escape", "escape", "ESC", "esc", 27 }) then
+			ControllerCameraTestRecordKeyAction(key, label, "close settings")
 			if ControllerCameraTestBindings.captureAction then
 				ControllerCameraTestBindings.captureAction = nil
 				ui.lastAction = "binding capture cancelled"
+				ControllerCameraTestRecordUIToggleAction("Escape binding capture cancelled")
 			else
 				ControllerCameraTestToggleSettingsUI(false)
+				ControllerCameraTestRecordUIToggleAction("Escape settings hidden")
 			end
 			return true
-		elseif key == KEYSYMS.UP then
+		elseif ControllerCameraTestKeyMatches(key, label, { "UP", "Up", "up", 273 }) then
+			ControllerCameraTestRecordKeyAction(key, label, "settings up")
 			ui.selectedIndex = ((ui.selectedIndex - 2) % #category.items) + 1
 			return true
-		elseif key == KEYSYMS.DOWN then
+		elseif ControllerCameraTestKeyMatches(key, label, { "DOWN", "Down", "down", 274 }) then
+			ControllerCameraTestRecordKeyAction(key, label, "settings down")
 			ui.selectedIndex = (ui.selectedIndex % #category.items) + 1
 			return true
-		elseif key == KEYSYMS.LEFT and not category.bindings then
+		elseif ControllerCameraTestKeyMatches(key, label, { "LEFT", "Left", "left", 276 }) and not category.bindings then
+			ControllerCameraTestRecordKeyAction(key, label, "settings decrease")
 			local item = category.items[ui.selectedIndex]
 			ControllerCameraTestAdjustSettingFromUI(item.key, -1, item.step)
 			return true
-		elseif key == KEYSYMS.RIGHT and not category.bindings then
+		elseif ControllerCameraTestKeyMatches(key, label, { "RIGHT", "Right", "right", 275 }) and not category.bindings then
+			ControllerCameraTestRecordKeyAction(key, label, "settings increase")
 			local item = category.items[ui.selectedIndex]
 			ControllerCameraTestAdjustSettingFromUI(item.key, 1, item.step)
 			return true
-		elseif key == KEYSYMS.TAB then
+		elseif ControllerCameraTestKeyMatches(key, label, { "TAB", "Tab", "tab", 9 }) then
+			ControllerCameraTestRecordKeyAction(key, label, "settings category")
 			local delta = mods and mods.shift and -1 or 1
 			local categories = ControllerCameraTestGetSettingsUICategories()
 			ui.categoryIndex = ((ui.categoryIndex - 1 + delta) % #categories) + 1
 			ui.selectedIndex = 1
 			return true
-		elseif key == KEYSYMS.RETURN or key == KEYSYMS.ENTER then
+		elseif ControllerCameraTestKeyMatches(key, label, { "RETURN", "Return", "return", "ENTER", "Enter", "enter", "KP_ENTER", "kpenter", 13, 271 }) then
+			ControllerCameraTestRecordKeyAction(key, label, "settings confirm")
 			local item = category.items[ui.selectedIndex]
 			if category.bindings then
 				ControllerCameraTestBindings.captureAction = item.action
@@ -6322,18 +6419,26 @@ function widget:KeyPress(key, mods, isRepeat)
 			return true
 		end
 	end
-	if key == KEYSYMS.PAGEUP then
-		ControllerCameraTestSettings.debugPanelVisible = not ControllerCameraTestSettings.debugPanelVisible
-		ControllerCameraTestTuning.lastAction = "Page Up debug panel " .. (ControllerCameraTestSettings.debugPanelVisible and "shown" or "hidden")
-		latchSelectionDebugMessage("Debug panel " .. (ControllerCameraTestSettings.debugPanelVisible and "shown" or "hidden"))
+	return false
+end
+
+function widget:TextCommand(command)
+	local normalized = ControllerCameraTestNormalizeKeyName(command)
+	if normalized == "cctdebug" then
+		ControllerCameraTestRecordKeyAction("text", command, "toggle debug")
+		ControllerCameraTestToggleDebugPanel("/luaui cct_debug")
 		return true
-	elseif key == KEYSYMS.PAGEDOWN then
-		ControllerCameraTestSettings.helpOverlayVisible = not ControllerCameraTestSettings.helpOverlayVisible
-		ControllerCameraTestTuning.lastAction = "Page Down help overlay " .. (ControllerCameraTestSettings.helpOverlayVisible and "shown" or "hidden")
-		latchSelectionDebugMessage("Help overlay " .. (ControllerCameraTestSettings.helpOverlayVisible and "shown" or "hidden"))
+	elseif normalized == "ccthelp" then
+		ControllerCameraTestRecordKeyAction("text", command, "toggle help")
+		ControllerCameraTestToggleHelpOverlay("/luaui cct_help")
 		return true
-	elseif key == KEYSYMS.HOME then
-		ControllerCameraTestResetSettingsToDefaults()
+	elseif normalized == "cctsettings" then
+		ControllerCameraTestRecordKeyAction("text", command, "toggle settings")
+		ControllerCameraTestToggleSettingsFromInput("/luaui cct_settings")
+		return true
+	elseif normalized == "cctresetsettings" then
+		ControllerCameraTestRecordKeyAction("text", command, "reset settings")
+		ControllerCameraTestResetSettingsFromInput("/luaui cct_reset_settings")
 		return true
 	end
 	return false
@@ -7231,6 +7336,7 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Control Groups: RB+B clear | RB+Dpad R, RB+A, RB+X are reserved/disabled",
 		"Status: controller mode shows compact factory/constructor activity panel; Y opens its radial",
 		"System UI: End Controller Settings | Page Up Debug | Page Down Help | Home Reset Settings Defaults",
+		"Fallback UI commands: /luaui cct_debug | cct_help | cct_settings | cct_reset_settings",
 		"Settings UI: D-pad/arrows adjust | LB/RB or Tab categories | A/Enter select | B/Escape close | X/Y reset",
 		"Bindings tab: A capture next input | B cancel capture | X reset binding | Y reset all bindings",
 		"Settings: saved ControllerCameraTestSettings override edited defaults after reload; Home applies code defaults",
@@ -7579,6 +7685,9 @@ function widget:DrawScreen()
 				"Settings category: " .. tostring(ControllerCameraTestSettingsUI.lastCategory),
 				"Binding capture: " .. tostring(ControllerCameraTestBindings.captureAction or "none"),
 				"Binding result: " .. tostring(ControllerCameraTestBindings.lastAction),
+				"Last key: key=" .. tostring(ControllerCameraTestKeyDebug.rawKey) .. " label=" .. tostring(ControllerCameraTestKeyDebug.label),
+				"Last key action: " .. tostring(ControllerCameraTestKeyDebug.matchedAction),
+				"Last UI toggle: " .. tostring(ControllerCameraTestKeyDebug.lastUIToggle),
 				string.format("Thresholds X/A/group: %.2f / %.2f / %.2f", ControllerCameraTestSettings.xHoldSeconds, ControllerCameraTestSettings.aHoldSeconds, ControllerCameraTestSettings.controlGroupAssignHoldSeconds),
 				string.format("Radial scale groundwork: %.2f", ControllerCameraTestSettings.radialScale),
 			},
@@ -7764,6 +7873,7 @@ function widget:DrawScreen()
 			"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary) .. " | Held: " .. heldButtonsSummary .. " | Pressed: " .. pressedRecentlySummary,
 			"Idle: " .. tostring(ControllerCameraTestIdleCycle.lastTypeName) .. " x" .. tostring(ControllerCameraTestIdleCycle.lastCount) .. " | Group " .. ControllerCameraTestGetControlGroupDisplaySlot(activeGroupSlot) .. " " .. tostring(activeGroupType) .. " x" .. tostring(activeGroupCount) .. " | A2: " .. tostring(ControllerCameraTestAreaSelect.doubleTapAction),
 			"Queue: " .. yesNo(ControllerCameraTestIsQueueModifierActive()) .. " | Settings: " .. yesNo(ControllerCameraTestSettingsUI.open) .. " | Tactical: " .. yesNo(ControllerCameraTestTacticalMenu.open) .. " | Build: " .. yesNo(ControllerCameraTestBuildMenu.open),
+			"Key: " .. tostring(ControllerCameraTestKeyDebug.rawKey) .. " " .. tostring(ControllerCameraTestKeyDebug.label) .. " -> " .. tostring(ControllerCameraTestKeyDebug.matchedAction),
 			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName) .. " (Q:" .. tostring(highlightedQueueCount) .. (factoryProgressKnown == "yes" and " P:" .. factoryProgressValue or "") .. ")",
 			"Placement: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none") .. " | Pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern) .. " | Spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
 			"Drag: Act=" .. yesNo(ControllerCameraTestDragCommand.active) .. " Mode=" .. tostring(ControllerCameraTestDragCommand.mode) .. " Pts=" .. tostring(ControllerCameraTestDragCommand.previewPoints and #ControllerCameraTestDragCommand.previewPoints or 0) .. " Path=" .. tostring(ControllerCameraTestDragCommand.singleUnitWaypointCount or 0) .. " Route=" .. (ControllerCameraTestDragCommand.nativeRouteUsed and "Native" or "Fallback"),
