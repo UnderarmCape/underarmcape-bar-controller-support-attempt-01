@@ -122,6 +122,11 @@ ControllerCameraTestAreaSelect = ControllerCameraTestAreaSelect or {
 	lastResult = "none",
 	doubleTapAction = "none",
 	filterMode = "units-only",
+	sameTypeTarget = "none",
+	sameTypeUnitDefID = "none",
+	sameTypeSource = "none",
+	sameTypeCandidateCount = 0,
+	sameTypeSelectedCount = 0,
 }
 ControllerCameraTestTacticalMenu = ControllerCameraTestTacticalMenu or {
 	open = false,
@@ -238,6 +243,10 @@ ControllerCameraTestSettings = ControllerCameraTestSettings or {
 	triggerDeadzone = 3000,
 	areaSelectRadius = 320,
 	reticleSize = 16,
+	xHoldSeconds = 0.14,
+	aHoldSeconds = 0.38,
+	controlGroupAssignHoldSeconds = 0.35,
+	radialScale = 1,
 	debugPanelVisible = true,
 	helpOverlayVisible = false,
 }
@@ -270,6 +279,10 @@ function ControllerCameraTestClampSetting(name, value)
 		triggerDeadzone = { 0, 12000 },
 		areaSelectRadius = { 120, 1200 },
 		reticleSize = { 8, 36 },
+		xHoldSeconds = { 0.08, 0.5 },
+		aHoldSeconds = { 0.2, 0.8 },
+		controlGroupAssignHoldSeconds = { 0.2, 0.8 },
+		radialScale = { 0.75, 1.5 },
 	}
 	local range = ranges[name]
 	if not range then
@@ -290,6 +303,10 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.triggerDeadzone = ControllerCameraTestClampSetting("triggerDeadzone", settings.triggerDeadzone or 3000)
 	settings.areaSelectRadius = ControllerCameraTestClampSetting("areaSelectRadius", settings.areaSelectRadius or 320)
 	settings.reticleSize = ControllerCameraTestClampSetting("reticleSize", settings.reticleSize or 16)
+	settings.xHoldSeconds = ControllerCameraTestClampSetting("xHoldSeconds", settings.xHoldSeconds or 0.14)
+	settings.aHoldSeconds = ControllerCameraTestClampSetting("aHoldSeconds", settings.aHoldSeconds or 0.38)
+	settings.controlGroupAssignHoldSeconds = ControllerCameraTestClampSetting("controlGroupAssignHoldSeconds", settings.controlGroupAssignHoldSeconds or 0.35)
+	settings.radialScale = ControllerCameraTestClampSetting("radialScale", settings.radialScale or 1)
 	settings.debugPanelVisible = settings.debugPanelVisible ~= false
 	settings.helpOverlayVisible = settings.helpOverlayVisible == true
 	ControllerCameraTestAreaSelect.radius = settings.areaSelectRadius
@@ -307,6 +324,10 @@ function ControllerCameraTestSettingDefinitions()
 		{ key = "triggerDeadzone", label = "Trigger deadzone", step = 500, decimals = 0 },
 		{ key = "areaSelectRadius", label = "Area radius", step = 40, decimals = 0 },
 		{ key = "reticleSize", label = "Reticle size", step = 1, decimals = 0 },
+		{ key = "xHoldSeconds", label = "X hold seconds", step = 0.02, decimals = 2 },
+		{ key = "aHoldSeconds", label = "A hold seconds", step = 0.02, decimals = 2 },
+		{ key = "controlGroupAssignHoldSeconds", label = "Group hold seconds", step = 0.02, decimals = 2 },
+		{ key = "radialScale", label = "Radial scale", step = 0.05, decimals = 2 },
 	}
 end
 
@@ -426,12 +447,12 @@ local XboxController = {
 	commandLayerButtonOrder = { 0, 1, 2, 3, 9, 10, 11, 12, 13, 14 },
 	previewButtonOrder = { 0, 1, 2, 3, 4, 6, 9, 10, 11, 12, 13, 14 },
 	normalPreviewLabels = {
-		[0] = "A = Select / Hold area / Double-tap commander if no selection",
+		[0] = "A = Select / hold area / double-tap same visible type",
 		[1] = "B = Clear Selection",
 		[2] = "X = Smart Action (Move/Build/Attack)",
 		[3] = "Y = Controller Build Menu",
-		[4] = "Back/View = Debug toggle; hold for tuning/groups",
-		[6] = "Start/Menu = Help overlay",
+		[4] = "Back/View = Commander-focus modifier / reserved",
+		[6] = "Start/Menu = Reserved",
 		[9] = "LB = Camera pitch; LB+D-pad L/R idle type",
 		[10] = "RB = Hold control-group mode",
 		[11] = "D-pad Up = Camera bookmark Up",
@@ -2254,7 +2275,7 @@ function ControllerCameraTestSelectVisibleCombatUnits()
 end
 
 function ControllerCameraTestSelectSameTypeAtReticleOrCombat()
-	return ControllerCameraTestSelectVisibleSameTypeUnderReticle(false)
+	return ControllerCameraTestSelectSameTypeFromReticle(false)
 end
 
 function ControllerCameraTestIsOwnUnit(unitID)
@@ -2293,55 +2314,132 @@ function ControllerCameraTestGetReticleAlliedUnitAndDef()
 	return target.targetID, unitDefID, unitDef
 end
 
-function ControllerCameraTestSelectVisibleSameTypeUnderReticle(includeBuildings)
-	local targetID, unitDefID, unitDef = ControllerCameraTestGetReticleAlliedUnitAndDef()
-	if not targetID or not unitDefID then
-		ControllerCameraTestAreaSelect.doubleTapAction = "no reticle unit"
+function ControllerCameraTestUnitIsOnScreen(unitID)
+	if type(Spring.WorldToScreenCoords) ~= "function" then
+		return true
+	end
+	if (viewSizeX or 0) <= 0 or (viewSizeY or 0) <= 0 then
+		return true
+	end
+	local x, y, z
+	if type(Spring.GetUnitViewPosition) == "function" then
+		local ok
+		ok, x, y, z = pcall(Spring.GetUnitViewPosition, unitID)
+		if not ok then
+			x, y, z = nil, nil, nil
+		end
+	end
+	if not x and type(spGetUnitPosition) == "function" then
+		local ok
+		ok, x, y, z = pcall(spGetUnitPosition, unitID)
+		if not ok then
+			x, y, z = nil, nil, nil
+		end
+	end
+	if not x or not z then
 		return false
 	end
-	if unitDef and unitDef.isBuilding and not includeBuildings then
-		ControllerCameraTestAreaSelect.doubleTapAction = "building requires LT"
-		latchSelectionDebugMessage("Double-tap same-type: hold LT for buildings")
-		return false
+	local ok, sx, sy = pcall(Spring.WorldToScreenCoords, x, y or 0, z)
+	if not ok or type(sx) ~= "number" or type(sy) ~= "number" then
+		return true
+	end
+	local margin = 24
+	return sx >= -margin and sx <= (viewSizeX + margin) and sy >= -margin and sy <= (viewSizeY + margin)
+end
+
+function ControllerCameraTestCollectSameTypeCandidates(unitDefID, includeOffscreen)
+	local candidates = {}
+	local seen = {}
+	local source = includeOffscreen and "owned" or "visible+owned-screen"
+	local function addCandidate(unitID)
+		if unitID and not seen[unitID] then
+			seen[unitID] = true
+			candidates[#candidates + 1] = unitID
+		end
+	end
+
+	if includeOffscreen then
+		for _, unitID in ipairs(ControllerCameraTestGetOwnTeamUnits()) do
+			addCandidate(unitID)
+		end
+	else
+		if type(Spring.GetVisibleUnits) == "function" then
+			local ok, visibleUnits = pcall(Spring.GetVisibleUnits)
+			if ok and type(visibleUnits) == "table" then
+				for _, unitID in ipairs(visibleUnits) do
+					addCandidate(unitID)
+				end
+			else
+				source = "owned-screen"
+			end
+		else
+			source = "owned-screen"
+		end
+		for _, unitID in ipairs(ControllerCameraTestGetOwnTeamUnits()) do
+			addCandidate(unitID)
+		end
 	end
 
 	local units = {}
-	for _, unitID in ipairs(ControllerCameraTestGetVisibleAlliedUnits()) do
+	for _, unitID in ipairs(candidates) do
 		local ok, candidateDefID = pcall(Spring.GetUnitDefID, unitID)
-		if ok and candidateDefID == unitDefID then
-			local _, candidateDef = ControllerCameraTestGetUnitDef(unitID)
-			if includeBuildings or not (candidateDef and candidateDef.isBuilding) then
+		if ok and candidateDefID == unitDefID and (includeOffscreen or ControllerCameraTestUnitIsOnScreen(unitID)) then
+			if includeOffscreen then
+				if ControllerCameraTestIsOwnUnit(unitID) then
+					units[#units + 1] = unitID
+				end
+			elseif ControllerCameraTestIsAlliedUnit(unitID) then
 				units[#units + 1] = unitID
 			end
 		end
 	end
+	table.sort(units)
+	return ControllerCameraTestFilterValidUnits(units), source
+end
 
-	if ControllerCameraTestSelectUnits(units, "A double-tap visible type") then
+function ControllerCameraTestUpdateSameTypeDebug(unitDefID, source, candidates, selected, action)
+	ControllerCameraTestAreaSelect.sameTypeUnitDefID = tostring(unitDefID or "none")
+	ControllerCameraTestAreaSelect.sameTypeTarget = ControllerCameraTestUnitTypeName(unitDefID)
+	ControllerCameraTestAreaSelect.sameTypeSource = tostring(source or "none")
+	ControllerCameraTestAreaSelect.sameTypeCandidateCount = candidates or 0
+	ControllerCameraTestAreaSelect.sameTypeSelectedCount = selected or 0
+	ControllerCameraTestAreaSelect.doubleTapAction = tostring(action or "none")
+end
+
+function ControllerCameraTestSelectSameTypeFromReticle(includeOffscreen)
+	local targetID, unitDefID, unitDef = ControllerCameraTestGetReticleAlliedUnitAndDef()
+	if not targetID or not unitDefID then
+		ControllerCameraTestUpdateSameTypeDebug(nil, "none", 0, 0, "no reticle unit")
+		return false
+	end
+	if unitDef and unitDef.isBuilding and not includeOffscreen then
+		ControllerCameraTestUpdateSameTypeDebug(unitDefID, "reticle building", 0, 0, "building requires LT")
+		latchSelectionDebugMessage("Double-tap same-type: hold LT for buildings")
+		return false
+	end
+
+	local units, source = ControllerCameraTestCollectSameTypeCandidates(unitDefID, includeOffscreen)
+	local label = includeOffscreen and "LT+A double-tap all type" or "A double-tap visible type"
+
+	if ControllerCameraTestSelectUnits(units, label) then
 		ControllerCameraTestAreaSelect.lastCount = #units
-		ControllerCameraTestAreaSelect.lastResult = "same visible type " .. tostring(#units)
-		ControllerCameraTestAreaSelect.doubleTapAction = "same visible type selected"
+		ControllerCameraTestAreaSelect.lastResult = (includeOffscreen and "same owned type " or "same visible type ") .. tostring(#units)
+		ControllerCameraTestUpdateSameTypeDebug(unitDefID, source, #units, #units, includeOffscreen and "same owned type selected" or "same visible type selected")
+		if includeOffscreen then
+			ControllerCameraTestFocusUnitsCenter(units, "Same type")
+		end
 		return true
 	end
-	ControllerCameraTestAreaSelect.doubleTapAction = "same visible type none"
+	ControllerCameraTestUpdateSameTypeDebug(unitDefID, source, #units, 0, includeOffscreen and "same owned type none" or "same visible type none")
 	return false
 end
 
+function ControllerCameraTestSelectVisibleSameTypeUnderReticle()
+	return ControllerCameraTestSelectSameTypeFromReticle(false)
+end
+
 function ControllerCameraTestSelectAllOwnedSameTypeUnderReticle()
-	local targetID, unitDefID = ControllerCameraTestGetReticleAlliedUnitAndDef()
-	if not targetID or not unitDefID then
-		ControllerCameraTestAreaSelect.doubleTapAction = "no reticle unit"
-		return false
-	end
-	local units = ControllerCameraTestGetAllOwnedUnitsOfType(unitDefID)
-	if ControllerCameraTestSelectUnits(units, "LT+A double-tap all type") then
-		ControllerCameraTestAreaSelect.lastCount = #units
-		ControllerCameraTestAreaSelect.lastResult = "same owned type " .. tostring(#units)
-		ControllerCameraTestAreaSelect.doubleTapAction = "same owned type selected"
-		ControllerCameraTestFocusUnitsCenter(units, "Same type")
-		return true
-	end
-	ControllerCameraTestAreaSelect.doubleTapAction = "same owned type none"
-	return false
+	return ControllerCameraTestSelectSameTypeFromReticle(true)
 end
 
 function ControllerCameraTestFocusCameraAt(x, y, z, label)
@@ -2962,7 +3060,7 @@ function ControllerCameraTestResolveControlGroupLeftPress()
 		return false
 	end
 
-	local holdSeconds = 0.35
+	local holdSeconds = ControllerCameraTestSettings.controlGroupAssignHoldSeconds or 0.35
 	local elapsed = debugEventTime - (groups.leftPressStartTime or debugEventTime)
 	if not groups.leftHoldTriggered and elapsed >= holdSeconds then
 		ControllerCameraTestAssignControlGroup(groups.activeSlot)
@@ -2990,7 +3088,7 @@ function ControllerCameraTestUpdateControlGroupLeftHold()
 		return ControllerCameraTestResolveControlGroupLeftPress()
 	end
 
-	local holdSeconds = 0.35
+	local holdSeconds = ControllerCameraTestSettings.controlGroupAssignHoldSeconds or 0.35
 	if not groups.leftHoldTriggered and (debugEventTime - (groups.leftPressStartTime or debugEventTime)) >= holdSeconds then
 		ControllerCameraTestAssignControlGroup(groups.activeSlot)
 		groups.leftHoldTriggered = true
@@ -4770,7 +4868,7 @@ end
 
 function ControllerCameraTestHandleNormalXInput(dt)
 	local drag = ControllerCameraTestDragCommand
-	local HOLD_SECONDS = 0.14
+	local HOLD_SECONDS = ControllerCameraTestSettings.xHoldSeconds or 0.14
 
 	if drag.active and WasButtonPressed("B") then
 		ControllerCameraTestCancelDrag("cancelled by B")
@@ -4812,7 +4910,7 @@ end
 
 function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 	local drag = ControllerCameraTestDragCommand
-	local X_HOLD_SECONDS = 0.14
+	local X_HOLD_SECONDS = ControllerCameraTestSettings.xHoldSeconds or 0.14
 	local A_HOLD_SECONDS = 0.35
 
 	if drag.active and WasButtonPressed("B") then
@@ -4887,7 +4985,7 @@ end
 
 function ControllerCameraTestHandleNormalAInput(dt)
 	local area = ControllerCameraTestAreaSelect
-	local HOLD_SECONDS = 0.38
+	local HOLD_SECONDS = ControllerCameraTestSettings.aHoldSeconds or 0.38
 
 	if WasButtonPressed("A") then
 		area.pressActive = true
@@ -4919,16 +5017,21 @@ function ControllerCameraTestHandleNormalAInput(dt)
 			if targetID and ControllerCameraTestIsQueueModifierActive() then
 				ControllerCameraTestSelectAllOwnedSameTypeUnderReticle()
 			elseif targetID then
-				ControllerCameraTestSelectVisibleSameTypeUnderReticle(false)
+				ControllerCameraTestSelectVisibleSameTypeUnderReticle()
+			elseif IsButtonDown("back") then
+				if ControllerCameraTestFocusCommander() then
+					ControllerCameraTestAreaSelect.doubleTapAction = "Back+double-tap commander focused"
+				else
+					ControllerCameraTestAreaSelect.doubleTapAction = "Back+double-tap commander failed"
+				end
 			elseif ControllerCameraTestIsQueueModifierActive() then
 				ControllerCameraTestSelectAllIdleUnitsInCurrentTypeBucket()
 				ControllerCameraTestAreaSelect.doubleTapAction = ControllerCameraTestIdleCycle.lastResult
 			elseif #selectedUnits == 0 then
-				if ControllerCameraTestFocusCommander() then
-					ControllerCameraTestAreaSelect.doubleTapAction = "commander focused"
-				else
-					ControllerCameraTestAreaSelect.doubleTapAction = "commander focus failed"
-				end
+				ControllerCameraTestAreaSelect.lastResult = "double tap empty ignored"
+				ControllerCameraTestAreaSelect.doubleTapAction = "empty ignored"
+				ControllerCameraTestLayerDebug.normalUtilityAction = "Double-tap empty ignored"
+				latchSelectionDebugMessage("Double-tap A empty: no action")
 			else
 				ControllerCameraTestAreaSelect.lastResult = "double tap ignored: units selected"
 				ControllerCameraTestAreaSelect.doubleTapAction = "ignored: units selected"
@@ -5042,69 +5145,16 @@ function ControllerCameraTestCanUseTuningControls()
 end
 
 function ControllerCameraTestHandleBackViewControls()
-	if not ControllerCameraTestCanUseTuningControls() then
-		ControllerCameraTestTuning.backHeld = false
-		ControllerCameraTestTuning.backComboUsed = false
-		return false
-	end
-
 	if WasButtonPressed("back") then
 		ControllerCameraTestTuning.backHeld = true
 		ControllerCameraTestTuning.backComboUsed = false
+		ControllerCameraTestTuning.lastAction = "Back/View reserved for gameplay"
+		ControllerCameraTestLayerDebug.normalUtilityAction = "Back/View modifier ready"
 	end
-
-	if IsButtonDown("back") then
-		local usedCombo = false
-		if WasButtonPressed("dpadLeft") then
-			ControllerCameraTestCycleTuningSetting(-1)
-			usedCombo = true
-		elseif WasButtonPressed("dpadRight") then
-			ControllerCameraTestCycleTuningSetting(1)
-			usedCombo = true
-		elseif WasButtonPressed("dpadUp") then
-			ControllerCameraTestAdjustTuningSetting(1)
-			usedCombo = true
-		elseif WasButtonPressed("dpadDown") then
-			ControllerCameraTestAdjustTuningSetting(-1)
-			usedCombo = true
-		elseif WasButtonPressed("A") then
-			ControllerCameraTestStoreQuickGroup(1)
-			usedCombo = true
-		elseif WasButtonPressed("B") then
-			ControllerCameraTestStoreQuickGroup(2)
-			usedCombo = true
-		elseif WasButtonPressed("X") then
-			ControllerCameraTestStoreQuickGroup(3)
-			usedCombo = true
-		elseif WasButtonPressed("Y") then
-			ControllerCameraTestStoreQuickGroup(4)
-			usedCombo = true
-		elseif WasButtonPressed("LB") then
-			ControllerCameraTestCycleQuickGroup(-1)
-			usedCombo = true
-		elseif WasButtonPressed("RB") then
-			ControllerCameraTestCycleQuickGroup(1)
-			usedCombo = true
-		end
-
-		if usedCombo then
-			ControllerCameraTestTuning.backComboUsed = true
-			ControllerCameraTestLayerDebug.normalUtilityAction = "Back/View combo: " .. tostring(ControllerCameraTestTuning.lastAction)
-		end
-		return true
-	end
-
 	if WasButtonReleased("back") and ControllerCameraTestTuning.backHeld then
-		if not ControllerCameraTestTuning.backComboUsed then
-			ControllerCameraTestSettings.debugPanelVisible = not ControllerCameraTestSettings.debugPanelVisible
-			ControllerCameraTestTuning.lastAction = "debug panel " .. (ControllerCameraTestSettings.debugPanelVisible and "shown" or "hidden")
-			latchSelectionDebugMessage("Debug panel " .. (ControllerCameraTestSettings.debugPanelVisible and "shown" or "hidden"))
-		end
 		ControllerCameraTestTuning.backHeld = false
 		ControllerCameraTestTuning.backComboUsed = false
-		return true
 	end
-
 	return false
 end
 
@@ -5133,8 +5183,7 @@ function ControllerCameraTestHandleNormalUtilityInput()
 	elseif WasButtonPressed("dpadRight") then
 		ControllerCameraTestCycleIdleUnit(1)
 	elseif WasButtonPressed("start") then
-		ControllerCameraTestSettings.helpOverlayVisible = not ControllerCameraTestSettings.helpOverlayVisible
-		ControllerCameraTestSetNormalUtilityAction("Help overlay " .. (ControllerCameraTestSettings.helpOverlayVisible and "shown" or "hidden"))
+		ControllerCameraTestSetNormalUtilityAction("Start/Menu reserved")
 	end
 	return false
 end
@@ -5156,7 +5205,7 @@ function ControllerCameraTestGetModeSummary()
 		return "area select"
 	end
 	if ControllerCameraTestTuning.backHeld then
-		return "tuning"
+		return "back modifier"
 	end
 	if IsButtonDown("RB") then
 		return "control groups"
@@ -5602,6 +5651,24 @@ end
 
 function widget:Update(dt)
 	ControllerCameraTestUpdateControllerFrame(dt)
+end
+
+function widget:KeyPress(key, mods, isRepeat)
+	if isRepeat or type(KEYSYMS) ~= "table" then
+		return false
+	end
+	if key == KEYSYMS.PAGEUP then
+		ControllerCameraTestSettings.debugPanelVisible = not ControllerCameraTestSettings.debugPanelVisible
+		ControllerCameraTestTuning.lastAction = "Page Up debug panel " .. (ControllerCameraTestSettings.debugPanelVisible and "shown" or "hidden")
+		latchSelectionDebugMessage("Debug panel " .. (ControllerCameraTestSettings.debugPanelVisible and "shown" or "hidden"))
+		return true
+	elseif key == KEYSYMS.PAGEDOWN then
+		ControllerCameraTestSettings.helpOverlayVisible = not ControllerCameraTestSettings.helpOverlayVisible
+		ControllerCameraTestTuning.lastAction = "Page Down help overlay " .. (ControllerCameraTestSettings.helpOverlayVisible and "shown" or "hidden")
+		latchSelectionDebugMessage("Help overlay " .. (ControllerCameraTestSettings.helpOverlayVisible and "shown" or "hidden"))
+		return true
+	end
+	return false
 end
 
 function widget:MouseMove(x, y)
@@ -6176,7 +6243,8 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Controller Camera Test Help",
 		"Camera/Move: LS pan | RS X rotate | RS Y zoom | LB+RS Y pitch | LT boost",
 		"Selection: A select | A hold area-select units first | LT+A hold includes buildings",
-		"Double-tap A on unit: visible same type | LT+double-tap A on unit: all owned same type | empty/no selection: Commander focus",
+		"Double-tap A on unit: visible same type | LT+double-tap A on unit: all owned same type | empty: no action",
+		"Back/View + double-tap A: focus Commander | Start/Menu: reserved",
 		"LT+double-tap A on empty reticle: select all idle units in current idle type",
 		"Context Actions: X tap context | X hold fast Move Line Drag | RT+B stop | RT+X tap attack | RT+X hold fast Fight Line Drag | RT+A hold Attack Line Drag",
 		"Combat Layers: RT+A reserved/disabled | RT+Y tactical radial | LS/Dpad choose | A confirm | B/Y close",
@@ -6190,8 +6258,8 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Idle Cycling: Dpad L/R idle unit | LB+Dpad L/R idle type | Dpad U/D recall cam | LT+Dpad U/D store cam",
 		"Control Groups: hold RB overlay | RB+Dpad U/D slot | RB+tap Dpad L recall | RB+hold Dpad L assign same type + auto-add",
 		"Control Groups: RB+B clear | RB+Dpad R, RB+A, RB+X are reserved/disabled",
-		"Legacy Groups: Back+A/B/X/Y store quick groups | Back+LB/RB cycle legacy groups",
-		"Debug Panel: Back toggle panel | Click headers expand/collapse | Compact/Full button | Tuning: Back+Dpad U/D/L/R",
+		"Debug Panel: Page Up toggle | Help: Page Down toggle | Click headers expand/collapse | Compact/Full button",
+		"Settings: sensitivities/thresholds persist; full settings menu and binding remap pending",
 		"Tuning Selection: " .. ControllerCameraTestCurrentSettingLabel(),
 	}
 
@@ -6521,6 +6589,9 @@ function widget:DrawScreen()
 			lines = {
 				"Tuning: " .. ControllerCameraTestCurrentSettingLabel(),
 				"Tuning action: " .. tostring(ControllerCameraTestTuning.lastAction),
+				"Settings menu pending: sensitivities ready, binding remap later",
+				string.format("Thresholds X/A/group: %.2f / %.2f / %.2f", ControllerCameraTestSettings.xHoldSeconds, ControllerCameraTestSettings.aHoldSeconds, ControllerCameraTestSettings.controlGroupAssignHoldSeconds),
+				string.format("Radial scale groundwork: %.2f", ControllerCameraTestSettings.radialScale),
 			},
 		},
 	}
@@ -6590,6 +6661,8 @@ function widget:DrawScreen()
 				"Area radius: " .. tostring(math.floor(ControllerCameraTestAreaSelect.radius)),
 				"Area filter: " .. tostring(ControllerCameraTestAreaSelect.filterMode),
 				"Double-tap action: " .. tostring(ControllerCameraTestAreaSelect.doubleTapAction),
+				"Same-type target: " .. tostring(ControllerCameraTestAreaSelect.sameTypeTarget) .. " defID=" .. tostring(ControllerCameraTestAreaSelect.sameTypeUnitDefID),
+				"Same-type source/count: " .. tostring(ControllerCameraTestAreaSelect.sameTypeSource) .. " candidates=" .. tostring(ControllerCameraTestAreaSelect.sameTypeCandidateCount) .. " selected=" .. tostring(ControllerCameraTestAreaSelect.sameTypeSelectedCount),
 				"Area result: " .. tostring(ControllerCameraTestAreaSelect.lastResult) .. " count=" .. tostring(ControllerCameraTestAreaSelect.lastCount),
 				"Area select debug: " .. tostring(ControllerCameraTestLayerDebug.areaSelect),
 			},
