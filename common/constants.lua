@@ -3,6 +3,14 @@
 
 if not Engine or not Spring then return end
 
+-- Controller-support engine compatibility shim for custom d5c8a21 Recoil.
+-- Minimal local test patch: keep the rest of BAR constants.lua intact.
+Engine.FeatureSupport = Engine.FeatureSupport or {}
+Engine.versionMajor = tonumber(Engine.versionMajor) or 2025
+Engine.versionMinor = tonumber(Engine.versionMinor) or 6
+Engine.versionPatchSet = tonumber(Engine.versionPatchSet) or 19
+Engine.commitsNumber = tonumber(Engine.commitsNumber) or 0
+
 --------------------------------------------------------------------------------
 -- Version handling ------------------------------------------------------------
 
