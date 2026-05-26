@@ -11,7 +11,7 @@ function widget:GetInfo()
 		date = "2026-05-22",
 		license = "GNU GPL, v2 or later",
 		layer = 0,
-		enabled = false,
+		enabled = true,
 	}
 end
 
@@ -586,6 +586,9 @@ local XboxController = {
 apiAvailable = false
 controllerName = "none"
 controllerInstanceId = nil
+rawControllerStateStatus = "none"
+rawAxesSummary = "none"
+rawButtonsSummary = "none"
 normalizedLeftX = 0
 normalizedLeftY = 0
 normalizedRightX = 0
@@ -909,7 +912,12 @@ local function GetAxis(state, axisId)
 		return 0
 	end
 
-	return tonumber(state.axes[axisId]) or 0
+	local value = state.axes[axisId + 1]
+	if value == nil then
+		value = state.axes[axisId]
+	end
+
+	return tonumber(value) or 0
 end
 
 local function GetButton(state, buttonId)
@@ -917,12 +925,58 @@ local function GetButton(state, buttonId)
 		return false
 	end
 
-	local value = state.buttons[buttonId]
+	local value = state.buttons[buttonId + 1]
+	if value == nil then
+		value = state.buttons[buttonId]
+	end
 	if type(value) == "boolean" then
 		return value
 	end
 
 	return (tonumber(value) or 0) ~= 0
+end
+
+function ControllerCameraTestSummarizeRawControllerState(state)
+	if type(state) ~= "table" then
+		rawControllerStateStatus = "state unavailable"
+		rawAxesSummary = "none"
+		rawButtonsSummary = "none"
+		return
+	end
+
+	local axes = type(state.axes) == "table" and state.axes or {}
+	local buttons = type(state.buttons) == "table" and state.buttons or {}
+	local oneBasedAxes = {}
+	local zeroBasedAxes = {}
+	local oneBasedDown = {}
+	local zeroBasedDown = {}
+
+	rawControllerStateStatus = "state table ok"
+
+	for axisID = 1, 6 do
+		oneBasedAxes[#oneBasedAxes + 1] = tostring(axisID) .. "=" .. tostring(axes[axisID])
+	end
+	for axisID = 0, 5 do
+		zeroBasedAxes[#zeroBasedAxes + 1] = tostring(axisID) .. "=" .. tostring(axes[axisID])
+	end
+
+	for buttonID = 1, 15 do
+		local value = buttons[buttonID]
+		if value == true or (tonumber(value) or 0) ~= 0 then
+			oneBasedDown[#oneBasedDown + 1] = tostring(buttonID)
+		end
+	end
+	for buttonID = 0, 14 do
+		local value = buttons[buttonID]
+		if value == true or (tonumber(value) or 0) ~= 0 then
+			zeroBasedDown[#zeroBasedDown + 1] = tostring(buttonID)
+		end
+	end
+
+	rawAxesSummary = "1-based: " .. table.concat(oneBasedAxes, " ")
+		.. " | 0-based: " .. table.concat(zeroBasedAxes, " ")
+	rawButtonsSummary = "1-based down: " .. (#oneBasedDown > 0 and table.concat(oneBasedDown, ",") or "none")
+		.. " | 0-based down: " .. (#zeroBasedDown > 0 and table.concat(zeroBasedDown, ",") or "none")
 end
 
 local function GetNamedAxis(state, axisName)
@@ -1232,6 +1286,9 @@ local function pollFirstController()
 	if not ok then
 		controllerName = "GetAvailableControllers failed"
 		controllerInstanceId = nil
+		rawControllerStateStatus = "GetAvailableControllers failed"
+		rawAxesSummary = "none"
+		rawButtonsSummary = "none"
 		return nil
 	end
 
@@ -1239,24 +1296,40 @@ local function pollFirstController()
 	if not controller then
 		controllerName = "none"
 		controllerInstanceId = nil
+		rawControllerStateStatus = "no controller"
+		rawAxesSummary = "none"
+		rawButtonsSummary = "none"
 		return nil
 	end
 
 	controllerName = tostring(controller.name or "unknown")
-	controllerInstanceId = controller.instanceId
+	controllerInstanceId = controller.instanceID or controller.instanceId
 	return controller
 end
 
 local function pollControllerState(instanceId)
 	if instanceId == nil then
+		rawControllerStateStatus = "no instanceID"
+		rawAxesSummary = "none"
+		rawButtonsSummary = "none"
 		return nil
 	end
 
 	local ok, state = pcall(spGetControllerState, instanceId)
-	if not ok or type(state) ~= "table" then
+	if not ok then
+		rawControllerStateStatus = "GetControllerState failed"
+		rawAxesSummary = "none"
+		rawButtonsSummary = "none"
+		return nil
+	end
+	if type(state) ~= "table" then
+		rawControllerStateStatus = "state unavailable"
+		rawAxesSummary = "none"
+		rawButtonsSummary = "none"
 		return nil
 	end
 
+	ControllerCameraTestSummarizeRawControllerState(state)
 	return state
 end
 
@@ -6092,6 +6165,9 @@ function ControllerCameraTestBeginControllerUpdate(dt)
 	pitchActive = false
 
 	if not apiAvailable then
+		rawControllerStateStatus = "controller API unavailable"
+		rawAxesSummary = "none"
+		rawButtonsSummary = "none"
 		resetControllerInputDebug()
 		return
 	end
@@ -6102,7 +6178,7 @@ function ControllerCameraTestBeginControllerUpdate(dt)
 		return
 	end
 
-	local state = pollControllerState(controller.instanceId)
+	local state = pollControllerState(controllerInstanceId)
 	if not state or type(state.axes) ~= "table" then
 		resetControllerInputDebug()
 		return nil
@@ -7531,7 +7607,7 @@ function widget:DrawScreen()
 			isExpanded = true
 		end
 
-		local arrow = isExpanded and "▼ " or "▶ "
+		local arrow = isExpanded and "[-] " or "[+] "
 		local displayTitle = arrow .. section.title
 
 		if section.key then
@@ -7652,9 +7728,12 @@ function widget:DrawScreen()
 				"Widget: Controller Camera Test",
 				"API: " .. yesNo(apiAvailable),
 				"Name: " .. tostring(controllerName),
-				"instanceId: " .. tostring(controllerInstanceId),
+				"instanceID: " .. tostring(controllerInstanceId),
 				"Input: " .. (controllerMode and "controller" or "mouse"),
 				"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary),
+				"Raw state: " .. tostring(rawControllerStateStatus),
+				"Raw axes: " .. tostring(rawAxesSummary),
+				"Raw buttons: " .. tostring(rawButtonsSummary),
 				"Held: " .. heldButtonsSummary,
 				"Pressed recent: " .. pressedRecentlySummary,
 				"Released recent: " .. releasedRecentlySummary,
