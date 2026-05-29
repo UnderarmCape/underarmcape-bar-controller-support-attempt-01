@@ -38,10 +38,10 @@ local TOGGLE_BUTTON_TOP_OFFSET = 8
 
 local ControllerBindingsUILayoutDefaults = {
 	useSafeArea = true,
-	maxXMargin = 120,
+	maxXMargin = 600,
 	maxYMargin = 300,
-	xMarginRatio = 0.06,
-	yMarginRatio = 0.18,
+	xMarginRatio = 0.15,
+	yMarginRatio = 0.10,
 	toggleButtonVisible = true,
 	toggleButtonRightOffset = 560,
 	toggleButtonTopOffset = 8,
@@ -59,16 +59,16 @@ local function ControllerBindingsUILayoutClampSetting(key, value)
 		end
 		return value == 1 or value == "true" or value == true
 	elseif key == "maxXMargin" then
-		local num = tonumber(value) or 120
+		local num = tonumber(value) or 600
 		return math.max(0, math.min(600, math.floor(num)))
 	elseif key == "maxYMargin" then
 		local num = tonumber(value) or 300
 		return math.max(0, math.min(600, math.floor(num)))
 	elseif key == "xMarginRatio" then
-		local num = tonumber(value) or 0.06
+		local num = tonumber(value) or 0.15
 		return math.max(0.00, math.min(0.30, num))
 	elseif key == "yMarginRatio" then
-		local num = tonumber(value) or 0.18
+		local num = tonumber(value) or 0.10
 		return math.max(0.00, math.min(0.30, num))
 	elseif key == "toggleButtonRightOffset" then
 		local num = tonumber(value) or 560
@@ -310,8 +310,8 @@ local ControllerBindingsUILayoutDefinitionsList = {
 		min = 0,
 		max = 600,
 		step = 10,
-		default = 120,
-		value = 120,
+		default = 600,
+		value = 600,
 		decimals = 0,
 		group = "UI",
 		source = "bindingsUI",
@@ -338,8 +338,8 @@ local ControllerBindingsUILayoutDefinitionsList = {
 		min = 0.00,
 		max = 0.30,
 		step = 0.01,
-		default = 0.06,
-		value = 0.06,
+		default = 0.15,
+		value = 0.15,
 		decimals = 2,
 		group = "UI",
 		source = "bindingsUI",
@@ -352,8 +352,8 @@ local ControllerBindingsUILayoutDefinitionsList = {
 		min = 0.00,
 		max = 0.30,
 		step = 0.01,
-		default = 0.18,
-		value = 0.18,
+		default = 0.10,
+		value = 0.10,
 		decimals = 2,
 		group = "UI",
 		source = "bindingsUI",
