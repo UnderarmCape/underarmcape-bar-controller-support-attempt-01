@@ -3,11 +3,13 @@ setlocal EnableExtensions EnableDelayedExpansion
 title BAR Xbox Controller Support Widget Installer
 
 echo ============================================================
-echo BAR Xbox Controller Support v0.4.1 Widget Installer
+echo BAR Xbox Controller Support v0.4.1 Widget-Only Installer
 echo ============================================================
 echo.
-echo This script will copy the two required controller LuaUI widgets
-echo into your Beyond All Reason widgets folder.
+echo [IMPORTANT] This script ONLY copies the LuaUI widget files.
+echo It does NOT install the required custom controller engine.
+echo You must install the engine build FIRST from the
+echo "required_engine_installer" folder in this package!
 echo.
 echo [Note] This script does NOT require administrator privileges.
 echo You can inspect this file in Notepad at any time to verify it.
@@ -32,7 +34,7 @@ if not exist "%TARGET_DIR%" (
 )
 
 REM 3. Locate Widget Sources relative to this script
-REM Script is in optional_installer/, so source is in ..\luaui\Widgets\
+REM Script is in optional_widget_installer/, so source is in ..\luaui\Widgets\
 set "SRC_TEST_1=%~dp0..\luaui\Widgets\gui_controller_camera_test.lua"
 set "SRC_BIND_1=%~dp0..\luaui\Widgets\gui_controller_bindings_ui.lua"
 
@@ -84,7 +86,7 @@ echo SUCCESS: Controller widgets copied successfully!
 echo ============================================================
 echo.
 echo Next steps:
-echo   1. Connect your Xbox controller.
+echo   1. Ensure you have run the custom engine installer.
 echo   2. Launch Beyond All Reason.
 echo   3. Press F11 in-game to verify "Controller Camera Test" and "Controller Bindings UI" widgets are enabled.
 echo   4. Click the "Bindings" button in the top-right corner to select a preset.
