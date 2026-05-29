@@ -129,5 +129,8 @@ BAR_Xbox_Controller_Support_AI_Continuation_Pack_v0.3.8_QUEUE_FIX_BINDING_UI_PRO
 
 - v0.3.7 remains the current production-compatible release for Recoil 2025.06.24.
 - v0.3.8 is a checkpoint label for the queue-removal fix plus the binding UI prototype work.
-- The browser prototype is not yet shipped as an in-game widget.
-- The next major milestone should be the in-game `gui_controller_bindings_ui.lua` port.
+- `gui_controller_bindings_ui.lua` now exists as the v0.4.0 pre-alpha in-game binding editor.
+- The pre-alpha in-game binding editor is committed in `d0a466f8fae79d91f7246597c2138fff594df568`.
+- Manual testing passed for opening, gameplay-input blocking, category navigation, exact control highlighting, rebind, reset, close, and gameplay resume.
+- The next work is UI layering/safe-area polish because the binding editor is currently overlapped by the minimap and top HUD.
+- See `BAR_Xbox_Controller_Support_v0.4.0_Antigravity_Handoff_Binding_UI_PreAlpha.md` for the Antigravity handoff prompt and guardrails.
