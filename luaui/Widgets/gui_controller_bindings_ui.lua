@@ -36,251 +36,6 @@ local TOGGLE_BUTTON_HEIGHT = 28
 local TOGGLE_BUTTON_RIGHT_OFFSET = 560
 local TOGGLE_BUTTON_TOP_OFFSET = 8
 
-local ControllerBindingsUILayoutDefaults = {
-	useSafeArea = true,
-	maxXMargin = 120,
-	maxYMargin = 300,
-	xMarginRatio = 0.06,
-	yMarginRatio = 0.18,
-	toggleButtonVisible = true,
-	toggleButtonRightOffset = 560,
-	toggleButtonTopOffset = 8,
-}
-
-local ControllerBindingsUILayoutSettings = {}
-for k, v in pairs(ControllerBindingsUILayoutDefaults) do
-	ControllerBindingsUILayoutSettings[k] = v
-end
-
-local function ControllerBindingsUILayoutClampSetting(key, value)
-	if key == "useSafeArea" or key == "toggleButtonVisible" then
-		if type(value) == "boolean" then
-			return value
-		end
-		return value == 1 or value == "true" or value == true
-	elseif key == "maxXMargin" then
-		local num = tonumber(value) or 120
-		return math.max(0, math.min(600, math.floor(num)))
-	elseif key == "maxYMargin" then
-		local num = tonumber(value) or 300
-		return math.max(0, math.min(600, math.floor(num)))
-	elseif key == "xMarginRatio" then
-		local num = tonumber(value) or 0.06
-		return math.max(0.00, math.min(0.30, num))
-	elseif key == "yMarginRatio" then
-		local num = tonumber(value) or 0.18
-		return math.max(0.00, math.min(0.30, num))
-	elseif key == "toggleButtonRightOffset" then
-		local num = tonumber(value) or 560
-		return math.max(200, math.min(1000, math.floor(num)))
-	elseif key == "toggleButtonTopOffset" then
-		local num = tonumber(value) or 8
-		return math.max(0, math.min(120, math.floor(num)))
-	end
-	return value
-end
-
-local function ControllerBindingsUILayoutResetAll()
-	for k, v in pairs(ControllerBindingsUILayoutDefaults) do
-		ControllerBindingsUILayoutSettings[k] = v
-	end
-end
-
-local function ControllerBindingsUILayoutResetSetting(key)
-	if ControllerBindingsUILayoutDefaults[key] ~= nil then
-		ControllerBindingsUILayoutSettings[key] = ControllerBindingsUILayoutDefaults[key]
-	end
-end
-
-local function ControllerBindingsUILayoutGetSetting(key)
-	local val = ControllerBindingsUILayoutSettings[key]
-	if val == nil then
-		return ControllerBindingsUILayoutDefaults[key]
-	end
-	return val
-end
-
-local function ControllerBindingsUILayoutSetSetting(key, value)
-	ControllerBindingsUILayoutSettings[key] = ControllerBindingsUILayoutClampSetting(key, value)
-end
-
-local ControllerBindingsUILayoutDefinitionsList = {
-	{
-		key = "bindingsUILayout.useSafeArea",
-		label = "Bindings UI safe area",
-		type = "boolean",
-		default = true,
-		value = true,
-		group = "UI",
-		source = "bindingsUI",
-		description = "Keeps the bindings editor inside a centered safe window instead of fullscreen.",
-	},
-	{
-		key = "bindingsUILayout.maxXMargin",
-		label = "Bindings UI max horizontal margin",
-		type = "integer",
-		min = 0,
-		max = 600,
-		step = 10,
-		default = 120,
-		value = 120,
-		decimals = 0,
-		group = "UI",
-		source = "bindingsUI",
-		description = "Maximum left/right safe margin in pixels.",
-	},
-	{
-		key = "bindingsUILayout.maxYMargin",
-		label = "Bindings UI max vertical margin",
-		type = "integer",
-		min = 0,
-		max = 600,
-		step = 10,
-		default = 300,
-		value = 300,
-		decimals = 0,
-		group = "UI",
-		source = "bindingsUI",
-		description = "Maximum top/bottom safe margin in pixels.",
-	},
-	{
-		key = "bindingsUILayout.xMarginRatio",
-		label = "Bindings UI horizontal margin ratio",
-		type = "number",
-		min = 0.00,
-		max = 0.30,
-		step = 0.01,
-		default = 0.06,
-		value = 0.06,
-		decimals = 2,
-		group = "UI",
-		source = "bindingsUI",
-		description = "Screen-width ratio used for left/right safe margins before max clamp.",
-	},
-	{
-		key = "bindingsUILayout.yMarginRatio",
-		label = "Bindings UI vertical margin ratio",
-		type = "number",
-		min = 0.00,
-		max = 0.30,
-		step = 0.01,
-		default = 0.18,
-		value = 0.18,
-		decimals = 2,
-		group = "UI",
-		source = "bindingsUI",
-		description = "Screen-height ratio used for top/bottom safe margins before max clamp.",
-	},
-	{
-		key = "bindingsUILayout.toggleButtonVisible",
-		label = "Bindings button visible",
-		type = "boolean",
-		default = true,
-		value = true,
-		group = "UI",
-		source = "bindingsUI",
-		description = "Shows the top Bindings button used to open this editor with the mouse.",
-	},
-	{
-		key = "bindingsUILayout.toggleButtonRightOffset",
-		label = "Bindings button right offset",
-		type = "integer",
-		min = 200,
-		max = 1000,
-		step = 10,
-		default = 560,
-		value = 560,
-		decimals = 0,
-		group = "UI",
-		source = "bindingsUI",
-		description = "Moves the top Bindings button left/right relative to the right edge.",
-	},
-	{
-		key = "bindingsUILayout.toggleButtonTopOffset",
-		label = "Bindings button top offset",
-		type = "integer",
-		min = 0,
-		max = 120,
-		step = 2,
-		default = 8,
-		value = 8,
-		decimals = 0,
-		group = "UI",
-		source = "bindingsUI",
-		description = "Moves the top Bindings button downward from the top edge.",
-	},
-	{
-		key = "bindingsUILayout.resetLayout",
-		label = "Reset Bindings UI layout",
-		type = "action",
-		group = "UI",
-		source = "bindingsUI",
-		description = "Restores only the Bindings UI layout settings to default values.",
-	},
-}
-
-local function ControllerBindingsUIGetSettingValue(item)
-	if not item then return nil end
-	if item.source == "bindingsUI" then
-		if item.type == "action" then
-			return nil
-		end
-		local key = item.key
-		if string.sub(key, 1, 17) == "bindingsUILayout." then
-			key = string.sub(key, 18)
-		end
-		return ControllerBindingsUILayoutGetSetting(key)
-	else
-		local ok, val = ControllerBindingsUISafeCall("GetSetting", item.key)
-		if ok then
-			return val
-		end
-		return item.value
-	end
-end
-
-local function ControllerBindingsUISetSettingValue(item, value)
-	if not item then return end
-	if item.source == "bindingsUI" then
-		if item.type == "action" then
-			if item.key == "bindingsUILayout.resetLayout" then
-				ControllerBindingsUILayoutResetAll()
-				ControllerBindingsUISetToast("Layout settings reset")
-			end
-		else
-			local key = item.key
-			if string.sub(key, 1, 17) == "bindingsUILayout." then
-				key = string.sub(key, 18)
-			end
-			ControllerBindingsUILayoutSetSetting(key, value)
-		end
-	else
-		ControllerBindingsUISafeCall("SetSetting", item.key, value)
-	end
-end
-
-local function ControllerBindingsUIResetSettingValue(item)
-	if not item then return end
-	if item.source == "bindingsUI" then
-		if item.type == "action" then
-			if item.key == "bindingsUILayout.resetLayout" then
-				ControllerBindingsUILayoutResetAll()
-				ControllerBindingsUISetToast("Layout settings reset")
-			end
-		else
-			local key = item.key
-			if string.sub(key, 1, 17) == "bindingsUILayout." then
-				key = string.sub(key, 18)
-			end
-			ControllerBindingsUILayoutResetSetting(key)
-			ControllerBindingsUISetToast("Reset " .. item.label)
-		end
-	else
-		ControllerBindingsUISafeCall("ResetSetting", item.key)
-		ControllerBindingsUISetToast("Reset " .. item.label)
-	end
-end
-
 local ControllerBindingsUI = {
 	open = false,
 	categoryIndex = 1,
@@ -562,16 +317,11 @@ end
 
 local function ControllerBindingsUIRebuildSettings()
 	local ok, defs = ControllerBindingsUISafeCall("GetSettingsDefinitions")
-	local newList = {}
 	if ok and type(defs) == "table" then
-		for i = 1, #defs do
-			newList[#newList + 1] = defs[i]
-		end
+		ControllerBindingsUI.settingsList = defs
+	else
+		ControllerBindingsUI.settingsList = {}
 	end
-	for i = 1, #ControllerBindingsUILayoutDefinitionsList do
-		newList[#newList + 1] = ControllerBindingsUILayoutDefinitionsList[i]
-	end
-	ControllerBindingsUI.settingsList = newList
 end
 
 local function ControllerBindingsUISelectedSetting()
@@ -591,21 +341,20 @@ local function ControllerBindingsUIAdjustSelectedSetting(delta, fast)
 	local item = ControllerBindingsUISelectedSetting()
 	if not item then return end
 
-	local current = ControllerBindingsUIGetSettingValue(item)
+	local ok, current = ControllerBindingsUISafeCall("GetSetting", item.key)
+	if not ok then current = item.value end
 
 	if item.type == "boolean" then
 		if delta ~= 0 then
-			ControllerBindingsUISetSettingValue(item, not current)
+			ControllerBindingsUISafeCall("SetSetting", item.key, not current)
 		end
-	elseif item.type == "action" then
-		ControllerBindingsUISetSettingValue(item, nil)
 	else
 		local step = item.step or 1
 		if fast then
 			step = step * 4
 		end
 		local newVal = (tonumber(current) or 0) + step * delta
-		ControllerBindingsUISetSettingValue(item, newVal)
+		ControllerBindingsUISafeCall("SetSetting", item.key, newVal)
 	end
 	ControllerBindingsUIRebuildSettings()
 end
@@ -613,8 +362,9 @@ end
 local function ControllerBindingsUIResetSelectedSetting()
 	local item = ControllerBindingsUISelectedSetting()
 	if not item then return end
-	ControllerBindingsUIResetSettingValue(item)
+	ControllerBindingsUISafeCall("ResetSetting", item.key)
 	ControllerBindingsUIRebuildSettings()
+	ControllerBindingsUISetToast("Reset " .. item.label)
 end
 
 local function ControllerBindingsUIResetAllSettings()
@@ -1069,12 +819,6 @@ local function ControllerBindingsUIDrawModalButton(id, label, x1, y1, x2, y2)
 end
 
 local function ControllerBindingsUIDrawHeader(x1, y2_header, x2, vsx, vsy)
-	local USE_SAFE_AREA_LAYOUT = ControllerBindingsUILayoutGetSetting("useSafeArea")
-	local SAFE_MAX_X_MARGIN = ControllerBindingsUILayoutGetSetting("maxXMargin")
-	local SAFE_MAX_Y_MARGIN = ControllerBindingsUILayoutGetSetting("maxYMargin")
-	local SAFE_X_MARGIN_RATIO = ControllerBindingsUILayoutGetSetting("xMarginRatio")
-	local SAFE_Y_MARGIN_RATIO = ControllerBindingsUILayoutGetSetting("yMarginRatio")
-
 	local infoText = "Xbox Controller Support v0.4.0 pre-alpha"
 	if ControllerBindingsUI.totalBindingsCount then
 		infoText = infoText .. "  |  Bindings loaded: " .. ControllerBindingsUI.totalBindingsCount
@@ -1148,12 +892,6 @@ local function ControllerBindingsUIDrawHeader(x1, y2_header, x2, vsx, vsy)
 end
 
 local function ControllerBindingsUIDrawTabs(x1, y2_header, x2, vsx, vsy)
-	local USE_SAFE_AREA_LAYOUT = ControllerBindingsUILayoutGetSetting("useSafeArea")
-	local SAFE_MAX_X_MARGIN = ControllerBindingsUILayoutGetSetting("maxXMargin")
-	local SAFE_MAX_Y_MARGIN = ControllerBindingsUILayoutGetSetting("maxYMargin")
-	local SAFE_X_MARGIN_RATIO = ControllerBindingsUILayoutGetSetting("xMarginRatio")
-	local SAFE_Y_MARGIN_RATIO = ControllerBindingsUILayoutGetSetting("yMarginRatio")
-
 	local tabs = ControllerBindingsUI.layout.tabs
 	for i = 1, #tabs do
 		tabs[i] = nil
@@ -1347,12 +1085,6 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 end
 
 local function ControllerBindingsUIDrawFooter(x1, y1, x2, vsx)
-	local USE_SAFE_AREA_LAYOUT = ControllerBindingsUILayoutGetSetting("useSafeArea")
-	local SAFE_MAX_X_MARGIN = ControllerBindingsUILayoutGetSetting("maxXMargin")
-	local SAFE_MAX_Y_MARGIN = ControllerBindingsUILayoutGetSetting("maxYMargin")
-	local SAFE_X_MARGIN_RATIO = ControllerBindingsUILayoutGetSetting("xMarginRatio")
-	local SAFE_Y_MARGIN_RATIO = ControllerBindingsUILayoutGetSetting("yMarginRatio")
-
 	if USE_SAFE_AREA_LAYOUT then
 		ControllerBindingsUIDrawRect(x1, y1, x2, y1 + 40, { 0.025, 0.035, 0.047, 0.96 })
 		ControllerBindingsUIDrawOutline(x1, y1, x2, y1 + 40, { 0.26, 0.37, 0.45, 0.95 })
@@ -1372,12 +1104,6 @@ local function ControllerBindingsUIDrawFooter(x1, y1, x2, vsx)
 end
 
 local function ControllerBindingsUIDrawWarning(vsx, vsy)
-	local USE_SAFE_AREA_LAYOUT = ControllerBindingsUILayoutGetSetting("useSafeArea")
-	local SAFE_MAX_X_MARGIN = ControllerBindingsUILayoutGetSetting("maxXMargin")
-	local SAFE_MAX_Y_MARGIN = ControllerBindingsUILayoutGetSetting("maxYMargin")
-	local SAFE_X_MARGIN_RATIO = ControllerBindingsUILayoutGetSetting("xMarginRatio")
-	local SAFE_Y_MARGIN_RATIO = ControllerBindingsUILayoutGetSetting("yMarginRatio")
-
 	ControllerBindingsUIDrawRect(0, 0, vsx, vsy, { 0, 0, 0, 0.68 })
 	local w = math.min(760, vsx - 140)
 	if USE_SAFE_AREA_LAYOUT then
@@ -1411,12 +1137,6 @@ local function ControllerBindingsUIDrawModal(vsx, vsy)
 	if not ControllerBindingsUI.modal then
 		return
 	end
-	local USE_SAFE_AREA_LAYOUT = ControllerBindingsUILayoutGetSetting("useSafeArea")
-	local SAFE_MAX_X_MARGIN = ControllerBindingsUILayoutGetSetting("maxXMargin")
-	local SAFE_MAX_Y_MARGIN = ControllerBindingsUILayoutGetSetting("maxYMargin")
-	local SAFE_X_MARGIN_RATIO = ControllerBindingsUILayoutGetSetting("xMarginRatio")
-	local SAFE_Y_MARGIN_RATIO = ControllerBindingsUILayoutGetSetting("yMarginRatio")
-
 	ControllerBindingsUIDrawRect(0, 0, vsx, vsy, { 0, 0, 0, 0.62 })
 	local w = 560
 	local h = 250
@@ -1454,11 +1174,7 @@ local function ControllerBindingsUIDrawModal(vsx, vsy)
 		ControllerBindingsUIDrawModalButton("duplicate", "Allow Duplicate", x1 + 174, y1 + 22, x1 + 344, y1 + 58)
 		ControllerBindingsUIDrawModalButton("cancel", "Cancel", x2 - 148, y1 + 22, x2 - 28, y1 + 58)
 	elseif ControllerBindingsUI.modal == "resetAll" then
-		local titleText = "Reset all controller bindings?"
-		if ControllerBindingsUI.mode == "settings" then
-			titleText = "Reset all controller settings?"
-		end
-		ControllerBindingsUIDrawText(titleText, x1 + 28, y2 - 92, 22, { 0.94, 0.99, 1, 1 }, "o")
+		ControllerBindingsUIDrawText("Reset all controller bindings?", x1 + 28, y2 - 92, 22, { 0.94, 0.99, 1, 1 }, "o")
 		ControllerBindingsUIDrawText("A / Enter confirms. B / Escape cancels.", x1 + 28, y2 - 136, 16, { 0.76, 0.88, 0.94, 1 }, "o")
 		ControllerBindingsUIDrawModalButton("resetAll", "Reset All", x1 + 28, y1 + 22, x1 + 158, y1 + 58)
 		ControllerBindingsUIDrawModalButton("cancel", "Cancel", x2 - 148, y1 + 22, x2 - 28, y1 + 58)
@@ -1500,7 +1216,8 @@ local function ControllerBindingsUIDrawSettingsList(x1, y1, x2, y2)
 			break
 		end
 		local selected = i == ControllerBindingsUI.settingsItemIndex
-		local val = ControllerBindingsUIGetSettingValue(item)
+		local ok, val = ControllerBindingsUISafeCall("GetSetting", item.key)
+		if not ok then val = item.value end
 
 		ControllerBindingsUIDrawRect(x1 + 12, rowY - rowH + 4, x2 - 12, rowY + 3, selected and { 0.13, 0.28, 0.34, 0.95 } or { 0.07, 0.085, 0.105, 0.72 })
 		if selected then
@@ -1512,8 +1229,6 @@ local function ControllerBindingsUIDrawSettingsList(x1, y1, x2, y2)
 		local valStr = ""
 		if item.type == "boolean" then
 			valStr = val and "ON" or "OFF"
-		elseif item.type == "action" then
-			valStr = "RESET"
 		else
 			local fmt = item.decimals == 0 and "%.0f" or string.format("%%.%df", item.decimals)
 			valStr = string.format(fmt, tonumber(val) or 0)
@@ -1533,7 +1248,8 @@ local function ControllerBindingsUIDrawSettingsDetails(x1, y1, x2, y2)
 		return
 	end
 
-	local val = ControllerBindingsUIGetSettingValue(item)
+	local ok, val = ControllerBindingsUISafeCall("GetSetting", item.key)
+	if not ok then val = item.value end
 
 	local y = y2 - 76
 	ControllerBindingsUIDrawText(item.label, x1 + 20, y, 21, { 0.94, 0.99, 1, 1 }, "o")
@@ -1549,9 +1265,6 @@ local function ControllerBindingsUIDrawSettingsDetails(x1, y1, x2, y2)
 	if item.type == "boolean" then
 		defValStr = item.default and "ON" or "OFF"
 		valStr = val and "ON" or "OFF"
-	elseif item.type == "action" then
-		defValStr = "N/A"
-		valStr = "ACTIVATE"
 	else
 		local fmt = item.decimals == 0 and "%.0f" or string.format("%%.%df", item.decimals)
 		defValStr = string.format(fmt, tonumber(item.default) or 0)
@@ -1563,7 +1276,7 @@ local function ControllerBindingsUIDrawSettingsDetails(x1, y1, x2, y2)
 	ControllerBindingsUIDrawText("Current: " .. valStr, x1 + 20, y, 16, { 0.86, 0.98, 1, 1 }, "o")
 	y = y - 34
 
-	if item.type ~= "boolean" and item.type ~= "action" then
+	if item.type ~= "boolean" then
 		local fmt = item.decimals == 0 and "%.0f" or string.format("%%.%df", item.decimals)
 		local minStr = string.format(fmt, tonumber(item.min) or 0)
 		local maxStr = string.format(fmt, tonumber(item.max) or 0)
@@ -1629,12 +1342,6 @@ local function ControllerBindingsUIDrawSettingsDetails(x1, y1, x2, y2)
 end
 
 local function ControllerBindingsUIDrawToggleButton(vsx, vsy)
-	if not ControllerBindingsUILayoutGetSetting("toggleButtonVisible") then
-		return
-	end
-	local TOGGLE_BUTTON_RIGHT_OFFSET = ControllerBindingsUILayoutGetSetting("toggleButtonRightOffset")
-	local TOGGLE_BUTTON_TOP_OFFSET = ControllerBindingsUILayoutGetSetting("toggleButtonTopOffset")
-
 	local x1 = vsx - TOGGLE_BUTTON_RIGHT_OFFSET
 	local x2 = x1 + TOGGLE_BUTTON_WIDTH
 	local y2 = vsy - TOGGLE_BUTTON_TOP_OFFSET
@@ -1652,11 +1359,6 @@ end
 
 local function ControllerBindingsUIDrawMain()
 	local vsx, vsy = spGetViewGeometry()
-	local USE_SAFE_AREA_LAYOUT = ControllerBindingsUILayoutGetSetting("useSafeArea")
-	local SAFE_MAX_X_MARGIN = ControllerBindingsUILayoutGetSetting("maxXMargin")
-	local SAFE_MAX_Y_MARGIN = ControllerBindingsUILayoutGetSetting("maxYMargin")
-	local SAFE_X_MARGIN_RATIO = ControllerBindingsUILayoutGetSetting("xMarginRatio")
-	local SAFE_Y_MARGIN_RATIO = ControllerBindingsUILayoutGetSetting("yMarginRatio")
 
 	local safe_x1 = 54
 	local safe_x2 = vsx - 54
@@ -1896,15 +1598,12 @@ end
 
 function widget:MousePress(x, y, button)
 	local vsx, vsy = spGetViewGeometry()
-	local TOGGLE_BUTTON_RIGHT_OFFSET = ControllerBindingsUILayoutGetSetting("toggleButtonRightOffset")
-	local TOGGLE_BUTTON_TOP_OFFSET = ControllerBindingsUILayoutGetSetting("toggleButtonTopOffset")
 	local bx1 = vsx - TOGGLE_BUTTON_RIGHT_OFFSET
 	local bx2 = bx1 + TOGGLE_BUTTON_WIDTH
 	local by2 = vsy - TOGGLE_BUTTON_TOP_OFFSET
 	local by1 = by2 - TOGGLE_BUTTON_HEIGHT
 
-	local toggleVisible = ControllerBindingsUILayoutGetSetting("toggleButtonVisible")
-	if toggleVisible and button == 1 and x >= bx1 and x <= bx2 and y >= by1 and y <= by2 then
+	if button == 1 and x >= bx1 and x <= bx2 and y >= by1 and y <= by2 then
 		ControllerBindingsUIToggle()
 		return true
 	end
@@ -1971,7 +1670,7 @@ function widget:MousePress(x, y, button)
 			if ControllerBindingsUIPointInside(hit, x, y) then
 				ControllerBindingsUI.settingsItemIndex = hit.index
 				local selectedItem = ControllerBindingsUISelectedSetting()
-				if selectedItem and (selectedItem.type == "boolean" or selectedItem.type == "action") then
+				if selectedItem and selectedItem.type == "boolean" then
 					ControllerBindingsUIAdjustSelectedSetting(1, false)
 				end
 				return true
@@ -1997,18 +1696,4 @@ function widget:DrawScreen()
 	end
 	ControllerBindingsUIDrawMain()
 	glColor(1, 1, 1, 1)
-end
-
-function widget:GetConfigData()
-	return {
-		layoutSettings = ControllerBindingsUILayoutSettings,
-	}
-end
-
-function widget:SetConfigData(data)
-	if data and type(data.layoutSettings) == "table" then
-		for k, v in pairs(data.layoutSettings) do
-			ControllerBindingsUILayoutSettings[k] = ControllerBindingsUILayoutClampSetting(k, v)
-		end
-	end
 end
