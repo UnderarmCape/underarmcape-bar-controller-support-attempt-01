@@ -1,42 +1,58 @@
 # STOP: READ THIS FIRST — BAR Xbox Controller Support v0.4.1
 
 > [!IMPORTANT]
-> **CRITICAL REQUIREMENT**: This controller support mod **REQUIRES** the custom controller-enabled BAR/Recoil engine.
-> Copying only the Lua widget files is **NOT** enough. The widgets rely on new controller-specific APIs exposed by the custom engine build. If you only copy the widgets, they may load but your controller input will not be recognized by the game.
+> **CRITICAL ENGINE REQUIREMENT**: This controller support mod **REQUIRES** a custom controller-enabled BAR/Recoil engine build to capture inputs.
+> Copying only the Lua widget files is **NOT** enough. You must run the custom engine installer first, and then copy these v0.4.1 widget files over the installation!
 
 ---
 
-## Required Install Order
+## What This Mod Consists Of
 
-This release package consists of two essential components that must be installed in order:
-
-### 1. Step 1: Install the Custom Engine
-You must install the **Recoil 2025.06.24 compatibility engine** build.
-* **How**: Open the folder `required_engine_installer/` and run the script `Install_BAR_Controller_Support_v0.3.7_RECOIL_2025_06_24_COMPAT.bat`.
-* *Security Note*: This batch installer does NOT require administrator privileges. You are welcome and encouraged to right-click and select **Edit** to inspect its code in Notepad before running it.
-
-### 2. Step 2: Install the LuaUI Widgets
-Once the engine is installed, you must install the controller widgets.
-* **How (Manual - Recommended)**: Copy both `.lua` files from the `luaui/Widgets/` directory of this package:
-  * `gui_controller_camera_test.lua`
-  * `gui_controller_bindings_ui.lua`
-  And paste them into your BAR widgets folder:
-  `%LOCALAPPDATA%\Programs\Beyond-All-Reason\data\games\BAR.sdd\luaui\Widgets\`
-* **How (Automated - Optional)**: Open the folder `optional_widget_installer/` and run `install_widget_files_only.bat`. This script only copies the two widget files and does not modify the engine.
-
-### 3. Step 3: Launch and Configure BAR
-* Start or restart Beyond All Reason.
-* Ensure both widgets are enabled (press `F11` in-game to open the LuaUI widget list, and check **Controller Camera Test** and **Controller Bindings UI**).
-* Click the **Bindings** button in the top-right corner of the screen (or run the chat command `/luaui bar_controller_bindings`) to open the settings interface.
-* Go to the **Presets** category and apply either **Balanced RTS** or **Build-First Commander**.
+This milestone release package contains two parts:
+1. **Custom Recoil Engine & Game Files**: Captured, compiled, and configured using the automated installer `required_engine_installer/Install_BAR_Controller_Support_v0.3.7_RECOIL_2025_06_24_COMPAT.bat`.
+2. **v0.4.1 LuaUI Widgets**: The updated high-quality bindings, presets, build placement shims, and queue controls contained in `luaui/Widgets/`.
 
 ---
 
-## Package Files & Folders
+## Target Installation Flow (Quick Guide)
 
-* **`README_INSTALL_FIRST.md`**: (This file) Crucial overview and install order instructions.
-* **`BAR_Xbox_Controller_Support_v0.4.1_INSTALL_GUIDE.md`**: Detailed installation guide, path customization, and verification checklist.
-* **`BAR_Xbox_Controller_Support_v0.4.1_Milestone_Release_Notes.md`**: Landmark feature highlights, preset button maps, and known issues.
-* **`luaui/Widgets/`**: Folder containing the core Lua widgets.
-* **`required_engine_installer/`**: Contains the automated installer script for the custom engine.
-* **`optional_widget_installer/`**: Contains the optional script to automate copying the widget files.
+Follow these exact steps in order to install the mod successfully:
+
+### Step 1: Run the Custom Engine Installer
+1. Open the folder `required_engine_installer/`.
+2. Run `Install_BAR_Controller_Support_v0.3.7_RECOIL_2025_06_24_COMPAT.bat` by double-clicking it.
+3. The script will automatically download the custom controller engine ZIP (`recoil_2025.06.24-controller-support-pr2985-win64.zip`) from GitHub, back up your current game and engine, stage the compatible versions of `BAR.sdd` and `BYAR Chobby.sdd`, configure developer mode, and clear obsolete caches.
+4. Wait for the terminal to display **INSTALL COMPLETE** and press any key to close the script window.
+
+### Step 2: Copy the v0.4.1 Widget Files (Critical Update)
+The engine installer script downloads a baseline package that may contain older widgets. To upgrade to the latest v0.4.1 features:
+1. Open the `luaui/Widgets/` directory in this package.
+2. Copy these two files:
+   * `gui_controller_camera_test.lua`
+   * `gui_controller_bindings_ui.lua`
+3. Paste both files into your active BAR games folder:
+   ```text
+   %LOCALAPPDATA%\Programs\Beyond-All-Reason\data\games\BAR.sdd\luaui\Widgets\
+   ```
+4. **Choose "Replace the files in the destination"** when Windows asks if you want to overwrite existing files.
+
+### Step 3: Launch and Configure BAR
+1. Plug in your USB Xbox controller.
+2. Launch Beyond All Reason.
+3. In the main menu, go to **Settings > Developer**.
+4. Set **Singleplayer** to **Beyond All Reason Dev** (this loads the local dev folder containing your custom controller files).
+5. Start a local Skirmish match.
+6. Press **F11** to open the LuaUI widget selector and verify that **Controller Camera Test** and **Controller Bindings UI** are enabled.
+7. Click the **Bindings** button in the top-right corner of the screen (or run `/luaui bar_controller_bindings` in the chat console) to open the bindings menu.
+8. Go to **Presets** and apply either **Balanced RTS** or **Build-First Commander**!
+
+---
+
+## Included Folders & Files
+
+* **`README_INSTALL_FIRST.md`**: (This file) Essential overview and installation order instructions.
+* **`BAR_Xbox_Controller_Support_v0.4.1_INSTALL_GUIDE.md`**: Detailed technical installation guide, path lists, batch behaviors, and troubleshooting.
+* **`BAR_Xbox_Controller_Support_v0.4.1_Milestone_Release_Notes.md`**: Features log, preset button maps, and known issues.
+* **`luaui/Widgets/`**: Updated v0.4.1 Lua widgets.
+* **`required_engine_installer/`**: Script to download and install the custom controller-enabled engine.
+* **`optional_widget_installer/`**: Optional script to copy only the widget files (Step 2).

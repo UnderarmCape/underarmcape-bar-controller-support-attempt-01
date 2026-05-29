@@ -3,7 +3,7 @@
 This is a major milestone release for the community-driven Beyond All Reason (BAR) Xbox Controller Support project.
 
 > [!IMPORTANT]
-> **CRITICAL REQUIREMENT**: This controller support mod **REQUIRES** the custom controller-enabled BAR/Recoil engine compatibility layer. The LuaUI widgets alone are **NOT** sufficient; they rely on controller-specific C++ APIs introduced in the custom engine. If you do not install the compatibility engine, your controller will not be detected.
+> **CRITICAL ENGINE REQUIREMENT**: This controller support mod **REQUIRES** a custom controller-enabled BAR/Recoil engine compatibility layer build to function. The LuaUI widgets alone are **NOT** sufficient; they rely on controller-specific C++ APIs introduced in the custom engine. If you do not install the compatibility engine first using the automated installer inside this package, your controller inputs will not be recognized.
 
 ---
 
@@ -14,7 +14,15 @@ This is a major milestone release for the community-driven Beyond All Reason (BA
 
 ---
 
-## 2. Feature Highlights
+## 2. Target Installation Order (Summary)
+This release package contains both the required widgets and the installer for the custom engine compatibility build:
+1. **Engine**: Open the `required_engine_installer/` folder and run `Install_BAR_Controller_Support_v0.3.7_RECOIL_2025_06_24_COMPAT.bat` to automatically download the compiled custom engine, back up active stock files, configure devmode, and disable cardinal camera locks.
+2. **v0.4.1 Widgets**: After the engine installer finishes, copy `gui_controller_camera_test.lua` and `gui_controller_bindings_ui.lua` from `luaui/Widgets/` to `%LOCALAPPDATA%\Programs\Beyond-All-Reason\data\games\BAR.sdd\luaui\Widgets\` (overwriting the older widgets).
+3. **Launch BAR**: Select **Settings > Developer**, choose **Beyond All Reason Dev** in the Singleplayer dropdown, and configure your presets!
+
+---
+
+## 3. Feature Highlights
 
 * **Binding Presets System**: Includes the `Balanced RTS` and `Build-First Commander` preset configurations to allow one-click bindings setup, with modal confirmation and live preset status tracking.
 * **Build / Factory Radial Menu**: Map unit and structure factory blueprints onto a convenient, visual radial menu.
@@ -34,7 +42,7 @@ This is a major milestone release for the community-driven Beyond All Reason (BA
 
 ---
 
-## 3. Preset Mappings Overview
+## 4. Preset Mappings Overview
 
 ### Balanced RTS Preset
 * **A** = Select / Confirm / Place
@@ -66,12 +74,5 @@ This is a major milestone release for the community-driven Beyond All Reason (BA
 
 ---
 
-## 4. Documented Known Issue
+## 5. Documented Known Issue
 * **Commander Focus Utility**: The `Back/View + A + A` shortcut (focus/select Commander) is currently unreliable or ignored by the gameplay input shim. This is a documented limitation and will be fixed in a later release. All other features on the Back/View command layer function properly.
-
----
-
-## 5. Installation Summary
-1. **Engine**: Run the batch installer in `required_engine_installer/` to download and swap the Recoil 2025.06.24 compatibility engine.
-2. **Widgets**: Copy the two Lua files from `luaui/Widgets/` to `%LOCALAPPDATA%\Programs\Beyond-All-Reason\data\games\BAR.sdd\luaui\Widgets\` (or use the script in `optional_widget_installer/`).
-3. **BAR**: Launch BAR, verify widgets are active, and apply a preset!
