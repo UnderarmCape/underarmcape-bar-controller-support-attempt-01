@@ -192,7 +192,7 @@ local ControllerBindingsUIDescriptions = {
 	commandLayer = "Open the tactical command layer for move, fight, reclaim, repair, and related commands.",
 	insertNextCommandModifier = "Hold to insert the next issued command at the front of the selected unit's queue without clearing the rest.",
 	appendQueueModifier = "Hold to append commands and build placements to the end of the queue, like Shift. This does not interrupt the current build.",
-	controlGroupModifier = "Hold to use controller control-group mode.",
+	controlGroupModifier = "Hold Start/Menu to use the controller group layer with D-pad and L3 inputs.",
 	pitchModifier = "Hold LB to access camera pitch / tilt behavior.",
 	removeQueuedCommand = "Removes the selected unit's current or next queued command. LT is reserved for camera speed only.",
 	removeLastQueuedCommand = "Removes the selected unit's final queued command. LT is reserved for camera speed only.",
@@ -220,10 +220,11 @@ local ControllerBindingsUIDescriptions = {
 	commandRight = "RT layer next command or selection cycle.",
 	idlePrev = "Cycle to the previous idle unit.",
 	idleNext = "Cycle to the next idle unit.",
-	groupSlotUp = "Move to the next controller control-group slot while RB is held.",
-	groupSlotDown = "Move to the previous controller control-group slot while RB is held.",
-	groupRecallOrAssign = "Tap to recall the active group. Hold to assign the same unit type.",
-	groupClear = "Clear the active controller control-group slot while RB is held.",
+	groupSlotUp = "Move to the next controller control-group slot while Start/Menu is held.",
+	groupSlotDown = "Move to the previous controller control-group slot while Start/Menu is held.",
+	groupRecallOrAssign = "Recall the active controller group slot while Start/Menu is held.",
+	groupAssign = "Assign the current selection to the active controller group slot while Start/Menu is held.",
+	groupClear = "Clear the active controller control-group slot with Start/Menu + L3.",
 }
 
 local ControllerBindingsUILabelOverrides = {
@@ -831,7 +832,8 @@ local function ControllerBindingsUIConfirmApplyPreset()
 			groupSlotUp = "dpadUp",
 			groupSlotDown = "dpadDown",
 			groupRecallOrAssign = "dpadLeft",
-			groupClear = "B",
+			groupAssign = "dpadRight",
+			groupClear = "leftStickClick",
 		}
 	elseif presetName == "Build-First Commander" then
 		map = {
@@ -873,7 +875,8 @@ local function ControllerBindingsUIConfirmApplyPreset()
 			groupSlotUp = "dpadUp",
 			groupSlotDown = "dpadDown",
 			groupRecallOrAssign = "dpadLeft",
-			groupClear = "B",
+			groupAssign = "dpadRight",
+			groupClear = "leftStickClick",
 		}
 	end
 
@@ -1562,6 +1565,7 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 				"L3 (Left Stick Click) = Remove current/next queue",
 				"R3 (Right Stick Click) = Remove last queue",
 				"Back/View = Commander focus / utility only",
+				"Start/Menu + D-pad/L3 = Group layer",
 			}
 		elseif action.actionLabel == "Build-First Commander" then
 			lines = {
@@ -1576,11 +1580,12 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 				"L3 (Left Stick Click) = Remove current/next queue",
 				"R3 (Right Stick Click) = Remove last queue",
 				"Back/View = Commander focus / utility only",
+				"Start/Menu + D-pad/L3 = Group layer",
 			}
 		end
 
 		for _, line in ipairs(lines) do
-			ControllerBindingsUIDrawText("  • " .. line, x1 + 20, y, 12, { 0.78, 0.9, 0.96, 1 }, "o")
+			ControllerBindingsUIDrawText("  - " .. line, x1 + 20, y, 12, { 0.78, 0.9, 0.96, 1 }, "o")
 			y = y - 16
 		end
 
@@ -1884,7 +1889,7 @@ local function ControllerBindingsUIDrawSettingsDetails(x1, y1, x2, y2)
 		elseif item.key == "aHoldSeconds" then
 			desc = "Duration to hold A button for holding actions."
 		elseif item.key == "controlGroupAssignHoldSeconds" then
-			desc = "Duration to hold RB + group shortcut to assign units."
+			desc = "Legacy duration for hold-to-assign group behavior if that shortcut is rebound."
 		elseif item.key == "singlePathSpacing" then
 			desc = "Minimum distance between queued waypoints."
 		elseif item.key == "singlePathInterval" then

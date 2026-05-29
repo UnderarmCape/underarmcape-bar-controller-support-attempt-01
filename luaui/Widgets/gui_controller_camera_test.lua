@@ -575,11 +575,11 @@ local XboxController = {
 		[2] = "X = Smart Action (Move/Build/Attack)",
 		[3] = "Y = Controller Build Menu",
 		[4] = "Back/View = Commander focus / utility",
-		[6] = "Start/Menu = Reserved",
+		[6] = "Start/Menu = Hold group layer",
 		[7] = "Left Stick Click = Remove current/next queued command",
 		[8] = "Right Stick Click = Remove last queued command",
 		[9] = "LB = Camera pitch; LB+D-pad L/R idle type",
-		[10] = "RB = Hold control-group mode",
+		[10] = "RB = Preset action / radial page",
 		[11] = "D-pad Up = Camera bookmark Up",
 		[12] = "D-pad Down = Camera bookmark Down",
 		[13] = "D-pad Left = Previous idle unit",
@@ -597,7 +597,7 @@ local XboxController = {
 		[13] = "RT + D-pad Left = Previous selection cycle",
 		[14] = "RT + D-pad Right = Next selection cycle",
 	},
-	normalLayoutSummary = "A Select/Hold Area/Double Same-Type, B Clear, X Context, Y Build, L3/R3 Queue Remove, D-pad L/R Idle, RB Groups",
+	normalLayoutSummary = "A Select/Hold Area/Double Same-Type, B Clear, X Context, Y Build, L3/R3 Queue Remove, D-pad L/R Idle, Start Groups",
 	commandLayoutSummary = "RT+A Reserved, RT+B Stop, RT+X Attack, RT+Y Tactical, RT+LB/RB Cycle, RT+D-pad Commands",
 }
 
@@ -1546,9 +1546,9 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "smartAction", label = "Smart Action", default = "X", group = "Core" },
 		{ action = "buildRadial", label = "Build / Factory Radial", default = "Y", group = "Core" },
 		{ action = "commandLayer", label = "Command Layer", default = "RT", group = "Modifiers" },
-		{ action = "insertNextCommandModifier", label = "Do Next / Insert Command Modifier", default = "back", group = "Queue" },
+		{ action = "insertNextCommandModifier", label = "Do Next / Insert Command Modifier", default = "RB", group = "Queue" },
 		{ action = "appendQueueModifier", label = "Append Queue / Shift Modifier", default = "RT", group = "Queue" },
-		{ action = "controlGroupModifier", label = "Group Modifier", default = "RB", group = "Modifiers" },
+		{ action = "controlGroupModifier", label = "Group Layer Modifier", default = "start", group = "Modifiers" },
 		{ action = "pitchModifier", label = "Pitch / Idle Type Modifier", default = "LB", group = "Modifiers" },
 		{ action = "removeQueuedCommand", label = "Remove Current/Next Queue Item", default = "leftStickClick", group = "Queue" },
 		{ action = "removeLastQueuedCommand", label = "Remove Last Queue Item", default = "rightStickClick", group = "Queue" },
@@ -1578,8 +1578,9 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "idleNext", label = "Next Idle Unit", default = "dpadRight", group = "Idle / Groups" },
 		{ action = "groupSlotUp", label = "Next Group Slot", default = "dpadUp", group = "Idle / Groups" },
 		{ action = "groupSlotDown", label = "Previous Group Slot", default = "dpadDown", group = "Idle / Groups" },
-		{ action = "groupRecallOrAssign", label = "Recall / Assign Group", default = "dpadLeft", group = "Idle / Groups" },
-		{ action = "groupClear", label = "Clear Group", default = "B", group = "Idle / Groups" },
+		{ action = "groupRecallOrAssign", label = "Recall Current Group", default = "dpadLeft", group = "Idle / Groups" },
+		{ action = "groupAssign", label = "Assign Current Selection", default = "dpadRight", group = "Idle / Groups" },
+		{ action = "groupClear", label = "Clear Group", default = "leftStickClick", group = "Idle / Groups" },
 	}
 end
 
@@ -3655,10 +3656,11 @@ function ControllerCameraTestFocusCommander()
 			end
 			local ok, x, y, z = pcall(spGetUnitPosition, unitID)
 			if ok and x and z and ControllerCameraTestFocusCameraAt(x, y, z, "Commander") then
+				ControllerCameraTestSelectUnits({ unitID }, "Commander")
 				ControllerCameraTestIdleCycle.currentUnitID = unitID
-				ControllerCameraTestIdleCycle.lastResult = "focused Commander " .. tostring(unitID)
-				ControllerCameraTestLayerDebug.normalUtilityAction = "Double-tap A Commander focus"
-				latchSelectionDebugMessage("Focused Commander")
+				ControllerCameraTestIdleCycle.lastResult = "focused and selected Commander " .. tostring(unitID)
+				ControllerCameraTestLayerDebug.normalUtilityAction = "Double-tap A Commander focus/select"
+				latchSelectionDebugMessage("Focused and selected Commander")
 				return true
 			end
 		end
@@ -4128,6 +4130,26 @@ function ControllerCameraTestAssignControlGroup(slot)
 	return true
 end
 
+function ControllerCameraTestAssignSelectedControlGroup(slot)
+	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	local units = ControllerCameraTestFilterValidUnits(selectedUnits)
+	if #units == 0 then
+		ControllerCameraTestSetControlGroupAction("assign failed: no selection", slot, 0)
+		return false
+	end
+
+	table.sort(units)
+	ControllerCameraTestControlGroups.slots[slot] = {
+		units = units,
+		count = #units,
+		lastAssignedTime = debugEventTime,
+	}
+	ControllerCameraTestControlGroups.activeSlot = slot
+	ControllerCameraTestSetControlGroupAction("assigned selection x" .. tostring(#units), slot, #units)
+	return true
+end
+
 function ControllerCameraTestRecallControlGroup(slot)
 	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
 	local groups = ControllerCameraTestControlGroups
@@ -4238,20 +4260,13 @@ function ControllerCameraTestHandleControlGroupInput()
 		elseif ControllerCameraTestActionPressed("groupSlotDown") then
 			ControllerCameraTestChangeControlGroupSlot(-1)
 		elseif ControllerCameraTestActionPressed("groupRecallOrAssign") then
-			ControllerCameraTestStartControlGroupLeftPress()
-		elseif ControllerCameraTestActionReleased("groupRecallOrAssign") and groups.leftPressActive then
-			ControllerCameraTestResolveControlGroupLeftPress()
-		elseif WasButtonPressed("dpadRight") then
-			ControllerCameraTestSetControlGroupAction("RB+D-pad Right disabled", groups.activeSlot, groups.slots[groups.activeSlot] and (groups.slots[groups.activeSlot].count or 0) or 0)
-			groups.leftInputState = "right disabled"
+			ControllerCameraTestRecallControlGroup(groups.activeSlot)
+			groups.leftInputState = "recalled"
+		elseif ControllerCameraTestActionPressed("groupAssign") then
+			ControllerCameraTestAssignSelectedControlGroup(groups.activeSlot)
+			groups.leftInputState = "assigned selection"
 		elseif ControllerCameraTestActionPressed("groupClear") then
 			ControllerCameraTestClearControlGroup(groups.activeSlot)
-		elseif ControllerCameraTestActionPressed("select") then
-			ControllerCameraTestSetControlGroupAction("RB+A disabled", groups.activeSlot, 0)
-			groups.leftInputState = "A disabled"
-		elseif ControllerCameraTestActionPressed("smartAction") then
-			ControllerCameraTestSetControlGroupAction("RB+X disabled", groups.activeSlot, 0)
-			groups.leftInputState = "X disabled"
 		else
 			ControllerCameraTestLayerDebug.normalUtilityAction = "Control group mode"
 		end
@@ -5661,6 +5676,10 @@ function ControllerCameraTestPlaceHighlightedBuildOption(exitPlacement, source)
 	return ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 end
 
+function ControllerCameraTestPlacementShouldExit(button)
+	return button == "place" and not ControllerCameraTestIsQueueModifierActive()
+end
+
 function ControllerCameraTestDequeueFactoryBuildOption(option)
 	local menu = ControllerCameraTestBuildMenu
 	if not option or type(option.cmdID) ~= "number" or option.cmdID >= 0 then
@@ -5783,6 +5802,9 @@ function ControllerCameraTestHandlePlacementInput(dt)
 	ControllerCameraTestUpdatePlacementAnalog()
 
 	local drag = ControllerCameraTestDragCommand
+	if ControllerCameraTestHandleQueueRemovalInput() then
+		return true
+	end
 
 	if ControllerCameraTestActionPressed("cancelPlacement") then
 		if drag.active then
@@ -5792,7 +5814,7 @@ function ControllerCameraTestHandlePlacementInput(dt)
 		end
 	elseif ControllerCameraTestActionPressed("place") or ControllerCameraTestActionPressed("placeStay") then
 		local button = ControllerCameraTestActionPressed("place") and "place" or "placeStay"
-		local isExit = (button == "place")
+		local isExit = ControllerCameraTestPlacementShouldExit(button)
 		if placement.placementPattern == "single" then
 			ControllerCameraTestPlaceBuildOption(placement.option, isExit, "placed and " .. (isExit and "exited" or "remained"))
 		else
@@ -5820,7 +5842,7 @@ function ControllerCameraTestHandlePlacementInput(dt)
 		end
 		if ControllerCameraTestActionReleased(btn) then
 			if (debugEventTime - drag.pressStartTime) >= 0.35 then
-				local isExit = (btn == "place")
+				local isExit = ControllerCameraTestPlacementShouldExit(btn)
 				ControllerCameraTestConfirmDragBuild(isExit)
 			end
 			drag.pressActive = false
@@ -5885,6 +5907,10 @@ function ControllerCameraTestHandleBuildMenuInput()
 
 	if ControllerCameraTestBuildPlacement.active then
 		return false
+	end
+
+	if ControllerCameraTestHandleQueueRemovalInput() then
+		return true
 	end
 
 	local currentLocalIndex = 1
@@ -6375,7 +6401,7 @@ function ControllerCameraTestHandleBackViewControls()
 		ControllerCameraTestTuning.backHeld = true
 		ControllerCameraTestTuning.backComboUsed = false
 		ControllerCameraTestTuning.backQueueModifier = ControllerCameraTestIsQueueModifierActive()
-		ControllerCameraTestTuning.lastAction = "Back/View reserved for gameplay"
+		ControllerCameraTestTuning.lastAction = "Back/View commander utility ready"
 		ControllerCameraTestLayerDebug.normalUtilityAction = "Back/View modifier ready"
 	end
 	if WasButtonReleased("back") and ControllerCameraTestTuning.backHeld then
@@ -6412,8 +6438,6 @@ function ControllerCameraTestHandleNormalUtilityInput()
 		ControllerCameraTestCycleIdleUnit(-1)
 	elseif ControllerCameraTestActionPressed("idleNext") then
 		ControllerCameraTestCycleIdleUnit(1)
-	elseif WasButtonPressed("start") then
-		ControllerCameraTestSetNormalUtilityAction("Start/Menu reserved")
 	end
 	return false
 end
@@ -6841,7 +6865,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	elseif ControllerCameraTestAreaSelect.active then
 		activeButtonLayoutSummary = "Area select: release A to select, RS Y/D-pad changes radius"
 	elseif ControllerCameraTestActionDown("controlGroupModifier") then
-		activeButtonLayoutSummary = "Control Groups: RB+D-pad U/D slot, tap L recall, hold L type-assign, B clear, R/A/X reserved"
+		activeButtonLayoutSummary = "Control Groups: Start+D-pad U/D slot, L recall, R assign, Start+L3 clear"
 	else
 		activeButtonLayoutSummary = XboxController.normalLayoutSummary
 	end
@@ -7547,7 +7571,7 @@ function ControllerCameraTestDrawControlGroupOverlay()
 	end)
 
 	gl.Color(0.82, 0.92, 1, 1)
-	gl.Text("Controller Groups  RB+Dpad: U/D slot, tap L recall, hold L assign, B clear", left + 12, top - 18, 12, "o")
+	gl.Text("Controller Groups  Start+Dpad: U/D slot, L recall, R assign, Start+L3 clear", left + 12, top - 18, 12, "o")
 
 	for slot = 1, 10 do
 		local x1 = left + 12 + ((slot - 1) * (slotSize + gap))
@@ -8005,7 +8029,7 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Camera/Move: LS pan | RS X rotate | RS Y zoom | LB+RS Y pitch | LT: Camera speed modifier",
 		"Selection: A select | A hold area-select units first | append modifier + A hold includes buildings",
 		"Double-tap A on unit: visible same type | append modifier + double-tap A on unit: all owned same type | empty: no action",
-		"Back/View: Commander focus / utility | Start/Menu: reserved",
+		"Back/View: Commander focus / utility | Start/Menu: hold group layer",
 		"Left Stick Click: Remove current/next queued command | Right Stick Click: Remove last queued command",
 		"append modifier + double-tap A on empty reticle: select all idle units in current idle type",
 		"Context Actions: X tap context | X hold one unit draw queued path | X hold many units line/spread | RT+B stop | RT+X attack/fight",
@@ -8019,8 +8043,8 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Placement Mode: A place | X place+stay | B cancel | RT append queue | bound insert modifier fronts",
 		"   * RS X camera rotate | Dpad L/R building facing | Dpad U/D spacing | LB tap pattern/hold grid | A/X hold Line/Grid",
 		"Idle Cycling: Dpad L/R idle unit | LB+Dpad L/R idle type | Dpad U/D recall cam | bound modifier + Dpad U/D store cam",
-		"Control Groups: hold RB overlay | RB+Dpad U/D slot | RB+tap Dpad L recall | RB+hold Dpad L assign same type + auto-add",
-		"Control Groups: RB+B clear | RB+Dpad R, RB+A, RB+X are reserved/disabled",
+		"Control Groups: hold Start/Menu overlay | Start+Dpad U/D slot | Start+Dpad L recall | Start+Dpad R assign selection",
+		"Control Groups: Start+L3 clear | Start/Menu uses D-pad/L3 only, not ABXY",
 		"Status: controller mode shows compact factory/constructor activity panel; Y opens its radial",
 		"System UI: End Controller Settings | Page Up Debug | Page Down Help | Home Reset Settings Defaults",
 		"Fallback UI commands: /luaui cct_debug | cct_help | cct_settings | cct_reset_settings",
