@@ -191,6 +191,7 @@ local ControllerBindingsUIDescriptions = {
 	buildRadial = "Open constructor build options or factory radial controls.",
 	commandLayer = "Open the tactical command layer for move, fight, reclaim, repair, and related commands.",
 	insertNextCommandModifier = "Hold to insert the next issued command at the front of the selected unit's queue without clearing the rest.",
+	appendQueueModifier = "Hold to append commands and build placements to the end of the queue, like Shift. This does not interrupt the current build.",
 	controlGroupModifier = "Hold to use controller control-group mode.",
 	pitchModifier = "Hold LB to access camera pitch / tilt behavior.",
 	removeQueuedCommand = "Removes the selected unit's current or next queued command. LT is reserved for camera speed only.",
@@ -569,6 +570,8 @@ local function ControllerBindingsUIDisplayGroup(def)
 		return "Tactical"
 	elseif def.action == "insertNextCommandModifier" then
 		return "Queue"
+	elseif def.action == "appendQueueModifier" then
+		return "Queue"
 	elseif def.action == "controlGroupModifier" then
 		return "Idle / Groups"
 	elseif def.group == "Radials" then
@@ -796,6 +799,7 @@ local function ControllerBindingsUIConfirmApplyPreset()
 			buildRadial = "Y",
 			commandLayer = "RT",
 			insertNextCommandModifier = "RB",
+			appendQueueModifier = "RT",
 			controlGroupModifier = "start",
 			pitchModifier = "LB",
 			removeQueuedCommand = "leftStickClick",
@@ -837,6 +841,7 @@ local function ControllerBindingsUIConfirmApplyPreset()
 			buildRadial = "RB",
 			commandLayer = "RT",
 			insertNextCommandModifier = "Y",
+			appendQueueModifier = "RT",
 			controlGroupModifier = "start",
 			pitchModifier = "LB",
 			removeQueuedCommand = "leftStickClick",
@@ -1552,7 +1557,7 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 				"Y = Build / Factory Radial",
 				"LT = Camera Speed Modifier only",
 				"LB = Camera Pitch Modifier",
-				"RT = Tactical / Command Layer",
+				"RT = Append Queue / Tactical Layer",
 				"RB = Do Next / Insert Command Modifier",
 				"L3 (Left Stick Click) = Remove current/next queue",
 				"R3 (Right Stick Click) = Remove last queue",
@@ -1566,7 +1571,7 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 				"Y = Do Next / Insert Command Modifier",
 				"LT = Camera Speed Modifier only",
 				"LB = Camera Pitch Modifier",
-				"RT = Tactical / Command Layer",
+				"RT = Append Queue / Tactical Layer",
 				"RB = Build / Factory Radial",
 				"L3 (Left Stick Click) = Remove current/next queue",
 				"R3 (Right Stick Click) = Remove last queue",

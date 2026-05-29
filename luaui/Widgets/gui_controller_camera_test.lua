@@ -1547,6 +1547,7 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "buildRadial", label = "Build / Factory Radial", default = "Y", group = "Core" },
 		{ action = "commandLayer", label = "Command Layer", default = "RT", group = "Modifiers" },
 		{ action = "insertNextCommandModifier", label = "Do Next / Insert Command Modifier", default = "back", group = "Queue" },
+		{ action = "appendQueueModifier", label = "Append Queue / Shift Modifier", default = "RT", group = "Queue" },
 		{ action = "controlGroupModifier", label = "Group Modifier", default = "RB", group = "Modifiers" },
 		{ action = "pitchModifier", label = "Pitch / Idle Type Modifier", default = "LB", group = "Modifiers" },
 		{ action = "removeQueuedCommand", label = "Remove Current/Next Queue Item", default = "leftStickClick", group = "Queue" },
@@ -2036,8 +2037,26 @@ end
 --------------------------------------------------------------------------------
 -- SECTION: Command issuing
 --------------------------------------------------------------------------------
-function ControllerCameraTestIsQueueModifierActive()
+function ControllerCameraTestIsInsertModifierActive()
 	return ControllerCameraTestActionDown("insertNextCommandModifier")
+end
+
+function ControllerCameraTestIsQueueFrontModifierActive()
+	return ControllerCameraTestIsInsertModifierActive()
+end
+
+function ControllerCameraTestIsAppendQueueModifierActive()
+	if not ControllerCameraTestActionDown("appendQueueModifier") or ControllerCameraTestIsQueueFrontModifierActive() then
+		return false
+	end
+	if commandLayerActive and not ControllerCameraTestBuildPlacement.active and not ControllerCameraTestBuildMenu.open then
+		return false
+	end
+	return true
+end
+
+function ControllerCameraTestIsQueueModifierActive()
+	return ControllerCameraTestIsAppendQueueModifierActive()
 end
 
 function ControllerCameraTestResetQueueRemovalDebug(mode)
@@ -2844,9 +2863,8 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		return
 	end
 
-	local isQueue = false
-	local isQueueFront = ControllerCameraTestIsQueueModifierActive() or IsButtonDown("RT") or (normalizedRightTrigger and normalizedRightTrigger > 0.1)
-	local orderOptions = isQueueFront and { "alt" } or {}
+	local isQueueFront = ControllerCameraTestIsQueueFrontModifierActive()
+	local orderOptions = ControllerCameraTestGetCommandOptions()
 	ControllerCameraTestCommandDebug.lastOptions = ControllerCameraTestCommandOptionsSummary(orderOptions)
 
 	if drag.mode == "moveLine" or drag.mode == "fightLine" or drag.mode == "attackLine" then
@@ -3297,7 +3315,7 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	params = type(params) == "table" and params or {}
 
-	local useInsert = options == nil and ControllerCameraTestIsQueueModifierActive()
+	local useInsert = options == nil and ControllerCameraTestIsQueueFrontModifierActive()
 	local finalOpts = type(options) == "table" and options or ControllerCameraTestGetCommandOptions()
 
 	ControllerCameraTestCommandDebug.issuedCmdID = useInsert and tostring(CMD.INSERT or 140) or tostring(cmdID)
@@ -5761,7 +5779,7 @@ function ControllerCameraTestHandlePlacementInput(dt)
 	end
 
 	placement.queueActive = ControllerCameraTestIsQueueModifierActive()
-	placement.queueFrontActive = ControllerCameraTestIsQueueModifierActive() or normalizedRightTrigger > 0
+	placement.queueFrontActive = ControllerCameraTestIsQueueFrontModifierActive()
 	ControllerCameraTestUpdatePlacementAnalog()
 
 	local drag = ControllerCameraTestDragCommand
@@ -5900,7 +5918,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 			local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
 			if option then
 				local queueActive = ControllerCameraTestIsQueueModifierActive()
-				local queueFrontActive = ControllerCameraTestIsQueueModifierActive() or normalizedRightTrigger > 0
+				local queueFrontActive = ControllerCameraTestIsQueueFrontModifierActive()
 				local orderOptions = ControllerCameraTestGetCommandOptions()
 
 				local cmdToIssue = option.cmdID
@@ -6741,7 +6759,9 @@ end
 function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	fastPanActive = normalizedLeftTrigger > 0
 	lbCameraModifierActive = ControllerCameraTestActionDown("pitchModifier")
-	commandLayerActive = ControllerCameraTestActionDown("commandLayer") and not ControllerCameraTestBuildPlacement.active
+	commandLayerActive = ControllerCameraTestActionDown("commandLayer")
+		and not ControllerCameraTestBuildPlacement.active
+		and not ControllerCameraTestBuildMenu.open
 	if ControllerCameraTestSettingsUI.open then
 		commandLayerActive = false
 		ControllerCameraTestHandleSettingsUIInput()
@@ -6815,7 +6835,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.open and "Tactical: A/X confirm, B/Y cancel, D-pad/LB/RB choose"
 			or XboxController.commandLayoutSummary
 	elseif ControllerCameraTestBuildPlacement.active then
-		activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, RS X camera, D-pad L/R facing"
+		activeButtonLayoutSummary = "Placement: A/X place, RT append, insert modifier fronts, LB tap pattern/hold grid"
 	elseif ControllerCameraTestBuildMenu.open then
 		activeButtonLayoutSummary = "Build menu: A placement, X quick-place, B/Y close, D-pad/LB/RB navigate"
 	elseif ControllerCameraTestAreaSelect.active then
@@ -7262,7 +7282,7 @@ function ControllerCameraTestDrawTacticalRadial()
 	gl.Text("A select  B/Y close", cx, cy - 2, 11, "oc")
 	if ControllerCameraTestIsQueueModifierActive() then
 		gl.Color(0.35, 0.95, 0.65, 1)
-		gl.Text("LT QUEUE", cx, cy - 20, 11, "oc")
+		gl.Text("APPEND", cx, cy - 20, 11, "oc")
 	end
 	gl.Color(1, 1, 1, 1)
 	gl.LineWidth(1)
@@ -7983,19 +8003,20 @@ function ControllerCameraTestDrawHelpOverlay()
 	local lines = {
 		"Controller Camera Test Help",
 		"Camera/Move: LS pan | RS X rotate | RS Y zoom | LB+RS Y pitch | LT: Camera speed modifier",
-		"Selection: A select | A hold area-select units first | bound modifier + A hold includes buildings",
-		"Double-tap A on unit: visible same type | bound modifier + double-tap A on unit: all owned same type | empty: no action",
+		"Selection: A select | A hold area-select units first | append modifier + A hold includes buildings",
+		"Double-tap A on unit: visible same type | append modifier + double-tap A on unit: all owned same type | empty: no action",
 		"Back/View: Commander focus / utility | Start/Menu: reserved",
 		"Left Stick Click: Remove current/next queued command | Right Stick Click: Remove last queued command",
-		"bound modifier + double-tap A on empty reticle: select all idle units in current idle type",
+		"append modifier + double-tap A on empty reticle: select all idle units in current idle type",
 		"Context Actions: X tap context | X hold one unit draw queued path | X hold many units line/spread | RT+B stop | RT+X attack/fight",
 		"Combat Layers: RT+A reserved/disabled | RT+Y tactical radial | LS/Dpad choose | A confirm | B/Y close",
-		"Queue Modifier: hold bound modifier button to queue commands",
+		"Append Queue: hold RT/bound append modifier to add commands/builds to the end",
+		"Do Next: hold bound insert modifier to insert near the front",
 		"Constructor Radial: Y open | LS/Dpad select | LB/RB page | Y close",
 		"   * A enter placement | X quick-place | B close radial",
 		"Factory Radial: Y open | LS/Dpad select | LB/RB page | Y close",
-		"   * A add 1 queue | bound modifier + A add 5 queue | B remove 1 | bound modifier + B remove 5",
-		"Placement Mode: A place | X place+stay | B cancel | bound modifier queue | RT queue front",
+		"   * A add 1 queue | append modifier + A add 5 queue | B remove 1 | append modifier + B remove 5",
+		"Placement Mode: A place | X place+stay | B cancel | RT append queue | bound insert modifier fronts",
 		"   * RS X camera rotate | Dpad L/R building facing | Dpad U/D spacing | LB tap pattern/hold grid | A/X hold Line/Grid",
 		"Idle Cycling: Dpad L/R idle unit | LB+Dpad L/R idle type | Dpad U/D recall cam | bound modifier + Dpad U/D store cam",
 		"Control Groups: hold RB overlay | RB+Dpad U/D slot | RB+tap Dpad L recall | RB+hold Dpad L assign same type + auto-add",
@@ -8404,7 +8425,8 @@ function widget:DrawScreen()
 				"Command preview: " .. commandPreviewSummary,
 				"Command action: " .. tostring(ControllerCameraTestLayerDebug.commandLayerAction),
 				"Normal utility: " .. tostring(ControllerCameraTestLayerDebug.normalUtilityAction),
-				"Queue modifier active: " .. yesNo(ControllerCameraTestIsQueueModifierActive()),
+				"Append queue active: " .. yesNo(ControllerCameraTestIsQueueModifierActive()),
+				"Insert front active: " .. yesNo(ControllerCameraTestIsQueueFrontModifierActive()),
 				"Single path active: " .. yesNo(ControllerCameraTestDragCommand.singleUnitPathActive),
 				"Single path waypoints: " .. tostring(ControllerCameraTestDragCommand.singleUnitWaypointCount or 0),
 				"Single path result: " .. tostring(ControllerCameraTestDragCommand.singleUnitPathResult),
@@ -8466,7 +8488,7 @@ function widget:DrawScreen()
 				"Options: " .. ControllerCameraTestGetBuildOptionSummary(),
 				"Placement active: " .. yesNo(ControllerCameraTestBuildPlacement.active),
 				"Placement facing: " .. tostring(ControllerCameraTestBuildPlacement.facing),
-				"Queue active: " .. yesNo(ControllerCameraTestBuildPlacement.queueActive),
+				"Append queue active: " .. yesNo(ControllerCameraTestBuildPlacement.queueActive),
 				"Placement result: " .. tostring(ControllerCameraTestBuildPlacement.lastResult),
 				"Placement issued: " .. tostring(ControllerCameraTestBuildPlacement.lastIssuedCount),
 				"Menu place result: " .. tostring(ControllerCameraTestBuildMenu.placementResult),
@@ -8488,7 +8510,7 @@ function widget:DrawScreen()
 				"Placement spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
 				"Placement input: RS X camera, D-pad L/R facing",
 				"Placement popup: " .. tostring(ControllerCameraTestPlacementPopup.lastResult),
-				"Queue front active (RT): " .. yesNo(ControllerCameraTestBuildPlacement.queueFrontActive),
+				"Insert front active: " .. yesNo(ControllerCameraTestBuildPlacement.queueFrontActive),
 				"Last construction shortcut: " .. tostring(ControllerCameraTestBuildPlacement.lastConstructionShortcut),
 				"Grid shortcut result: " .. tostring(ControllerCameraTestBuildPlacement.gridShortcutResult),
 				"Factory radial: " .. tostring(isFactoryRadial),
@@ -8547,7 +8569,7 @@ function widget:DrawScreen()
 		local compactLines = {
 			"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary) .. " | Held: " .. heldButtonsSummary .. " | Pressed: " .. pressedRecentlySummary,
 			"Idle: " .. tostring(ControllerCameraTestIdleCycle.lastTypeName) .. " x" .. tostring(ControllerCameraTestIdleCycle.lastCount) .. " | Group " .. ControllerCameraTestGetControlGroupDisplaySlot(activeGroupSlot) .. " " .. tostring(activeGroupType) .. " x" .. tostring(activeGroupCount) .. " | A2: " .. tostring(ControllerCameraTestAreaSelect.doubleTapAction),
-			"Queue: " .. yesNo(ControllerCameraTestIsQueueModifierActive()) .. " | Settings: " .. yesNo(ControllerCameraTestSettingsUI.open) .. " | External UI: " .. yesNo(ControllerCameraTestExternalBindingUI.open) .. " | Tactical: " .. yesNo(ControllerCameraTestTacticalMenu.open) .. " | Build: " .. yesNo(ControllerCameraTestBuildMenu.open),
+			"Append: " .. yesNo(ControllerCameraTestIsQueueModifierActive()) .. " | Insert: " .. yesNo(ControllerCameraTestIsQueueFrontModifierActive()) .. " | Settings: " .. yesNo(ControllerCameraTestSettingsUI.open) .. " | External UI: " .. yesNo(ControllerCameraTestExternalBindingUI.open) .. " | Tactical: " .. yesNo(ControllerCameraTestTacticalMenu.open) .. " | Build: " .. yesNo(ControllerCameraTestBuildMenu.open),
 			"Key: " .. tostring(ControllerCameraTestKeyDebug.rawKey) .. " " .. tostring(ControllerCameraTestKeyDebug.label) .. " -> " .. tostring(ControllerCameraTestKeyDebug.matchedAction),
 			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName) .. " (Q:" .. tostring(highlightedQueueCount) .. (factoryProgressKnown == "yes" and " P:" .. factoryProgressValue or "") .. ")",
 			"Placement: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none") .. " | Pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern) .. " | Spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
