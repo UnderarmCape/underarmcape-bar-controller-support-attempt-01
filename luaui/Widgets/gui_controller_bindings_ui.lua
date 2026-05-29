@@ -10,7 +10,7 @@ function widget:GetInfo()
 		author = "Kailil / Codex",
 		date = "2026-05-29",
 		license = "GNU GPL, v2 or later",
-		layer = 9999,
+		layer = 1000000,
 		enabled = true,
 	}
 end
@@ -24,6 +24,12 @@ local glLineWidth = gl.LineWidth
 local glBeginEnd = gl.BeginEnd
 local glVertex = gl.Vertex
 local GL_LINE_LOOP = GL.LINE_LOOP
+
+local USE_SAFE_AREA_LAYOUT = true
+local SAFE_LEFT_MARGIN = 285
+local SAFE_TOP_MARGIN = 80
+local SAFE_RIGHT_MARGIN = 20
+local SAFE_BOTTOM_MARGIN = 40
 
 local ControllerBindingsUI = {
 	open = false,
@@ -673,24 +679,55 @@ local function ControllerBindingsUIDrawModalButton(id, label, x1, y1, x2, y2)
 	ControllerBindingsUI.layout.modalButtons[#ControllerBindingsUI.layout.modalButtons + 1] = { id = id, x1 = x1, y1 = y1, x2 = x2, y2 = y2 }
 end
 
-local function ControllerBindingsUIDrawHeader(vsx, vsy)
-	ControllerBindingsUIDrawRect(0, vsy - 92, vsx, vsy, { 0.025, 0.035, 0.047, 0.96 })
-	ControllerBindingsUIDrawText("BAR Controller Bindings", 54, vsy - 42, 30, { 0.93, 0.98, 1, 1 }, "o")
-	ControllerBindingsUIDrawText("Xbox Controller Support v0.4.0 pre-alpha", 56, vsy - 72, 16, { 0.62, 0.75, 0.84, 1 }, "o")
-	ControllerBindingsUIDrawText(ControllerBindingsUI.toast or "", vsx - 54, vsy - 56, 15, { 0.78, 0.92, 0.98, 1 }, "or")
+local function ControllerBindingsUIDrawHeader(x1, y2_header, x2, vsx, vsy)
+	if USE_SAFE_AREA_LAYOUT then
+		local h = 70
+		ControllerBindingsUIDrawRect(x1, y2_header - h, x2, y2_header, { 0.025, 0.035, 0.047, 0.96 })
+		ControllerBindingsUIDrawOutline(x1, y2_header - h, x2, y2_header, { 0.26, 0.37, 0.45, 0.95 })
+		ControllerBindingsUIDrawText("BAR Controller Bindings", x1 + 20, y2_header - 30, 22, { 0.93, 0.98, 1, 1 }, "o")
+		ControllerBindingsUIDrawText("Xbox Controller Support v0.4.0 pre-alpha", x1 + 22, y2_header - 52, 13, { 0.62, 0.75, 0.84, 1 }, "o")
+		ControllerBindingsUIDrawText(ControllerBindingsUI.toast or "", x2 - 80, y2_header - 35, 14, { 0.78, 0.92, 0.98, 1 }, "or")
+	else
+		ControllerBindingsUIDrawRect(0, vsy - 92, vsx, vsy, { 0.025, 0.035, 0.047, 0.96 })
+		ControllerBindingsUIDrawText("BAR Controller Bindings", 54, vsy - 42, 30, { 0.93, 0.98, 1, 1 }, "o")
+		ControllerBindingsUIDrawText("Xbox Controller Support v0.4.0 pre-alpha", 56, vsy - 72, 16, { 0.62, 0.75, 0.84, 1 }, "o")
+		ControllerBindingsUIDrawText(ControllerBindingsUI.toast or "", vsx - 54, vsy - 56, 15, { 0.78, 0.92, 0.98, 1 }, "or")
+	end
 end
 
-local function ControllerBindingsUIDrawTabs(vsx, vsy)
+local function ControllerBindingsUIDrawTabs(x1, y2_header, x2, vsx, vsy)
 	local tabs = ControllerBindingsUI.layout.tabs
 	for i = 1, #tabs do
 		tabs[i] = nil
 	end
-	local x = 54
-	local y1 = vsy - 145
+
+	local start_x = 54
+	local y_tab_top = y2_header - 15
 	local h = 38
+
+	if USE_SAFE_AREA_LAYOUT then
+		start_x = x1 + 10
+		y_tab_top = y2_header - 8
+	end
+
+	local x = start_x
+	local y1 = y_tab_top - h
+	local lowest_y = y1
+
 	for i = 1, #ControllerBindingsUI.categories do
 		local category = ControllerBindingsUI.categories[i]
 		local w = math.max(96, math.min(168, 42 + string.len(category.name) * 8))
+
+		if USE_SAFE_AREA_LAYOUT and (x + w > x2 - 10) then
+			-- Wrap to the next row
+			x = start_x
+			y_tab_top = y_tab_top - h - 6
+			y1 = y_tab_top - h
+			if y1 < lowest_y then
+				lowest_y = y1
+			end
+		end
+
 		local active = i == ControllerBindingsUI.categoryIndex
 		ControllerBindingsUIDrawRect(x, y1, x + w, y1 + h, active and { 0.12, 0.26, 0.34, 0.96 } or { 0.06, 0.075, 0.095, 0.9 })
 		ControllerBindingsUIDrawOutline(x, y1, x + w, y1 + h, active and { 0.46, 0.78, 0.95, 1 } or { 0.22, 0.30, 0.37, 0.9 })
@@ -698,6 +735,8 @@ local function ControllerBindingsUIDrawTabs(vsx, vsy)
 		tabs[#tabs + 1] = { x1 = x, y1 = y1, x2 = x + w, y2 = y1 + h, index = i }
 		x = x + w + 8
 	end
+
+	return lowest_y
 end
 
 local function ControllerBindingsUIDrawControllerOverview(x1, y1, x2, y2)
@@ -802,17 +841,34 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 	end
 end
 
-local function ControllerBindingsUIDrawFooter(vsx)
-	ControllerBindingsUIDrawRect(0, 0, vsx, 50, { 0.025, 0.035, 0.047, 0.96 })
-	ControllerBindingsUIDrawText("A/Enter Rebind  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Category  |  Delete Clear: not supported yet", vsx * 0.5, 18, 14, { 0.78, 0.9, 0.96, 1 }, "oc")
+local function ControllerBindingsUIDrawFooter(x1, y1, x2, vsx)
+	if USE_SAFE_AREA_LAYOUT then
+		ControllerBindingsUIDrawRect(x1, y1, x2, y1 + 40, { 0.025, 0.035, 0.047, 0.96 })
+		ControllerBindingsUIDrawOutline(x1, y1, x2, y1 + 40, { 0.26, 0.37, 0.45, 0.95 })
+		ControllerBindingsUIDrawText("A/Enter Rebind  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Category  |  Delete Clear: not supported yet", (x1 + x2) * 0.5, y1 + 13, 13, { 0.78, 0.9, 0.96, 1 }, "oc")
+	else
+		ControllerBindingsUIDrawRect(0, 0, vsx, 50, { 0.025, 0.035, 0.047, 0.96 })
+		ControllerBindingsUIDrawText("A/Enter Rebind  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Category  |  Delete Clear: not supported yet", vsx * 0.5, 18, 14, { 0.78, 0.9, 0.96, 1 }, "oc")
+	end
 end
 
 local function ControllerBindingsUIDrawWarning(vsx, vsy)
 	ControllerBindingsUIDrawRect(0, 0, vsx, vsy, { 0, 0, 0, 0.68 })
 	local w = math.min(760, vsx - 140)
+	if USE_SAFE_AREA_LAYOUT then
+		w = math.min(760, (vsx - SAFE_RIGHT_MARGIN - SAFE_LEFT_MARGIN) - 40)
+	end
 	local h = 240
-	local x1 = (vsx - w) * 0.5
-	local y1 = (vsy - h) * 0.5
+	local x1, y1
+	if USE_SAFE_AREA_LAYOUT then
+		local cx = (SAFE_LEFT_MARGIN + vsx - SAFE_RIGHT_MARGIN) * 0.5
+		local cy = (SAFE_BOTTOM_MARGIN + vsy - SAFE_TOP_MARGIN) * 0.5
+		x1 = cx - w * 0.5
+		y1 = cy - h * 0.5
+	else
+		x1 = (vsx - w) * 0.5
+		y1 = (vsy - h) * 0.5
+	end
 	ControllerBindingsUIDrawPanel(x1, y1, x1 + w, y1 + h, "Controller Support API Missing")
 	if not WG or not WG.BARControllerSupport then
 		ControllerBindingsUIDrawText("Controller support API not available. Enable gui_controller_camera_test.lua first.", x1 + 24, y1 + h - 82, 17, { 1, 0.83, 0.62, 1 }, "o")
@@ -830,10 +886,20 @@ local function ControllerBindingsUIDrawModal(vsx, vsy)
 	ControllerBindingsUIDrawRect(0, 0, vsx, vsy, { 0, 0, 0, 0.62 })
 	local w = 560
 	local h = 250
-	local x1 = (vsx - w) * 0.5
-	local y1 = (vsy - h) * 0.5
-	local x2 = x1 + w
-	local y2 = y1 + h
+	local x1, y1, x2, y2
+	if USE_SAFE_AREA_LAYOUT then
+		local cx = (SAFE_LEFT_MARGIN + vsx - SAFE_RIGHT_MARGIN) * 0.5
+		local cy = (SAFE_BOTTOM_MARGIN + vsy - SAFE_TOP_MARGIN) * 0.5
+		x1 = cx - w * 0.5
+		y1 = cy - h * 0.5
+		x2 = x1 + w
+		y2 = y1 + h
+	else
+		x1 = (vsx - w) * 0.5
+		y1 = (vsy - h) * 0.5
+		x2 = x1 + w
+		y2 = y1 + h
+	end
 	ControllerBindingsUIDrawPanel(x1, y1, x2, y2, "Controller Bindings")
 	ControllerBindingsUI.layout.modalButtons = {}
 
@@ -861,37 +927,74 @@ end
 
 local function ControllerBindingsUIDrawMain()
 	local vsx, vsy = spGetViewGeometry()
-	ControllerBindingsUI.layout.close = { x1 = vsx - 104, y1 = vsy - 78, x2 = vsx - 54, y2 = vsy - 32 }
+
+	local safe_x1 = 54
+	local safe_x2 = vsx - 54
+	local safe_y1 = 0
+	local safe_y2 = vsy
+
+	if USE_SAFE_AREA_LAYOUT then
+		safe_x1 = SAFE_LEFT_MARGIN
+		safe_x2 = vsx - SAFE_RIGHT_MARGIN
+		safe_y1 = SAFE_BOTTOM_MARGIN
+		safe_y2 = vsy - SAFE_TOP_MARGIN
+	end
+
+	local close_x1, close_y1, close_x2, close_y2
+	if USE_SAFE_AREA_LAYOUT then
+		close_x1 = safe_x2 - 60
+		close_y1 = safe_y2 - 53
+		close_x2 = safe_x2 - 10
+		close_y2 = safe_y2 - 13
+	else
+		close_x1 = vsx - 104
+		close_y1 = vsy - 78
+		close_x2 = vsx - 54
+		close_y2 = vsy - 32
+	end
+	ControllerBindingsUI.layout.close = { x1 = close_x1, y1 = close_y1, x2 = close_x2, y2 = close_y2 }
+
 	ControllerBindingsUIDrawRect(0, 0, vsx, vsy, { 0.012, 0.018, 0.026, 0.94 })
-	ControllerBindingsUIDrawHeader(vsx, vsy)
-	ControllerBindingsUIDrawChip("close", "X", vsx - 104, vsy - 78, vsx - 54, vsy - 32, {})
+	ControllerBindingsUIDrawHeader(safe_x1, safe_y2, safe_x2, vsx, vsy)
+	ControllerBindingsUIDrawChip("close", "X", close_x1, close_y1, close_x2, close_y2, {})
+
 	if #ControllerBindingsUI.missing > 0 then
 		ControllerBindingsUIDrawWarning(vsx, vsy)
 		return
 	end
-	ControllerBindingsUIDrawTabs(vsx, vsy)
-	local top = vsy - 168
+
+	local lowest_y = ControllerBindingsUIDrawTabs(safe_x1, USE_SAFE_AREA_LAYOUT and (safe_y2 - 70) or (vsy - 92), safe_x2, vsx, vsy)
+
+	local top = lowest_y - 15
 	local bottom = 66
 	local gap = 18
-	local leftW = math.min(850, vsx * 0.44)
-	local actionW = math.min(500, vsx * 0.25)
-	local x1 = 54
+
+	if USE_SAFE_AREA_LAYOUT then
+		bottom = safe_y1 + 50
+	end
+
+	local leftW = math.min(850, (safe_x2 - safe_x1) * 0.44)
+	local actionW = math.min(500, (safe_x2 - safe_x1) * 0.25)
+
+	local x1 = safe_x1
 	local x2 = x1 + leftW
 	local ax1 = x2 + gap
 	local ax2 = ax1 + actionW
 	local dx1 = ax2 + gap
-	local dx2 = vsx - 54
+	local dx2 = safe_x2
+
 	if dx2 - dx1 < 330 then
-		leftW = math.max(560, vsx * 0.38)
+		leftW = math.max(450, (safe_x2 - safe_x1) * 0.38)
 		x2 = x1 + leftW
 		ax1 = x2 + gap
-		ax2 = math.min(vsx - 414, ax1 + actionW)
+		ax2 = math.min(safe_x2 - 300, ax1 + actionW)
 		dx1 = ax2 + gap
 	end
+
 	ControllerBindingsUIDrawControllerOverview(x1, bottom, x2, top)
 	ControllerBindingsUIDrawActionList(ax1, bottom, ax2, top)
 	ControllerBindingsUIDrawDetails(dx1, bottom, dx2, top)
-	ControllerBindingsUIDrawFooter(vsx)
+	ControllerBindingsUIDrawFooter(safe_x1, safe_y1, safe_x2, vsx)
 	ControllerBindingsUIDrawModal(vsx, vsy)
 end
 
