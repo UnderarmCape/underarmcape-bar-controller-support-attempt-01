@@ -789,11 +789,13 @@ local function ControllerBindingsUIConfirmApplyPreset()
 	local map = {}
 	if presetName == "Balanced RTS" then
 		map = {
+			select = "A",
 			cancel = "B",
+			smartAction = "X",
 			buildRadial = "Y",
 			commandLayer = "RT",
-			insertNextCommandModifier = "back",
-			controlGroupModifier = "RB",
+			insertNextCommandModifier = "RB",
+			controlGroupModifier = "start",
 			pitchModifier = "LB",
 			removeQueuedCommand = "leftStickClick",
 			removeLastQueuedCommand = "rightStickClick",
@@ -828,17 +830,20 @@ local function ControllerBindingsUIConfirmApplyPreset()
 		}
 	elseif presetName == "Build-First Commander" then
 		map = {
+			select = "A",
 			cancel = "B",
+			smartAction = "X",
 			buildRadial = "RB",
 			commandLayer = "RT",
-			insertNextCommandModifier = "back",
+			insertNextCommandModifier = "Y",
+			controlGroupModifier = "start",
 			pitchModifier = "LB",
 			removeQueuedCommand = "leftStickClick",
 			removeLastQueuedCommand = "rightStickClick",
 			radialSelect = "A",
 			radialCancel = "B",
 			radialQuick = "X",
-			radialClose = "RB",
+			radialClose = "Y",
 			radialPrevPage = "LB",
 			radialNextPage = "RB",
 			place = "A",
@@ -1547,24 +1552,24 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 				"LT = Camera Speed Modifier only",
 				"LB = Camera Pitch Modifier",
 				"RT = Tactical / Command Layer",
-				"RB = Group / Management Layer",
+				"RB = Do Next / Insert Command Modifier",
 				"L3 (Left Stick Click) = Remove current/next queue",
 				"R3 (Right Stick Click) = Remove last queue",
-				"Back/View = Do Next / Insert Command Modifier",
+				"Back/View = Commander focus / utility only",
 			}
 		elseif action.actionLabel == "Build-First Commander" then
 			lines = {
 				"A = Select / Confirm",
 				"B = Cancel / Clear Selection",
 				"X = Move / Smart Move",
-				"Y = Tactical / Context Action",
+				"Y = Do Next / Insert Command Modifier",
 				"LT = Camera Speed Modifier only",
 				"LB = Camera Pitch Modifier",
 				"RT = Tactical / Command Layer",
-				"RB = Build / Factory Layer",
+				"RB = Build / Factory Radial",
 				"L3 (Left Stick Click) = Remove current/next queue",
 				"R3 (Right Stick Click) = Remove last queue",
-				"Back/View = Do Next / Insert Command Modifier",
+				"Back/View = Commander focus / utility only",
 			}
 		end
 
