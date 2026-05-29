@@ -195,6 +195,7 @@ ControllerCameraTestControlGroups = ControllerCameraTestControlGroups or {
 	leftPressStartTime = 0,
 	leftHoldTriggered = false,
 	leftInputState = "idle",
+	nativeAutogroupStatus = "none",
 }
 ControllerCameraTestVisualFeedback = ControllerCameraTestVisualFeedback or {
 	targetX = nil,
@@ -574,7 +575,7 @@ local XboxController = {
 		[1] = "B = Clear Selection",
 		[2] = "X = Smart Action (Move/Build/Attack)",
 		[3] = "Y = Controller Build Menu",
-		[4] = "Back/View = Commander focus / utility",
+		[4] = "Back/View = Command layer / Commander utility",
 		[6] = "Start/Menu = Hold group layer",
 		[7] = "Left Stick Click = Remove current/next queued command",
 		[8] = "Right Stick Click = Remove last queued command",
@@ -586,19 +587,19 @@ local XboxController = {
 		[14] = "D-pad Right = Next idle unit",
 	},
 	commandPreviewLabels = {
-		[0] = "RT + A = Reserved / select-all disabled",
-		[1] = "RT + B = Stop selected units",
-		[2] = "RT + X = Attack / Attack-move",
-		[3] = "RT + Y = Tactical command menu",
-		[9] = "RT + LB = Previous selected unit/type",
-		[10] = "RT + RB = Next selected unit/type",
-		[11] = "RT + D-pad Up = Guard allied / Patrol ground",
-		[12] = "RT + D-pad Down = Reclaim target/area",
-		[13] = "RT + D-pad Left = Previous selection cycle",
-		[14] = "RT + D-pad Right = Next selection cycle",
+		[0] = "Layer + A = Reserved / Back double-tap commander",
+		[1] = "Layer + B = Stop selected units",
+		[2] = "Layer + X = Attack / Attack-move",
+		[3] = "Layer + Y = Tactical command menu",
+		[9] = "Layer + LB = Previous selected unit/type",
+		[10] = "Layer + RB = Next selected unit/type",
+		[11] = "Layer + D-pad Up = Guard allied / Patrol ground",
+		[12] = "Layer + D-pad Down = Reclaim target/area",
+		[13] = "Layer + D-pad Left = Previous selection cycle",
+		[14] = "Layer + D-pad Right = Next selection cycle",
 	},
 	normalLayoutSummary = "A Select/Hold Area/Double Same-Type, B Clear, X Context, Y Build, L3/R3 Queue Remove, D-pad L/R Idle, Start Groups",
-	commandLayoutSummary = "RT+A Reserved, RT+B Stop, RT+X Attack, RT+Y Tactical, RT+LB/RB Cycle, RT+D-pad Commands",
+	commandLayoutSummary = "Layer+A Reserved/Commander, Layer+B Stop, Layer+X Attack, Layer+Y Tactical, Layer+D-pad Commands",
 }
 
 apiAvailable = false
@@ -1470,7 +1471,7 @@ end
 local function attemptReticleSelection()
 	if commandLayerActive then
 		lastSelectionResult = "RT layer active"
-		latchSelectionDebugMessage("A select skipped: RT command layer active")
+		latchSelectionDebugMessage("A select skipped: command layer active")
 		return
 	end
 	if not controllerMode or not reticleVisible then
@@ -1513,7 +1514,7 @@ end
 local function attemptClearSelection()
 	if commandLayerActive then
 		lastBButtonResult = "RT active"
-		latchSelectionDebugMessage("B ignored: RT command layer active")
+		latchSelectionDebugMessage("B ignored: command layer active")
 		return
 	end
 
@@ -1579,7 +1580,7 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "groupSlotUp", label = "Next Group Slot", default = "dpadUp", group = "Idle / Groups" },
 		{ action = "groupSlotDown", label = "Previous Group Slot", default = "dpadDown", group = "Idle / Groups" },
 		{ action = "groupRecallOrAssign", label = "Recall Current Group", default = "dpadLeft", group = "Idle / Groups" },
-		{ action = "groupAssign", label = "Assign Current Selection", default = "dpadRight", group = "Idle / Groups" },
+		{ action = "groupAssign", label = "Assign Same-Type/Future Group", default = "dpadRight", group = "Idle / Groups" },
 		{ action = "groupClear", label = "Clear Group", default = "leftStickClick", group = "Idle / Groups" },
 	}
 end
@@ -3381,7 +3382,7 @@ end
 
 function ControllerCameraTestSelectVisibleCombatUnits()
 	ControllerCameraTestCycleDebug.lastResult = "visible select disabled"
-	ControllerCameraTestLayerDebug.commandLayerAction = "RT+A select-all disabled"
+	ControllerCameraTestLayerDebug.commandLayerAction = "Layer+A select-all disabled"
 	latchSelectionDebugMessage("Visible select-all is disabled")
 	return false
 end
@@ -4064,7 +4065,7 @@ function ControllerCameraTestPruneDeadUnitsFromControlGroup(slot)
 	local units = ControllerCameraTestFilterValidUnits(entry.units)
 	entry.units = units
 	entry.count = #units
-	if #units == 0 and not entry.autoAddUnitDefID then
+	if #units == 0 and not entry.autoAddUnitDefID and not entry.autoAddUnitDefIDs then
 		groups.slots[slot] = nil
 	end
 	return units
@@ -4080,74 +4081,130 @@ function ControllerCameraTestSetControlGroupAction(action, slot, count)
 	latchSelectionDebugMessage("Group " .. tostring(groups.lastSlot) .. ": " .. tostring(action))
 end
 
-function ControllerCameraTestGetControlGroupSourceUnitDefID()
-	local targetID, unitDefID, unitDef = ControllerCameraTestGetReticleAlliedUnitAndDef()
-	if unitDefID and ControllerCameraTestIsOwnUnit(targetID) then
-		return unitDefID, unitDef, "reticle"
+function ControllerCameraTestGetControlGroupSourceUnitDefIDs()
+	local unitDefIDs = {}
+	local seen = {}
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	for _, unitID in ipairs(selectedUnits) do
+		if ControllerCameraTestIsOwnUnit(unitID) then
+			local selectedDefID = ControllerCameraTestGetUnitDef(unitID)
+			if selectedDefID and not seen[selectedDefID] then
+				seen[selectedDefID] = true
+				unitDefIDs[#unitDefIDs + 1] = selectedDefID
+			end
+		end
+	end
+	if #unitDefIDs > 0 then
+		return unitDefIDs, "selection"
 	end
 
-	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
-	if selectedUnits[1] then
-		local selectedDefID, selectedDef = ControllerCameraTestGetUnitDef(selectedUnits[1])
-		if selectedDefID then
-			return selectedDefID, selectedDef, "selection"
-		end
+	local targetID, unitDefID = ControllerCameraTestGetReticleAlliedUnitAndDef()
+	if unitDefID and ControllerCameraTestIsOwnUnit(targetID) then
+		return { unitDefID }, "reticle"
 	end
 
 	if ControllerCameraTestIdleCycle.currentUnitID then
-		local idleDefID, idleDef = ControllerCameraTestGetUnitDef(ControllerCameraTestIdleCycle.currentUnitID)
+		local idleDefID = ControllerCameraTestGetUnitDef(ControllerCameraTestIdleCycle.currentUnitID)
 		if idleDefID then
-			return idleDefID, idleDef, "idle"
+			return { idleDefID }, "idle"
 		end
 	end
-	return nil, nil, "none"
+	return {}, "none"
+end
+
+function ControllerCameraTestControlGroupAutoAddLabel(entry)
+	if type(entry) ~= "table" then
+		return "none"
+	end
+
+	local labels = {}
+	local seen = {}
+	if entry.autoAddUnitDefID then
+		seen[entry.autoAddUnitDefID] = true
+		labels[#labels + 1] = ControllerCameraTestUnitTypeName(entry.autoAddUnitDefID)
+	end
+	if type(entry.autoAddUnitDefIDs) == "table" then
+		for unitDefID in pairs(entry.autoAddUnitDefIDs) do
+			if not seen[unitDefID] then
+				seen[unitDefID] = true
+				labels[#labels + 1] = ControllerCameraTestUnitTypeName(unitDefID)
+			end
+		end
+	end
+	if #labels == 0 then
+		return "none"
+	end
+	table.sort(labels)
+	return table.concat(labels, ", ")
 end
 
 function ControllerCameraTestAssignControlGroup(slot)
 	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
 	local groups = ControllerCameraTestControlGroups
-	local unitDefID, unitDef, source = ControllerCameraTestGetControlGroupSourceUnitDefID()
-	if not unitDefID then
+	local unitDefIDs, source = ControllerCameraTestGetControlGroupSourceUnitDefIDs()
+	if #unitDefIDs == 0 then
 		ControllerCameraTestSetControlGroupAction("assign failed: no source unit", slot, 0)
 		return false
 	end
-	local units = ControllerCameraTestGetAllOwnedUnitsOfType(unitDefID)
+
+	local units = {}
+	local addedUnits = {}
+	local autoAddUnitDefIDs = {}
+	local typeNames = {}
+	for _, unitDefID in ipairs(unitDefIDs) do
+		autoAddUnitDefIDs[unitDefID] = true
+		typeNames[#typeNames + 1] = ControllerCameraTestUnitTypeName(unitDefID)
+		for _, unitID in ipairs(ControllerCameraTestGetAllOwnedUnitsOfType(unitDefID)) do
+			if not addedUnits[unitID] then
+				addedUnits[unitID] = true
+				units[#units + 1] = unitID
+			end
+		end
+	end
+
 	if #units == 0 then
 		ControllerCameraTestSetControlGroupAction("assign failed: no owned type", slot, 0)
 		return false
 	end
 	table.sort(units)
+	table.sort(typeNames)
+	local primaryUnitDefID = unitDefIDs[1]
+	local typeName = table.concat(typeNames, ", ")
 	groups.slots[slot] = {
 		units = units,
-		unitDefID = unitDefID,
-		autoAddUnitDefID = unitDefID,
-		typeName = ControllerCameraTestUnitTypeName(unitDefID),
+		unitDefID = primaryUnitDefID,
+		autoAddUnitDefID = primaryUnitDefID,
+		autoAddUnitDefIDs = autoAddUnitDefIDs,
+		typeName = typeName,
 		count = #units,
 		lastAssignedTime = debugEventTime,
 	}
 	groups.activeSlot = slot
-	ControllerCameraTestSetControlGroupAction("assigned " .. ControllerCameraTestUnitTypeName(unitDefID) .. " x" .. tostring(#units) .. " AUTO via " .. tostring(source), slot, #units)
+	ControllerCameraTestSetControlGroupAction("assigned " .. typeName .. " x" .. tostring(#units) .. " AUTO via " .. tostring(source), slot, #units)
+	if source == "selection" then
+		ControllerCameraTestTryNativeAutogroup(slot)
+	else
+		groups.nativeAutogroupStatus = "BAR Auto Group mirror skipped: source " .. tostring(source)
+	end
 	return true
 end
 
-function ControllerCameraTestAssignSelectedControlGroup(slot)
-	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
-	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
-	local units = ControllerCameraTestFilterValidUnits(selectedUnits)
-	if #units == 0 then
-		ControllerCameraTestSetControlGroupAction("assign failed: no selection", slot, 0)
+function ControllerCameraTestTryNativeAutogroup(slot)
+	if not WG or type(WG.autogroup) ~= "table" or type(WG.autogroup.addCurrentSelectionToAutogroup) ~= "function" then
 		return false
 	end
 
-	table.sort(units)
-	ControllerCameraTestControlGroups.slots[slot] = {
-		units = units,
-		count = #units,
-		lastAssignedTime = debugEventTime,
-	}
-	ControllerCameraTestControlGroups.activeSlot = slot
-	ControllerCameraTestSetControlGroupAction("assigned selection x" .. tostring(#units), slot, #units)
-	return true
+	local groupNumber = tonumber(ControllerCameraTestGetControlGroupDisplaySlot(slot))
+	if groupNumber == nil then
+		return false
+	end
+	local ok, result = pcall(WG.autogroup.addCurrentSelectionToAutogroup, groupNumber)
+	if ok and result ~= false then
+		ControllerCameraTestControlGroups.nativeAutogroupStatus = "mirrored to BAR Auto Group " .. tostring(groupNumber)
+	else
+		ControllerCameraTestControlGroups.nativeAutogroupStatus = "BAR Auto Group mirror skipped/failed"
+	end
+	return ok and result ~= false
 end
 
 function ControllerCameraTestRecallControlGroup(slot)
@@ -4263,8 +4320,8 @@ function ControllerCameraTestHandleControlGroupInput()
 			ControllerCameraTestRecallControlGroup(groups.activeSlot)
 			groups.leftInputState = "recalled"
 		elseif ControllerCameraTestActionPressed("groupAssign") then
-			ControllerCameraTestAssignSelectedControlGroup(groups.activeSlot)
-			groups.leftInputState = "assigned selection"
+			ControllerCameraTestAssignControlGroup(groups.activeSlot)
+			groups.leftInputState = "assigned same-type"
 		elseif ControllerCameraTestActionPressed("groupClear") then
 			ControllerCameraTestClearControlGroup(groups.activeSlot)
 		else
@@ -4291,7 +4348,10 @@ function ControllerCameraTestAutoAddFinishedUnitToGroups(unitID, unitDefID, unit
 	end
 	local groups = ControllerCameraTestControlGroups
 	for slot, entry in pairs(groups.slots) do
-		if type(entry) == "table" and entry.autoAddUnitDefID == unitDefID then
+		local shouldAutoAdd = type(entry) == "table"
+			and (entry.autoAddUnitDefID == unitDefID
+				or (type(entry.autoAddUnitDefIDs) == "table" and entry.autoAddUnitDefIDs[unitDefID]))
+		if shouldAutoAdd then
 			local exists = false
 			for _, existingID in ipairs(entry.units or {}) do
 				if existingID == unitID then
@@ -4304,8 +4364,8 @@ function ControllerCameraTestAutoAddFinishedUnitToGroups(unitID, unitDefID, unit
 				entry.units[#entry.units + 1] = unitID
 				table.sort(entry.units)
 				entry.count = #entry.units
-				entry.unitDefID = unitDefID
-				entry.typeName = entry.typeName or ControllerCameraTestUnitTypeName(unitDefID)
+				entry.unitDefID = entry.unitDefID or unitDefID
+				entry.typeName = entry.typeName or ControllerCameraTestControlGroupAutoAddLabel(entry)
 				groups.lastAction = "auto-added " .. tostring(entry.typeName)
 				groups.lastSlot = ControllerCameraTestGetControlGroupDisplaySlot(slot)
 				groups.lastCount = entry.count
@@ -4328,7 +4388,7 @@ function ControllerCameraTestRemoveUnitFromControlGroups(unitID)
 			end
 			entry.units = filtered
 			entry.count = #filtered
-			if #filtered == 0 and not entry.autoAddUnitDefID then
+			if #filtered == 0 and not entry.autoAddUnitDefID and not entry.autoAddUnitDefIDs then
 				ControllerCameraTestControlGroups.slots[slot] = nil
 			end
 		end
@@ -4432,7 +4492,7 @@ function ControllerCameraTestToggleTacticalMenu()
 	menu.open = not menu.open
 	menu.lastAction = menu.open and "opened" or "closed"
 	ControllerCameraTestRefreshTacticalDebug()
-	latchSelectionDebugMessage(menu.open and "RT+Y tactical menu opened" or "Tactical menu closed")
+	latchSelectionDebugMessage(menu.open and "Command layer tactical menu opened" or "Tactical menu closed")
 end
 
 function ControllerCameraTestCycleTacticalCommand(delta)
@@ -4648,12 +4708,12 @@ function ControllerCameraTestIssueGuardOrPatrol()
 	local target = ControllerCameraTestGetReticleTargetInfo()
 	if target.targetType == "unit" and target.targetID and ControllerCameraTestIsAlliedUnit(target.targetID) then
 		ControllerCameraTestIssueOrderToSelectedUnits(CMD.GUARD, { target.targetID }, "Guard", "unit " .. tostring(target.targetID))
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Up guard"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+D-pad Up guard"
 	elseif target.hasWorld then
 		ControllerCameraTestIssueOrderToSelectedUnits(CMD.PATROL, { target.x, target.y, target.z }, "Patrol", "ground")
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Up patrol"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+D-pad Up patrol"
 	else
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Up failed: no target"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+D-pad Up failed: no target"
 		latchSelectionDebugMessage("Guard/Patrol failed: no target")
 	end
 end
@@ -4661,7 +4721,7 @@ end
 function ControllerCameraTestIssueReclaimOrStop()
 	local option = { name = "Reclaim", cmdID = CMD.RECLAIM, kind = "reclaim" }
 	ControllerCameraTestExecuteTacticalCommand(option)
-	ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Down reclaim"
+	ControllerCameraTestLayerDebug.commandLayerAction = "Layer+D-pad Down reclaim"
 end
 
 function ControllerCameraTestRefreshBuildMenuDebug()
@@ -6224,9 +6284,9 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 		if drag.active then
 			ControllerCameraTestConfirmDragCommand(false)
 		else
-			ControllerCameraTestLayerDebug.commandLayerAction = "RT+A select-all disabled"
-			ControllerCameraTestCycleDebug.lastResult = "RT+A select-all disabled"
-			latchSelectionDebugMessage("RT+A reserved: select-all disabled")
+			ControllerCameraTestLayerDebug.commandLayerAction = "Layer+A select-all disabled"
+			ControllerCameraTestCycleDebug.lastResult = "Layer+A select-all disabled"
+			latchSelectionDebugMessage("Layer+A reserved: select-all disabled")
 		end
 		drag.pressActive = false
 	end
@@ -6322,6 +6382,28 @@ function ControllerCameraTestSetNormalUtilityAction(message)
 	latchSelectionDebugMessage(message)
 end
 
+function ControllerCameraTestHandleBackCommandLayerSelectTap()
+	if not IsButtonDown("back") then
+		return false
+	end
+
+	local area = ControllerCameraTestAreaSelect
+	if (debugEventTime - (area.lastTapTime or -10)) <= 0.35 then
+		ControllerCameraTestTuning.backComboUsed = true
+		if ControllerCameraTestFocusCommander() then
+			area.doubleTapAction = "Back+command-layer double-tap commander focused/selected"
+		else
+			area.doubleTapAction = "Back+command-layer double-tap commander failed"
+		end
+		area.lastTapTime = -10
+	else
+		area.lastTapTime = debugEventTime
+		area.doubleTapAction = "Back+A first tap"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Back+A first tap commander utility"
+	end
+	return true
+end
+
 function ControllerCameraTestHandleCommandLayerInput(dt)
 	if ControllerCameraTestHandleTacticalMenuInput() then
 		return
@@ -6332,18 +6414,21 @@ function ControllerCameraTestHandleCommandLayerInput(dt)
 	end
 
 	if ControllerCameraTestActionPressed("select") then
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+A select-all disabled"
-		ControllerCameraTestCycleDebug.lastResult = "RT+A select-all disabled"
-		latchSelectionDebugMessage("RT+A reserved: select-all disabled")
+		if ControllerCameraTestHandleBackCommandLayerSelectTap() then
+			return
+		end
+		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+A select-all disabled"
+		ControllerCameraTestCycleDebug.lastResult = "Layer+A select-all disabled"
+		latchSelectionDebugMessage("Layer+A reserved: select-all disabled")
 	elseif ControllerCameraTestActionPressed("cancel") then
 		attemptStopCommand()
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+B stop"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+B stop"
 	elseif ControllerCameraTestActionPressed("smartAction") then
 		attemptAttackCommand()
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+X attack/attack-move"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+X attack/attack-move"
 	elseif ControllerCameraTestActionPressed("buildRadial") then
 		ControllerCameraTestToggleTacticalMenu()
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+Y tactical menu"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+Y tactical menu"
 	elseif ControllerCameraTestActionPressed("commandUp") then
 		ControllerCameraTestIssueGuardOrPatrol()
 	elseif ControllerCameraTestActionPressed("commandDown") then
@@ -6351,19 +6436,19 @@ function ControllerCameraTestHandleCommandLayerInput(dt)
 	elseif ControllerCameraTestActionPressed("commandLeft") then
 		if not ControllerCameraTestCycleQuickGroup(-1) then
 			ControllerCameraTestCycleSelection(-1)
-			ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Left cycle selection"
+			ControllerCameraTestLayerDebug.commandLayerAction = "Layer+D-pad Left cycle selection"
 		end
 	elseif ControllerCameraTestActionPressed("commandRight") then
 		if not ControllerCameraTestCycleQuickGroup(1) then
 			ControllerCameraTestCycleSelection(1)
-			ControllerCameraTestLayerDebug.commandLayerAction = "RT+D-pad Right cycle selection"
+			ControllerCameraTestLayerDebug.commandLayerAction = "Layer+D-pad Right cycle selection"
 		end
 	elseif ControllerCameraTestActionPressed("pitchModifier") then
 		ControllerCameraTestCycleSelection(-1)
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+LB previous selection"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+LB previous selection"
 	elseif ControllerCameraTestActionPressed("controlGroupModifier") then
 		ControllerCameraTestCycleSelection(1)
-		ControllerCameraTestLayerDebug.commandLayerAction = "RT+RB next selection"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+RB next selection"
 	end
 end
 
@@ -6865,7 +6950,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	elseif ControllerCameraTestAreaSelect.active then
 		activeButtonLayoutSummary = "Area select: release A to select, RS Y/D-pad changes radius"
 	elseif ControllerCameraTestActionDown("controlGroupModifier") then
-		activeButtonLayoutSummary = "Control Groups: Start+D-pad U/D slot, L recall, R assign, Start+L3 clear"
+		activeButtonLayoutSummary = "Control Groups: Start+D-pad U/D slot, L recall, R type+future assign, Start+L3 clear"
 	else
 		activeButtonLayoutSummary = XboxController.normalLayoutSummary
 	end
@@ -7571,7 +7656,7 @@ function ControllerCameraTestDrawControlGroupOverlay()
 	end)
 
 	gl.Color(0.82, 0.92, 1, 1)
-	gl.Text("Controller Groups  Start+Dpad: U/D slot, L recall, R assign, Start+L3 clear", left + 12, top - 18, 12, "o")
+	gl.Text("Controller Groups  Start+Dpad: U/D slot, L recall, R type+future assign, Start+L3 clear", left + 12, top - 18, 12, "o")
 
 	for slot = 1, 10 do
 		local x1 = left + 12 + ((slot - 1) * (slotSize + gap))
@@ -8029,11 +8114,11 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Camera/Move: LS pan | RS X rotate | RS Y zoom | LB+RS Y pitch | LT: Camera speed modifier",
 		"Selection: A select | A hold area-select units first | append modifier + A hold includes buildings",
 		"Double-tap A on unit: visible same type | append modifier + double-tap A on unit: all owned same type | empty: no action",
-		"Back/View: Commander focus / utility | Start/Menu: hold group layer",
+		"Back/View: command layer modifier; Back/View + double-tap A focuses/selects Commander | Start/Menu: group layer",
 		"Left Stick Click: Remove current/next queued command | Right Stick Click: Remove last queued command",
 		"append modifier + double-tap A on empty reticle: select all idle units in current idle type",
-		"Context Actions: X tap context | X hold one unit draw queued path | X hold many units line/spread | RT+B stop | RT+X attack/fight",
-		"Combat Layers: RT+A reserved/disabled | RT+Y tactical radial | LS/Dpad choose | A confirm | B/Y close",
+		"Context Actions: X tap context | X hold one unit draw queued path | X hold many units line/spread | Layer+B stop | Layer+X attack/fight",
+		"Combat Layers: Layer+A reserved except Back double-tap Commander | Layer+Y tactical radial | LS/Dpad choose | A confirm | B/Y close",
 		"Append Queue: hold RT/bound append modifier to add commands/builds to the end",
 		"Do Next: hold bound insert modifier to insert near the front",
 		"Constructor Radial: Y open | LS/Dpad select | LB/RB page | Y close",
@@ -8043,7 +8128,7 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Placement Mode: A place | X place+stay | B cancel | RT append queue | bound insert modifier fronts",
 		"   * RS X camera rotate | Dpad L/R building facing | Dpad U/D spacing | LB tap pattern/hold grid | A/X hold Line/Grid",
 		"Idle Cycling: Dpad L/R idle unit | LB+Dpad L/R idle type | Dpad U/D recall cam | bound modifier + Dpad U/D store cam",
-		"Control Groups: hold Start/Menu overlay | Start+Dpad U/D slot | Start+Dpad L recall | Start+Dpad R assign selection",
+		"Control Groups: hold Start/Menu overlay | Start+Dpad U/D slot | Start+Dpad L recall | Start+Dpad R same-type/future assign",
 		"Control Groups: Start+L3 clear | Start/Menu uses D-pad/L3 only, not ABXY",
 		"Status: controller mode shows compact factory/constructor activity panel; Y opens its radial",
 		"System UI: End Controller Settings | Page Up Debug | Page Down Help | Home Reset Settings Defaults",
@@ -8298,7 +8383,7 @@ function widget:DrawScreen()
 	local activeGroupSlot = ControllerCameraTestNormalizeControlGroupSlot(ControllerCameraTestControlGroups.activeSlot or 1)
 	local activeGroupEntry = ControllerCameraTestControlGroups.slots[activeGroupSlot]
 	local activeGroupType = activeGroupEntry and (activeGroupEntry.typeName or ControllerCameraTestUnitTypeName(activeGroupEntry.unitDefID)) or "none"
-	local activeGroupAuto = activeGroupEntry and activeGroupEntry.autoAddUnitDefID and ControllerCameraTestUnitTypeName(activeGroupEntry.autoAddUnitDefID) or "none"
+	local activeGroupAuto = ControllerCameraTestControlGroupAutoAddLabel(activeGroupEntry)
 	local activeGroupCount = activeGroupEntry and tostring(activeGroupEntry.count or #(activeGroupEntry.units or {})) or "0"
 
 	local controllerSections = {
@@ -8378,6 +8463,7 @@ function widget:DrawScreen()
 				"Group last slot: " .. tostring(ControllerCameraTestControlGroups.lastSlot),
 				"Group last count: " .. tostring(ControllerCameraTestControlGroups.lastCount),
 				"Group left input: " .. tostring(ControllerCameraTestControlGroups.leftInputState),
+				"Group native autogroup: " .. tostring(ControllerCameraTestControlGroups.nativeAutogroupStatus or "none"),
 			},
 		},
 		{
@@ -8443,7 +8529,7 @@ function widget:DrawScreen()
 			key = "Commands",
 			title = "Commands",
 			lines = {
-				"RT command layer: " .. activeInactive(commandLayerActive),
+				"Command layer: " .. activeInactive(commandLayerActive),
 				"Layout: " .. activeButtonLayoutSummary,
 				"Normal preview: " .. normalPreviewSummary,
 				"Command preview: " .. commandPreviewSummary,

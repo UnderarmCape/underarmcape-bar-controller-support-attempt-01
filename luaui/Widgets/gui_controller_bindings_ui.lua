@@ -189,7 +189,7 @@ local ControllerBindingsUIDescriptions = {
 	cancel = "Cancel current modes, close menus, or clear selection in normal play.",
 	smartAction = "Context-sensitive action. Tap for smart action, hold for path or line behavior.",
 	buildRadial = "Open constructor build options or factory radial controls.",
-	commandLayer = "Open the tactical command layer for move, fight, reclaim, repair, and related commands.",
+	commandLayer = "Hold Back/View in the v0.4.1 presets to open the tactical command layer for move, fight, reclaim, repair, and related commands.",
 	insertNextCommandModifier = "Hold to insert the next issued command at the front of the selected unit's queue without clearing the rest.",
 	appendQueueModifier = "Hold to append commands and build placements to the end of the queue, like Shift. This does not interrupt the current build.",
 	controlGroupModifier = "Hold Start/Menu to use the controller group layer with D-pad and L3 inputs.",
@@ -223,7 +223,7 @@ local ControllerBindingsUIDescriptions = {
 	groupSlotUp = "Move to the next controller control-group slot while Start/Menu is held.",
 	groupSlotDown = "Move to the previous controller control-group slot while Start/Menu is held.",
 	groupRecallOrAssign = "Recall the active controller group slot while Start/Menu is held.",
-	groupAssign = "Assign the current selection to the active controller group slot while Start/Menu is held.",
+	groupAssign = "Assign all units of the selected same type, plus future units of that type when available, to the active group slot while Start/Menu is held.",
 	groupClear = "Clear the active controller control-group slot with Start/Menu + L3.",
 }
 
@@ -798,7 +798,7 @@ local function ControllerBindingsUIConfirmApplyPreset()
 			cancel = "B",
 			smartAction = "X",
 			buildRadial = "Y",
-			commandLayer = "RT",
+			commandLayer = "back",
 			insertNextCommandModifier = "RB",
 			appendQueueModifier = "RT",
 			controlGroupModifier = "start",
@@ -841,7 +841,7 @@ local function ControllerBindingsUIConfirmApplyPreset()
 			cancel = "B",
 			smartAction = "X",
 			buildRadial = "RB",
-			commandLayer = "RT",
+			commandLayer = "back",
 			insertNextCommandModifier = "Y",
 			appendQueueModifier = "RT",
 			controlGroupModifier = "start",
@@ -1560,12 +1560,14 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 				"Y = Build / Factory Radial",
 				"LT = Camera Speed Modifier only",
 				"LB = Camera Pitch Modifier",
-				"RT = Append Queue / Tactical Layer",
+				"RT = Append Queue / Shift-style queue",
+				"Back/View = Command Layer Modifier",
 				"RB = Do Next / Insert Command Modifier",
 				"L3 (Left Stick Click) = Remove current/next queue",
 				"R3 (Right Stick Click) = Remove last queue",
-				"Back/View = Commander focus / utility only",
-				"Start/Menu + D-pad/L3 = Group layer",
+				"Back/View + A + A = Commander focus/select utility",
+				"Start/Menu + D-pad Left/Right = Recall / same-type future assign",
+				"Start/Menu + D-pad Up/Down or L3 = Group slot / clear",
 			}
 		elseif action.actionLabel == "Build-First Commander" then
 			lines = {
@@ -1575,12 +1577,14 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 				"Y = Do Next / Insert Command Modifier",
 				"LT = Camera Speed Modifier only",
 				"LB = Camera Pitch Modifier",
-				"RT = Append Queue / Tactical Layer",
+				"RT = Append Queue / Shift-style queue",
+				"Back/View = Command Layer Modifier",
 				"RB = Build / Factory Radial",
 				"L3 (Left Stick Click) = Remove current/next queue",
 				"R3 (Right Stick Click) = Remove last queue",
-				"Back/View = Commander focus / utility only",
-				"Start/Menu + D-pad/L3 = Group layer",
+				"Back/View + A + A = Commander focus/select utility",
+				"Start/Menu + D-pad Left/Right = Recall / same-type future assign",
+				"Start/Menu + D-pad Up/Down or L3 = Group slot / clear",
 			}
 		end
 
