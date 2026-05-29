@@ -190,7 +190,7 @@ local ControllerBindingsUIDescriptions = {
 	smartAction = "Context-sensitive action. Tap for smart action, hold for path or line behavior.",
 	buildRadial = "Open constructor build options or factory radial controls.",
 	commandLayer = "Open the tactical command layer for move, fight, reclaim, repair, and related commands.",
-	queueModifier = "Queue modifier used like Shift while confirming commands.",
+	insertNextCommandModifier = "Hold to insert the next issued command at the front of the selected unit's queue without clearing the rest.",
 	controlGroupModifier = "Hold to use controller control-group mode.",
 	pitchModifier = "Hold LB to access camera pitch / tilt behavior.",
 	removeQueuedCommand = "Removes the selected unit's current or next queued command. LT is reserved for camera speed only.",
@@ -566,7 +566,7 @@ local function ControllerBindingsUIDisplayGroup(def)
 		return "Camera"
 	elseif def.action == "commandLayer" then
 		return "Tactical"
-	elseif def.action == "queueModifier" then
+	elseif def.action == "insertNextCommandModifier" then
 		return "Queue"
 	elseif def.action == "controlGroupModifier" then
 		return "Idle / Groups"
@@ -792,7 +792,7 @@ local function ControllerBindingsUIConfirmApplyPreset()
 			cancel = "B",
 			buildRadial = "Y",
 			commandLayer = "RT",
-			queueModifier = "",
+			insertNextCommandModifier = "back",
 			controlGroupModifier = "RB",
 			pitchModifier = "LB",
 			removeQueuedCommand = "leftStickClick",
@@ -831,8 +831,7 @@ local function ControllerBindingsUIConfirmApplyPreset()
 			cancel = "B",
 			buildRadial = "RB",
 			commandLayer = "RT",
-			queueModifier = "",
-			controlGroupModifier = "",
+			insertNextCommandModifier = "back",
 			pitchModifier = "LB",
 			removeQueuedCommand = "leftStickClick",
 			removeLastQueuedCommand = "rightStickClick",
@@ -1551,7 +1550,7 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 				"RB = Group / Management Layer",
 				"L3 (Left Stick Click) = Remove current/next queue",
 				"R3 (Right Stick Click) = Remove last queue",
-				"Back/View = Commander Focus / Utility",
+				"Back/View = Do Next / Insert Command Modifier",
 			}
 		elseif action.actionLabel == "Build-First Commander" then
 			lines = {
@@ -1565,7 +1564,7 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 				"RB = Build / Factory Layer",
 				"L3 (Left Stick Click) = Remove current/next queue",
 				"R3 (Right Stick Click) = Remove last queue",
-				"Back/View = Commander Focus / Utility",
+				"Back/View = Do Next / Insert Command Modifier",
 			}
 		end
 

@@ -1542,7 +1542,7 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "smartAction", label = "Smart Action", default = "X", group = "Core" },
 		{ action = "buildRadial", label = "Build / Factory Radial", default = "Y", group = "Core" },
 		{ action = "commandLayer", label = "Command Layer", default = "RT", group = "Modifiers" },
-		{ action = "queueModifier", label = "Queue Modifier", default = "", group = "Modifiers" },
+		{ action = "insertNextCommandModifier", label = "Do Next / Insert Command Modifier", default = "back", group = "Queue" },
 		{ action = "controlGroupModifier", label = "Group Modifier", default = "RB", group = "Modifiers" },
 		{ action = "pitchModifier", label = "Pitch / Idle Type Modifier", default = "LB", group = "Modifiers" },
 		{ action = "removeQueuedCommand", label = "Remove Current/Next Queue Item", default = "leftStickClick", group = "Queue" },
@@ -2032,7 +2032,7 @@ end
 -- SECTION: Command issuing
 --------------------------------------------------------------------------------
 function ControllerCameraTestIsQueueModifierActive()
-	return ControllerCameraTestActionDown("queueModifier")
+	return ControllerCameraTestActionDown("insertNextCommandModifier")
 end
 
 function ControllerCameraTestResetQueueRemovalDebug(mode)
@@ -2839,9 +2839,9 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		return
 	end
 
-	local isQueue = ControllerCameraTestIsQueueModifierActive()
-	local isQueueFront = IsButtonDown("RT") or (normalizedRightTrigger and normalizedRightTrigger > 0.1)
-	local orderOptions = isQueue and ControllerCameraTestGetCommandOptions() or {}
+	local isQueue = false
+	local isQueueFront = ControllerCameraTestIsQueueModifierActive() or IsButtonDown("RT") or (normalizedRightTrigger and normalizedRightTrigger > 0.1)
+	local orderOptions = isQueueFront and { "alt" } or {}
 	ControllerCameraTestCommandDebug.lastOptions = ControllerCameraTestCommandOptionsSummary(orderOptions)
 
 	if drag.mode == "moveLine" or drag.mode == "fightLine" or drag.mode == "attackLine" then
@@ -3291,11 +3291,13 @@ end
 function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, targetName, options)
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	params = type(params) == "table" and params or {}
-	options = type(options) == "table" and options or ControllerCameraTestGetCommandOptions()
 
-	ControllerCameraTestCommandDebug.issuedCmdID = tostring(cmdID)
-	ControllerCameraTestCommandDebug.issuedParamsCount = #params
-	ControllerCameraTestCommandDebug.lastOptions = ControllerCameraTestCommandOptionsSummary(options)
+	local useInsert = options == nil and ControllerCameraTestIsQueueModifierActive()
+	local finalOpts = type(options) == "table" and options or ControllerCameraTestGetCommandOptions()
+
+	ControllerCameraTestCommandDebug.issuedCmdID = useInsert and tostring(CMD.INSERT or 140) or tostring(cmdID)
+	ControllerCameraTestCommandDebug.issuedParamsCount = useInsert and (#params + 3) or #params
+	ControllerCameraTestCommandDebug.lastOptions = useInsert and "alt" or ControllerCameraTestCommandOptionsSummary(finalOpts)
 	if type(cmdID) ~= "number" then
 		ControllerCameraTestCommandDebug.lastResult = "command unavailable"
 		latchSelectionDebugMessage(tostring(cmdName) .. " unavailable")
@@ -3313,8 +3315,18 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 	end
 
 	local issuedCount = 0
+	local cmdInsert = CMD.INSERT or 140
 	for _, unitID in ipairs(selectedUnits) do
-		local ok, result = pcall(spGiveOrderToUnit, unitID, cmdID, params, options)
+		local ok, result
+		if useInsert then
+			local insertParams = { 0, cmdID, 0 }
+			for i = 1, #params do
+				insertParams[#insertParams + 1] = params[i]
+			end
+			ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, insertParams, { "alt" })
+		else
+			ok, result = pcall(spGiveOrderToUnit, unitID, cmdID, params, finalOpts)
+		end
 		if ok and result ~= false then
 			issuedCount = issuedCount + 1
 		end
@@ -5687,7 +5699,7 @@ function ControllerCameraTestHandlePlacementInput(dt)
 	end
 
 	placement.queueActive = ControllerCameraTestIsQueueModifierActive()
-	placement.queueFrontActive = normalizedRightTrigger > 0
+	placement.queueFrontActive = ControllerCameraTestIsQueueModifierActive() or normalizedRightTrigger > 0
 	ControllerCameraTestUpdatePlacementAnalog()
 
 	local drag = ControllerCameraTestDragCommand
@@ -5827,7 +5839,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 			local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
 			if option then
 				local queueActive = ControllerCameraTestIsQueueModifierActive()
-				local queueFrontActive = normalizedRightTrigger > 0
+				local queueFrontActive = ControllerCameraTestIsQueueModifierActive() or normalizedRightTrigger > 0
 				local orderOptions = ControllerCameraTestGetCommandOptions()
 
 				local cmdToIssue = option.cmdID
