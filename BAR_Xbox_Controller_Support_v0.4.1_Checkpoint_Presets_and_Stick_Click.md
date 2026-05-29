@@ -1,211 +1,180 @@
-# BAR Xbox Controller Support v0.4.1 WIP Checkpoint — Presets & Stick-Click Controls
+# BAR Xbox Controller Support v0.4.1 Pre-Alpha Checkpoint
 
-This checkpoint documents the in-progress v0.4.1 work for Beyond All Reason (BAR) Xbox Controller Support,
-building directly on top of the stable v0.4.0 pre-alpha Binding UI release.
+This checkpoint documents the current v0.4.1 prerelease state for Beyond All Reason Xbox Controller Support.
+v0.4.0 remains the stable pre-alpha baseline. v0.4.1 is a WIP prerelease for testing the new presets, queue controls, command layer, and group layer behavior.
 
----
-
-## 1. Release Status
+## Release Status
 
 | Field | Value |
 |---|---|
-| Version | v0.4.1 WIP Pre-Release |
-| Based On | v0.4.0 pre-alpha (commit `bc4ac238`) |
-| WIP HEAD | `b410ee7a` |
+| Version | v0.4.1 Pre-Alpha |
+| Stable baseline | v0.4.0 binding UI pre-alpha |
 | Branch | `controller-support-current-master-engine-shim` |
-| Status | **In Progress — Not Stable** |
+| Latest code commit | `9a2c36eb` |
+| Status | Prerelease WIP, not stable |
 
-> [!WARNING]
-> This is a **WIP pre-release only**. The stable v0.4.0 pre-alpha release is preserved at commit `bc4ac238`.
-> Do not overwrite the v0.4.0 GitHub release or tag with v0.4.1 WIP assets.
+Do not overwrite the v0.4.0 stable release or tag with v0.4.1 assets.
 
----
+## Main Files
 
-## 2. What Changed Since v0.4.0
-
-### 2.1 New Binding Definitions
-
-Three new input actions were added to the binding definition table in `gui_controller_camera_test.lua`:
-
-| Action Name | Label | Default | Group |
-|---|---|---|---|
-| `insertNextCommandModifier` | Do Next / Insert Command Modifier | `back` | Queue |
-| `removeQueuedCommand` | Remove Current/Next Queue Item | `leftStickClick` | Queue |
-| `removeLastQueuedCommand` | Remove Last Queue Item | `rightStickClick` | Queue |
-
-> [!NOTE]
-> `insertNextCommandModifier` replaces the former `queueModifier` action. The old `queueModifier` binding
-> behavior (LT as queue toggle) has been removed. LT is now exclusively the camera pan/zoom speed modifier.
-
-### 2.2 Left Stick Click / Right Stick Click Support
-
-- `leftStickClick` (controller button ID 7) and `rightStickClick` (button ID 8) are now recognized as bindable inputs.
-- Both appear in the input name display table and are captured by the binding UI capture system.
-- They are included in the bindable button enumeration list used for conflict detection and rebinding.
-
-### 2.3 Queue Control Redesign
-
-| Behavior | v0.4.0 | v0.4.1 WIP |
-|---|---|---|
-| Remove current/next queue item | Back/View tap | Left Stick Click (L3) |
-| Remove last queue item | LT + Back/View | Right Stick Click (R3) |
-| Insert command at front of queue | — | Back/View hold (`insertNextCommandModifier`) |
-| LT role | Pan/zoom speed + queue modifier layer | **Camera pan/zoom speed only** |
-| LB role | Camera pitch modifier | Camera pitch modifier (unchanged) |
-
-### 2.4 Binding Presets System
-
-A new **Presets** category has been added to the Bindings UI. Two presets are defined:
-
-#### Balanced RTS Preset
-
-Full mapping applied when this preset is activated:
-
-| Action | Button |
+| File | Purpose |
 |---|---|
-| cancel | B |
-| buildRadial | Y |
-| commandLayer | RT |
-| insertNextCommandModifier | Back/View |
-| controlGroupModifier | RB |
-| pitchModifier | LB |
-| removeQueuedCommand | Left Stick Click |
-| removeLastQueuedCommand | Right Stick Click |
-| radialSelect | A |
-| radialCancel | B |
-| radialQuick | X |
-| radialClose | Y |
-| radialPrevPage | LB |
-| radialNextPage | RB |
-| place | A |
-| placeStay | X |
-| cancelPlacement | B |
-| rotateBuildingLeft | D-pad Left |
-| rotateBuildingRight | D-pad Right |
-| spacingUp | D-pad Up |
-| spacingDown | D-pad Down |
-| patternPrev | LB |
-| patternNext | RB |
-| tacticalSelect | A |
-| tacticalCancel | B |
-| tacticalClose | Y |
-| commandUp | D-pad Up |
-| commandDown | D-pad Down |
-| commandLeft | D-pad Left |
-| commandRight | D-pad Right |
-| idlePrev | D-pad Left |
-| idleNext | D-pad Right |
-| groupSlotUp | D-pad Up |
-| groupSlotDown | D-pad Down |
-| groupRecallOrAssign | D-pad Left |
-| groupClear | B |
+| `luaui/Widgets/gui_controller_camera_test.lua` | Gameplay input, camera, placement, queue, command, group, and controller API bridge |
+| `luaui/Widgets/gui_controller_bindings_ui.lua` | In-game bindings/settings UI, presets, descriptions, and rebinding surface |
 
-#### Build-First Commander Preset
+## Current Preset Maps
 
-Same as Balanced RTS with the following differences:
+### Balanced RTS
 
-| Action | Balanced RTS | Build-First Commander |
-|---|---|---|
-| buildRadial | Y | **RB** |
-| controlGroupModifier | RB | *(unset — removed to avoid RB conflict)* |
-| radialClose | Y | **RB** |
+| Control | Behavior |
+|---|---|
+| A | Select / Confirm |
+| B | Cancel / Clear |
+| X | Move / Smart Move |
+| Y | Build / Factory Radial |
+| Back/View hold | Command Layer Modifier |
+| Back/View + A + A | Commander focus/select utility |
+| LT | Camera speed modifier only |
+| LB | Camera pitch modifier; placement LB tap cycles pattern, LB hold forces Grid |
+| RT | Append Queue / Shift-style modifier |
+| RB | Do Next / Insert Command Modifier |
+| L3 | Remove current/next queued command |
+| R3 | Remove last queued command |
+| D-pad Left/Right | Previous/next idle unit |
+| Start/Menu + D-pad Up/Down | Next/previous group slot |
+| Start/Menu + D-pad Left | Recall current group slot |
+| Start/Menu + D-pad Right | Assign same-type/future units to current group slot |
+| Start/Menu + L3 | Clear current group slot |
 
-### 2.5 Preset UI Behavior
+### Build-First Commander
 
-- Presets appear as a top-level category in the Bindings UI (above all other categories).
-- Selecting a preset and pressing **A/Enter** or clicking triggers a confirmation modal.
-- Confirming applies all bindings in the preset map via `SetBinding`.
-- The active preset name is tracked in `ControllerBindingsUI.currentPreset`.
-- If any individual binding is changed after preset application, the status resets to `"Custom"`.
-- Each preset's detail view shows the full mapping table and the current active/inactive status.
+| Control | Behavior |
+|---|---|
+| A | Select / Confirm |
+| B | Cancel / Clear |
+| X | Move / Smart Move |
+| RB | Build / Factory Radial |
+| Back/View hold | Command Layer Modifier |
+| Back/View + A + A | Commander focus/select utility |
+| LT | Camera speed modifier only |
+| LB | Camera pitch modifier; placement LB tap cycles pattern, LB hold forces Grid |
+| RT | Append Queue / Shift-style modifier |
+| Y | Do Next / Insert Command Modifier |
+| L3 | Remove current/next queued command |
+| R3 | Remove last queued command |
+| D-pad Left/Right | Previous/next idle unit |
+| Start/Menu + D-pad Up/Down | Next/previous group slot |
+| Start/Menu + D-pad Left | Recall current group slot |
+| Start/Menu + D-pad Right | Assign same-type/future units to current group slot |
+| Start/Menu + L3 | Clear current group slot |
 
----
+Start/Menu is not paired with A/B/X/Y. Back/View may pair with A because it uses left thumb plus right thumb.
 
-## 3. Known Issues / Open Work
+## Behavior Changes Since v0.4.0
 
-> [!CAUTION]
-> The following items are **not yet resolved** in this WIP state:
+- Added bindable L3/R3 inputs.
+- Split queue removal:
+  - L3 removes the current/next queued command.
+  - R3 removes the last queued command.
+- Added `appendQueueModifier`:
+  - Default preset binding: RT.
+  - Uses Shift-style queue options.
+  - Appends builds/commands to the end of the queue.
+  - Does not interrupt the currently building item.
+- Added `insertNextCommandModifier`:
+  - Balanced RTS: RB.
+  - Build-First Commander: Y.
+  - Uses insert/front behavior.
+- Moved command layer to Back/View in both presets.
+- Preserved Back/View + double-tap A commander utility by handling it inside the command-layer A path.
+- Moved group layer to Start/Menu + D-pad/L3.
+- Restored group assignment to same-type/future behavior instead of current-selection-only behavior.
+- Placement polish:
+  - RT + A appends and keeps placement active, matching RT + X.
+  - L3/R3 queue removal works during active placement.
+  - RB does not cycle placement patterns.
+  - LB hold forces Grid.
+  - LB tap cycles placement patterns.
 
-1. **Build menu not opening from presets**: The `buildRadial` action name may not match the correct internal
-   command. The build radial/menu open action name needs to be diagnosed from the gameplay widget.
-2. **`insertNextCommandModifier` / Do Next behavior**: The Back/View hold behavior for prepending commands
-   to the front of the order queue is wired but not fully validated in-game for all order types.
-3. **No stable in-game manual test pass**: v0.4.1 has not yet received a full manual test session.
+## Same-Type / Future Group Assignment
 
----
+Start/Menu + D-pad Right now uses the controller widget's same-type group assignment path:
 
-## 4. Commit History (v0.4.1 WIP)
+- Selected unit definitions are preferred as the source.
+- All currently owned units of those unit types are stored in the controller group.
+- The group stores auto-add metadata so future finished units of those types are added to the controller group.
+- If BAR's `WG.autogroup.addCurrentSelectionToAutogroup` API is available, the assignment is also mirrored to BAR's native Auto Group widget.
+- If no selection exists, the controller widget can fall back to reticle/idle source for internal grouping; native Auto Group mirroring is skipped in that fallback case to avoid assigning the wrong selected type.
 
-```text
-b410ee7a  Clean up queue preset bindings
-d1c377f0  Add controller binding presets and stick-click queue controls
-```
+## Known Limitations
 
-These build on top of the v0.4.0 chain:
+- v0.4.1 is still a prerelease WIP.
+- Users may need to apply or reset a preset to pick up new bindings.
+- Native BAR Auto Group mirroring depends on the `Auto Group` widget being enabled and available as `WG.autogroup`.
+- The command-layer debug labels are now generic "Layer" labels, but some internal drag labels still use historical RT strings.
+- Full broad public testing is still pending.
 
-```text
-bc4ac238  Set tuned bindings UI layout defaults        ← v0.4.0 pre-alpha stable
-04551703  Add adjustable bindings UI layout settings safely with guarded scoping
-3bf76d67  Revert "Add adjustable bindings UI layout settings"
-9a9aaae5  Add adjustable bindings UI layout settings   ← (bad commit, reverted)
-69ce2a3d  Widen bindings UI and show all binding definitions
-40123b3d  Move controller settings into new bindings UI
-```
+## Validation
 
----
-
-## 5. Files Modified
-
-| File | Role | Changes |
-|---|---|---|
-| `luaui/Widgets/gui_controller_bindings_ui.lua` | Bindings / Settings UI | Added Presets category, preset maps, preset detail view, modal confirm, preset status tracking |
-| `luaui/Widgets/gui_controller_camera_test.lua` | Gameplay / Input Engine | Added L3/R3 button IDs, new binding definitions, queue split logic, `insertNextCommandModifier` wiring |
-
----
-
-## 6. Validation
+Validation run after the latest code patch:
 
 ```powershell
-luac -p luaui/Widgets/gui_controller_bindings_ui.lua
-luac -p luaui/Widgets/gui_controller_camera_test.lua
-git diff --check
+luac -p luaui/Widgets/gui_controller_bindings_ui.lua luaui/Widgets/gui_controller_camera_test.lua
+git diff --check -- luaui/Widgets/gui_controller_bindings_ui.lua luaui/Widgets/gui_controller_camera_test.lua
 ```
 
-All three pass clean as of HEAD `b410ee7a`.
+Both commands passed. UTF-8 BOM checks passed for both Lua files.
 
----
+## Live Manual Test Results Reported Before This Checkpoint
 
-## 7. Next Steps
+- RT + A placement works.
+- RT + X placement still works.
+- RT append placement does not interrupt the current build item.
+- L3/R3 queue removal during placement works.
+- L3/R3 queue removal outside placement works.
+- Back/View + A + A commander focus/select behavior works.
+- Build-First Commander: RB opens build/factory radial.
+- Balanced RTS: Y opens build/factory radial.
+- RB no longer cycles placement modes.
+- LB hold forces Grid placement.
+- LB tap cycles placement modes.
+- Build-First Commander: Y works as Do Next / Insert.
+- Balanced RTS: RB works as Do Next / Insert.
+- LT remains camera speed only.
+- LB remains camera pitch outside placement.
 
-Before this can be promoted to a stable v0.4.1 release, the following must be completed:
+## Installation / Update Notes
 
-1. Diagnose and fix the correct internal action name for opening the build radial/menu.
-2. Update preset maps if `buildRadial` action name is incorrect.
-3. Move `insertNextCommandModifier` from Back/View to a less collision-prone button if needed.
-4. Run a full in-game manual test session against the checklist below.
-5. Confirm L3 removes current/next queue item.
-6. Confirm R3 removes last queue item.
-7. Confirm Back/View hold correctly inserts command at front of queue.
-8. Confirm applying presets works with the confirmation modal.
-9. Confirm preset status displays correctly (Active / Inactive / Custom).
+For a manual update:
 
----
+1. Install the Recoil 2025.06.24 compatibility engine from the existing v0.3.7 engine release if it is not already installed.
+2. Copy `luaui/Widgets/gui_controller_camera_test.lua` into the BAR game folder.
+3. Copy `luaui/Widgets/gui_controller_bindings_ui.lua` into the BAR game folder.
+4. In BAR, enable/load both widgets.
+5. Open the bindings UI with `/luaui bar_controller_bindings`.
+6. Apply either `Balanced RTS` or `Build-First Commander`.
+7. If old bindings are persisted, reset/apply the preset again.
 
-## 8. Manual Test Checklist (v0.4.1 Target)
+## Manual Test Checklist
 
-- [ ] UI opens with `/luaui bar_controller_bindings`
-- [ ] Presets category is listed first in the category list
-- [ ] `Balanced RTS` preset shows correct mapping table in detail view
-- [ ] `Build-First Commander` preset shows correct mapping table in detail view
-- [ ] Applying a preset triggers confirmation modal
-- [ ] Confirming applies all bindings and shows toast
-- [ ] Active preset status shows "Active" for the applied preset
-- [ ] Changing a binding resets status to "Custom"
-- [ ] Left Stick Click (L3) removes current/next queue item in gameplay
-- [ ] Right Stick Click (R3) removes last queue item in gameplay
-- [ ] Back/View hold triggers Do Next / Insert Command Modifier
-- [ ] LT no longer acts as a queue modifier
-- [ ] LB still acts as camera pitch modifier
-- [ ] Build radial/menu opens correctly from the bound button
-- [ ] Settings tab opens without crash
-- [ ] Closing UI resumes gameplay inputs
+1. Apply Build-First Commander preset.
+2. Select constructor.
+3. Press RB. Expected: build/factory radial opens.
+4. Select Windmill.
+5. Hold RT + A to place multiple windmills. Expected: append placement continues and does not interrupt current build.
+6. Hold RT + X during placement. Expected: append placement still works.
+7. During placement, press L3. Expected: remove current/next queue item.
+8. During placement, press R3. Expected: remove last queue item.
+9. Hold LB during placement. Expected: Grid placement forced.
+10. Tap LB during placement. Expected: placement pattern cycles.
+11. Confirm RB does not cycle placement pattern.
+12. Hold Back/View and use command layer behavior. Expected: command layer works.
+13. Back/View + A + A. Expected: commander is focused/teleported to and selected.
+14. Start/Menu + D-pad Up/Down. Expected: group slot changes.
+15. Start/Menu + D-pad Left. Expected: current group recalled.
+16. Start/Menu + D-pad Right on a selected unit type, such as Tick. Expected: all current same-type units are assigned and future units are auto-added if supported.
+17. Start/Menu + L3. Expected: current group cleared.
+18. Apply Balanced RTS preset.
+19. Press Y with constructor selected. Expected: build/factory radial opens.
+20. Confirm RT append, RB insert, LB grid/pattern, L3/R3 removal, and Back/View command layer still work.
+21. Close UI and confirm gameplay resumes.
