@@ -129,6 +129,8 @@ local ControllerBindingsUI = {
 	settingsPages = { "Camera", "Input", "Radials", "Selection", "Placement", "UI" },
 	settingsPageIndex = 1,
 	settingsItemIndex = 1,
+	currentPreset = "Balanced RTS",
+	pendingPresetName = nil,
 }
 
 local ControllerBindingsUIRequiredAPI = {
@@ -191,7 +193,8 @@ local ControllerBindingsUIDescriptions = {
 	queueModifier = "Queue modifier used like Shift while confirming commands.",
 	controlGroupModifier = "Hold to use controller control-group mode.",
 	pitchModifier = "Hold LB to access camera pitch / tilt behavior.",
-	removeQueuedCommand = "Back/View removes the current or next queued unit command. LT + Back/View removes the last queued command.",
+	removeQueuedCommand = "Removes the selected unit's current or next queued command. LT is reserved for camera speed only.",
+	removeLastQueuedCommand = "Removes the selected unit's final queued command. LT is reserved for camera speed only.",
 	radialSelect = "Select the highlighted radial item.",
 	radialCancel = "Cancel or close the current radial.",
 	radialQuick = "Quick-place a radial item when supported.",
@@ -241,6 +244,8 @@ local ControllerBindingsUIBindingLabels = {
 	dpadDown = "D-pad Down",
 	dpadLeft = "D-pad Left",
 	dpadRight = "D-pad Right",
+	leftStickClick = "Left Stick Click",
+	rightStickClick = "Right Stick Click",
 }
 
 local ControllerBindingsUIControlIdMap = {
@@ -262,9 +267,11 @@ local ControllerBindingsUIControlIdMap = {
 	leftstick = "leftStick",
 	leftstickx = "leftStickX",
 	leftsticky = "leftStickY",
+	leftstickclick = "leftStick",
 	rightstick = "rightStick",
 	rightstickx = "rightStickX",
 	rightsticky = "rightStickY",
+	rightstickclick = "rightStick",
 	dpadup = "dpadUp",
 	dpaddown = "dpadDown",
 	dpadleft = "dpadLeft",
@@ -274,6 +281,7 @@ local ControllerBindingsUIControlIdMap = {
 local ControllerBindingsUICaptureInputs = {
 	"A", "B", "X", "Y", "back", "start", "LB", "RB",
 	"dpadUp", "dpadDown", "dpadLeft", "dpadRight", "LT", "RT",
+	"leftStickClick", "rightStickClick",
 }
 
 local function ControllerBindingsUISupport()
@@ -684,6 +692,33 @@ local function ControllerBindingsUIRebuildCategories()
 		return orderA < orderB
 	end)
 
+	local presetsGroup = {
+		name = "Presets",
+		actions = {
+			{
+				action = "preset_balanced",
+				label = "Balanced RTS",
+				actionLabel = "Balanced RTS",
+				default = "",
+				group = "Presets",
+				sourceGroup = "Presets",
+				readOnly = true,
+				description = "General-purpose default layout with balanced combat & base building.",
+			},
+			{
+				action = "preset_buildfirst",
+				label = "Build-First Commander",
+				actionLabel = "Build-First Commander",
+				default = "",
+				group = "Presets",
+				sourceGroup = "Presets",
+				readOnly = true,
+				description = "Base-building and constructor-heavy layout with build layer on RB.",
+			},
+		}
+	}
+	table.insert(categories, 1, presetsGroup)
+
 	ControllerBindingsUI.categories = categories
 
 	local totalLoaded = 0
@@ -744,6 +779,104 @@ local function ControllerBindingsUISetToast(text)
 	ControllerBindingsUI.toast = tostring(text or "")
 end
 
+local function ControllerBindingsUIConfirmApplyPreset()
+	local presetName = ControllerBindingsUI.pendingPresetName
+	if not presetName then
+		ControllerBindingsUI.modal = nil
+		return
+	end
+
+	local map = {}
+	if presetName == "Balanced RTS" then
+		map = {
+			cancel = "B",
+			buildRadial = "Y",
+			commandLayer = "RT",
+			queueModifier = "",
+			controlGroupModifier = "RB",
+			pitchModifier = "LB",
+			removeQueuedCommand = "leftStickClick",
+			removeLastQueuedCommand = "rightStickClick",
+			radialSelect = "A",
+			radialCancel = "B",
+			radialQuick = "X",
+			radialClose = "Y",
+			radialPrevPage = "LB",
+			radialNextPage = "RB",
+			place = "A",
+			placeStay = "X",
+			cancelPlacement = "B",
+			rotateBuildingLeft = "dpadLeft",
+			rotateBuildingRight = "dpadRight",
+			spacingUp = "dpadUp",
+			spacingDown = "dpadDown",
+			patternPrev = "LB",
+			patternNext = "RB",
+			tacticalSelect = "A",
+			tacticalCancel = "B",
+			tacticalClose = "Y",
+			commandUp = "dpadUp",
+			commandDown = "dpadDown",
+			commandLeft = "dpadLeft",
+			commandRight = "dpadRight",
+			idlePrev = "dpadLeft",
+			idleNext = "dpadRight",
+			groupSlotUp = "dpadUp",
+			groupSlotDown = "dpadDown",
+			groupRecallOrAssign = "dpadLeft",
+			groupClear = "B",
+		}
+	elseif presetName == "Build-First Commander" then
+		map = {
+			cancel = "B",
+			buildRadial = "RB",
+			commandLayer = "RT",
+			queueModifier = "",
+			controlGroupModifier = "",
+			pitchModifier = "LB",
+			removeQueuedCommand = "leftStickClick",
+			removeLastQueuedCommand = "rightStickClick",
+			radialSelect = "A",
+			radialCancel = "B",
+			radialQuick = "X",
+			radialClose = "RB",
+			radialPrevPage = "LB",
+			radialNextPage = "RB",
+			place = "A",
+			placeStay = "X",
+			cancelPlacement = "B",
+			rotateBuildingLeft = "dpadLeft",
+			rotateBuildingRight = "dpadRight",
+			spacingUp = "dpadUp",
+			spacingDown = "dpadDown",
+			patternPrev = "LB",
+			patternNext = "RB",
+			tacticalSelect = "A",
+			tacticalCancel = "B",
+			tacticalClose = "Y",
+			commandUp = "dpadUp",
+			commandDown = "dpadDown",
+			commandLeft = "dpadLeft",
+			commandRight = "dpadRight",
+			idlePrev = "dpadLeft",
+			idleNext = "dpadRight",
+			groupSlotUp = "dpadUp",
+			groupSlotDown = "dpadDown",
+			groupRecallOrAssign = "dpadLeft",
+			groupClear = "B",
+		}
+	end
+
+	for actionName, buttonName in pairs(map) do
+		ControllerBindingsUISafeCall("SetBinding", actionName, buttonName)
+	end
+
+	ControllerBindingsUI.currentPreset = presetName
+	ControllerBindingsUI.modal = nil
+	ControllerBindingsUI.pendingPresetName = nil
+	ControllerBindingsUISetToast("Applied preset: " .. presetName)
+end
+
 local function ControllerBindingsUIApplyBinding(action, inputName, allowDuplicate)
 	if not action then
 		return
@@ -761,6 +894,9 @@ local function ControllerBindingsUIApplyBinding(action, inputName, allowDuplicat
 		return
 	end
 	local ok = ControllerBindingsUISafeCall("SetBinding", action.action, inputName)
+	if ok then
+		ControllerBindingsUI.currentPreset = "Custom"
+	end
 	ControllerBindingsUI.modal = nil
 	ControllerBindingsUI.captureAction = nil
 	ControllerBindingsUI.pendingInput = nil
@@ -822,6 +958,16 @@ local function ControllerBindingsUISelectAction(index)
 end
 
 local function ControllerBindingsUIStartCapture()
+	local category = ControllerBindingsUISelectedCategory()
+	if category and category.name == "Presets" then
+		local action = ControllerBindingsUISelectedAction()
+		if action then
+			ControllerBindingsUI.modal = "applyPreset"
+			ControllerBindingsUI.pendingPresetName = action.label
+			ControllerBindingsUISetToast("Confirm preset: " .. action.label)
+		end
+		return
+	end
 	local action = ControllerBindingsUISelectedAction()
 	if not action then
 		return
@@ -850,11 +996,18 @@ local function ControllerBindingsUIResetSelected()
 	if not action then
 		return
 	end
+	if action.group == "Presets" then
+		ControllerBindingsUISetToast("Cannot reset a preset layout")
+		return
+	end
 	if action.readOnly then
 		ControllerBindingsUISetToast("Read-only camera axis")
 		return
 	end
 	local ok = ControllerBindingsUISafeCall("ResetBinding", action.action)
+	if ok then
+		ControllerBindingsUI.currentPreset = "Custom"
+	end
 	ControllerBindingsUISetToast(ok and ("Reset " .. action.label) or "ResetBinding failed")
 end
 
@@ -865,6 +1018,9 @@ end
 
 local function ControllerBindingsUIConfirmResetAll()
 	local ok = ControllerBindingsUISafeCall("ResetAllBindings")
+	if ok then
+		ControllerBindingsUI.currentPreset = "Custom"
+	end
 	ControllerBindingsUI.modal = nil
 	ControllerBindingsUISetToast(ok and "All bindings reset" or "ResetAllBindings failed")
 end
@@ -1341,8 +1497,18 @@ local function ControllerBindingsUIDrawActionList(x1, y1, x2, y2)
 			ControllerBindingsUIDrawOutline(x1 + 12, rowY - rowH + 4, x2 - 12, rowY + 3, { 0.46, 0.88, 0.96, 1 })
 		end
 		ControllerBindingsUIDrawText(action.label, x1 + 24, rowY - 19, 14, { 0.92, 0.97, 1, 1 }, "o")
-		local suffix = action.readOnly and " (view)" or ""
-		ControllerBindingsUIDrawText(ControllerBindingsUIDisplayBinding(binding) .. suffix, x2 - 24, rowY - 19, 13, { 0.78, 0.9, 0.96, 1 }, "or")
+		local rightText = ""
+		if category.name == "Presets" then
+			if ControllerBindingsUI.currentPreset == action.actionLabel then
+				rightText = "Active"
+			else
+				rightText = "Apply"
+			end
+		else
+			local suffix = action.readOnly and " (view)" or ""
+			rightText = ControllerBindingsUIDisplayBinding(binding) .. suffix
+		end
+		ControllerBindingsUIDrawText(rightText, x2 - 24, rowY - 19, 13, { 0.78, 0.9, 0.96, 1 }, "or")
 		rows[#rows + 1] = { x1 = x1 + 12, y1 = rowY - rowH + 4, x2 = x2 - 12, y2 = rowY + 3, index = i }
 		rowY = rowY - rowH - 3
 	end
@@ -1353,6 +1519,63 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 	local action = ControllerBindingsUISelectedAction()
 	if not action then
 		ControllerBindingsUIDrawText("No action selected", x1 + 20, y2 - 74, 16, { 0.92, 0.96, 1, 1 }, "o")
+		return
+	end
+	if action.group == "Presets" then
+		local y = y2 - 76
+		ControllerBindingsUIDrawText(action.label .. " Preset", x1 + 20, y, 21, { 0.94, 0.99, 1, 1 }, "o")
+		y = y - 36
+		local presetStatus = "Custom"
+		if ControllerBindingsUI.currentPreset == action.actionLabel then
+			presetStatus = "Active"
+		else
+			presetStatus = "Inactive"
+		end
+		ControllerBindingsUIDrawText("Status: " .. presetStatus, x1 + 20, y, 15, { 0.72, 0.84, 0.9, 1 }, "o")
+		y = y - 24
+		ControllerBindingsUIDrawText(action.description or "", x1 + 20, y, 13, { 0.82, 0.9, 0.94, 1 }, "o")
+		y = y - 28
+		ControllerBindingsUIDrawText("Preset Mapping:", x1 + 20, y, 15, { 0.9, 0.97, 1, 1 }, "o")
+		y = y - 20
+
+		local lines = {}
+		if action.actionLabel == "Balanced RTS" then
+			lines = {
+				"A = Select / Confirm",
+				"B = Cancel / Clear Selection",
+				"X = Move / Smart Move",
+				"Y = Build / Factory Radial",
+				"LT = Camera Speed Modifier only",
+				"LB = Camera Pitch Modifier",
+				"RT = Tactical / Command Layer",
+				"RB = Group / Management Layer",
+				"L3 (Left Stick Click) = Remove current/next queue",
+				"R3 (Right Stick Click) = Remove last queue",
+				"Back/View = Commander Focus / Utility",
+			}
+		elseif action.actionLabel == "Build-First Commander" then
+			lines = {
+				"A = Select / Confirm",
+				"B = Cancel / Clear Selection",
+				"X = Move / Smart Move",
+				"Y = Tactical / Context Action",
+				"LT = Camera Speed Modifier only",
+				"LB = Camera Pitch Modifier",
+				"RT = Tactical / Command Layer",
+				"RB = Build / Factory Layer",
+				"L3 (Left Stick Click) = Remove current/next queue",
+				"R3 (Right Stick Click) = Remove last queue",
+				"Back/View = Commander Focus / Utility",
+			}
+		end
+
+		for _, line in ipairs(lines) do
+			ControllerBindingsUIDrawText("  • " .. line, x1 + 20, y, 12, { 0.78, 0.9, 0.96, 1 }, "o")
+			y = y - 16
+		end
+
+		y = y - 10
+		ControllerBindingsUIDrawText("Press A/Enter or click to apply this preset layout.", x1 + 20, y, 12, { 1, 0.84, 0.46, 1 }, "o")
 		return
 	end
 	local binding = ControllerBindingsUIGetCurrentBinding(action)
@@ -1389,15 +1612,21 @@ local function ControllerBindingsUIDrawFooter(x1, y1, x2, vsx)
 	if USE_SAFE_AREA_LAYOUT then
 		ControllerBindingsUIDrawRect(x1, y1, x2, y1 + 40, { 0.025, 0.035, 0.047, 0.96 })
 		ControllerBindingsUIDrawOutline(x1, y1, x2, y1 + 40, { 0.26, 0.37, 0.45, 0.95 })
+		local category = ControllerBindingsUISelectedCategory()
 		if ControllerBindingsUI.mode == "settings" then
 			ControllerBindingsUIDrawText("A/Enter Toggle Bool  |  Left/Right Adjust Number  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Tab  |  Start/Menu Mode Toggle", (x1 + x2) * 0.5, y1 + 13, 13, { 0.78, 0.9, 0.96, 1 }, "oc")
+		elseif category and category.name == "Presets" then
+			ControllerBindingsUIDrawText("A/Enter Apply Preset  |  B/Esc Close  |  LB/RB or Left/Right Category  |  Start/Menu Mode Toggle", (x1 + x2) * 0.5, y1 + 13, 13, { 0.78, 0.9, 0.96, 1 }, "oc")
 		else
 			ControllerBindingsUIDrawText("A/Enter Rebind  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Category  |  Start/Menu Mode Toggle", (x1 + x2) * 0.5, y1 + 13, 13, { 0.78, 0.9, 0.96, 1 }, "oc")
 		end
 	else
 		ControllerBindingsUIDrawRect(0, 0, vsx, 50, { 0.025, 0.035, 0.047, 0.96 })
+		local category = ControllerBindingsUISelectedCategory()
 		if ControllerBindingsUI.mode == "settings" then
 			ControllerBindingsUIDrawText("A/Enter Toggle Bool  |  Left/Right Adjust Number  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Tab  |  Start/Menu Mode Toggle", vsx * 0.5, 18, 14, { 0.78, 0.9, 0.96, 1 }, "oc")
+		elseif category and category.name == "Presets" then
+			ControllerBindingsUIDrawText("A/Enter Apply Preset  |  B/Esc Close  |  LB/RB or Left/Right Category  |  Start/Menu Mode Toggle", vsx * 0.5, 18, 14, { 0.78, 0.9, 0.96, 1 }, "oc")
 		else
 			ControllerBindingsUIDrawText("A/Enter Rebind  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Category  |  Start/Menu Mode Toggle", vsx * 0.5, 18, 14, { 0.78, 0.9, 0.96, 1 }, "oc")
 		end
@@ -1494,6 +1723,12 @@ local function ControllerBindingsUIDrawModal(vsx, vsy)
 		ControllerBindingsUIDrawText(titleText, x1 + 28, y2 - 92, 22, { 0.94, 0.99, 1, 1 }, "o")
 		ControllerBindingsUIDrawText("A / Enter confirms. B / Escape cancels.", x1 + 28, y2 - 136, 16, { 0.76, 0.88, 0.94, 1 }, "o")
 		ControllerBindingsUIDrawModalButton("resetAll", "Reset All", x1 + 28, y1 + 22, x1 + 158, y1 + 58)
+		ControllerBindingsUIDrawModalButton("cancel", "Cancel", x2 - 148, y1 + 22, x2 - 28, y1 + 58)
+	elseif ControllerBindingsUI.modal == "applyPreset" then
+		local presetName = ControllerBindingsUI.pendingPresetName
+		ControllerBindingsUIDrawText("Apply " .. tostring(presetName or "") .. " preset?", x1 + 28, y2 - 92, 22, { 0.94, 0.99, 1, 1 }, "o")
+		ControllerBindingsUIDrawText("Warning: This will replace selected build/tactical/queue/group bindings only.", x1 + 28, y2 - 136, 15, { 1, 0.84, 0.64, 1 }, "o")
+		ControllerBindingsUIDrawModalButton("applyPreset", "Apply Preset", x1 + 28, y1 + 22, x1 + 178, y1 + 58)
 		ControllerBindingsUIDrawModalButton("cancel", "Cancel", x2 - 148, y1 + 22, x2 - 28, y1 + 58)
 	end
 end
@@ -1859,6 +2094,13 @@ function widget:KeyPress(key, mods, isRepeat, label)
 			end
 		end
 		return true
+	elseif ControllerBindingsUI.modal == "applyPreset" then
+		if ControllerBindingsUIKeyMatches(key, label, { "ESCAPE", "Escape", "escape", "ESC", "esc", 27 }) then
+			ControllerBindingsUICancelModal()
+		elseif ControllerBindingsUIKeyMatches(key, label, { "RETURN", "Return", "return", "ENTER", "Enter", "enter", 13, 271 }) then
+			ControllerBindingsUIConfirmApplyPreset()
+		end
+		return true
 	end
 
 	if ControllerBindingsUIKeyMatches(key, label, { "ESCAPE", "Escape", "escape", "ESC", "esc", 27 }) then
@@ -1986,6 +2228,8 @@ function widget:MousePress(x, y, button)
 				else
 					ControllerBindingsUIConfirmResetAll()
 				end
+			elseif hit.id == "applyPreset" then
+				ControllerBindingsUIConfirmApplyPreset()
 			end
 			return true
 		end
@@ -2020,7 +2264,11 @@ function widget:MousePress(x, y, button)
 		for i = 1, #ControllerBindingsUI.layout.rows do
 			local hit = ControllerBindingsUI.layout.rows[i]
 			if ControllerBindingsUIPointInside(hit, x, y) then
-				ControllerBindingsUISelectAction(hit.index)
+				if ControllerBindingsUI.actionIndex == hit.index then
+					ControllerBindingsUIStartCapture()
+				else
+					ControllerBindingsUISelectAction(hit.index)
+				end
 				return true
 			end
 		end

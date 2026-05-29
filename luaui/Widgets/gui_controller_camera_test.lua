@@ -564,14 +564,16 @@ local XboxController = {
 	},
 	buttonOrder = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 },
 	commandLayerButtonOrder = { 0, 1, 2, 3, 9, 10, 11, 12, 13, 14 },
-	previewButtonOrder = { 0, 1, 2, 3, 4, 6, 9, 10, 11, 12, 13, 14 },
+	previewButtonOrder = { 0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14 },
 	normalPreviewLabels = {
 		[0] = "A = Select / hold area / double-tap same visible type",
 		[1] = "B = Clear Selection",
 		[2] = "X = Smart Action (Move/Build/Attack)",
 		[3] = "Y = Controller Build Menu",
-		[4] = "Back/View = Remove current queue item; LT+Back removes last",
+		[4] = "Back/View = Commander focus / utility",
 		[6] = "Start/Menu = Reserved",
+		[7] = "Left Stick Click = Remove current/next queued command",
+		[8] = "Right Stick Click = Remove last queued command",
 		[9] = "LB = Camera pitch; LB+D-pad L/R idle type",
 		[10] = "RB = Hold control-group mode",
 		[11] = "D-pad Up = Camera bookmark Up",
@@ -591,7 +593,7 @@ local XboxController = {
 		[13] = "RT + D-pad Left = Previous selection cycle",
 		[14] = "RT + D-pad Right = Next selection cycle",
 	},
-	normalLayoutSummary = "A Select/Hold Area/Double Same-Type, B Clear, X Context, Y Build, Back Queue Remove, D-pad L/R Idle, RB Groups",
+	normalLayoutSummary = "A Select/Hold Area/Double Same-Type, B Clear, X Context, Y Build, L3/R3 Queue Remove, D-pad L/R Idle, RB Groups",
 	commandLayoutSummary = "RT+A Reserved, RT+B Stop, RT+X Attack, RT+Y Tactical, RT+LB/RB Cycle, RT+D-pad Commands",
 }
 
@@ -1540,10 +1542,11 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "smartAction", label = "Smart Action", default = "X", group = "Core" },
 		{ action = "buildRadial", label = "Build / Factory Radial", default = "Y", group = "Core" },
 		{ action = "commandLayer", label = "Command Layer", default = "RT", group = "Modifiers" },
-		{ action = "queueModifier", label = "Queue Modifier", default = "LT", group = "Modifiers" },
+		{ action = "queueModifier", label = "Queue Modifier", default = "", group = "Modifiers" },
 		{ action = "controlGroupModifier", label = "Group Modifier", default = "RB", group = "Modifiers" },
 		{ action = "pitchModifier", label = "Pitch / Idle Type Modifier", default = "LB", group = "Modifiers" },
-		{ action = "removeQueuedCommand", label = "Remove Queue Item / LT=Last", default = "back", group = "Queue" },
+		{ action = "removeQueuedCommand", label = "Remove Current/Next Queue Item", default = "leftStickClick", group = "Queue" },
+		{ action = "removeLastQueuedCommand", label = "Remove Last Queue Item", default = "rightStickClick", group = "Queue" },
 		{ action = "radialSelect", label = "Radial Select", default = "A", group = "Radials" },
 		{ action = "radialCancel", label = "Radial Cancel", default = "B", group = "Radials" },
 		{ action = "radialQuick", label = "Radial Quick Place", default = "X", group = "Radials" },
@@ -1600,6 +1603,8 @@ function ControllerCameraTestBindingLabel(buttonName)
 		dpadDown = "D-pad Down",
 		dpadLeft = "D-pad Left",
 		dpadRight = "D-pad Right",
+		leftStickClick = "Left Stick Click",
+		rightStickClick = "Right Stick Click",
 	}
 	return labels[buttonName] or tostring(buttonName or "Unbound")
 end
@@ -1954,7 +1959,7 @@ function ControllerCameraTestResetSettingsCategory(category)
 end
 
 function ControllerCameraTestGetPressedBindingInput()
-	for _, buttonName in ipairs({ "A", "X", "Y", "back", "start", "LB", "RB", "dpadUp", "dpadDown", "dpadLeft", "dpadRight" }) do
+	for _, buttonName in ipairs({ "A", "X", "Y", "back", "start", "LB", "RB", "dpadUp", "dpadDown", "dpadLeft", "dpadRight", "leftStickClick", "rightStickClick" }) do
 		if WasButtonPressed(buttonName) then
 			return buttonName
 		end
@@ -2278,7 +2283,13 @@ function ControllerCameraTestHandleQueueRemovalInput()
 		if ControllerCameraTestGetBinding("removeQueuedCommand") == "back" then
 			return false
 		end
-		return ControllerCameraTestIssueQueueRemovalCommand(ControllerCameraTestIsQueueModifierActive())
+		return ControllerCameraTestIssueQueueRemovalCommand(false)
+	end
+	if ControllerCameraTestActionPressed("removeLastQueuedCommand") then
+		if ControllerCameraTestGetBinding("removeLastQueuedCommand") == "back" then
+			return false
+		end
+		return ControllerCameraTestIssueQueueRemovalCommand(true)
 	end
 	return false
 end
@@ -6277,14 +6288,8 @@ function ControllerCameraTestHandleBackViewControls()
 		ControllerCameraTestLayerDebug.normalUtilityAction = "Back/View modifier ready"
 	end
 	if WasButtonReleased("back") and ControllerCameraTestTuning.backHeld then
-		local shouldRemoveQueue = not ControllerCameraTestTuning.backComboUsed and ControllerCameraTestGetBinding("removeQueuedCommand") == "back"
 		ControllerCameraTestTuning.backHeld = false
 		ControllerCameraTestTuning.backComboUsed = false
-		if shouldRemoveQueue then
-			local removeLast = ControllerCameraTestTuning.backQueueModifier == true
-			ControllerCameraTestTuning.backQueueModifier = false
-			return ControllerCameraTestIssueQueueRemovalCommand(removeLast)
-		end
 		ControllerCameraTestTuning.backQueueModifier = false
 	end
 	return false
@@ -7904,22 +7909,22 @@ function ControllerCameraTestDrawHelpOverlay()
 	local maxChars = math.max(28, math.floor((width - 36) / 7.5))
 	local lines = {
 		"Controller Camera Test Help",
-		"Camera/Move: LS pan | RS X rotate | RS Y zoom | LB+RS Y pitch | LT boost",
-		"Selection: A select | A hold area-select units first | LT+A hold includes buildings",
-		"Double-tap A on unit: visible same type | LT+double-tap A on unit: all owned same type | empty: no action",
-		"Back/View + double-tap A: focus Commander | Start/Menu: reserved",
-		"Queue Removal: Back/View removes current queue item | LT+Back/View removes last queue item",
-		"LT+double-tap A on empty reticle: select all idle units in current idle type",
+		"Camera/Move: LS pan | RS X rotate | RS Y zoom | LB+RS Y pitch | LT: Camera speed modifier",
+		"Selection: A select | A hold area-select units first | bound modifier + A hold includes buildings",
+		"Double-tap A on unit: visible same type | bound modifier + double-tap A on unit: all owned same type | empty: no action",
+		"Back/View: Commander focus / utility | Start/Menu: reserved",
+		"Left Stick Click: Remove current/next queued command | Right Stick Click: Remove last queued command",
+		"bound modifier + double-tap A on empty reticle: select all idle units in current idle type",
 		"Context Actions: X tap context | X hold one unit draw queued path | X hold many units line/spread | RT+B stop | RT+X attack/fight",
 		"Combat Layers: RT+A reserved/disabled | RT+Y tactical radial | LS/Dpad choose | A confirm | B/Y close",
-		"Queue Modifier: hold LT while confirming Move/Fight/Attack/Reclaim/Repair/Build to queue like Shift",
+		"Queue Modifier: hold bound modifier button to queue commands",
 		"Constructor Radial: Y open | LS/Dpad select | LB/RB page | Y close",
 		"   * A enter placement | X quick-place | B close radial",
 		"Factory Radial: Y open | LS/Dpad select | LB/RB page | Y close",
-		"   * A add 1 queue | LT+A add 5 queue | B remove 1 | LT+B remove 5",
-		"Placement Mode: A place | X place+stay | B cancel | LT queue | RT queue front",
+		"   * A add 1 queue | bound modifier + A add 5 queue | B remove 1 | bound modifier + B remove 5",
+		"Placement Mode: A place | X place+stay | B cancel | bound modifier queue | RT queue front",
 		"   * RS X camera rotate | Dpad L/R building facing | Dpad U/D spacing | LB/RB pattern | A/X hold Line/Grid",
-		"Idle Cycling: Dpad L/R idle unit | LB+Dpad L/R idle type | Dpad U/D recall cam | LT+Dpad U/D store cam",
+		"Idle Cycling: Dpad L/R idle unit | LB+Dpad L/R idle type | Dpad U/D recall cam | bound modifier + Dpad U/D store cam",
 		"Control Groups: hold RB overlay | RB+Dpad U/D slot | RB+tap Dpad L recall | RB+hold Dpad L assign same type + auto-add",
 		"Control Groups: RB+B clear | RB+Dpad R, RB+A, RB+X are reserved/disabled",
 		"Status: controller mode shows compact factory/constructor activity panel; Y opens its radial",
