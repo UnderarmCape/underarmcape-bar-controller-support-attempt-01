@@ -100,6 +100,10 @@ ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	gridShortcutResult = "none",
 	lastConstructionShortcut = "none",
 	useCustomGridFallback = true,
+	patternPressActive = false,
+	patternPressStartTime = 0,
+	patternHoldTriggered = false,
+	patternHoldSeconds = 0.25,
 }
 ControllerCameraTestDragCommand = ControllerCameraTestDragCommand or {
 	active = false,
@@ -1560,7 +1564,7 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "rotateBuildingRight", label = "Rotate Building Right", default = "dpadRight", group = "Placement" },
 		{ action = "spacingUp", label = "Increase Spacing", default = "dpadUp", group = "Placement" },
 		{ action = "spacingDown", label = "Decrease Spacing", default = "dpadDown", group = "Placement" },
-		{ action = "patternPrev", label = "Select Grid Placement", default = "LB", group = "Placement" },
+		{ action = "patternPrev", label = "Tap Pattern / Hold Grid", default = "LB", group = "Placement" },
 		{ action = "patternNext", label = "Placement Pattern Reserved", default = "none", group = "Placement" },
 		{ action = "tacticalSelect", label = "Tactical Select", default = "A", group = "Tactical" },
 		{ action = "tacticalCancel", label = "Tactical Cancel", default = "B", group = "Tactical" },
@@ -5268,6 +5272,9 @@ function ControllerCameraTestSetPlacementOption(option)
 	placement.lastConstructionShortcut = "none"
 	placement.gridShortcutResult = "none"
 	placement.lastResult = "placing " .. tostring(option.name)
+	placement.patternPressActive = false
+	placement.patternPressStartTime = 0
+	placement.patternHoldTriggered = false
 	latchSelectionDebugMessage("Placement: " .. tostring(option.name))
 	return true
 end
@@ -5287,6 +5294,9 @@ function ControllerCameraTestCancelPlacement(reason)
 	placement.placementMode = "none"
 	placement.cmdDescIndex = nil
 	placement.nativeSetActiveCommandResult = "none"
+	placement.patternPressActive = false
+	placement.patternPressStartTime = 0
+	placement.patternHoldTriggered = false
 	latchSelectionDebugMessage("Placement cancelled")
 end
 
@@ -5339,20 +5349,71 @@ function ControllerCameraTestTryConstructionShortcut(actionName, direction)
 			return false
 		end
 
-		if placement.placementPattern ~= "grid" then
-			placement.placementPattern = "grid"
-			placement.lastConstructionShortcut = "pattern grid"
-			placement.gridShortcutResult = "grid selected"
-			ControllerCameraTestShowPlacementPatternPopup(placement.placementPattern, "pattern")
-			return true
+		if direction == "grid" then
+			if placement.placementPattern ~= "grid" then
+				placement.placementPattern = "grid"
+				placement.lastConstructionShortcut = "pattern grid"
+				placement.gridShortcutResult = "grid selected"
+				ControllerCameraTestShowPlacementPatternPopup(placement.placementPattern, "pattern")
+				return true
+			end
+
+			placement.lastConstructionShortcut = "pattern grid held"
+			placement.gridShortcutResult = "grid already selected"
+			return false
 		end
 
-		placement.lastConstructionShortcut = "pattern grid held"
-		placement.gridShortcutResult = "grid already selected"
-		return false
+		local patterns = { "single", "line", "grid", "border", "split" }
+		local currentIdx = 1
+		for idx, pat in ipairs(patterns) do
+			if pat == placement.placementPattern then
+				currentIdx = idx
+				break
+			end
+		end
+
+		if direction == "prev" then
+			currentIdx = ((currentIdx - 2) % #patterns) + 1
+		else
+			currentIdx = (currentIdx % #patterns) + 1
+		end
+
+		placement.placementPattern = patterns[currentIdx]
+		placement.lastConstructionShortcut = "pattern " .. tostring(direction or "cycle")
+		placement.gridShortcutResult = "pattern selected"
+		ControllerCameraTestShowPlacementPatternPopup(placement.placementPattern, "pattern")
+		return true
 	end
 
 	return false
+end
+
+function ControllerCameraTestHandlePlacementPatternInput()
+	local placement = ControllerCameraTestBuildPlacement
+	local isDown = ControllerCameraTestActionDown("patternPrev")
+	local changed = false
+
+	if isDown then
+		if not placement.patternPressActive then
+			placement.patternPressActive = true
+			placement.patternPressStartTime = debugEventTime
+			placement.patternHoldTriggered = false
+		elseif not placement.patternHoldTriggered
+			and (debugEventTime - (placement.patternPressStartTime or debugEventTime)) >= (placement.patternHoldSeconds or 0.25) then
+			changed = ControllerCameraTestTryConstructionShortcut("pattern", "grid") or changed
+			placement.patternHoldTriggered = true
+		end
+	elseif placement.patternPressActive then
+		if not placement.patternHoldTriggered then
+			changed = ControllerCameraTestTryConstructionShortcut("pattern", "cycle") or changed
+		end
+
+		placement.patternPressActive = false
+		placement.patternPressStartTime = 0
+		placement.patternHoldTriggered = false
+	end
+
+	return changed
 end
 
 function ControllerCameraTestDragModeForPlacementPattern(pattern)
@@ -5693,6 +5754,9 @@ end
 function ControllerCameraTestHandlePlacementInput(dt)
 	local placement = ControllerCameraTestBuildPlacement
 	if not placement.active then
+		placement.patternPressActive = false
+		placement.patternPressStartTime = 0
+		placement.patternHoldTriggered = false
 		return false
 	end
 
@@ -5755,14 +5819,15 @@ function ControllerCameraTestHandlePlacementInput(dt)
 		elseif ControllerCameraTestActionPressed("rotateBuildingRight") then
 			ControllerCameraTestRotatePlacementFacing(1)
 			changed = true
-		elseif ControllerCameraTestActionDown("patternPrev") then
-			changed = ControllerCameraTestTryConstructionShortcut("pattern", "grid")
-		elseif ControllerCameraTestActionPressed("patternNext") then
-			changed = ControllerCameraTestTryConstructionShortcut("pattern", "next")
-		elseif ControllerCameraTestActionPressed("spacingUp") then
-			changed = ControllerCameraTestTryConstructionShortcut("spacing", "inc")
-		elseif ControllerCameraTestActionPressed("spacingDown") then
-			changed = ControllerCameraTestTryConstructionShortcut("spacing", "dec")
+		else
+			changed = ControllerCameraTestHandlePlacementPatternInput()
+			if not changed then
+				if ControllerCameraTestActionPressed("spacingUp") then
+					changed = ControllerCameraTestTryConstructionShortcut("spacing", "inc")
+				elseif ControllerCameraTestActionPressed("spacingDown") then
+					changed = ControllerCameraTestTryConstructionShortcut("spacing", "dec")
+				end
+			end
 		end
 		if changed then
 			drag.mode = ControllerCameraTestDragModeForPlacementPattern(placement.placementPattern)
@@ -5777,10 +5842,8 @@ function ControllerCameraTestHandlePlacementInput(dt)
 			ControllerCameraTestRotatePlacementFacing(1)
 		elseif ControllerCameraTestActionPressed("radialClose") then
 			ControllerCameraTestCancelPlacement("cancelled by Y")
-		elseif ControllerCameraTestActionDown("patternPrev") then
-			ControllerCameraTestTryConstructionShortcut("pattern", "grid")
-		elseif ControllerCameraTestActionPressed("patternNext") then
-			ControllerCameraTestTryConstructionShortcut("pattern", "next")
+		elseif ControllerCameraTestHandlePlacementPatternInput() then
+			-- Pattern helper handles LB tap-to-cycle and hold-to-grid.
 		elseif ControllerCameraTestActionPressed("spacingUp") then
 			ControllerCameraTestTryConstructionShortcut("spacing", "inc")
 		elseif ControllerCameraTestActionPressed("spacingDown") then
@@ -5789,9 +5852,9 @@ function ControllerCameraTestHandlePlacementInput(dt)
 	end
 
 	if drag.active then
-		activeButtonLayoutSummary = "Drag Build: A/X confirm, B cancel, RS X camera, D-pad L/R facing, U/D spacing, LB grid"
+		activeButtonLayoutSummary = "Drag Build: A/X confirm, B cancel, RS X camera, D-pad L/R facing, U/D spacing, LB tap pattern/hold grid"
 	else
-		activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, RS X camera, D-pad L/R facing, U/D spacing, LB grid"
+		activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, RS X camera, D-pad L/R facing, U/D spacing, LB tap pattern/hold grid"
 	end
 	return true
 end
@@ -7933,7 +7996,7 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Factory Radial: Y open | LS/Dpad select | LB/RB page | Y close",
 		"   * A add 1 queue | bound modifier + A add 5 queue | B remove 1 | bound modifier + B remove 5",
 		"Placement Mode: A place | X place+stay | B cancel | bound modifier queue | RT queue front",
-		"   * RS X camera rotate | Dpad L/R building facing | Dpad U/D spacing | LB grid | A/X hold Line/Grid",
+		"   * RS X camera rotate | Dpad L/R building facing | Dpad U/D spacing | LB tap pattern/hold grid | A/X hold Line/Grid",
 		"Idle Cycling: Dpad L/R idle unit | LB+Dpad L/R idle type | Dpad U/D recall cam | bound modifier + Dpad U/D store cam",
 		"Control Groups: hold RB overlay | RB+Dpad U/D slot | RB+tap Dpad L recall | RB+hold Dpad L assign same type + auto-add",
 		"Control Groups: RB+B clear | RB+Dpad R, RB+A, RB+X are reserved/disabled",
