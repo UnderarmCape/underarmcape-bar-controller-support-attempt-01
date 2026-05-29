@@ -47,6 +47,13 @@ ControllerCameraTestCommandDebug = ControllerCameraTestCommandDebug or {
 	mexActionResult = "none",
 	mexApplyPreviewPath = "no",
 	mexFallbackGiveOrderPath = "no",
+	queueRemovalMode = "none",
+	queueRemovalSelectedCount = 0,
+	queueRemovalAttemptedCount = 0,
+	queueRemovalRemovedCount = 0,
+	queueRemovalLastQueueSize = "none",
+	queueRemovalLastTag = "none",
+	queueRemovalUnitDetails = "none",
 }
 ControllerCameraTestBuildMenu = ControllerCameraTestBuildMenu or {
 	open = false,
@@ -300,6 +307,7 @@ ControllerCameraTestTuning = ControllerCameraTestTuning or {
 	selectedIndex = 1,
 	backHeld = false,
 	backComboUsed = false,
+	backQueueModifier = false,
 	lastAction = "none",
 }
 ControllerCameraTestSettingsUI = ControllerCameraTestSettingsUI or {
@@ -308,6 +316,10 @@ ControllerCameraTestSettingsUI = ControllerCameraTestSettingsUI or {
 	selectedIndex = 1,
 	lastAction = "none",
 	lastCategory = "Camera",
+}
+ControllerCameraTestExternalBindingUI = ControllerCameraTestExternalBindingUI or {
+	open = false,
+	lastAction = "none",
 }
 ControllerCameraTestKeyDebug = ControllerCameraTestKeyDebug or {
 	rawKey = "none",
@@ -558,7 +570,7 @@ local XboxController = {
 		[1] = "B = Clear Selection",
 		[2] = "X = Smart Action (Move/Build/Attack)",
 		[3] = "Y = Controller Build Menu",
-		[4] = "Back/View = Commander-focus modifier / reserved",
+		[4] = "Back/View = Remove current queue item; LT+Back removes last",
 		[6] = "Start/Menu = Reserved",
 		[9] = "LB = Camera pitch; LB+D-pad L/R idle type",
 		[10] = "RB = Hold control-group mode",
@@ -579,7 +591,7 @@ local XboxController = {
 		[13] = "RT + D-pad Left = Previous selection cycle",
 		[14] = "RT + D-pad Right = Next selection cycle",
 	},
-	normalLayoutSummary = "A Select/Hold Area/Double Same-Type, B Clear, X Context, Y Build, D-pad L/R Idle, LB+D-pad Type, RB Groups",
+	normalLayoutSummary = "A Select/Hold Area/Double Same-Type, B Clear, X Context, Y Build, Back Queue Remove, D-pad L/R Idle, RB Groups",
 	commandLayoutSummary = "RT+A Reserved, RT+B Stop, RT+X Attack, RT+Y Tactical, RT+LB/RB Cycle, RT+D-pad Commands",
 }
 
@@ -1531,6 +1543,7 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "queueModifier", label = "Queue Modifier", default = "LT", group = "Modifiers" },
 		{ action = "controlGroupModifier", label = "Group Modifier", default = "RB", group = "Modifiers" },
 		{ action = "pitchModifier", label = "Pitch / Idle Type Modifier", default = "LB", group = "Modifiers" },
+		{ action = "removeQueuedCommand", label = "Remove Queue Item / LT=Last", default = "back", group = "Queue" },
 		{ action = "radialSelect", label = "Radial Select", default = "A", group = "Radials" },
 		{ action = "radialCancel", label = "Radial Cancel", default = "B", group = "Radials" },
 		{ action = "radialQuick", label = "Radial Quick Place", default = "X", group = "Radials" },
@@ -1670,6 +1683,49 @@ end
 
 function ControllerCameraTestActionReleased(actionName)
 	return ControllerCameraTestBindingReleased(ControllerCameraTestGetBinding(actionName))
+end
+
+function ControllerCameraTestSetBindingUIOpen(open)
+	ControllerCameraTestExternalBindingUI.open = not not open
+	ControllerCameraTestExternalBindingUI.lastAction = ControllerCameraTestExternalBindingUI.open and "external binding UI open" or "external binding UI closed"
+end
+
+function ControllerCameraTestIsBindingUIOpen()
+	return ControllerCameraTestExternalBindingUI.open == true or ControllerCameraTestSettingsUI.open == true
+end
+
+function ControllerCameraTestIsGameplayInputBlocked()
+	return ControllerCameraTestExternalBindingUI.open == true
+end
+
+function ControllerCameraTestInstallWGAPI()
+	WG.BARControllerSupport = WG.BARControllerSupport or {}
+	WG.BARControllerSupport.GetBindingDefinitions = ControllerCameraTestBindingDefinitions
+	WG.BARControllerSupport.GetBinding = ControllerCameraTestGetBinding
+	WG.BARControllerSupport.SetBinding = ControllerCameraTestSetBinding
+	WG.BARControllerSupport.ResetBinding = ControllerCameraTestResetBinding
+	WG.BARControllerSupport.ResetAllBindings = ControllerCameraTestResetAllBindings
+	WG.BARControllerSupport.GetPressedBindingInput = ControllerCameraTestGetPressedBindingInput
+	WG.BARControllerSupport.IsInputPressed = ControllerCameraTestBindingPressed
+	WG.BARControllerSupport.IsInputDown = ControllerCameraTestBindingDown
+	WG.BARControllerSupport.SetBindingUIOpen = ControllerCameraTestSetBindingUIOpen
+	WG.BARControllerSupport.IsBindingUIOpen = ControllerCameraTestIsBindingUIOpen
+end
+
+function ControllerCameraTestRemoveWGAPI()
+	if not WG or not WG.BARControllerSupport then
+		return
+	end
+	WG.BARControllerSupport.GetBindingDefinitions = nil
+	WG.BARControllerSupport.GetBinding = nil
+	WG.BARControllerSupport.SetBinding = nil
+	WG.BARControllerSupport.ResetBinding = nil
+	WG.BARControllerSupport.ResetAllBindings = nil
+	WG.BARControllerSupport.GetPressedBindingInput = nil
+	WG.BARControllerSupport.IsInputPressed = nil
+	WG.BARControllerSupport.IsInputDown = nil
+	WG.BARControllerSupport.SetBindingUIOpen = nil
+	WG.BARControllerSupport.IsBindingUIOpen = nil
 end
 
 --------------------------------------------------------------------------------
@@ -1855,6 +1911,259 @@ end
 --------------------------------------------------------------------------------
 function ControllerCameraTestIsQueueModifierActive()
 	return ControllerCameraTestActionDown("queueModifier")
+end
+
+function ControllerCameraTestResetQueueRemovalDebug(mode)
+	ControllerCameraTestCommandDebug.queueRemovalMode = tostring(mode or "none")
+	ControllerCameraTestCommandDebug.queueRemovalSelectedCount = 0
+	ControllerCameraTestCommandDebug.queueRemovalAttemptedCount = 0
+	ControllerCameraTestCommandDebug.queueRemovalRemovedCount = 0
+	ControllerCameraTestCommandDebug.queueRemovalLastQueueSize = "none"
+	ControllerCameraTestCommandDebug.queueRemovalLastTag = "none"
+	ControllerCameraTestCommandDebug.queueRemovalUnitDetails = "none"
+end
+
+function ControllerCameraTestAppendQueueRemovalDebug(text)
+	text = tostring(text or "none")
+	local current = tostring(ControllerCameraTestCommandDebug.queueRemovalUnitDetails or "none")
+	if current == "none" then
+		current = text
+	elseif #current < 260 then
+		current = current .. "; " .. text
+	end
+	ControllerCameraTestCommandDebug.queueRemovalUnitDetails = current
+end
+
+function ControllerCameraTestGetGameFrameSafe()
+	if type(Spring.GetGameFrame) ~= "function" then
+		return 1
+	end
+	local ok, frame = pcall(Spring.GetGameFrame)
+	return ok and (tonumber(frame) or 0) or 0
+end
+
+function ControllerCameraTestGetCommandCountSafe(unitID)
+	if type(Spring.GetUnitCommandCount) ~= "function" then
+		return 0
+	end
+	local ok, count = pcall(Spring.GetUnitCommandCount, unitID)
+	return ok and (tonumber(count) or 0) or 0
+end
+
+function ControllerCameraTestGetCurrentCommandSafe(unitID, cmdIndex)
+	if type(Spring.GetUnitCurrentCommand) ~= "function" then
+		return nil
+	end
+	local ok, cmdID, cmdOpts, cmdTag, cmdParam1, cmdParam2 = pcall(Spring.GetUnitCurrentCommand, unitID, cmdIndex)
+	if not ok then
+		return nil
+	end
+	return cmdID, cmdOpts, cmdTag, cmdParam1, cmdParam2
+end
+
+function ControllerCameraTestGetUnitCommandsSafe(unitID, count)
+	if type(Spring.GetUnitCommands) ~= "function" then
+		return nil
+	end
+	local ok, commands = pcall(Spring.GetUnitCommands, unitID, count)
+	if ok and type(commands) == "table" then
+		return commands
+	end
+	return nil
+end
+
+function ControllerCameraTestGiveOrderToUnitSafe(unitID, cmdID, params, options)
+	if type(Spring.GiveOrderToUnit) ~= "function" or not unitID or not cmdID then
+		return false
+	end
+	return pcall(Spring.GiveOrderToUnit, unitID, cmdID, params or {}, options or 0)
+end
+
+function ControllerCameraTestRemovePregameBuildQueueCommand(cmdIndex)
+	local pregame = WG and WG["pregame-build"]
+	if type(pregame) ~= "table" or type(pregame.getBuildQueue) ~= "function" or type(pregame.setBuildQueue) ~= "function" then
+		ControllerCameraTestAppendQueueRemovalDebug("pregame unavailable")
+		return false, "pregame unavailable"
+	end
+	local ok, buildQueue = pcall(pregame.getBuildQueue)
+	if not ok or type(buildQueue) ~= "table" or #buildQueue == 0 then
+		ControllerCameraTestAppendQueueRemovalDebug("pregame empty")
+		return false, "pregame empty"
+	end
+	cmdIndex = math.max(1, math.min(#buildQueue, tonumber(cmdIndex) or 1))
+	local newQueue = {}
+	for i, item in ipairs(buildQueue) do
+		if i ~= cmdIndex then
+			newQueue[#newQueue + 1] = item
+		end
+	end
+	local setOk = pcall(pregame.setBuildQueue, newQueue)
+	ControllerCameraTestCommandDebug.queueRemovalLastQueueSize = tostring(#buildQueue)
+	ControllerCameraTestCommandDebug.queueRemovalLastTag = "pregame:" .. tostring(cmdIndex)
+	ControllerCameraTestAppendQueueRemovalDebug("pregame q" .. tostring(#buildQueue) .. " idx" .. tostring(cmdIndex) .. (setOk and " removed" or " failed"))
+	return setOk, setOk and "pregame removed" or "pregame set failed"
+end
+
+function ControllerCameraTestRemoveCommand(unitID, cmdIndex, commandQueueSize)
+	if ControllerCameraTestGetGameFrameSafe() <= 0 then
+		return ControllerCameraTestRemovePregameBuildQueueCommand(cmdIndex)
+	end
+
+	commandQueueSize = tonumber(commandQueueSize) or ControllerCameraTestGetCommandCountSafe(unitID)
+	ControllerCameraTestCommandDebug.queueRemovalLastQueueSize = tostring(commandQueueSize or "none")
+	if not unitID then
+		ControllerCameraTestAppendQueueRemovalDebug("no unit")
+		return false, "no unit"
+	end
+	if not commandQueueSize or commandQueueSize < 1 then
+		ControllerCameraTestAppendQueueRemovalDebug("u" .. tostring(unitID) .. " empty")
+		return false, "empty queue"
+	end
+
+	cmdIndex = math.max(1, math.min(commandQueueSize, tonumber(cmdIndex) or 1))
+	local cmdID, _, cmdTag, _, cmdParam2 = ControllerCameraTestGetCurrentCommandSafe(unitID, cmdIndex)
+	ControllerCameraTestCommandDebug.queueRemovalLastTag = tostring(cmdTag or "none")
+	if not cmdID or not cmdTag then
+		ControllerCameraTestAppendQueueRemovalDebug("u" .. tostring(unitID) .. " q" .. tostring(commandQueueSize) .. " no tag")
+		return false, "no command tag"
+	end
+
+	local commandDeleted = false
+	local result = "remove tag " .. tostring(cmdTag)
+	if (cmdID == CMD.RECLAIM or cmdID == CMD.REPAIR) and cmdParam2 then
+		local _, _, cmdTag2 = ControllerCameraTestGetCurrentCommandSafe(unitID, cmdIndex + 1)
+		if cmdTag2 then
+			commandDeleted = ControllerCameraTestGiveOrderToUnitSafe(unitID, CMD.REMOVE, { cmdTag2, cmdTag }, 0)
+			result = "remove area pair " .. tostring(cmdTag2) .. "," .. tostring(cmdTag)
+		end
+	elseif cmdID == CMD.REPAIR and cmdIndex ~= commandQueueSize then
+		local cmdID2, _, cmdTag2 = ControllerCameraTestGetCurrentCommandSafe(unitID, cmdIndex + 1)
+		if cmdID2 == CMD.GUARD and cmdTag2 then
+			commandDeleted = ControllerCameraTestGiveOrderToUnitSafe(unitID, CMD.REMOVE, { cmdTag2, cmdTag }, 0)
+			result = "remove repair/guard pair " .. tostring(cmdTag2) .. "," .. tostring(cmdTag)
+		end
+	elseif cmdID == CMD.GUARD and cmdIndex ~= 1 then
+		local cmdID2, _, cmdTag2 = ControllerCameraTestGetCurrentCommandSafe(unitID, cmdIndex - 1)
+		if cmdID2 == CMD.REPAIR and cmdTag2 then
+			commandDeleted = ControllerCameraTestGiveOrderToUnitSafe(unitID, CMD.REMOVE, { cmdTag, cmdTag2 }, 0)
+			result = "remove guard/repair pair " .. tostring(cmdTag) .. "," .. tostring(cmdTag2)
+		end
+	elseif cmdID == CMD.FIGHT and cmdIndex == 1 then
+		local commands = ControllerCameraTestGetUnitCommandsSafe(unitID, -1)
+		if commands and commands[2] and commands[2].id == CMD.PATROL then
+			commandQueueSize = commandQueueSize - 2
+			ControllerCameraTestGiveOrderToUnitSafe(unitID, CMD.STOP, {}, {})
+			for i = 1, #commands do
+				if i == 1 then
+					ControllerCameraTestGiveOrderToUnitSafe(unitID, CMD.MOVE, commands[i].params, {})
+				end
+				if i ~= cmdIndex then
+					ControllerCameraTestGiveOrderToUnitSafe(unitID, commands[i].id, commands[i].params, { "shift" })
+				end
+			end
+			commandDeleted = true
+			result = "rebuilt fight/patrol queue"
+		end
+	end
+
+	if not commandDeleted then
+		commandDeleted = ControllerCameraTestGiveOrderToUnitSafe(unitID, CMD.REMOVE, { cmdTag }, 0)
+	end
+	if commandDeleted and commandQueueSize == 1 then
+		ControllerCameraTestGiveOrderToUnitSafe(unitID, CMD.STOP, {}, 0)
+	end
+
+	ControllerCameraTestAppendQueueRemovalDebug("u" .. tostring(unitID) .. " q" .. tostring(commandQueueSize) .. " idx" .. tostring(cmdIndex) .. " " .. tostring(result) .. (commandDeleted and " ok" or " failed"))
+	return commandDeleted, commandDeleted and result or "remove failed"
+end
+
+function ControllerCameraTestProcessSelectedUnits(processCommandFunc)
+	if ControllerCameraTestGetGameFrameSafe() <= 0 then
+		ControllerCameraTestCommandDebug.queueRemovalSelectedCount = 0
+		ControllerCameraTestCommandDebug.queueRemovalAttemptedCount = 1
+		local removed = processCommandFunc(nil, true)
+		ControllerCameraTestCommandDebug.queueRemovalRemovedCount = removed and 1 or 0
+		return removed and 1 or 0, 1
+	end
+
+	if type(Spring.GetSelectedUnits) ~= "function" then
+		ControllerCameraTestAppendQueueRemovalDebug("selection API unavailable")
+		return 0, 0
+	end
+
+	local ok, selectedUnits = pcall(Spring.GetSelectedUnits)
+	if not ok or type(selectedUnits) ~= "table" or #selectedUnits == 0 then
+		ControllerCameraTestCommandDebug.queueRemovalSelectedCount = 0
+		ControllerCameraTestAppendQueueRemovalDebug("no selected units")
+		return 0, 0
+	end
+
+	ControllerCameraTestCommandDebug.queueRemovalSelectedCount = #selectedUnits
+	local removedCount = 0
+	local attemptedCount = 0
+	for i = 1, #selectedUnits do
+		attemptedCount = attemptedCount + 1
+		if processCommandFunc(selectedUnits[i], false) then
+			removedCount = removedCount + 1
+		end
+	end
+	ControllerCameraTestCommandDebug.queueRemovalAttemptedCount = attemptedCount
+	ControllerCameraTestCommandDebug.queueRemovalRemovedCount = removedCount
+	return removedCount, attemptedCount
+end
+
+function ControllerCameraTestSkipCurrentCommand()
+	return ControllerCameraTestProcessSelectedUnits(function(unitID, force)
+		if force then
+			return ControllerCameraTestRemoveCommand(nil, 1, nil)
+		end
+		return ControllerCameraTestRemoveCommand(unitID, 1, ControllerCameraTestGetCommandCountSafe(unitID))
+	end)
+end
+
+function ControllerCameraTestCancelLastCommand()
+	return ControllerCameraTestProcessSelectedUnits(function(unitID, force)
+		if force then
+			local pregame = WG and WG["pregame-build"]
+			local buildQueue = type(pregame) == "table" and type(pregame.getBuildQueue) == "function" and select(2, pcall(pregame.getBuildQueue)) or nil
+			return ControllerCameraTestRemoveCommand(nil, type(buildQueue) == "table" and #buildQueue or 1, nil)
+		end
+		local commandQueueSize = ControllerCameraTestGetCommandCountSafe(unitID)
+		if not commandQueueSize or commandQueueSize < 1 then
+			ControllerCameraTestAppendQueueRemovalDebug("u" .. tostring(unitID) .. " empty")
+			return false
+		end
+		return ControllerCameraTestRemoveCommand(unitID, commandQueueSize, commandQueueSize)
+	end)
+end
+
+function ControllerCameraTestIssueQueueRemovalCommand(removeLast)
+	ControllerCameraTestResetQueueRemovalDebug(removeLast and "cancel-last" or "skip-current")
+	local removedCount, attemptedCount
+	if removeLast then
+		removedCount, attemptedCount = ControllerCameraTestCancelLastCommand()
+	else
+		removedCount, attemptedCount = ControllerCameraTestSkipCurrentCommand()
+	end
+
+	local result = (removeLast and "queue cancel-last" or "queue skip-current")
+		.. " removed " .. tostring(removedCount or 0) .. "/" .. tostring(attemptedCount or 0)
+	ControllerCameraTestCommandDebug.lastOptions = removeLast and "LT queue removal" or "queue removal"
+	ControllerCameraTestCommandDebug.lastResult = result
+	ControllerCameraTestLayerDebug.normalUtilityAction = result
+	lastIssuedCommand = result
+	latchSelectionDebugMessage(result)
+	return true
+end
+
+function ControllerCameraTestHandleQueueRemovalInput()
+	if ControllerCameraTestActionPressed("removeQueuedCommand") then
+		if ControllerCameraTestGetBinding("removeQueuedCommand") == "back" then
+			return false
+		end
+		return ControllerCameraTestIssueQueueRemovalCommand(ControllerCameraTestIsQueueModifierActive())
+	end
+	return false
 end
 
 function ControllerCameraTestGetCommandOptions(extraOptions)
@@ -5716,6 +6025,7 @@ function ControllerCameraTestHandleNormalAInput(dt)
 			elseif targetID then
 				ControllerCameraTestSelectVisibleSameTypeUnderReticle()
 			elseif IsButtonDown("back") then
+				ControllerCameraTestTuning.backComboUsed = true
 				if ControllerCameraTestFocusCommander() then
 					ControllerCameraTestAreaSelect.doubleTapAction = "Back+double-tap commander focused"
 				else
@@ -5845,18 +6155,28 @@ function ControllerCameraTestHandleBackViewControls()
 	if WasButtonPressed("back") then
 		ControllerCameraTestTuning.backHeld = true
 		ControllerCameraTestTuning.backComboUsed = false
+		ControllerCameraTestTuning.backQueueModifier = ControllerCameraTestIsQueueModifierActive()
 		ControllerCameraTestTuning.lastAction = "Back/View reserved for gameplay"
 		ControllerCameraTestLayerDebug.normalUtilityAction = "Back/View modifier ready"
 	end
 	if WasButtonReleased("back") and ControllerCameraTestTuning.backHeld then
+		local shouldRemoveQueue = not ControllerCameraTestTuning.backComboUsed and ControllerCameraTestGetBinding("removeQueuedCommand") == "back"
 		ControllerCameraTestTuning.backHeld = false
 		ControllerCameraTestTuning.backComboUsed = false
+		if shouldRemoveQueue then
+			local removeLast = ControllerCameraTestTuning.backQueueModifier == true
+			ControllerCameraTestTuning.backQueueModifier = false
+			return ControllerCameraTestIssueQueueRemovalCommand(removeLast)
+		end
+		ControllerCameraTestTuning.backQueueModifier = false
 	end
 	return false
 end
 
 function ControllerCameraTestHandleNormalUtilityInput()
 	if ControllerCameraTestHandleControlGroupInput() then
+		return true
+	elseif ControllerCameraTestHandleQueueRemovalInput() then
 		return true
 	elseif ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestActionPressed("idlePrev") then
 		ControllerCameraTestCycleDebug.lbHadPitchMotion = true
@@ -5888,6 +6208,9 @@ end
 function ControllerCameraTestGetModeSummary()
 	if ControllerCameraTestSettingsUI.open then
 		return "settings"
+	end
+	if ControllerCameraTestIsGameplayInputBlocked() then
+		return "external binding UI"
 	end
 	if commandLayerActive then
 		if ControllerCameraTestTacticalMenu.open then
@@ -6147,8 +6470,13 @@ end
 function widget:Initialize()
 	apiAvailable = type(spGetAvailableControllers) == "function" and type(spGetControllerState) == "function"
 	ControllerCameraTestEnsureBindings()
+	ControllerCameraTestInstallWGAPI()
 	updateScreenCenter(spGetViewGeometry())
 	ensureDebugPanelInitialized()
+end
+
+function widget:Shutdown()
+	ControllerCameraTestRemoveWGAPI()
 end
 
 function widget:ViewResize(vsx, vsy)
@@ -6224,6 +6552,13 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		ControllerCameraTestHandleSettingsUIInput()
 		ControllerCameraTestLayerDebug.modeSummary = "settings"
 		activeButtonLayoutSummary = "Settings: D-pad adjust, LB/RB category, A edit, B close, X/Y reset"
+		return
+	end
+	if ControllerCameraTestIsGameplayInputBlocked() then
+		commandLayerActive = false
+		ControllerCameraTestLayerDebug.modeSummary = "external binding UI"
+		activeButtonLayoutSummary = "External binding UI active: gameplay input blocked"
+		ControllerCameraTestExternalBindingUI.lastAction = "gameplay input blocked"
 		return
 	end
 	if not commandLayerActive and ControllerCameraTestTacticalMenu.open then
@@ -6350,7 +6685,7 @@ end
 
 function ControllerCameraTestUpdateCameraControls(dt)
 	local placementActive = ControllerCameraTestBuildPlacement.active
-	local menuOpen = (ControllerCameraTestBuildMenu.open and not placementActive) or ControllerCameraTestTacticalMenu.open or ControllerCameraTestSettingsUI.open
+	local menuOpen = (ControllerCameraTestBuildMenu.open and not placementActive) or ControllerCameraTestTacticalMenu.open or ControllerCameraTestSettingsUI.open or ControllerCameraTestIsGameplayInputBlocked()
 	local areaActive = ControllerCameraTestAreaSelect.active
 	ControllerCameraTestUpdateSmoothedCameraInputs(dt, menuOpen, areaActive)
 	local smooth = ControllerCameraTestInputSmoothing
@@ -6384,6 +6719,11 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 
 	ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
+	if ControllerCameraTestIsGameplayInputBlocked() then
+		updateReticleWorldTarget()
+		if controllerMode and reticleVisible and type(spWarpMouse) == "function" then spWarpMouse(screenCenterX, screenCenterY) end
+		return
+	end
 	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestBuildMenu.open then
 		ControllerCameraTestUpdateRadialStickSelection()
 	end
@@ -7451,6 +7791,7 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Selection: A select | A hold area-select units first | LT+A hold includes buildings",
 		"Double-tap A on unit: visible same type | LT+double-tap A on unit: all owned same type | empty: no action",
 		"Back/View + double-tap A: focus Commander | Start/Menu: reserved",
+		"Queue Removal: Back/View removes current queue item | LT+Back/View removes last queue item",
 		"LT+double-tap A on empty reticle: select all idle units in current idle type",
 		"Context Actions: X tap context | X hold one unit draw queued path | X hold many units line/spread | RT+B stop | RT+X attack/fight",
 		"Combat Layers: RT+A reserved/disabled | RT+Y tactical radial | LS/Dpad choose | A confirm | B/Y close",
@@ -7815,6 +8156,8 @@ function widget:DrawScreen()
 				"Settings UI: End | Reset all settings: Home",
 				"Settings source: saved config; Home resets code defaults",
 				"Settings UI open: " .. yesNo(ControllerCameraTestSettingsUI.open),
+				"External binding UI open: " .. yesNo(ControllerCameraTestExternalBindingUI.open),
+				"External binding UI action: " .. tostring(ControllerCameraTestExternalBindingUI.lastAction),
 				"Settings category: " .. tostring(ControllerCameraTestSettingsUI.lastCategory),
 				"Binding capture: " .. tostring(ControllerCameraTestBindings.captureAction or "none"),
 				"Binding result: " .. tostring(ControllerCameraTestBindings.lastAction),
@@ -7880,6 +8223,10 @@ function widget:DrawScreen()
 				"Last command options: " .. tostring(ControllerCameraTestCommandDebug.lastOptions),
 				"Last command result: " .. tostring(ControllerCameraTestCommandDebug.lastResult),
 				"Last issued command: " .. tostring(lastIssuedCommand),
+				"Queue removal mode: " .. tostring(ControllerCameraTestCommandDebug.queueRemovalMode),
+				"Queue removal selected/attempted/removed: " .. tostring(ControllerCameraTestCommandDebug.queueRemovalSelectedCount) .. " / " .. tostring(ControllerCameraTestCommandDebug.queueRemovalAttemptedCount) .. " / " .. tostring(ControllerCameraTestCommandDebug.queueRemovalRemovedCount),
+				"Queue removal last q/tag: " .. tostring(ControllerCameraTestCommandDebug.queueRemovalLastQueueSize) .. " / " .. tostring(ControllerCameraTestCommandDebug.queueRemovalLastTag),
+				"Queue removal units: " .. tostring(ControllerCameraTestCommandDebug.queueRemovalUnitDetails),
 				"Mex smart available: " .. tostring(ControllerCameraTestCommandDebug.mexSmartAvailable),
 				"Mex nearest spot: " .. tostring(ControllerCameraTestCommandDebug.mexNearestSpot),
 				"Mex building cmd ID: " .. tostring(ControllerCameraTestCommandDebug.mexBuildingCmdID),
@@ -8005,7 +8352,7 @@ function widget:DrawScreen()
 		local compactLines = {
 			"Mode: " .. tostring(ControllerCameraTestLayerDebug.modeSummary) .. " | Held: " .. heldButtonsSummary .. " | Pressed: " .. pressedRecentlySummary,
 			"Idle: " .. tostring(ControllerCameraTestIdleCycle.lastTypeName) .. " x" .. tostring(ControllerCameraTestIdleCycle.lastCount) .. " | Group " .. ControllerCameraTestGetControlGroupDisplaySlot(activeGroupSlot) .. " " .. tostring(activeGroupType) .. " x" .. tostring(activeGroupCount) .. " | A2: " .. tostring(ControllerCameraTestAreaSelect.doubleTapAction),
-			"Queue: " .. yesNo(ControllerCameraTestIsQueueModifierActive()) .. " | Settings: " .. yesNo(ControllerCameraTestSettingsUI.open) .. " | Tactical: " .. yesNo(ControllerCameraTestTacticalMenu.open) .. " | Build: " .. yesNo(ControllerCameraTestBuildMenu.open),
+			"Queue: " .. yesNo(ControllerCameraTestIsQueueModifierActive()) .. " | Settings: " .. yesNo(ControllerCameraTestSettingsUI.open) .. " | External UI: " .. yesNo(ControllerCameraTestExternalBindingUI.open) .. " | Tactical: " .. yesNo(ControllerCameraTestTacticalMenu.open) .. " | Build: " .. yesNo(ControllerCameraTestBuildMenu.open),
 			"Key: " .. tostring(ControllerCameraTestKeyDebug.rawKey) .. " " .. tostring(ControllerCameraTestKeyDebug.label) .. " -> " .. tostring(ControllerCameraTestKeyDebug.matchedAction),
 			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName) .. " (Q:" .. tostring(highlightedQueueCount) .. (factoryProgressKnown == "yes" and " P:" .. factoryProgressValue or "") .. ")",
 			"Placement: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none") .. " | Pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern) .. " | Spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
