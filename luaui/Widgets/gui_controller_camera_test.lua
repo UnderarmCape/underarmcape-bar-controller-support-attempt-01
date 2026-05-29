@@ -349,25 +349,25 @@ function ControllerCameraTestClampSetting(name, value)
 		return ControllerCameraTestSettings[name]
 	end
 	local ranges = {
-		panSpeed = { 500, 8000 },
-		fastPanMultiplier = { 1, 6 },
-		zoomSpeed = { 400, 9000 },
-		zoomBoostMultiplier = { 1, 6 },
-		rotationSpeed = { 0.5, 8 },
-		pitchSpeed = { 0.5, 8 },
-		stickDeadzone = { 0, 12000 },
-		triggerDeadzone = { 0, 12000 },
-		areaSelectRadius = { 120, 1200 },
-		reticleSize = { 8, 36 },
-		xHoldSeconds = { 0.08, 0.5 },
-		aHoldSeconds = { 0.2, 0.8 },
-		controlGroupAssignHoldSeconds = { 0.2, 0.8 },
-		radialScale = { 0.75, 1.5 },
-		cameraSmoothing = { 0.02, 0.4 },
-		stickCurve = { 1, 2.2 },
-		triggerCurve = { 1, 2.2 },
-		singlePathSpacing = { 40, 240 },
-		singlePathInterval = { 0.04, 0.3 },
+		panSpeed = { 100, 10000 },
+		fastPanMultiplier = { 1.0, 10.0 },
+		zoomSpeed = { 100, 20000 },
+		zoomBoostMultiplier = { 1.0, 12.0 },
+		rotationSpeed = { 0.1, 20.0 },
+		pitchSpeed = { 0.1, 20.0 },
+		stickDeadzone = { 0, 20000 },
+		triggerDeadzone = { 0, 20000 },
+		areaSelectRadius = { 40, 2000 },
+		reticleSize = { 4, 100 },
+		xHoldSeconds = { 0.05, 2.0 },
+		aHoldSeconds = { 0.05, 2.0 },
+		controlGroupAssignHoldSeconds = { 0.05, 2.5 },
+		radialScale = { 0.5, 3.0 },
+		cameraSmoothing = { 0.0, 1.0 },
+		stickCurve = { 0.25, 5.0 },
+		triggerCurve = { 0.25, 5.0 },
+		singlePathSpacing = { 16, 1024 },
+		singlePathInterval = { 0.02, 1.0 },
 	}
 	local range = ranges[name]
 	if not range then
@@ -1698,6 +1698,93 @@ function ControllerCameraTestIsGameplayInputBlocked()
 	return ControllerCameraTestExternalBindingUI.open == true
 end
 
+function ControllerCameraTestGetSettingsDefinitions()
+	local categories = ControllerCameraTestGetSettingsUICategories()
+	local defaults = ControllerCameraTestGetDefaultSettings()
+	local ranges = {
+		panSpeed = { 100, 10000, 100, "number", 0 },
+		fastPanMultiplier = { 1.0, 10.0, 0.25, "number", 2 },
+		zoomSpeed = { 100, 20000, 100, "number", 0 },
+		zoomBoostMultiplier = { 1.0, 12.0, 0.25, "number", 2 },
+		rotationSpeed = { 0.1, 20.0, 0.1, "number", 1 },
+		pitchSpeed = { 0.1, 20.0, 0.1, "number", 1 },
+		cameraSmoothing = { 0.0, 1.0, 0.01, "number", 2 },
+		stickCurve = { 0.25, 5.0, 0.025, "number", 3 },
+		triggerCurve = { 0.25, 5.0, 0.025, "number", 3 },
+		stickDeadzone = { 0, 20000, 250, "number", 0 },
+		triggerDeadzone = { 0, 20000, 250, "number", 0 },
+		xHoldSeconds = { 0.05, 2.0, 0.01, "number", 2 },
+		aHoldSeconds = { 0.05, 2.0, 0.01, "number", 2 },
+		controlGroupAssignHoldSeconds = { 0.05, 2.5, 0.01, "number", 2 },
+		singlePathSpacing = { 16, 1024, 8, "number", 0 },
+		singlePathInterval = { 0.02, 1.0, 0.01, "number", 2 },
+		radialScale = { 0.5, 3.0, 0.05, "number", 2 },
+		areaSelectRadius = { 40, 2000, 40, "number", 0 },
+		reticleSize = { 4, 100, 1, "number", 0 },
+		compactSelectedStatus = { 0, 1, 1, "boolean", 0 },
+		hideCompactStatusWhenRadialOpen = { 0, 1, 1, "boolean", 0 },
+		placementPopupEnabled = { 0, 1, 1, "boolean", 0 },
+		preferNativeBlueprint = { 0, 1, 1, "boolean", 0 },
+		debugPanelVisible = { 0, 1, 1, "boolean", 0 },
+		helpOverlayVisible = { 0, 1, 1, "boolean", 0 },
+	}
+
+	local defs = {}
+	for _, cat in ipairs(categories) do
+		if not cat.bindings then
+			for _, item in ipairs(cat.items) do
+				local r = ranges[item.key]
+				if r then
+					local def = {
+						key = item.key,
+						label = item.label,
+						group = cat.key,
+						type = item.type or r[4],
+						min = r[1],
+						max = r[2],
+						step = item.step or r[3],
+						decimals = item.decimals or r[5],
+						default = defaults[item.key],
+						value = ControllerCameraTestSettings[item.key],
+					}
+					table.insert(defs, def)
+				end
+			end
+		end
+	end
+	return defs
+end
+
+function ControllerCameraTestGetSetting(key)
+	return ControllerCameraTestSettings[key]
+end
+
+function ControllerCameraTestSetSetting(key, value)
+	local current = ControllerCameraTestSettings[key]
+	if type(current) == "boolean" then
+		if type(value) == "string" then
+			ControllerCameraTestSettings[key] = (value == "true" or value == "ON")
+		else
+			ControllerCameraTestSettings[key] = not not value
+		end
+	else
+		local num = tonumber(value)
+		if num then
+			ControllerCameraTestSettings[key] = ControllerCameraTestClampSetting(key, num)
+		end
+	end
+	if key == "areaSelectRadius" then
+		ControllerCameraTestAreaSelect.radius = ControllerCameraTestSettings.areaSelectRadius
+	end
+	ControllerCameraTestApplySettingsDefaults()
+	return ControllerCameraTestSettings[key]
+end
+
+function ControllerCameraTestResetSetting(key)
+	ControllerCameraTestResetSettingToDefault(key)
+	return ControllerCameraTestSettings[key]
+end
+
 function ControllerCameraTestInstallWGAPI()
 	WG.BARControllerSupport = WG.BARControllerSupport or {}
 	WG.BARControllerSupport.GetBindingDefinitions = ControllerCameraTestBindingDefinitions
@@ -1710,6 +1797,11 @@ function ControllerCameraTestInstallWGAPI()
 	WG.BARControllerSupport.IsInputDown = ControllerCameraTestBindingDown
 	WG.BARControllerSupport.SetBindingUIOpen = ControllerCameraTestSetBindingUIOpen
 	WG.BARControllerSupport.IsBindingUIOpen = ControllerCameraTestIsBindingUIOpen
+	WG.BARControllerSupport.GetSettingsDefinitions = ControllerCameraTestGetSettingsDefinitions
+	WG.BARControllerSupport.GetSetting = ControllerCameraTestGetSetting
+	WG.BARControllerSupport.SetSetting = ControllerCameraTestSetSetting
+	WG.BARControllerSupport.ResetSetting = ControllerCameraTestResetSetting
+	WG.BARControllerSupport.ResetAllSettings = ControllerCameraTestResetSettingsToDefaults
 end
 
 function ControllerCameraTestRemoveWGAPI()
@@ -1726,6 +1818,11 @@ function ControllerCameraTestRemoveWGAPI()
 	WG.BARControllerSupport.IsInputDown = nil
 	WG.BARControllerSupport.SetBindingUIOpen = nil
 	WG.BARControllerSupport.IsBindingUIOpen = nil
+	WG.BARControllerSupport.GetSettingsDefinitions = nil
+	WG.BARControllerSupport.GetSetting = nil
+	WG.BARControllerSupport.SetSetting = nil
+	WG.BARControllerSupport.ResetSetting = nil
+	WG.BARControllerSupport.ResetAllSettings = nil
 end
 
 --------------------------------------------------------------------------------
@@ -1784,7 +1881,27 @@ function ControllerCameraTestGetSettingsUICategory()
 	return category
 end
 
+local LEGACY_CONTROLLER_SETTINGS_UI_ENABLED = false
+
 function ControllerCameraTestToggleSettingsUI(forceOpen)
+	if not LEGACY_CONTROLLER_SETTINGS_UI_ENABLED then
+		if WG.BARControllerBindingsUI and WG.BARControllerBindingsUI.Toggle then
+			if forceOpen == false then
+				if WG.BARControllerBindingsUI.Close then
+					WG.BARControllerBindingsUI.Close()
+				end
+			elseif forceOpen == true then
+				if WG.BARControllerBindingsUI.Open then
+					WG.BARControllerBindingsUI.Open()
+				end
+			else
+				WG.BARControllerBindingsUI.Toggle()
+			end
+		else
+			Spring.Echo("BAR Controller Support: Legacy settings UI is disabled. Binding/Settings UI is unavailable.")
+		end
+		return
+	end
 	local ui = ControllerCameraTestSettingsUI
 	ui.open = forceOpen == nil and not ui.open or forceOpen
 	ui.bindingCaptureAction = nil

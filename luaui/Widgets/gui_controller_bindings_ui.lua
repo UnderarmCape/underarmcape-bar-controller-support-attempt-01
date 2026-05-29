@@ -26,10 +26,14 @@ local glVertex = gl.Vertex
 local GL_LINE_LOOP = GL.LINE_LOOP
 
 local USE_SAFE_AREA_LAYOUT = true
-local SAFE_LEFT_MARGIN = 285
-local SAFE_TOP_MARGIN = 80
-local SAFE_RIGHT_MARGIN = 20
-local SAFE_BOTTOM_MARGIN = 40
+local SAFE_MAX_MARGIN = 300
+local SAFE_X_MARGIN_RATIO = 0.14
+local SAFE_Y_MARGIN_RATIO = 0.18
+
+local TOGGLE_BUTTON_WIDTH = 110
+local TOGGLE_BUTTON_HEIGHT = 28
+local TOGGLE_BUTTON_RIGHT_OFFSET = 560
+local TOGGLE_BUTTON_TOP_OFFSET = 8
 
 local ControllerBindingsUI = {
 	open = false,
@@ -49,7 +53,13 @@ local ControllerBindingsUI = {
 		rows = {},
 		close = nil,
 		modalButtons = {},
+		modeTabs = {},
 	},
+	mode = "bindings",
+	settingsList = {},
+	settingsPages = { "Camera", "Input", "Radials", "Selection", "Placement", "UI" },
+	settingsPageIndex = 1,
+	settingsItemIndex = 1,
 }
 
 local ControllerBindingsUIRequiredAPI = {
@@ -304,6 +314,64 @@ local function ControllerBindingsUIAddAction(groupsByName, def)
 	}
 end
 
+local function ControllerBindingsUIRebuildSettings()
+	local ok, defs = ControllerBindingsUISafeCall("GetSettingsDefinitions")
+	if ok and type(defs) == "table" then
+		ControllerBindingsUI.settingsList = defs
+	else
+		ControllerBindingsUI.settingsList = {}
+	end
+end
+
+local function ControllerBindingsUISelectedSetting()
+	local pageName = ControllerBindingsUI.settingsPages[ControllerBindingsUI.settingsPageIndex]
+	if not pageName then return nil end
+	local items = {}
+	for i = 1, #ControllerBindingsUI.settingsList do
+		local def = ControllerBindingsUI.settingsList[i]
+		if def.group == pageName then
+			table.insert(items, def)
+		end
+	end
+	return items[ControllerBindingsUI.settingsItemIndex]
+end
+
+local function ControllerBindingsUIAdjustSelectedSetting(delta, fast)
+	local item = ControllerBindingsUISelectedSetting()
+	if not item then return end
+
+	local ok, current = ControllerBindingsUISafeCall("GetSetting", item.key)
+	if not ok then current = item.value end
+
+	if item.type == "boolean" then
+		if delta ~= 0 then
+			ControllerBindingsUISafeCall("SetSetting", item.key, not current)
+		end
+	else
+		local step = item.step or 1
+		if fast then
+			step = step * 4
+		end
+		local newVal = (tonumber(current) or 0) + step * delta
+		ControllerBindingsUISafeCall("SetSetting", item.key, newVal)
+	end
+	ControllerBindingsUIRebuildSettings()
+end
+
+local function ControllerBindingsUIResetSelectedSetting()
+	local item = ControllerBindingsUISelectedSetting()
+	if not item then return end
+	ControllerBindingsUISafeCall("ResetSetting", item.key)
+	ControllerBindingsUIRebuildSettings()
+	ControllerBindingsUISetToast("Reset " .. item.label)
+end
+
+local function ControllerBindingsUIResetAllSettings()
+	ControllerBindingsUISafeCall("ResetAllSettings")
+	ControllerBindingsUIRebuildSettings()
+	ControllerBindingsUISetToast("All settings reset")
+end
+
 local function ControllerBindingsUIRebuildCategories()
 	local groupsByName = {}
 	for i = 1, #ControllerBindingsUIReadOnlyCameraDefs do
@@ -413,9 +481,13 @@ local function ControllerBindingsUIOpen()
 	ControllerBindingsUI.open = true
 	ControllerBindingsUI.modal = nil
 	ControllerBindingsUI.captureAction = nil
+	ControllerBindingsUI.mode = "bindings"
+	ControllerBindingsUI.settingsPageIndex = 1
+	ControllerBindingsUI.settingsItemIndex = 1
 	ControllerBindingsUISetGameplayBlocked(true)
 	ControllerBindingsUIRefreshMissingAPI()
 	ControllerBindingsUIRebuildCategories()
+	ControllerBindingsUIRebuildSettings()
 	ControllerBindingsUISetToast("Binding editor open")
 end
 
@@ -559,7 +631,12 @@ end
 
 local function ControllerBindingsUIHandleResetAllInput()
 	if ControllerBindingsUIIsPressed("A") then
-		ControllerBindingsUIConfirmResetAll()
+		if ControllerBindingsUI.mode == "settings" then
+			ControllerBindingsUIResetAllSettings()
+			ControllerBindingsUI.modal = nil
+		else
+			ControllerBindingsUIConfirmResetAll()
+		end
 	elseif ControllerBindingsUIIsPressed("B") then
 		ControllerBindingsUICancelModal()
 	end
@@ -578,22 +655,76 @@ local function ControllerBindingsUIHandleControllerInput()
 		return ControllerBindingsUIHandleResetAllInput()
 	end
 
-	if ControllerBindingsUIIsPressed("B") then
-		ControllerBindingsUIClose()
-	elseif ControllerBindingsUIIsPressed("A") then
-		ControllerBindingsUIStartCapture()
-	elseif ControllerBindingsUIIsPressed("X") then
-		ControllerBindingsUIResetSelected()
-	elseif ControllerBindingsUIIsPressed("Y") then
-		ControllerBindingsUIResetAll()
-	elseif ControllerBindingsUIIsPressed("dpadUp") then
-		ControllerBindingsUISelectAction(ControllerBindingsUI.actionIndex - 1)
-	elseif ControllerBindingsUIIsPressed("dpadDown") then
-		ControllerBindingsUISelectAction(ControllerBindingsUI.actionIndex + 1)
-	elseif ControllerBindingsUIIsPressed("dpadLeft") or ControllerBindingsUIIsPressed("LB") then
-		ControllerBindingsUISelectCategory(ControllerBindingsUI.categoryIndex - 1)
-	elseif ControllerBindingsUIIsPressed("dpadRight") or ControllerBindingsUIIsPressed("RB") then
-		ControllerBindingsUISelectCategory(ControllerBindingsUI.categoryIndex + 1)
+	if ControllerBindingsUIIsPressed("start") then
+		if ControllerBindingsUI.mode == "settings" then
+			ControllerBindingsUI.mode = "bindings"
+			ControllerBindingsUISetToast("Switched to Bindings")
+		else
+			ControllerBindingsUI.mode = "settings"
+			ControllerBindingsUIRebuildSettings()
+			ControllerBindingsUISetToast("Switched to Settings")
+		end
+		return true
+	end
+
+	if ControllerBindingsUI.mode == "settings" then
+		local items = {}
+		local pageName = ControllerBindingsUI.settingsPages[ControllerBindingsUI.settingsPageIndex]
+		for i = 1, #ControllerBindingsUI.settingsList do
+			local def = ControllerBindingsUI.settingsList[i]
+			if def.group == pageName then
+				table.insert(items, def)
+			end
+		end
+
+		if ControllerBindingsUIIsPressed("B") then
+			ControllerBindingsUIClose()
+		elseif ControllerBindingsUIIsPressed("A") then
+			ControllerBindingsUIAdjustSelectedSetting(1, false)
+		elseif ControllerBindingsUIIsPressed("X") then
+			ControllerBindingsUIResetSelectedSetting()
+		elseif ControllerBindingsUIIsPressed("Y") then
+			ControllerBindingsUI.modal = "resetAll"
+			ControllerBindingsUISetToast("Confirm reset all settings")
+		elseif ControllerBindingsUIIsPressed("dpadUp") then
+			if #items > 0 then
+				ControllerBindingsUI.settingsItemIndex = ((ControllerBindingsUI.settingsItemIndex - 2) % #items) + 1
+			end
+		elseif ControllerBindingsUIIsPressed("dpadDown") then
+			if #items > 0 then
+				ControllerBindingsUI.settingsItemIndex = (ControllerBindingsUI.settingsItemIndex % #items) + 1
+			end
+		elseif ControllerBindingsUIIsPressed("dpadLeft") then
+			ControllerBindingsUIAdjustSelectedSetting(-1, false)
+		elseif ControllerBindingsUIIsPressed("dpadRight") then
+			ControllerBindingsUIAdjustSelectedSetting(1, false)
+		elseif ControllerBindingsUIIsPressed("LB") then
+			local count = #ControllerBindingsUI.settingsPages
+			ControllerBindingsUI.settingsPageIndex = ((ControllerBindingsUI.settingsPageIndex - 2) % count) + 1
+			ControllerBindingsUI.settingsItemIndex = 1
+		elseif ControllerBindingsUIIsPressed("RB") then
+			local count = #ControllerBindingsUI.settingsPages
+			ControllerBindingsUI.settingsPageIndex = (ControllerBindingsUI.settingsPageIndex % count) + 1
+			ControllerBindingsUI.settingsItemIndex = 1
+		end
+	else
+		if ControllerBindingsUIIsPressed("B") then
+			ControllerBindingsUIClose()
+		elseif ControllerBindingsUIIsPressed("A") then
+			ControllerBindingsUIStartCapture()
+		elseif ControllerBindingsUIIsPressed("X") then
+			ControllerBindingsUIResetSelected()
+		elseif ControllerBindingsUIIsPressed("Y") then
+			ControllerBindingsUIResetAll()
+		elseif ControllerBindingsUIIsPressed("dpadUp") then
+			ControllerBindingsUISelectAction(ControllerBindingsUI.actionIndex - 1)
+		elseif ControllerBindingsUIIsPressed("dpadDown") then
+			ControllerBindingsUISelectAction(ControllerBindingsUI.actionIndex + 1)
+		elseif ControllerBindingsUIIsPressed("dpadLeft") or ControllerBindingsUIIsPressed("LB") then
+			ControllerBindingsUISelectCategory(ControllerBindingsUI.categoryIndex - 1)
+		elseif ControllerBindingsUIIsPressed("dpadRight") or ControllerBindingsUIIsPressed("RB") then
+			ControllerBindingsUISelectCategory(ControllerBindingsUI.categoryIndex + 1)
+		end
 	end
 	return true
 end
@@ -686,12 +817,64 @@ local function ControllerBindingsUIDrawHeader(x1, y2_header, x2, vsx, vsy)
 		ControllerBindingsUIDrawOutline(x1, y2_header - h, x2, y2_header, { 0.26, 0.37, 0.45, 0.95 })
 		ControllerBindingsUIDrawText("BAR Controller Bindings", x1 + 20, y2_header - 30, 22, { 0.93, 0.98, 1, 1 }, "o")
 		ControllerBindingsUIDrawText("Xbox Controller Support v0.4.0 pre-alpha", x1 + 22, y2_header - 52, 13, { 0.62, 0.75, 0.84, 1 }, "o")
-		ControllerBindingsUIDrawText(ControllerBindingsUI.toast or "", x2 - 80, y2_header - 35, 14, { 0.78, 0.92, 0.98, 1 }, "or")
+
+		-- Mode Tabs (Bindings / Settings)
+		local mX2 = x2 - 80
+		local mW = 120
+		local mH = 34
+		local mY1 = y2_header - 52
+		local mY2 = mY1 + mH
+
+		-- Bindings Mode Tab
+		local bActive = ControllerBindingsUI.mode == "bindings"
+		local bX1 = mX2 - mW * 2 - 10
+		local bX2 = bX1 + mW
+		ControllerBindingsUIDrawRect(bX1, mY1, bX2, mY2, bActive and { 0.15, 0.45, 0.48, 0.9 } or { 0.045, 0.06, 0.075, 0.85 })
+		ControllerBindingsUIDrawOutline(bX1, mY1, bX2, mY2, bActive and { 0.55, 0.96, 0.92, 1 } or { 0.26, 0.37, 0.45, 0.8 })
+		ControllerBindingsUIDrawText("Bindings", (bX1 + bX2) * 0.5, (mY1 + mY2) * 0.5 - 5, 14, bActive and { 0.55, 0.96, 0.92, 1 } or { 0.84, 0.93, 0.98, 1 }, "oc")
+		ControllerBindingsUI.layout.modeTabs.bindings = { x1 = bX1, y1 = mY1, x2 = bX2, y2 = mY2 }
+
+		-- Settings Mode Tab
+		local sActive = ControllerBindingsUI.mode == "settings"
+		local sX1 = mX2 - mW
+		local sX2 = sX1 + mW
+		ControllerBindingsUIDrawRect(sX1, mY1, sX2, mY2, sActive and { 0.15, 0.45, 0.48, 0.9 } or { 0.045, 0.06, 0.075, 0.85 })
+		ControllerBindingsUIDrawOutline(sX1, mY1, sX2, mY2, sActive and { 0.55, 0.96, 0.92, 1 } or { 0.26, 0.37, 0.45, 0.8 })
+		ControllerBindingsUIDrawText("Settings", (sX1 + sX2) * 0.5, (mY1 + mY2) * 0.5 - 5, 14, sActive and { 0.55, 0.96, 0.92, 1 } or { 0.84, 0.93, 0.98, 1 }, "oc")
+		ControllerBindingsUI.layout.modeTabs.settings = { x1 = sX1, y1 = mY1, x2 = sX2, y2 = mY2 }
+
+		ControllerBindingsUIDrawText(ControllerBindingsUI.toast or "", bX1 - 15, y2_header - 35, 14, { 0.78, 0.92, 0.98, 1 }, "or")
 	else
 		ControllerBindingsUIDrawRect(0, vsy - 92, vsx, vsy, { 0.025, 0.035, 0.047, 0.96 })
 		ControllerBindingsUIDrawText("BAR Controller Bindings", 54, vsy - 42, 30, { 0.93, 0.98, 1, 1 }, "o")
 		ControllerBindingsUIDrawText("Xbox Controller Support v0.4.0 pre-alpha", 56, vsy - 72, 16, { 0.62, 0.75, 0.84, 1 }, "o")
-		ControllerBindingsUIDrawText(ControllerBindingsUI.toast or "", vsx - 54, vsy - 56, 15, { 0.78, 0.92, 0.98, 1 }, "or")
+
+		-- Mode Tabs in Fullscreen Mode
+		local mX2 = vsx - 120
+		local mW = 120
+		local mH = 38
+		local mY1 = vsy - 66
+		local mY2 = mY1 + mH
+
+		-- Bindings Mode Tab
+		local bActive = ControllerBindingsUI.mode == "bindings"
+		local bX1 = mX2 - mW * 2 - 10
+		local bX2 = bX1 + mW
+		ControllerBindingsUIDrawRect(bX1, mY1, bX2, mY2, bActive and { 0.15, 0.45, 0.48, 0.9 } or { 0.045, 0.06, 0.075, 0.85 })
+		ControllerBindingsUIDrawOutline(bX1, mY1, bX2, mY2, bActive and { 0.55, 0.96, 0.92, 1 } or { 0.26, 0.37, 0.45, 0.8 })
+		ControllerBindingsUIDrawText("Bindings", (bX1 + bX2) * 0.5, (mY1 + mY2) * 0.5 - 5, 15, bActive and { 0.55, 0.96, 0.92, 1 } or { 0.84, 0.93, 0.98, 1 }, "oc")
+		ControllerBindingsUI.layout.modeTabs.bindings = { x1 = bX1, y1 = mY1, x2 = bX2, y2 = mY2 }
+
+		-- Settings Mode Tab
+		local sActive = ControllerBindingsUI.mode == "settings"
+		local sX1 = mX2 - mW
+		local sX2 = sX1 + mW
+		ControllerBindingsUIDrawRect(sX1, mY1, sX2, mY2, sActive and { 0.15, 0.45, 0.48, 0.9 } or { 0.045, 0.06, 0.075, 0.85 })
+		ControllerBindingsUIDrawOutline(sX1, mY1, sX2, mY2, sActive and { 0.55, 0.96, 0.92, 1 } or { 0.26, 0.37, 0.45, 0.8 })
+		ControllerBindingsUIDrawText("Settings", (sX1 + sX2) * 0.5, (mY1 + mY2) * 0.5 - 5, 15, sActive and { 0.55, 0.96, 0.92, 1 } or { 0.84, 0.93, 0.98, 1 }, "oc")
+		ControllerBindingsUI.layout.modeTabs.settings = { x1 = sX1, y1 = mY1, x2 = sX2, y2 = mY2 }
+
+		ControllerBindingsUIDrawText(ControllerBindingsUI.toast or "", bX1 - 20, vsy - 56, 15, { 0.78, 0.92, 0.98, 1 }, "or")
 	end
 end
 
@@ -714,26 +897,48 @@ local function ControllerBindingsUIDrawTabs(x1, y2_header, x2, vsx, vsy)
 	local y1 = y_tab_top - h
 	local lowest_y = y1
 
-	for i = 1, #ControllerBindingsUI.categories do
-		local category = ControllerBindingsUI.categories[i]
-		local w = math.max(96, math.min(168, 42 + string.len(category.name) * 8))
+	if ControllerBindingsUI.mode == "settings" then
+		for i = 1, #ControllerBindingsUI.settingsPages do
+			local pageName = ControllerBindingsUI.settingsPages[i]
+			local w = math.max(96, math.min(168, 42 + string.len(pageName) * 8))
 
-		if USE_SAFE_AREA_LAYOUT and (x + w > x2 - 10) then
-			-- Wrap to the next row
-			x = start_x
-			y_tab_top = y_tab_top - h - 6
-			y1 = y_tab_top - h
-			if y1 < lowest_y then
-				lowest_y = y1
+			if USE_SAFE_AREA_LAYOUT and (x + w > x2 - 10) then
+				x = start_x
+				y_tab_top = y_tab_top - h - 6
+				y1 = y_tab_top - h
+				if y1 < lowest_y then
+					lowest_y = y1
+				end
 			end
-		end
 
-		local active = i == ControllerBindingsUI.categoryIndex
-		ControllerBindingsUIDrawRect(x, y1, x + w, y1 + h, active and { 0.12, 0.26, 0.34, 0.96 } or { 0.06, 0.075, 0.095, 0.9 })
-		ControllerBindingsUIDrawOutline(x, y1, x + w, y1 + h, active and { 0.46, 0.78, 0.95, 1 } or { 0.22, 0.30, 0.37, 0.9 })
-		ControllerBindingsUIDrawText(category.name, x + w * 0.5, y1 + 12, 14, { 0.9, 0.97, 1, 1 }, "oc")
-		tabs[#tabs + 1] = { x1 = x, y1 = y1, x2 = x + w, y2 = y1 + h, index = i }
-		x = x + w + 8
+			local active = i == ControllerBindingsUI.settingsPageIndex
+			ControllerBindingsUIDrawRect(x, y1, x + w, y1 + h, active and { 0.12, 0.26, 0.34, 0.96 } or { 0.06, 0.075, 0.095, 0.9 })
+			ControllerBindingsUIDrawOutline(x, y1, x + w, y1 + h, active and { 0.46, 0.78, 0.95, 1 } or { 0.22, 0.30, 0.37, 0.9 })
+			ControllerBindingsUIDrawText(pageName, x + w * 0.5, y1 + 12, 14, { 0.9, 0.97, 1, 1 }, "oc")
+			tabs[#tabs + 1] = { x1 = x, y1 = y1, x2 = x + w, y2 = y1 + h, index = i }
+			x = x + w + 8
+		end
+	else
+		for i = 1, #ControllerBindingsUI.categories do
+			local category = ControllerBindingsUI.categories[i]
+			local w = math.max(96, math.min(168, 42 + string.len(category.name) * 8))
+
+			if USE_SAFE_AREA_LAYOUT and (x + w > x2 - 10) then
+				x = start_x
+				y_tab_top = y_tab_top - h - 6
+				y1 = y_tab_top - h
+				if y1 < lowest_y then
+					lowest_y = y1
+				end
+			end
+
+			local active = i == ControllerBindingsUI.categoryIndex
+			ControllerBindingsUIDrawRect(x, y1, x + w, y1 + h, active and { 0.12, 0.26, 0.34, 0.96 } or { 0.06, 0.075, 0.095, 0.9 })
+			ControllerBindingsUIDrawOutline(x, y1, x + w, y1 + h, active and { 0.46, 0.78, 0.95, 1 } or { 0.22, 0.30, 0.37, 0.9 })
+			ControllerBindingsUIDrawText(category.name, x + w * 0.5, y1 + 12, 14, { 0.9, 0.97, 1, 1 }, "oc")
+			tabs[#tabs + 1] = { x1 = x, y1 = y1, x2 = x + w, y2 = y1 + h, index = i }
+			x = x + w + 8
+		end
 	end
 
 	return lowest_y
@@ -741,9 +946,30 @@ end
 
 local function ControllerBindingsUIDrawControllerOverview(x1, y1, x2, y2)
 	ControllerBindingsUIDrawPanel(x1, y1, x2, y2, "Controller Overview")
-	local action = ControllerBindingsUISelectedAction()
-	local binding = ControllerBindingsUIGetCurrentBinding(action) or action and action.default
-	local activeIds = ControllerBindingsUIBindingToControlIds(binding)
+	local activeIds = {}
+	if ControllerBindingsUI.mode == "settings" then
+		local setting = ControllerBindingsUISelectedSetting()
+		if setting then
+			local key = setting.key
+			if key == "panSpeed" or key == "fastPanMultiplier" or key == "stickCurve" or key == "stickDeadzone" then
+				activeIds.leftStick = true
+			elseif key == "zoomSpeed" or key == "zoomBoostMultiplier" or key == "rotationSpeed" or key == "pitchSpeed" then
+				activeIds.rightStick = true
+				if key == "zoomSpeed" or key == "zoomBoostMultiplier" then
+					activeIds.rightStickY = true
+				elseif key == "rotationSpeed" then
+					activeIds.rightStickX = true
+				end
+			elseif key == "triggerCurve" or key == "triggerDeadzone" then
+				activeIds.lt = true
+				activeIds.rt = true
+			end
+		end
+	else
+		local action = ControllerBindingsUISelectedAction()
+		local binding = ControllerBindingsUIGetCurrentBinding(action) or action and action.default
+		activeIds = ControllerBindingsUIBindingToControlIds(binding)
+	end
 	local cx = (x1 + x2) * 0.5
 	local cy = (y1 + y2) * 0.5 - 10
 	local w = x2 - x1
@@ -845,10 +1071,18 @@ local function ControllerBindingsUIDrawFooter(x1, y1, x2, vsx)
 	if USE_SAFE_AREA_LAYOUT then
 		ControllerBindingsUIDrawRect(x1, y1, x2, y1 + 40, { 0.025, 0.035, 0.047, 0.96 })
 		ControllerBindingsUIDrawOutline(x1, y1, x2, y1 + 40, { 0.26, 0.37, 0.45, 0.95 })
-		ControllerBindingsUIDrawText("A/Enter Rebind  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Category  |  Delete Clear: not supported yet", (x1 + x2) * 0.5, y1 + 13, 13, { 0.78, 0.9, 0.96, 1 }, "oc")
+		if ControllerBindingsUI.mode == "settings" then
+			ControllerBindingsUIDrawText("A/Enter Toggle Bool  |  Left/Right Adjust Number  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Tab  |  Start/Menu Mode Toggle", (x1 + x2) * 0.5, y1 + 13, 13, { 0.78, 0.9, 0.96, 1 }, "oc")
+		else
+			ControllerBindingsUIDrawText("A/Enter Rebind  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Category  |  Start/Menu Mode Toggle", (x1 + x2) * 0.5, y1 + 13, 13, { 0.78, 0.9, 0.96, 1 }, "oc")
+		end
 	else
 		ControllerBindingsUIDrawRect(0, 0, vsx, 50, { 0.025, 0.035, 0.047, 0.96 })
-		ControllerBindingsUIDrawText("A/Enter Rebind  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Category  |  Delete Clear: not supported yet", vsx * 0.5, 18, 14, { 0.78, 0.9, 0.96, 1 }, "oc")
+		if ControllerBindingsUI.mode == "settings" then
+			ControllerBindingsUIDrawText("A/Enter Toggle Bool  |  Left/Right Adjust Number  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Tab  |  Start/Menu Mode Toggle", vsx * 0.5, 18, 14, { 0.78, 0.9, 0.96, 1 }, "oc")
+		else
+			ControllerBindingsUIDrawText("A/Enter Rebind  |  X/R Reset  |  Y Reset All  |  B/Esc Close  |  LB/RB or Left/Right Category  |  Start/Menu Mode Toggle", vsx * 0.5, 18, 14, { 0.78, 0.9, 0.96, 1 }, "oc")
+		end
 	end
 end
 
@@ -856,13 +1090,16 @@ local function ControllerBindingsUIDrawWarning(vsx, vsy)
 	ControllerBindingsUIDrawRect(0, 0, vsx, vsy, { 0, 0, 0, 0.68 })
 	local w = math.min(760, vsx - 140)
 	if USE_SAFE_AREA_LAYOUT then
-		w = math.min(760, (vsx - SAFE_RIGHT_MARGIN - SAFE_LEFT_MARGIN) - 40)
+		local safeX = math.min(SAFE_MAX_MARGIN, math.floor(vsx * SAFE_X_MARGIN_RATIO))
+		w = math.min(760, (vsx - safeX - safeX) - 40)
 	end
 	local h = 240
 	local x1, y1
 	if USE_SAFE_AREA_LAYOUT then
-		local cx = (SAFE_LEFT_MARGIN + vsx - SAFE_RIGHT_MARGIN) * 0.5
-		local cy = (SAFE_BOTTOM_MARGIN + vsy - SAFE_TOP_MARGIN) * 0.5
+		local safeX = math.min(SAFE_MAX_MARGIN, math.floor(vsx * SAFE_X_MARGIN_RATIO))
+		local safeY = math.min(SAFE_MAX_MARGIN, math.floor(vsy * SAFE_Y_MARGIN_RATIO))
+		local cx = (safeX + vsx - safeX) * 0.5
+		local cy = (safeY + vsy - safeY) * 0.5
 		x1 = cx - w * 0.5
 		y1 = cy - h * 0.5
 	else
@@ -888,8 +1125,10 @@ local function ControllerBindingsUIDrawModal(vsx, vsy)
 	local h = 250
 	local x1, y1, x2, y2
 	if USE_SAFE_AREA_LAYOUT then
-		local cx = (SAFE_LEFT_MARGIN + vsx - SAFE_RIGHT_MARGIN) * 0.5
-		local cy = (SAFE_BOTTOM_MARGIN + vsy - SAFE_TOP_MARGIN) * 0.5
+		local safeX = math.min(SAFE_MAX_MARGIN, math.floor(vsx * SAFE_X_MARGIN_RATIO))
+		local safeY = math.min(SAFE_MAX_MARGIN, math.floor(vsy * SAFE_Y_MARGIN_RATIO))
+		local cx = (safeX + vsx - safeX) * 0.5
+		local cy = (safeY + vsy - safeY) * 0.5
 		x1 = cx - w * 0.5
 		y1 = cy - h * 0.5
 		x2 = x1 + w
@@ -925,6 +1164,179 @@ local function ControllerBindingsUIDrawModal(vsx, vsy)
 	end
 end
 
+local function ControllerBindingsUIDrawSettingsList(x1, y1, x2, y2)
+	local rows = ControllerBindingsUI.layout.rows
+	for i = 1, #rows do
+		rows[i] = nil
+	end
+	local pageName = ControllerBindingsUI.settingsPages[ControllerBindingsUI.settingsPageIndex]
+	ControllerBindingsUIDrawPanel(x1, y1, x2, y2, pageName or "Settings")
+	if not pageName then
+		return
+	end
+
+	local items = {}
+	for i = 1, #ControllerBindingsUI.settingsList do
+		local def = ControllerBindingsUI.settingsList[i]
+		if def.group == pageName then
+			table.insert(items, def)
+		end
+	end
+
+	if #items == 0 then
+		ControllerBindingsUIDrawText("No settings in this category", x1 + 24, y2 - 70, 14, { 0.72, 0.84, 0.9, 1 }, "o")
+		return
+	end
+
+	local rowH = 34
+	local rowY = y2 - 70
+	for i = 1, #items do
+		local item = items[i]
+		if rowY < y1 + 18 then
+			break
+		end
+		local selected = i == ControllerBindingsUI.settingsItemIndex
+		local ok, val = ControllerBindingsUISafeCall("GetSetting", item.key)
+		if not ok then val = item.value end
+
+		ControllerBindingsUIDrawRect(x1 + 12, rowY - rowH + 4, x2 - 12, rowY + 3, selected and { 0.13, 0.28, 0.34, 0.95 } or { 0.07, 0.085, 0.105, 0.72 })
+		if selected then
+			ControllerBindingsUIDrawOutline(x1 + 12, rowY - rowH + 4, x2 - 12, rowY + 3, { 0.46, 0.88, 0.96, 1 })
+		end
+
+		ControllerBindingsUIDrawText(item.label, x1 + 24, rowY - 19, 14, { 0.92, 0.97, 1, 1 }, "o")
+
+		local valStr = ""
+		if item.type == "boolean" then
+			valStr = val and "ON" or "OFF"
+		else
+			local fmt = item.decimals == 0 and "%.0f" or string.format("%%.%df", item.decimals)
+			valStr = string.format(fmt, tonumber(val) or 0)
+		end
+
+		ControllerBindingsUIDrawText(valStr, x2 - 24, rowY - 19, 13, { 0.78, 0.9, 0.96, 1 }, "or")
+		rows[#rows + 1] = { x1 = x1 + 12, y1 = rowY - rowH + 4, x2 = x2 - 12, y2 = rowY + 3, index = i }
+		rowY = rowY - rowH - 3
+	end
+end
+
+local function ControllerBindingsUIDrawSettingsDetails(x1, y1, x2, y2)
+	ControllerBindingsUIDrawPanel(x1, y1, x2, y2, "Setting Details")
+	local item = ControllerBindingsUISelectedSetting()
+	if not item then
+		ControllerBindingsUIDrawText("No setting selected", x1 + 20, y2 - 74, 16, { 0.92, 0.96, 1, 1 }, "o")
+		return
+	end
+
+	local ok, val = ControllerBindingsUISafeCall("GetSetting", item.key)
+	if not ok then val = item.value end
+
+	local y = y2 - 76
+	ControllerBindingsUIDrawText(item.label, x1 + 20, y, 21, { 0.94, 0.99, 1, 1 }, "o")
+	y = y - 42
+
+	ControllerBindingsUIDrawText("Key: " .. tostring(item.key), x1 + 20, y, 14, { 0.72, 0.84, 0.9, 1 }, "o")
+	y = y - 28
+	ControllerBindingsUIDrawText("Page: " .. tostring(item.group), x1 + 20, y, 14, { 0.72, 0.84, 0.9, 1 }, "o")
+	y = y - 28
+
+	local defValStr = ""
+	local valStr = ""
+	if item.type == "boolean" then
+		defValStr = item.default and "ON" or "OFF"
+		valStr = val and "ON" or "OFF"
+	else
+		local fmt = item.decimals == 0 and "%.0f" or string.format("%%.%df", item.decimals)
+		defValStr = string.format(fmt, tonumber(item.default) or 0)
+		valStr = string.format(fmt, tonumber(val) or 0)
+	end
+
+	ControllerBindingsUIDrawText("Default: " .. defValStr, x1 + 20, y, 14, { 0.72, 0.84, 0.9, 1 }, "o")
+	y = y - 28
+	ControllerBindingsUIDrawText("Current: " .. valStr, x1 + 20, y, 16, { 0.86, 0.98, 1, 1 }, "o")
+	y = y - 34
+
+	if item.type ~= "boolean" then
+		local fmt = item.decimals == 0 and "%.0f" or string.format("%%.%df", item.decimals)
+		local minStr = string.format(fmt, tonumber(item.min) or 0)
+		local maxStr = string.format(fmt, tonumber(item.max) or 0)
+		ControllerBindingsUIDrawText("Range: " .. minStr .. " to " .. maxStr .. " (step " .. tostring(item.step) .. ")", x1 + 20, y, 13, { 0.62, 0.75, 0.82, 1 }, "o")
+		y = y - 34
+	end
+
+	local desc = item.description or ""
+	if desc == "" then
+		if item.key == "panSpeed" then
+			desc = "Controls the camera movement speed when panning."
+		elseif item.key == "fastPanMultiplier" then
+			desc = "Speed multiplier when holding LT while panning."
+		elseif item.key == "zoomSpeed" then
+			desc = "Controls camera zooming speed."
+		elseif item.key == "zoomBoostMultiplier" then
+			desc = "Zoom speed multiplier when holding LT."
+		elseif item.key == "rotationSpeed" then
+			desc = "Controls camera horizontal rotation speed."
+		elseif item.key == "pitchSpeed" then
+			desc = "Controls camera vertical pitch speed."
+		elseif item.key == "cameraSmoothing" then
+			desc = "Smooths stick movement to prevent sudden camera jumps."
+		elseif item.key == "stickCurve" then
+			desc = "Exponent curve for sticks. Higher values give finer control."
+		elseif item.key == "triggerCurve" then
+			desc = "Exponent curve for triggers. Higher values give finer control."
+		elseif item.key == "stickDeadzone" then
+			desc = "Minimum stick movement required to register input."
+		elseif item.key == "triggerDeadzone" then
+			desc = "Minimum trigger pull required to register input."
+		elseif item.key == "xHoldSeconds" then
+			desc = "Duration to hold X button for holding actions."
+		elseif item.key == "aHoldSeconds" then
+			desc = "Duration to hold A button for holding actions."
+		elseif item.key == "controlGroupAssignHoldSeconds" then
+			desc = "Duration to hold RB + group shortcut to assign units."
+		elseif item.key == "singlePathSpacing" then
+			desc = "Minimum distance between queued waypoints."
+		elseif item.key == "singlePathInterval" then
+			desc = "Minimum time between issued waypoints."
+		elseif item.key == "radialScale" then
+			desc = "Size scale multiplier for the radial menus."
+		elseif item.key == "compactSelectedStatus" then
+			desc = "Shows a compact selection status panel."
+		elseif item.key == "hideCompactStatusWhenRadialOpen" then
+			desc = "Automatically hide status panel when a radial menu is open."
+		elseif item.key == "areaSelectRadius" then
+			desc = "Default radius for selecting multiple units."
+		elseif item.key == "reticleSize" then
+			desc = "Visual size of the gameplay reticle."
+		elseif item.key == "placementPopupEnabled" then
+			desc = "Shows helper tooltip popup during build placement."
+		elseif item.key == "preferNativeBlueprint" then
+			desc = "Enables native BAR blueprint grid placement."
+		elseif item.key == "debugPanelVisible" then
+			desc = "Renders the controller support developer debug panel."
+		elseif item.key == "helpOverlayVisible" then
+			desc = "Renders controller support gameplay guide overlays."
+		end
+	end
+	ControllerBindingsUIDrawText(desc, x1 + 20, y, 13, { 0.82, 0.9, 0.94, 1 }, "o")
+end
+
+local function ControllerBindingsUIDrawToggleButton(vsx, vsy)
+	local x1 = vsx - TOGGLE_BUTTON_RIGHT_OFFSET
+	local x2 = x1 + TOGGLE_BUTTON_WIDTH
+	local y2 = vsy - TOGGLE_BUTTON_TOP_OFFSET
+	local y1 = y2 - TOGGLE_BUTTON_HEIGHT
+
+	local open = ControllerBindingsUI.open
+	local fill = open and { 0.15, 0.45, 0.48, 0.9 } or { 0.045, 0.06, 0.075, 0.85 }
+	local outline = open and { 0.55, 0.96, 0.92, 1 } or { 0.26, 0.37, 0.45, 0.8 }
+	local textCol = open and { 0.55, 0.96, 0.92, 1 } or { 0.84, 0.93, 0.98, 1 }
+
+	ControllerBindingsUIDrawRect(x1, y1, x2, y2, fill)
+	ControllerBindingsUIDrawOutline(x1, y1, x2, y2, outline)
+	ControllerBindingsUIDrawText("Bindings", (x1 + x2) * 0.5, (y1 + y2) * 0.5 - 5, 12, textCol, "oc")
+end
+
 local function ControllerBindingsUIDrawMain()
 	local vsx, vsy = spGetViewGeometry()
 
@@ -934,10 +1346,12 @@ local function ControllerBindingsUIDrawMain()
 	local safe_y2 = vsy
 
 	if USE_SAFE_AREA_LAYOUT then
-		safe_x1 = SAFE_LEFT_MARGIN
-		safe_x2 = vsx - SAFE_RIGHT_MARGIN
-		safe_y1 = SAFE_BOTTOM_MARGIN
-		safe_y2 = vsy - SAFE_TOP_MARGIN
+		local safeX = math.min(SAFE_MAX_MARGIN, math.floor(vsx * SAFE_X_MARGIN_RATIO))
+		local safeY = math.min(SAFE_MAX_MARGIN, math.floor(vsy * SAFE_Y_MARGIN_RATIO))
+		safe_x1 = safeX
+		safe_x2 = vsx - safeX
+		safe_y1 = safeY
+		safe_y2 = vsy - safeY
 	end
 
 	local close_x1, close_y1, close_x2, close_y2
@@ -992,8 +1406,13 @@ local function ControllerBindingsUIDrawMain()
 	end
 
 	ControllerBindingsUIDrawControllerOverview(x1, bottom, x2, top)
-	ControllerBindingsUIDrawActionList(ax1, bottom, ax2, top)
-	ControllerBindingsUIDrawDetails(dx1, bottom, dx2, top)
+	if ControllerBindingsUI.mode == "settings" then
+		ControllerBindingsUIDrawSettingsList(ax1, bottom, ax2, top)
+		ControllerBindingsUIDrawSettingsDetails(dx1, bottom, dx2, top)
+	else
+		ControllerBindingsUIDrawActionList(ax1, bottom, ax2, top)
+		ControllerBindingsUIDrawDetails(dx1, bottom, dx2, top)
+	end
 	ControllerBindingsUIDrawFooter(safe_x1, safe_y1, safe_x2, vsx)
 	ControllerBindingsUIDrawModal(vsx, vsy)
 end
@@ -1015,6 +1434,7 @@ function widget:Initialize()
 	WG.BARControllerBindingsUI.Toggle = ControllerBindingsUIToggle
 	WG.BARControllerBindingsUI.Open = ControllerBindingsUIOpen
 	WG.BARControllerBindingsUI.Close = ControllerBindingsUIClose
+	WG.BARControllerBindingsUI.IsOpen = function() return ControllerBindingsUI.open == true end
 	ControllerBindingsUIRefreshMissingAPI()
 	ControllerBindingsUIRebuildCategories()
 end
@@ -1028,6 +1448,7 @@ function widget:Shutdown()
 		WG.BARControllerBindingsUI.Toggle = nil
 		WG.BARControllerBindingsUI.Open = nil
 		WG.BARControllerBindingsUI.Close = nil
+		WG.BARControllerBindingsUI.IsOpen = nil
 		WG.BARControllerBindingsUI = nil
 	end
 end
@@ -1073,39 +1494,122 @@ function widget:KeyPress(key, mods, isRepeat, label)
 		if ControllerBindingsUIKeyMatches(key, label, { "ESCAPE", "Escape", "escape", "ESC", "esc", 27 }) then
 			ControllerBindingsUICancelModal()
 		elseif ControllerBindingsUIKeyMatches(key, label, { "RETURN", "Return", "return", "ENTER", "Enter", "enter", 13, 271 }) then
-			ControllerBindingsUIConfirmResetAll()
+			if ControllerBindingsUI.mode == "settings" then
+				ControllerBindingsUIResetAllSettings()
+				ControllerBindingsUI.modal = nil
+			else
+				ControllerBindingsUIConfirmResetAll()
+			end
 		end
 		return true
 	end
 
 	if ControllerBindingsUIKeyMatches(key, label, { "ESCAPE", "Escape", "escape", "ESC", "esc", 27 }) then
 		ControllerBindingsUIClose()
-	elseif ControllerBindingsUIKeyMatches(key, label, { "UP", "Up", "up", 273 }) then
-		ControllerBindingsUISelectAction(ControllerBindingsUI.actionIndex - 1)
-	elseif ControllerBindingsUIKeyMatches(key, label, { "DOWN", "Down", "down", 274 }) then
-		ControllerBindingsUISelectAction(ControllerBindingsUI.actionIndex + 1)
-	elseif ControllerBindingsUIKeyMatches(key, label, { "LEFT", "Left", "left", 276 }) then
-		ControllerBindingsUISelectCategory(ControllerBindingsUI.categoryIndex - 1)
-	elseif ControllerBindingsUIKeyMatches(key, label, { "RIGHT", "Right", "right", 275 }) then
-		ControllerBindingsUISelectCategory(ControllerBindingsUI.categoryIndex + 1)
-	elseif ControllerBindingsUIKeyMatches(key, label, { "RETURN", "Return", "return", "ENTER", "Enter", "enter", 13, 271 }) then
-		ControllerBindingsUIStartCapture()
-	elseif ControllerBindingsUIKeyMatches(key, label, { "R", "r" }) then
-		ControllerBindingsUIResetSelected()
-	elseif ControllerBindingsUIKeyMatches(key, label, { "DELETE", "Delete", "delete", 127 }) then
-		ControllerBindingsUISetToast("Clear not supported by current binding API")
+		return true
+	elseif ControllerBindingsUIKeyMatches(key, label, { "tab", "TAB", 9 }) or ControllerBindingsUIKeyMatches(key, label, { "S", "s", "Start", "start", "Menu", "menu" }) then
+		if ControllerBindingsUI.mode == "settings" then
+			ControllerBindingsUI.mode = "bindings"
+			ControllerBindingsUISetToast("Switched to Bindings")
+		else
+			ControllerBindingsUI.mode = "settings"
+			ControllerBindingsUIRebuildSettings()
+			ControllerBindingsUISetToast("Switched to Settings")
+		end
+		return true
+	end
+
+	if ControllerBindingsUI.mode == "settings" then
+		local items = {}
+		local pageName = ControllerBindingsUI.settingsPages[ControllerBindingsUI.settingsPageIndex]
+		for i = 1, #ControllerBindingsUI.settingsList do
+			local def = ControllerBindingsUI.settingsList[i]
+			if def.group == pageName then
+				table.insert(items, def)
+			end
+		end
+
+		if ControllerBindingsUIKeyMatches(key, label, { "UP", "Up", "up", 273 }) then
+			if #items > 0 then
+				ControllerBindingsUI.settingsItemIndex = ((ControllerBindingsUI.settingsItemIndex - 2) % #items) + 1
+			end
+			return true
+		elseif ControllerBindingsUIKeyMatches(key, label, { "DOWN", "Down", "down", 274 }) then
+			if #items > 0 then
+				ControllerBindingsUI.settingsItemIndex = (ControllerBindingsUI.settingsItemIndex % #items) + 1
+			end
+			return true
+		elseif ControllerBindingsUIKeyMatches(key, label, { "LEFT", "Left", "left", 276 }) then
+			ControllerBindingsUIAdjustSelectedSetting(-1, mods.shift)
+			return true
+		elseif ControllerBindingsUIKeyMatches(key, label, { "RIGHT", "Right", "right", 275 }) then
+			ControllerBindingsUIAdjustSelectedSetting(1, mods.shift)
+			return true
+		elseif ControllerBindingsUIKeyMatches(key, label, { "RETURN", "Return", "return", "ENTER", "Enter", "enter", 13, 271 }) then
+			ControllerBindingsUIAdjustSelectedSetting(1, false)
+			return true
+		elseif ControllerBindingsUIKeyMatches(key, label, { "R", "r" }) then
+			ControllerBindingsUIResetSelectedSetting()
+			return true
+		end
+	else
+		if ControllerBindingsUIKeyMatches(key, label, { "UP", "Up", "up", 273 }) then
+			ControllerBindingsUISelectAction(ControllerBindingsUI.actionIndex - 1)
+			return true
+		elseif ControllerBindingsUIKeyMatches(key, label, { "DOWN", "Down", "down", 274 }) then
+			ControllerBindingsUISelectAction(ControllerBindingsUI.actionIndex + 1)
+			return true
+		elseif ControllerBindingsUIKeyMatches(key, label, { "LEFT", "Left", "left", 276 }) then
+			ControllerBindingsUISelectCategory(ControllerBindingsUI.categoryIndex - 1)
+			return true
+		elseif ControllerBindingsUIKeyMatches(key, label, { "RIGHT", "Right", "right", 275 }) then
+			ControllerBindingsUISelectCategory(ControllerBindingsUI.categoryIndex + 1)
+			return true
+		elseif ControllerBindingsUIKeyMatches(key, label, { "RETURN", "Return", "return", "ENTER", "Enter", "enter", 13, 271 }) then
+			ControllerBindingsUIStartCapture()
+			return true
+		elseif ControllerBindingsUIKeyMatches(key, label, { "R", "r" }) then
+			ControllerBindingsUIResetSelected()
+			return true
+		end
 	end
 	return true
 end
 
 function widget:MousePress(x, y, button)
+	local vsx, vsy = spGetViewGeometry()
+	local bx1 = vsx - TOGGLE_BUTTON_RIGHT_OFFSET
+	local bx2 = bx1 + TOGGLE_BUTTON_WIDTH
+	local by2 = vsy - TOGGLE_BUTTON_TOP_OFFSET
+	local by1 = by2 - TOGGLE_BUTTON_HEIGHT
+
+	if button == 1 and x >= bx1 and x <= bx2 and y >= by1 and y <= by2 then
+		ControllerBindingsUIToggle()
+		return true
+	end
+
 	if not ControllerBindingsUI.open or button ~= 1 then
 		return false
 	end
+
 	if ControllerBindingsUIPointInside(ControllerBindingsUI.layout.close, x, y) then
 		ControllerBindingsUIClose()
 		return true
 	end
+
+	if ControllerBindingsUI.layout.modeTabs then
+		if ControllerBindingsUIPointInside(ControllerBindingsUI.layout.modeTabs.bindings, x, y) then
+			ControllerBindingsUI.mode = "bindings"
+			ControllerBindingsUISetToast("Switched to Bindings")
+			return true
+		elseif ControllerBindingsUIPointInside(ControllerBindingsUI.layout.modeTabs.settings, x, y) then
+			ControllerBindingsUI.mode = "settings"
+			ControllerBindingsUIRebuildSettings()
+			ControllerBindingsUISetToast("Switched to Settings")
+			return true
+		end
+	end
+
 	for i = 1, #ControllerBindingsUI.layout.modalButtons do
 		local hit = ControllerBindingsUI.layout.modalButtons[i]
 		if ControllerBindingsUIPointInside(hit, x, y) then
@@ -1116,29 +1620,57 @@ function widget:MousePress(x, y, button)
 			elseif hit.id == "replace" then
 				ControllerBindingsUISetToast("Replace unsupported by current API; use Allow Duplicate")
 			elseif hit.id == "resetAll" then
-				ControllerBindingsUIConfirmResetAll()
+				if ControllerBindingsUI.mode == "settings" then
+					ControllerBindingsUIResetAllSettings()
+					ControllerBindingsUI.modal = nil
+				else
+					ControllerBindingsUIConfirmResetAll()
+				end
 			end
 			return true
 		end
 	end
+
 	for i = 1, #ControllerBindingsUI.layout.tabs do
 		local hit = ControllerBindingsUI.layout.tabs[i]
 		if ControllerBindingsUIPointInside(hit, x, y) then
-			ControllerBindingsUISelectCategory(hit.index)
+			if ControllerBindingsUI.mode == "settings" then
+				ControllerBindingsUI.settingsPageIndex = hit.index
+				ControllerBindingsUI.settingsItemIndex = 1
+			else
+				ControllerBindingsUISelectCategory(hit.index)
+			end
 			return true
 		end
 	end
-	for i = 1, #ControllerBindingsUI.layout.rows do
-		local hit = ControllerBindingsUI.layout.rows[i]
-		if ControllerBindingsUIPointInside(hit, x, y) then
-			ControllerBindingsUISelectAction(hit.index)
-			return true
+
+	if ControllerBindingsUI.mode == "settings" then
+		for i = 1, #ControllerBindingsUI.layout.rows do
+			local hit = ControllerBindingsUI.layout.rows[i]
+			if ControllerBindingsUIPointInside(hit, x, y) then
+				ControllerBindingsUI.settingsItemIndex = hit.index
+				local selectedItem = ControllerBindingsUISelectedSetting()
+				if selectedItem and selectedItem.type == "boolean" then
+					ControllerBindingsUIAdjustSelectedSetting(1, false)
+				end
+				return true
+			end
+		end
+	else
+		for i = 1, #ControllerBindingsUI.layout.rows do
+			local hit = ControllerBindingsUI.layout.rows[i]
+			if ControllerBindingsUIPointInside(hit, x, y) then
+				ControllerBindingsUISelectAction(hit.index)
+				return true
+			end
 		end
 	end
 	return true
 end
 
 function widget:DrawScreen()
+	local vsx, vsy = spGetViewGeometry()
+	ControllerBindingsUIDrawToggleButton(vsx, vsy)
 	if not ControllerBindingsUI.open then
 		return
 	end
