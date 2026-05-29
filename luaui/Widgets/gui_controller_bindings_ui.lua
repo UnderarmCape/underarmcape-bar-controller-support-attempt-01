@@ -208,8 +208,8 @@ local ControllerBindingsUIDescriptions = {
 	rotateBuildingRight = "Rotate building facing right.",
 	spacingUp = "Increase build spacing during placement.",
 	spacingDown = "Decrease build spacing during placement.",
-	patternPrev = "Cycle to the previous placement pattern.",
-	patternNext = "Cycle to the next placement pattern.",
+	patternPrev = "Select Grid placement directly while placing buildings.",
+	patternNext = "Reserved. Placement pattern cycling is disabled so RB stays free for preset duties.",
 	tacticalSelect = "Confirm highlighted tactical radial command.",
 	tacticalCancel = "Cancel the tactical radial.",
 	tacticalClose = "Close the tactical radial.",
@@ -246,6 +246,7 @@ local ControllerBindingsUIBindingLabels = {
 	dpadRight = "D-pad Right",
 	leftStickClick = "Left Stick Click",
 	rightStickClick = "Right Stick Click",
+	none = "Unbound",
 }
 
 local ControllerBindingsUIControlIdMap = {
@@ -813,7 +814,7 @@ local function ControllerBindingsUIConfirmApplyPreset()
 			spacingUp = "dpadUp",
 			spacingDown = "dpadDown",
 			patternPrev = "LB",
-			patternNext = "RB",
+			patternNext = "none",
 			tacticalSelect = "A",
 			tacticalCancel = "B",
 			tacticalClose = "Y",
@@ -854,7 +855,7 @@ local function ControllerBindingsUIConfirmApplyPreset()
 			spacingUp = "dpadUp",
 			spacingDown = "dpadDown",
 			patternPrev = "LB",
-			patternNext = "RB",
+			patternNext = "none",
 			tacticalSelect = "A",
 			tacticalCancel = "B",
 			tacticalClose = "Y",
