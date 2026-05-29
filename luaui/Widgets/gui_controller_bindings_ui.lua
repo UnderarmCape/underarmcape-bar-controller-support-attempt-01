@@ -26,8 +26,9 @@ local glVertex = gl.Vertex
 local GL_LINE_LOOP = GL.LINE_LOOP
 
 local USE_SAFE_AREA_LAYOUT = true
-local SAFE_MAX_MARGIN = 300
-local SAFE_X_MARGIN_RATIO = 0.14
+local SAFE_MAX_X_MARGIN = 120
+local SAFE_MAX_Y_MARGIN = 300
+local SAFE_X_MARGIN_RATIO = 0.06
 local SAFE_Y_MARGIN_RATIO = 0.18
 
 local TOGGLE_BUTTON_WIDTH = 110
@@ -401,6 +402,13 @@ local function ControllerBindingsUIRebuildCategories()
 	end)
 
 	ControllerBindingsUI.categories = categories
+
+	local totalLoaded = 0
+	for _, cat in ipairs(categories) do
+		totalLoaded = totalLoaded + #cat.actions
+	end
+	ControllerBindingsUI.totalBindingsCount = totalLoaded
+
 	if ControllerBindingsUI.categoryIndex > #categories then
 		ControllerBindingsUI.categoryIndex = math.max(1, #categories)
 	end
@@ -811,12 +819,17 @@ local function ControllerBindingsUIDrawModalButton(id, label, x1, y1, x2, y2)
 end
 
 local function ControllerBindingsUIDrawHeader(x1, y2_header, x2, vsx, vsy)
+	local infoText = "Xbox Controller Support v0.4.0 pre-alpha"
+	if ControllerBindingsUI.totalBindingsCount then
+		infoText = infoText .. "  |  Bindings loaded: " .. ControllerBindingsUI.totalBindingsCount
+	end
+
 	if USE_SAFE_AREA_LAYOUT then
 		local h = 70
 		ControllerBindingsUIDrawRect(x1, y2_header - h, x2, y2_header, { 0.025, 0.035, 0.047, 0.96 })
 		ControllerBindingsUIDrawOutline(x1, y2_header - h, x2, y2_header, { 0.26, 0.37, 0.45, 0.95 })
 		ControllerBindingsUIDrawText("BAR Controller Bindings", x1 + 20, y2_header - 30, 22, { 0.93, 0.98, 1, 1 }, "o")
-		ControllerBindingsUIDrawText("Xbox Controller Support v0.4.0 pre-alpha", x1 + 22, y2_header - 52, 13, { 0.62, 0.75, 0.84, 1 }, "o")
+		ControllerBindingsUIDrawText(infoText, x1 + 22, y2_header - 52, 13, { 0.62, 0.75, 0.84, 1 }, "o")
 
 		-- Mode Tabs (Bindings / Settings)
 		local mX2 = x2 - 80
@@ -847,7 +860,7 @@ local function ControllerBindingsUIDrawHeader(x1, y2_header, x2, vsx, vsy)
 	else
 		ControllerBindingsUIDrawRect(0, vsy - 92, vsx, vsy, { 0.025, 0.035, 0.047, 0.96 })
 		ControllerBindingsUIDrawText("BAR Controller Bindings", 54, vsy - 42, 30, { 0.93, 0.98, 1, 1 }, "o")
-		ControllerBindingsUIDrawText("Xbox Controller Support v0.4.0 pre-alpha", 56, vsy - 72, 16, { 0.62, 0.75, 0.84, 1 }, "o")
+		ControllerBindingsUIDrawText(infoText, 56, vsy - 72, 16, { 0.62, 0.75, 0.84, 1 }, "o")
 
 		-- Mode Tabs in Fullscreen Mode
 		local mX2 = vsx - 120
@@ -1008,7 +1021,11 @@ local function ControllerBindingsUIDrawActionList(x1, y1, x2, y2)
 		rows[i] = nil
 	end
 	local category = ControllerBindingsUISelectedCategory()
-	ControllerBindingsUIDrawPanel(x1, y1, x2, y2, category and category.name or "Actions")
+	local title = "Actions"
+	if category then
+		title = category.name .. " — " .. #category.actions .. " actions"
+	end
+	ControllerBindingsUIDrawPanel(x1, y1, x2, y2, title)
 	if not category then
 		return
 	end
@@ -1090,14 +1107,14 @@ local function ControllerBindingsUIDrawWarning(vsx, vsy)
 	ControllerBindingsUIDrawRect(0, 0, vsx, vsy, { 0, 0, 0, 0.68 })
 	local w = math.min(760, vsx - 140)
 	if USE_SAFE_AREA_LAYOUT then
-		local safeX = math.min(SAFE_MAX_MARGIN, math.floor(vsx * SAFE_X_MARGIN_RATIO))
+		local safeX = math.min(SAFE_MAX_X_MARGIN, math.floor(vsx * SAFE_X_MARGIN_RATIO))
 		w = math.min(760, (vsx - safeX - safeX) - 40)
 	end
 	local h = 240
 	local x1, y1
 	if USE_SAFE_AREA_LAYOUT then
-		local safeX = math.min(SAFE_MAX_MARGIN, math.floor(vsx * SAFE_X_MARGIN_RATIO))
-		local safeY = math.min(SAFE_MAX_MARGIN, math.floor(vsy * SAFE_Y_MARGIN_RATIO))
+		local safeX = math.min(SAFE_MAX_X_MARGIN, math.floor(vsx * SAFE_X_MARGIN_RATIO))
+		local safeY = math.min(SAFE_MAX_Y_MARGIN, math.floor(vsy * SAFE_Y_MARGIN_RATIO))
 		local cx = (safeX + vsx - safeX) * 0.5
 		local cy = (safeY + vsy - safeY) * 0.5
 		x1 = cx - w * 0.5
@@ -1125,8 +1142,8 @@ local function ControllerBindingsUIDrawModal(vsx, vsy)
 	local h = 250
 	local x1, y1, x2, y2
 	if USE_SAFE_AREA_LAYOUT then
-		local safeX = math.min(SAFE_MAX_MARGIN, math.floor(vsx * SAFE_X_MARGIN_RATIO))
-		local safeY = math.min(SAFE_MAX_MARGIN, math.floor(vsy * SAFE_Y_MARGIN_RATIO))
+		local safeX = math.min(SAFE_MAX_X_MARGIN, math.floor(vsx * SAFE_X_MARGIN_RATIO))
+		local safeY = math.min(SAFE_MAX_Y_MARGIN, math.floor(vsy * SAFE_Y_MARGIN_RATIO))
 		local cx = (safeX + vsx - safeX) * 0.5
 		local cy = (safeY + vsy - safeY) * 0.5
 		x1 = cx - w * 0.5
@@ -1170,8 +1187,8 @@ local function ControllerBindingsUIDrawSettingsList(x1, y1, x2, y2)
 		rows[i] = nil
 	end
 	local pageName = ControllerBindingsUI.settingsPages[ControllerBindingsUI.settingsPageIndex]
-	ControllerBindingsUIDrawPanel(x1, y1, x2, y2, pageName or "Settings")
 	if not pageName then
+		ControllerBindingsUIDrawPanel(x1, y1, x2, y2, "Settings")
 		return
 	end
 
@@ -1182,6 +1199,9 @@ local function ControllerBindingsUIDrawSettingsList(x1, y1, x2, y2)
 			table.insert(items, def)
 		end
 	end
+
+	local title = pageName .. " — " .. #items .. " settings"
+	ControllerBindingsUIDrawPanel(x1, y1, x2, y2, title)
 
 	if #items == 0 then
 		ControllerBindingsUIDrawText("No settings in this category", x1 + 24, y2 - 70, 14, { 0.72, 0.84, 0.9, 1 }, "o")
@@ -1346,8 +1366,8 @@ local function ControllerBindingsUIDrawMain()
 	local safe_y2 = vsy
 
 	if USE_SAFE_AREA_LAYOUT then
-		local safeX = math.min(SAFE_MAX_MARGIN, math.floor(vsx * SAFE_X_MARGIN_RATIO))
-		local safeY = math.min(SAFE_MAX_MARGIN, math.floor(vsy * SAFE_Y_MARGIN_RATIO))
+		local safeX = math.min(SAFE_MAX_X_MARGIN, math.floor(vsx * SAFE_X_MARGIN_RATIO))
+		local safeY = math.min(SAFE_MAX_Y_MARGIN, math.floor(vsy * SAFE_Y_MARGIN_RATIO))
 		safe_x1 = safeX
 		safe_x2 = vsx - safeX
 		safe_y1 = safeY
