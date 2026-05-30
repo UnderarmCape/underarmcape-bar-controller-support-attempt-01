@@ -160,6 +160,10 @@ ControllerCameraTestTacticalMenu = ControllerCameraTestTacticalMenu or {
 	highlightedName = "none",
 	lastAction = "none",
 	lastResult = "none",
+	stagedOption = nil,
+	stagedName = "none",
+	stagedKind = "none",
+	stagedState = "none",
 	radialLastAngle = 0,
 }
 ControllerCameraTestCycleDebug = ControllerCameraTestCycleDebug or {
@@ -591,16 +595,16 @@ local XboxController = {
 		[0] = "Layer + A = Reserved / Back double-tap commander",
 		[1] = "Layer + B = Stop selected units",
 		[2] = "Layer + X = Attack / Attack-move",
-		[3] = "Layer + Y = Tactical command menu",
+		[3] = "Layer + Y = Tactical command menu if bound",
 		[9] = "Layer + LB = Previous selected unit/type",
-		[10] = "Layer + RB = Next selected unit/type",
+		[10] = "Layer + RB = Tactical command menu",
 		[11] = "Layer + D-pad Up = Guard allied / Patrol ground",
 		[12] = "Layer + D-pad Down = Reclaim target/area",
 		[13] = "Layer + D-pad Left = Previous selection cycle",
 		[14] = "Layer + D-pad Right = Next selection cycle",
 	},
 	normalLayoutSummary = "A Select/Hold Area/Double Same-Type, B Clear, X Context, Y Build, L3/R3 Queue Remove, D-pad L/R Idle, Start Groups",
-	commandLayoutSummary = "Layer+A Reserved/Commander, Layer+B Stop, Layer+X Attack, Layer+Y Tactical, Layer+D-pad Commands",
+	commandLayoutSummary = "Layer+A Commander, Layer+B Stop, Layer+X Attack, Layer+RB Tactical, Layer+D-pad Commands",
 }
 
 apiAvailable = false
@@ -3674,10 +3678,10 @@ function ControllerCameraTestFocusCommander()
 end
 
 function ControllerCameraTestUnitIsIdle(unitID)
-	if type(Spring.GetCommandQueue) == "function" then
-		local ok, queue = pcall(Spring.GetCommandQueue, unitID, 1)
-		if ok and type(queue) == "table" then
-			return #queue == 0
+	if type(Spring.GetUnitCommandCount) == "function" then
+		local ok, count = pcall(Spring.GetUnitCommandCount, unitID)
+		if ok and type(count) == "number" then
+			return count == 0
 		end
 	end
 	if type(Spring.GetUnitCommands) == "function" then
@@ -4496,6 +4500,10 @@ function ControllerCameraTestToggleTacticalMenu()
 	latchSelectionDebugMessage(menu.open and "Command layer tactical menu opened" or "Tactical menu closed")
 end
 
+function ControllerCameraTestTacticalTogglePressed()
+	return ControllerCameraTestBindingPressed("RB") or ControllerCameraTestActionPressed("buildRadial")
+end
+
 function ControllerCameraTestCycleTacticalCommand(delta)
 	local menu = ControllerCameraTestTacticalMenu
 	local commands = ControllerCameraTestGetTacticalCommands()
@@ -4546,9 +4554,99 @@ function ControllerCameraTestUpdateTacticalStickSelection()
 	end
 end
 
-function ControllerCameraTestExecuteTacticalCommand(option)
+function ControllerCameraTestTacticalCommandNeedsTarget(option)
+	if type(option) ~= "table" then
+		return false
+	end
+	return option.kind == "drag_line"
+		or option.kind == "drag_area"
+		or option.kind == "ground"
+		or option.kind == "attack"
+		or option.kind == "alliedUnit"
+		or option.kind == "reclaim"
+		or option.kind == "repair"
+end
+
+function ControllerCameraTestStageTacticalCommand(option)
+	local menu = ControllerCameraTestTacticalMenu
+	if type(option) ~= "table" then
+		menu.lastResult = "stage failed: no option"
+		return false
+	end
+	menu.stagedOption = {
+		name = option.name,
+		cmdID = option.cmdID,
+		kind = option.kind,
+		dragMode = option.dragMode,
+	}
+	menu.stagedName = tostring(option.name or "Command")
+	menu.stagedKind = tostring(option.kind or "none")
+	menu.stagedState = "staged"
+	menu.open = false
+	menu.lastAction = "staged " .. menu.stagedName
+	menu.lastResult = "staged: move reticle, A confirm, B cancel"
+	ControllerCameraTestLayerDebug.commandLayerAction = menu.lastAction
+	latchSelectionDebugMessage(menu.stagedName .. " staged")
+	return true
+end
+
+function ControllerCameraTestClearStagedTacticalCommand(reason)
+	local menu = ControllerCameraTestTacticalMenu
+	local name = tostring(menu.stagedName or "Command")
+	menu.stagedOption = nil
+	menu.stagedName = "none"
+	menu.stagedKind = "none"
+	menu.stagedState = reason or "none"
+	if reason then
+		menu.lastAction = tostring(reason)
+		menu.lastResult = tostring(reason)
+		latchSelectionDebugMessage(name .. " " .. tostring(reason))
+	end
+end
+
+function ControllerCameraTestConfirmStagedTacticalCommand()
+	local menu = ControllerCameraTestTacticalMenu
+	local option = menu.stagedOption
+	if type(option) ~= "table" then
+		return false
+	end
+	local name = tostring(menu.stagedName or option.name or "Command")
+	menu.stagedOption = nil
+	menu.stagedName = name
+	menu.stagedKind = tostring(option.kind or "none")
+	menu.stagedState = "confirming"
+	menu.lastAction = "confirming " .. name
+	ControllerCameraTestExecuteTacticalCommand(option, false)
+	menu.stagedState = "confirmed"
+	menu.stagedName = name
+	return true
+end
+
+function ControllerCameraTestHandleStagedTacticalCommandInput()
+	local menu = ControllerCameraTestTacticalMenu
+	if type(menu.stagedOption) ~= "table" then
+		return false
+	end
+	if ControllerCameraTestActionPressed("tacticalCancel") or ControllerCameraTestActionPressed("cancel") then
+		ControllerCameraTestClearStagedTacticalCommand("cancelled")
+		ControllerCameraTestLayerDebug.commandLayerAction = "Tactical staged command cancelled"
+		return true
+	end
+	if ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("select") then
+		ControllerCameraTestConfirmStagedTacticalCommand()
+		return true
+	end
+	ControllerCameraTestLayerDebug.commandLayerAction = "Tactical staged: " .. tostring(menu.stagedName)
+	return true
+end
+
+function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 	if type(option) ~= "table" then
 		ControllerCameraTestTacticalMenu.lastResult = "no tactical option"
+		return
+	end
+	if stageTargeted and ControllerCameraTestTacticalCommandNeedsTarget(option) then
+		ControllerCameraTestStageTacticalCommand(option)
 		return
 	end
 
@@ -4560,8 +4658,11 @@ function ControllerCameraTestExecuteTacticalCommand(option)
 		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
 		drag.pressActive = false
 		drag.pressButton = nil
-		ControllerCameraTestTacticalMenu.lastResult = "started drag: " .. tostring(option.name)
-		latchSelectionDebugMessage(option.name .. " started")
+		ControllerCameraTestTacticalMenu.lastResult = "confirming staged drag: " .. tostring(option.name)
+		pcall(ControllerCameraTestUpdateDragPreview)
+		ControllerCameraTestConfirmDragCommand(false)
+		ControllerCameraTestTacticalMenu.lastResult = drag.lastResult or ControllerCameraTestTacticalMenu.lastResult
+		latchSelectionDebugMessage(option.name .. " confirmed")
 		ControllerCameraTestTacticalMenu.open = false
 		return
 	elseif option.kind == "repeat_toggle" then
@@ -4699,7 +4800,7 @@ function ControllerCameraTestHandleTacticalMenuInput()
 		ControllerCameraTestCycleTacticalCommand(1)
 	elseif ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("radialQuick") then
 		local commands = ControllerCameraTestGetTacticalCommands()
-		ControllerCameraTestExecuteTacticalCommand(commands[menu.selectedIndex])
+		ControllerCameraTestExecuteTacticalCommand(commands[menu.selectedIndex], true)
 	end
 	ControllerCameraTestRefreshTacticalDebug()
 	return true
@@ -4840,7 +4941,10 @@ function ControllerCameraTestClassifyBuildOption(unitDef, name)
 	end
 
 	-- Build Heuristic
-	local isBuild = unitDef.builder
+	local isBuild = unitDef.isBuilder
+		or unitDef.canBuild
+		or unitDef.canAssist
+		or (type(unitDef.buildOptions) == "table" and #unitDef.buildOptions > 0)
 		or string.find(nameLower, "lab")
 		or string.find(nameLower, "factory")
 		or string.find(nameLower, "gantry")
@@ -6417,7 +6521,19 @@ function ControllerCameraTestHandleBackCommandLayerSelectTap()
 end
 
 function ControllerCameraTestHandleCommandLayerInput(dt)
+	if ControllerCameraTestTacticalTogglePressed() then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
+		ControllerCameraTestToggleTacticalMenu()
+		ControllerCameraTestLayerDebug.commandLayerAction = ControllerCameraTestTacticalMenu.open and "Layer+RB tactical menu opened" or "Layer+RB tactical menu closed"
+		return
+	end
+
 	if ControllerCameraTestHandleTacticalMenuInput() then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
+		return
+	end
+
+	if ControllerCameraTestHandleStagedTacticalCommandInput() then
 		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		return
 	end
@@ -6447,7 +6563,7 @@ function ControllerCameraTestHandleCommandLayerInput(dt)
 	elseif ControllerCameraTestActionPressed("buildRadial") then
 		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		ControllerCameraTestToggleTacticalMenu()
-		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+Y tactical menu"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Layer build/tactical menu"
 	elseif ControllerCameraTestActionPressed("commandUp") then
 		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		ControllerCameraTestIssueGuardOrPatrol()
@@ -6570,6 +6686,12 @@ function ControllerCameraTestGetModeSummary()
 	end
 	if ControllerCameraTestBuildMenu.open then
 		return "build menu"
+	end
+	if type(ControllerCameraTestTacticalMenu.stagedOption) == "table" then
+		return "tactical staged"
+	end
+	if ControllerCameraTestTacticalMenu.open then
+		return "tactical menu"
 	end
 	if ControllerCameraTestAreaSelect.active then
 		return "area select"
@@ -6915,18 +7037,22 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		ControllerCameraTestExternalBindingUI.lastAction = "gameplay input blocked"
 		return
 	end
-	if not commandLayerActive and ControllerCameraTestTacticalMenu.open then
-		ControllerCameraTestTacticalMenu.open = false
-		ControllerCameraTestTacticalMenu.lastAction = "closed: RT released"
-	end
 	ControllerCameraTestUpdateLBTapState()
 	updateSelectionTestActive()
 
-	if commandLayerActive then
+	if ControllerCameraTestHandleStagedTacticalCommandInput() then
+		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
+			ControllerCameraTestCancelAreaSelect("cancelled by tactical stage")
+		end
+	elseif commandLayerActive then
 		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
 			ControllerCameraTestCancelAreaSelect("cancelled by RT layer")
 		end
 		ControllerCameraTestHandleCommandLayerInput(dt)
+	elseif ControllerCameraTestHandleTacticalMenuInput() then
+		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
+			ControllerCameraTestCancelAreaSelect("cancelled by tactical menu")
+		end
 	elseif ControllerCameraTestHandlePlacementInput(dt) then
 		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
 			ControllerCameraTestCancelAreaSelect("cancelled by placement")
@@ -6971,8 +7097,12 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 
 	ControllerCameraTestLayerDebug.modeSummary = ControllerCameraTestGetModeSummary()
 	if commandLayerActive then
-		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.open and "Tactical: A/X confirm, B/Y cancel, D-pad/LB/RB choose"
+		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.open and "Tactical: A/X stage, B/Y cancel, Back+RB toggle, D-pad/LB/RB choose"
 			or XboxController.commandLayoutSummary
+	elseif type(ControllerCameraTestTacticalMenu.stagedOption) == "table" then
+		activeButtonLayoutSummary = "Tactical staged: move reticle, A confirm, B cancel"
+	elseif ControllerCameraTestTacticalMenu.open then
+		activeButtonLayoutSummary = "Tactical: A/X stage, B/Y close, D-pad/LB/RB choose"
 	elseif ControllerCameraTestBuildPlacement.active then
 		activeButtonLayoutSummary = "Placement: A/X place, RT append, insert modifier fronts, LB tap pattern/hold grid"
 	elseif ControllerCameraTestBuildMenu.open then
@@ -7418,7 +7548,7 @@ function ControllerCameraTestDrawTacticalRadial()
 	gl.Color(1, 0.92, 0.72, 1)
 	gl.Text(current and current.name or "Tactical", cx, cy + 22, 15, "oc")
 	gl.Color(1, 1, 1, 0.86)
-	gl.Text("A select  B/Y close", cx, cy - 2, 11, "oc")
+	gl.Text("A/X stage  B/Y close", cx, cy - 2, 11, "oc")
 	if ControllerCameraTestIsQueueModifierActive() then
 		gl.Color(0.35, 0.95, 0.65, 1)
 		gl.Text("APPEND", cx, cy - 20, 11, "oc")
@@ -7507,7 +7637,7 @@ function ControllerCameraTestGetSelectedPrimaryUnitInfo()
 				info.mode = "factory"
 				return info
 			end
-			if not constructorInfo and (unitDef.isBuilder or unitDef.builder or unitDef.canAssist
+			if not constructorInfo and (unitDef.isBuilder or unitDef.canBuild or unitDef.canAssist
 				or (type(unitDef.buildOptions) == "table" and #unitDef.buildOptions > 0))
 			then
 				info.mode = "constructor"
@@ -7580,8 +7710,8 @@ function ControllerCameraTestBuildCompactSelectedStatus()
 		status.currentCmdID = nil
 		status.queueItems = nil
 		status.currentAction = "idle"
-		if type(Spring.GetCommandQueue) == "function" then
-			local ok, queue = pcall(Spring.GetCommandQueue, info.unitID, 1)
+		if type(Spring.GetUnitCommands) == "function" then
+			local ok, queue = pcall(Spring.GetUnitCommands, info.unitID, 1)
 			if ok and type(queue) == "table" and queue[1] then
 				status.currentAction = "command " .. tostring(queue[1].id or "active")
 			end
@@ -8148,7 +8278,7 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Left Stick Click: Remove current/next queued command | Right Stick Click: Remove last queued command",
 		"append modifier + double-tap A on empty reticle: select all idle units in current idle type",
 		"Context Actions: X tap context | X hold one unit draw queued path | X hold many units line/spread | Layer+B stop | Layer+X attack/fight",
-		"Combat Layers: Layer+A reserved except Back double-tap Commander | Layer+Y tactical radial | LS/Dpad choose | A confirm | B/Y close",
+		"Combat Layers: Back+RB toggles tactical radial | LS/Dpad choose | A/X stage target command | A confirm staged | B/Y close/cancel",
 		"Append Queue: hold RT/bound append modifier to add commands/builds to the end",
 		"Do Next: hold bound insert modifier to insert near the front",
 		"Constructor Radial: Y open | LS/Dpad select | LB/RB page | Y close",
@@ -8613,6 +8743,8 @@ function widget:DrawScreen()
 				"Tactical open: " .. yesNo(ControllerCameraTestTacticalMenu.open),
 				"Tactical radial visible: " .. yesNo(ControllerCameraTestTacticalMenu.open),
 				"Tactical command: " .. tostring(ControllerCameraTestTacticalMenu.highlightedName),
+				"Tactical staged: " .. tostring(ControllerCameraTestTacticalMenu.stagedName),
+				"Tactical stage state: " .. tostring(ControllerCameraTestTacticalMenu.stagedState),
 				"Tactical result: " .. tostring(ControllerCameraTestTacticalMenu.lastResult),
 			},
 		},
