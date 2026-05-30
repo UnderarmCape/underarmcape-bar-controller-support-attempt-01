@@ -408,6 +408,8 @@ ControllerCameraTestDgunMode = ControllerCameraTestDgunMode or {
 	moveTargetX = 0,
 	moveTargetY = 0,
 	moveTargetZ = 0,
+	aimActive = false,
+	movementStickActive = false,
 }
 ControllerCameraTestDgunAimRange = 280
 ControllerCameraTestDebugSections = ControllerCameraTestDebugSections or {
@@ -3588,6 +3590,16 @@ local function attemptAttackCommand()
 	end
 end
 
+local function attemptFightCommand()
+	if not reticleHasWorldTarget or not reticleWorldX or not reticleWorldY or not reticleWorldZ then
+		latchSelectionDebugMessage("Fight skipped: no world target")
+		return
+	end
+	local params = { reticleWorldX, reticleWorldY, reticleWorldZ }
+	local targetName = string.format("x=%.1f, y=%.1f, z=%.1f", reticleWorldX, reticleWorldY, reticleWorldZ)
+	issueOrderToSelection(CMD.FIGHT, params, "Fight", targetName)
+end
+
 local function attemptStopCommand()
 	issueOrderToSelection(CMD.STOP, {}, "Stop", "none", {})
 end
@@ -3652,6 +3664,15 @@ function ControllerCameraTestIsAlliedUnit(unitID)
 	return unitTeam == myTeam
 end
 
+function ControllerCameraTestIsOwnedUnit(unitID)
+	if not unitID or type(Spring.GetUnitTeam) ~= "function" then
+		return false
+	end
+	local unitTeam = Spring.GetUnitTeam(unitID)
+	local myTeam = type(Spring.GetMyTeamID) == "function" and Spring.GetMyTeamID()
+	return unitTeam ~= nil and myTeam ~= nil and unitTeam == myTeam
+end
+
 function ControllerCameraTestGetUnitDef(unitID)
 	if not unitID or type(Spring.GetUnitDefID) ~= "function" then
 		return nil, nil
@@ -3704,6 +3725,65 @@ function ControllerCameraTestGetVisibleAlliedUnits()
 	end
 	table.sort(alliedUnits)
 	return alliedUnits
+end
+
+function ControllerCameraTestSelectCombatUnitsOnScreen()
+	if type(Spring.GetVisibleUnits) ~= "function" then
+		ControllerCameraTestCycleDebug.lastResult = "LB select failed: API unavailable"
+		latchSelectionDebugMessage("LB select failed: API unavailable")
+		return false
+	end
+
+	local ok, visibleUnits = pcall(Spring.GetVisibleUnits)
+	if not ok or type(visibleUnits) ~= "table" then
+		ControllerCameraTestCycleDebug.lastResult = "LB select failed: visibleUnits error"
+		latchSelectionDebugMessage("LB select failed: visibleUnits error")
+		return false
+	end
+
+	local combatUnits = {}
+	local ownedUnits = {}
+
+	for _, unitID in ipairs(visibleUnits) do
+		if ControllerCameraTestIsOwnedUnit(unitID) then
+			table.insert(ownedUnits, unitID)
+			local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
+			if unitDef then
+				local isMobile = ControllerCameraTestIsMobileUnitDef(unitDef)
+				local isCombat = ControllerCameraTestIsCombatUnitDef(unitDef)
+				if isMobile and isCombat then
+					table.insert(combatUnits, unitID)
+				end
+			end
+		end
+	end
+
+	local unitsToSelect = {}
+	local debugMsg = ""
+
+	if #combatUnits > 0 then
+		unitsToSelect = combatUnits
+		debugMsg = "LB selected combat units on screen: " .. #combatUnits
+	elseif #ownedUnits > 0 then
+		unitsToSelect = ownedUnits
+		debugMsg = "LB selected owned units on screen: " .. #ownedUnits
+	end
+
+	if #unitsToSelect > 0 then
+		if type(spSelectUnitArray) == "function" then
+			local selOk = pcall(spSelectUnitArray, unitsToSelect, false)
+			if selOk then
+				ControllerCameraTestCycleDebug.lastResult = debugMsg
+				latchSelectionDebugMessage(debugMsg)
+				return true
+			end
+		end
+	end
+
+	local noMsg = "LB selected owned units on screen: 0"
+	ControllerCameraTestCycleDebug.lastResult = noMsg
+	latchSelectionDebugMessage(noMsg)
+	return false
 end
 
 function ControllerCameraTestSelectUnits(units, label)
@@ -4148,6 +4228,8 @@ function ControllerCameraTestEnterDgunMode(commanderID)
 	dgun.lastFireResult = "none"
 	dgun.lastMoveResult = "none"
 	dgun.moveActive = false
+	dgun.aimActive = false
+	dgun.movementStickActive = false
 
 	-- Resolve command ID once
 	dgun.cmdID = FindActiveDgunCommandID()
@@ -4213,11 +4295,13 @@ end
 function ControllerCameraTestUpdateDgunAim(dt)
 	local dgun = ControllerCameraTestDgunMode
 	if not dgun.active or not dgun.commanderID then
+		dgun.aimActive = false
 		return
 	end
 
 	local cx, cy, cz = spGetUnitPosition(dgun.commanderID)
 	if not cx or not cz then
+		dgun.aimActive = false
 		return
 	end
 	cy = cy or 0
@@ -4225,12 +4309,15 @@ function ControllerCameraTestUpdateDgunAim(dt)
 	local rx = normalizedRightX or 0
 	local ry = normalizedRightY or 0
 
-	local deadzone = 0.05
+	local deadzone = 0.50
 	local mag = math.sqrt(rx * rx + ry * ry)
 
 	if mag > deadzone then
 		dgun.aimX = rx / mag
 		dgun.aimZ = ry / mag
+		dgun.aimActive = true
+	else
+		dgun.aimActive = false
 	end
 
 	dgun.targetX = cx + dgun.aimX * dgun.range
@@ -4242,19 +4329,23 @@ function ControllerCameraTestUpdateDgunMovement(dt)
 	local dgun = ControllerCameraTestDgunMode
 	if not dgun.active or not dgun.commanderID then
 		dgun.moveActive = false
+		dgun.movementStickActive = false
 		return
 	end
 
 	local lx = normalizedLeftX or 0
 	local ly = normalizedLeftY or 0
 
-	local deadzone = 0.20
+	local deadzone = 0.40
 	local mag = math.sqrt(lx * lx + ly * ly)
 
 	if mag <= deadzone then
 		dgun.moveActive = false
+		dgun.movementStickActive = false
 		return
 	end
+
+	dgun.movementStickActive = true
 
 	local now = debugEventTime
 	local elapsed = now - (dgun.lastMoveTime or 0)
@@ -7251,31 +7342,51 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 	end
 
 	if ControllerCameraTestActionPressed("smartAction") then
+		if ControllerCameraTestActionDown("pitchModifier") then
+			local attackAreaOption = { name = "Attack Area", shortLabel = "Attack Area", cmdID = CMD.ATTACK, kind = "drag_area", dragMode = "attackArea" }
+			ControllerCameraTestStageTacticalCommand(attackAreaOption)
+			return true
+		end
+
 		drag.pressActive = true
 		drag.pressStartTime = debugEventTime
-		drag.pressButton = "RT+X"
+		if ControllerCameraTestBindingDown("RT") then
+			drag.pressButton = "RT+X"
+		else
+			drag.pressButton = "fight"
+		end
 		drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
 		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
 		drag.active = false
 	end
 
-	if drag.pressActive and drag.pressButton == "RT+X" and ControllerCameraTestActionDown("smartAction") then
+	if drag.pressActive and (drag.pressButton == "RT+X" or drag.pressButton == "fight") and ControllerCameraTestActionDown("smartAction") then
 		if not drag.active and (debugEventTime - drag.pressStartTime) >= X_HOLD_SECONDS then
 			drag.active = true
-			drag.mode = "fightLine"
-			drag.lastResult = "active"
-			latchSelectionDebugMessage("Fight Line Drag started")
+			if drag.pressButton == "RT+X" then
+				drag.mode = "attackLine"
+				drag.lastResult = "active"
+				latchSelectionDebugMessage("Attack Line Drag started")
+			else
+				drag.mode = "fightLine"
+				drag.lastResult = "active"
+				latchSelectionDebugMessage("Fight Line Drag started")
+			end
 		end
 		if drag.active then
 			ControllerCameraTestUpdateDragPreview()
 		end
 	end
 
-	if ControllerCameraTestActionReleased("smartAction") and drag.pressActive and drag.pressButton == "RT+X" then
+	if ControllerCameraTestActionReleased("smartAction") and drag.pressActive and (drag.pressButton == "RT+X" or drag.pressButton == "fight") then
 		if drag.active then
 			ControllerCameraTestConfirmDragCommand(false)
 		else
-			attemptAttackCommand()
+			if drag.pressButton == "RT+X" then
+				attemptAttackCommand()
+			else
+				attemptFightCommand()
+			end
 		end
 		drag.pressActive = false
 	end
@@ -7567,8 +7678,8 @@ function ControllerCameraTestHandleNormalUtilityInput()
 		ControllerCameraTestCycleIdleUnitType(1)
 	elseif ControllerCameraTestActionReleased("pitchModifier") and ControllerCameraTestCycleDebug.lbPressActive then
 		if not ControllerCameraTestCycleDebug.lbHadPitchMotion then
-			ControllerCameraTestCycleSelection(-1)
-			ControllerCameraTestLayerDebug.normalUtilityAction = "LB tap cycle selection"
+			ControllerCameraTestSelectCombatUnitsOnScreen()
+			ControllerCameraTestLayerDebug.normalUtilityAction = "LB tap combat units screen select"
 		end
 		ControllerCameraTestCycleDebug.lbPressActive = false
 		ControllerCameraTestCycleDebug.lbHadPitchMotion = false
@@ -9615,6 +9726,10 @@ function widget:DrawScreen()
 				"DGUN command ID: " .. tostring(ControllerCameraTestDgunMode.cmdID or "none"),
 				"DGUN range source: " .. tostring(ControllerCameraTestDgunMode.rangeSource or "none"),
 				"DGUN aim range: " .. tostring(ControllerCameraTestDgunMode.range or 280),
+				"DGUN aim deadzone: 0.50",
+				"DGUN move deadzone: 0.40",
+				"Aim stick input: " .. (ControllerCameraTestDgunMode.aimActive and "active" or "ignored"),
+				"Move stick input: " .. (ControllerCameraTestDgunMode.movementStickActive and "active" or "ignored"),
 				string.format("Aim vector: rx=%.3f rz=%.3f", ControllerCameraTestDgunMode.aimX, ControllerCameraTestDgunMode.aimZ),
 				string.format("Target world: x=%.1f y=%.1f z=%.1f", ControllerCameraTestDgunMode.targetX, ControllerCameraTestDgunMode.targetY, ControllerCameraTestDgunMode.targetZ),
 				"Last fire result: " .. tostring(ControllerCameraTestDgunMode.lastFireResult),
