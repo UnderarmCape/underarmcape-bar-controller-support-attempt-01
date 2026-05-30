@@ -512,7 +512,7 @@ function ControllerCameraTestGetDefaultSettings()
 		cameraSmoothing = 0.06,
 		stickCurve = 1.175,
 		triggerCurve = 1.075,
-		smartAssistScale = 1.0,
+		smartAssistScale = 0.10,
 		singlePathSpacing = 96,
 		singlePathInterval = 0.10,
 		compactSelectedStatus = true,
@@ -569,6 +569,7 @@ ControllerCameraTestSelfDestruct = ControllerCameraTestSelfDestruct or {
 	chordActive = false,
 	holdStartTime = 0,
 	holdSeconds = 0.75,
+	holdTime = 0,
 	attempted = false,
 	issued = false,
 	cmdID = "none",
@@ -2653,6 +2654,10 @@ function ControllerCameraTestIssueQueueRemovalCommand(removeLast)
 end
 
 function ControllerCameraTestHandleQueueRemovalInput()
+	-- Block L3 queue removal when self-destruct chord (Back + R3 + L3) is active
+	if ControllerCameraTestSelfDestruct.chordActive then
+		return false
+	end
 	if ControllerCameraTestActionPressed("removeQueuedCommand") then
 		if ControllerCameraTestGetBinding("removeQueuedCommand") == "back" then
 			return false
@@ -3811,10 +3816,12 @@ end
 
 function ControllerCameraTestHandleSelfDestructChord()
 	local state = ControllerCameraTestSelfDestruct
+	-- Chord: Back/View + R3 (rightStickClick) + L3 (leftStickClick)
+	-- Must take priority over DGUN entry (Back + R3 alone).
+	-- L3 normal queue-removal is blocked while chord is active (see HandleQueueRemovalInput).
 	local chordActive = IsButtonDown("back")
 		and IsButtonDown("rightStickClick")
-		and IsButtonDown("RB")
-		and ControllerCameraTestBindingDown("RT")
+		and IsButtonDown("leftStickClick")
 	if not chordActive then
 		if state.chordActive and not state.attempted then
 			state.lastResult = "cancelled before safety hold"
@@ -3835,11 +3842,13 @@ function ControllerCameraTestHandleSelfDestructChord()
 	end
 
 	local elapsed = math.max(0, debugEventTime - (state.holdStartTime or debugEventTime))
+	state.holdTime = elapsed
+	state.selectedCount = #(type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
 	if not state.attempted and elapsed >= (state.holdSeconds or 0.75) then
 		state.attempted = true
 		state.issued = ControllerCameraTestIssueSelfDestruct()
 	elseif not state.attempted then
-		state.lastResult = string.format("holding %.2f / %.2f", elapsed, state.holdSeconds or 0.75)
+		state.lastResult = string.format("holding %.2f / %.2f s (%d units)", elapsed, state.holdSeconds or 0.75, state.selectedCount or 0)
 	end
 	return true
 end
@@ -4214,12 +4223,33 @@ local function attemptContextCommand()
 		ControllerCameraTestCommandDebug.smartLastResult = "ignored self-target selected unit"
 		latchSelectionDebugMessage("ignored self-target move")
 		return
-	elseif ok and (targetType == "unit" or targetType == "feature") and tonumber(targetID) then
+	elseif ok and targetType == "unit" and tonumber(targetID) then
+		-- Only raw-target a unit (not a feature) with the default command.
+		-- Feature targets must go through TrySmartAssistedCommand to get proper cmdID.
+		-- If TrySmartAssistedCommand returned false for a feature it means no smart command
+		-- was found; we do NOT issue a move-to-feature (featureID as param is misinterpreted).
 		params = { tonumber(targetID) }
-		targetString = targetType .. " " .. tostring(targetID)
+		targetString = "unit " .. tostring(targetID)
+		ControllerCameraTestCommandDebug.smartFallbackBlocked = "no"
+	elseif ok and targetType == "feature" and tonumber(targetID) then
+		-- Feature directly traced; TrySmartAssistedCommand had no match (unit has no
+		-- reclaim/resurrect available for this feature). Fall back to world-pos move
+		-- rather than passing featureID as a unit-target param.
+		ControllerCameraTestCommandDebug.smartFeatureRawID = tostring(targetID)
+		ControllerCameraTestCommandDebug.smartFallbackBlocked = "yes (feature: using world pos)"
+		if reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
+			params = { reticleWorldX, reticleWorldY, reticleWorldZ }
+			targetString = "ground (from feature " .. tostring(targetID) .. ")"
+			ControllerCameraTestCommandDebug.smartLastResult = "Smart X: feature no smart cmd, world pos fallback"
+		else
+			ControllerCameraTestCommandDebug.lastResult = "Smart X: feature no smart cmd, no world pos - aborted"
+			latchSelectionDebugMessage("Smart X: feature no smart cmd, aborted")
+			return
+		end
 	elseif reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
 		params = { reticleWorldX, reticleWorldY, reticleWorldZ }
 		targetString = "ground"
+		ControllerCameraTestCommandDebug.smartFallbackBlocked = "no"
 		ControllerCameraTestCommandDebug.smartLastResult = "Smart X: no assisted target, fallback move"
 	else
 		ControllerCameraTestCommandDebug.lastResult = "context failed: no target"
@@ -5956,9 +5986,11 @@ local function ControllerCameraTestAreaOptionFromDesc(desc)
 		or lowerAction == "res"
 	then
 		dragMode = "resurrectArea"
-		shortLabel = "Resurrect Area"
+		-- Differentiate "Restore Area" vs "Resurrect Area" based on the descriptor text/action
+		local isRestore = text:find("restore", 1, true) and not text:find("resurrect", 1, true)
+		shortLabel = isRestore and "Restore Area" or "Resurrect Area"
 		colorProfile = "resurrect"
-		iconLabel = "RES"
+		iconLabel = isRestore and "RESTORE" or "RES"
 	elseif text:find("reclaim", 1, true) and (text:find("area", 1, true) or text:find("radius", 1, true)) then
 		dragMode = "reclaimArea"
 		shortLabel = "Reclaim Area"
@@ -8889,12 +8921,12 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 
 	if ControllerCameraTestHandleSelfDestructChord() then
 		ControllerCameraTestLayerDebug.modeSummary = "self-destruct safety"
-		activeButtonLayoutSummary = "Self-destruct: hold Back/View + R3 + RB + RT"
+		activeButtonLayoutSummary = "Self-destruct: hold Back/View + R3 + L3 (" .. string.format("%.2f", ControllerCameraTestSelfDestruct.holdTime or 0) .. "s)"
 		return
 	end
 
-	-- Hook DGUN Mode Activation: Back + R3
-	if IsButtonDown("back") and WasButtonPressed("rightStickClick") then
+	-- Hook DGUN Mode Activation: Back + R3 (but NOT when L3 is also held - that is self-destruct chord)
+	if IsButtonDown("back") and WasButtonPressed("rightStickClick") and not IsButtonDown("leftStickClick") then
 		local commanderID = GetSelectedCommanderID()
 		if commanderID then
 			ControllerCameraTestEnterDgunMode(commanderID)
