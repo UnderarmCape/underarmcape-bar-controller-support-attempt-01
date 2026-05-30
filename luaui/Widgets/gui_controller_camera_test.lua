@@ -170,10 +170,22 @@ ControllerCameraTestTacticalMenu = ControllerCameraTestTacticalMenu or {
 }
 ControllerCameraTestMemoryDebug = ControllerCameraTestMemoryDebug or {
 	lastSampleTime = -10,
+	lastInputSummaryTime = -10,
+	lastRawSummaryTime = -10,
+	lastControllerScanTime = -10,
 	luaKB = 0,
+	initLuaKB = nil,
+	deltaKB = 0,
+	maxLuaKB = 0,
 	luaMB = "0.0",
 	lastResult = "not sampled",
-	audit = "no unbounded widget growth found",
+	audit = "binding definitions cached; hot debug summaries throttled",
+	controllerConnected = "no",
+	mode = "unknown",
+	buttonEventCount = 0,
+	tacticalOpenCount = 0,
+	hitboxCount = 0,
+	debugRowCount = 0,
 }
 ControllerCameraTestCycleDebug = ControllerCameraTestCycleDebug or {
 	lastResult = "none",
@@ -977,14 +989,21 @@ function ControllerCameraTestSummarizeRawControllerState(state)
 		return
 	end
 
+	rawControllerStateStatus = "state table ok"
+	local memory = ControllerCameraTestMemoryDebug
+	if not ControllerCameraTestSettings.debugPanelVisible
+		or (debugEventTime - (memory.lastRawSummaryTime or -10)) < 1
+	then
+		return
+	end
+	memory.lastRawSummaryTime = debugEventTime
+
 	local axes = type(state.axes) == "table" and state.axes or {}
 	local buttons = type(state.buttons) == "table" and state.buttons or {}
 	local oneBasedAxes = {}
 	local zeroBasedAxes = {}
 	local oneBasedDown = {}
 	local zeroBasedDown = {}
-
-	rawControllerStateStatus = "state table ok"
 
 	for axisID = 1, 6 do
 		oneBasedAxes[#oneBasedAxes + 1] = tostring(axisID) .. "=" .. tostring(axes[axisID])
@@ -1141,6 +1160,8 @@ local function updateDebugLatchSummaries()
 	end
 end
 
+local getActiveAxisSummary
+
 function ControllerCameraTestUpdateMemoryDebug()
 	local memory = ControllerCameraTestMemoryDebug
 	if (debugEventTime - (memory.lastSampleTime or -10)) < 2 then
@@ -1157,8 +1178,43 @@ function ControllerCameraTestUpdateMemoryDebug()
 		return
 	end
 	memory.luaKB = math.floor(kb + 0.5)
+	if type(memory.initLuaKB) ~= "number" then
+		memory.initLuaKB = memory.luaKB
+	end
+	memory.deltaKB = memory.luaKB - (memory.initLuaKB or memory.luaKB)
+	if memory.luaKB > (memory.maxLuaKB or 0) then
+		memory.maxLuaKB = memory.luaKB
+	end
 	memory.luaMB = string.format("%.1f", kb / 1024)
+	memory.mode = ControllerCameraTestGetModeSummary and ControllerCameraTestGetModeSummary() or tostring(ControllerCameraTestLayerDebug.modeSummary)
+	memory.hitboxCount = type(ControllerCameraTestDebugSectionHitboxes) == "table" and #ControllerCameraTestDebugSectionHitboxes or 0
 	memory.lastResult = "sampled"
+end
+
+local function countButtonStates(buttonStates)
+	local count = 0
+	for _, buttonId in ipairs(XboxController.buttonOrder) do
+		if buttonStates[buttonId] then
+			count = count + 1
+		end
+	end
+	return count
+end
+
+function ControllerCameraTestUpdateHotInputDebugSummaries(state)
+	local memory = ControllerCameraTestMemoryDebug
+	local eventCount = countButtonStates(pressedButtonStates) + countButtonStates(releasedButtonStates)
+	if eventCount > 0 then
+		memory.buttonEventCount = (memory.buttonEventCount or 0) + eventCount
+	end
+	if eventCount == 0 and (debugEventTime - (memory.lastInputSummaryTime or -10)) < 0.5 then
+		return
+	end
+	memory.lastInputSummaryTime = debugEventTime
+	heldButtonsSummary = getButtonStateSummary(currentButtonStates)
+	pressedThisFrameSummary = getButtonStateSummary(pressedButtonStates)
+	releasedThisFrameSummary = getButtonStateSummary(releasedButtonStates)
+	activeAxesSummary = getActiveAxisSummary(state)
 end
 
 local function getPreviewSummary(buttonStates, previewLabels)
@@ -1197,7 +1253,7 @@ local function getNormalizedDebugAxis(state, axisName)
 	return normalizeAxis(value)
 end
 
-local function getActiveAxisSummary(state)
+getActiveAxisSummary = function(state)
 	local active = {}
 
 	for _, axisName in ipairs(XboxController.axisOrder) do
@@ -1335,6 +1391,16 @@ local function updateCameraDebug(cameraState)
 end
 
 local function pollFirstController()
+	local memory = ControllerCameraTestMemoryDebug
+	if (debugEventTime - (memory.lastControllerScanTime or -10)) < 1 then
+		if controllerInstanceId ~= nil then
+			memory.controllerConnected = "yes"
+			return true
+		end
+		return nil
+	end
+	memory.lastControllerScanTime = debugEventTime
+
 	local ok, controllers = pcall(spGetAvailableControllers)
 	if not ok then
 		controllerName = "GetAvailableControllers failed"
@@ -1342,6 +1408,7 @@ local function pollFirstController()
 		rawControllerStateStatus = "GetAvailableControllers failed"
 		rawAxesSummary = "none"
 		rawButtonsSummary = "none"
+		memory.controllerConnected = "scan failed"
 		return nil
 	end
 
@@ -1352,11 +1419,13 @@ local function pollFirstController()
 		rawControllerStateStatus = "no controller"
 		rawAxesSummary = "none"
 		rawButtonsSummary = "none"
+		memory.controllerConnected = "no"
 		return nil
 	end
 
 	controllerName = tostring(controller.name or "unknown")
 	controllerInstanceId = controller.instanceID or controller.instanceId
+	memory.controllerConnected = "yes"
 	return controller
 end
 
@@ -1373,12 +1442,18 @@ local function pollControllerState(instanceId)
 		rawControllerStateStatus = "GetControllerState failed"
 		rawAxesSummary = "none"
 		rawButtonsSummary = "none"
+		controllerInstanceId = nil
+		ControllerCameraTestMemoryDebug.controllerConnected = "state failed"
+		ControllerCameraTestMemoryDebug.lastControllerScanTime = -10
 		return nil
 	end
 	if type(state) ~= "table" then
 		rawControllerStateStatus = "state unavailable"
 		rawAxesSummary = "none"
 		rawButtonsSummary = "none"
+		controllerInstanceId = nil
+		ControllerCameraTestMemoryDebug.controllerConnected = "state unavailable"
+		ControllerCameraTestMemoryDebug.lastControllerScanTime = -10
 		return nil
 	end
 
@@ -1575,7 +1650,12 @@ end
 -- SECTION: Binding system
 --------------------------------------------------------------------------------
 function ControllerCameraTestBindingDefinitions()
-	return {
+	local bindings = ControllerCameraTestBindings
+	local version = "v0.4.1-memory-cache-1"
+	if type(bindings.definitionCache) == "table" and bindings.definitionCacheVersion == version then
+		return bindings.definitionCache
+	end
+	local defs = {
 		{ action = "select", label = "Select / Area Select", default = "A", group = "Core" },
 		{ action = "cancel", label = "Cancel / Clear", default = "B", group = "Core" },
 		{ action = "smartAction", label = "Smart Action", default = "X", group = "Core" },
@@ -1617,18 +1697,26 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "groupAssign", label = "Assign Same-Type/Future Group", default = "dpadRight", group = "Idle / Groups" },
 		{ action = "groupClear", label = "Clear Group", default = "leftStickClick", group = "Idle / Groups" },
 	}
+	bindings.definitionCache = defs
+	bindings.definitionCacheVersion = version
+	return defs
 end
 
 function ControllerCameraTestEnsureBindings()
 	local bindings = ControllerCameraTestBindings
 	bindings.defaults = bindings.defaults or {}
 	bindings.actions = bindings.actions or {}
+	local version = "v0.4.1-memory-cache-1"
+	if bindings.defaultsInitializedVersion == version then
+		return
+	end
 	for _, def in ipairs(ControllerCameraTestBindingDefinitions()) do
 		bindings.defaults[def.action] = def.default
 		if type(bindings.actions[def.action]) ~= "string" then
 			bindings.actions[def.action] = def.default
 		end
 	end
+	bindings.defaultsInitializedVersion = version
 end
 
 function ControllerCameraTestGetBinding(actionName)
@@ -1637,17 +1725,21 @@ function ControllerCameraTestGetBinding(actionName)
 end
 
 function ControllerCameraTestBindingLabel(buttonName)
-	local labels = {
-		back = "Back/View",
-		start = "Start/Menu",
-		dpadUp = "D-pad Up",
-		dpadDown = "D-pad Down",
-		dpadLeft = "D-pad Left",
-		dpadRight = "D-pad Right",
-		leftStickClick = "Left Stick Click",
-		rightStickClick = "Right Stick Click",
-		none = "Unbound",
-	}
+	local labels = ControllerCameraTestBindings.labelCache
+	if type(labels) ~= "table" then
+		labels = {
+			back = "Back/View",
+			start = "Start/Menu",
+			dpadUp = "D-pad Up",
+			dpadDown = "D-pad Down",
+			dpadLeft = "D-pad Left",
+			dpadRight = "D-pad Right",
+			leftStickClick = "Left Stick Click",
+			rightStickClick = "Right Stick Click",
+			none = "Unbound",
+		}
+		ControllerCameraTestBindings.labelCache = labels
+	end
 	return labels[buttonName] or tostring(buttonName or "Unbound")
 end
 
@@ -4524,6 +4616,9 @@ end
 function ControllerCameraTestToggleTacticalMenu()
 	local menu = ControllerCameraTestTacticalMenu
 	menu.open = not menu.open
+	if menu.open then
+		ControllerCameraTestMemoryDebug.tacticalOpenCount = (ControllerCameraTestMemoryDebug.tacticalOpenCount or 0) + 1
+	end
 	menu.lastAction = menu.open and "opened" or "closed"
 	ControllerCameraTestRefreshTacticalDebug()
 	latchSelectionDebugMessage(menu.open and "Command layer tactical menu opened" or "Tactical menu closed")
@@ -7076,10 +7171,13 @@ function ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	normalizedRightTrigger = normalizeTrigger(GetNamedAxis(state, "rightTrigger"))
 	updateButtonStates(state)
 	ControllerCameraTestUpdateBindingTriggerEdges()
-	heldButtonsSummary = getButtonStateSummary(currentButtonStates)
-	pressedThisFrameSummary = getButtonStateSummary(pressedButtonStates)
-	releasedThisFrameSummary = getButtonStateSummary(releasedButtonStates)
-	activeAxesSummary = getActiveAxisSummary(state)
+	if not hasButtonState(pressedButtonStates) then
+		pressedThisFrameSummary = "none"
+	end
+	if not hasButtonState(releasedButtonStates) then
+		releasedThisFrameSummary = "none"
+	end
+	ControllerCameraTestUpdateHotInputDebugSummaries(state)
 	if normalizedLeftX ~= 0
 		or normalizedLeftY ~= 0
 		or normalizedRightX ~= 0
@@ -8841,6 +8939,12 @@ function widget:DrawScreen()
 			lines = {
 				"Lua KB: " .. tostring(ControllerCameraTestMemoryDebug.luaKB),
 				"Lua MB: " .. tostring(ControllerCameraTestMemoryDebug.luaMB),
+				"Lua delta/max KB: " .. tostring(ControllerCameraTestMemoryDebug.deltaKB) .. " / " .. tostring(ControllerCameraTestMemoryDebug.maxLuaKB),
+				"Controller connected: " .. tostring(ControllerCameraTestMemoryDebug.controllerConnected),
+				"Active mode: " .. tostring(ControllerCameraTestMemoryDebug.mode),
+				"Button event count: " .. tostring(ControllerCameraTestMemoryDebug.buttonEventCount),
+				"Tactical open count: " .. tostring(ControllerCameraTestMemoryDebug.tacticalOpenCount),
+				"Hitbox/debug rows: " .. tostring(ControllerCameraTestMemoryDebug.hitboxCount) .. " / " .. tostring(ControllerCameraTestMemoryDebug.debugRowCount),
 				"Sample: " .. tostring(ControllerCameraTestMemoryDebug.lastResult),
 				"Audit: " .. tostring(ControllerCameraTestMemoryDebug.audit),
 			},
@@ -8905,6 +9009,15 @@ function widget:DrawScreen()
 			},
 		},
 	}
+
+	local debugRowCount = 0
+	for _, section in ipairs(controllerSections) do
+		debugRowCount = debugRowCount + 1 + #(section.lines or {})
+	end
+	for _, section in ipairs(cameraSections) do
+		debugRowCount = debugRowCount + 1 + #(section.lines or {})
+	end
+	ControllerCameraTestMemoryDebug.debugRowCount = debugRowCount
 
 	gl.Color(0, 0, 0, 0.82)
 	gl.Rect(panelLeft, panelBottom, panelRight, panelTop)
