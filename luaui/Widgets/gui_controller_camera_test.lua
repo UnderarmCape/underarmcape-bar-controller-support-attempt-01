@@ -138,6 +138,126 @@ ControllerCameraTestDragCommand = ControllerCameraTestDragCommand or {
 	singleUnitWaypointCount = 0,
 }
 
+-- Table pool for build drag preview cells to avoid per-frame allocations
+local cellTablePool = {}
+local cellTablePoolSize = 0
+
+local function GetCellTable(x, y, z, facing)
+	if cellTablePoolSize > 0 then
+		local t = cellTablePool[cellTablePoolSize]
+		cellTablePool[cellTablePoolSize] = nil
+		cellTablePoolSize = cellTablePoolSize - 1
+		t[1] = x
+		t[2] = y
+		t[3] = z
+		t[4] = facing
+		return t
+	else
+		return { x, y, z, facing }
+	end
+end
+
+local function ReleaseCellTable(t)
+	cellTablePoolSize = cellTablePoolSize + 1
+	cellTablePool[cellTablePoolSize] = t
+end
+
+-- Drag preview input cache
+local lastDragPreviewCache = {
+	active = false,
+	mode = nil,
+	startX = nil,
+	startY = nil,
+	startZ = nil,
+	endX = nil,
+	endY = nil,
+	endZ = nil,
+	cmdID = nil,
+	facing = nil,
+	spacing = nil,
+	preferNative = nil,
+}
+
+local lastSelectedUnits = {}
+local lastPreviewWasNative = false
+
+local function CheckSelectedUnitsChanged(current)
+	if #current ~= #lastSelectedUnits then
+		return true
+	end
+	for i = 1, #current do
+		if current[i] ~= lastSelectedUnits[i] then
+			return true
+		end
+	end
+	return false
+end
+
+local function UpdateSelectedUnitsCache(current)
+	for k in pairs(lastSelectedUnits) do
+		lastSelectedUnits[k] = nil
+	end
+	for i = 1, #current do
+		lastSelectedUnits[i] = current[i]
+	end
+end
+
+local function ClearCachedPreviewPoints()
+	local drag = ControllerCameraTestDragCommand
+	if type(drag.previewPoints) == "table" then
+		if not lastPreviewWasNative then
+			for i = 1, #drag.previewPoints do
+				local pt = drag.previewPoints[i]
+				if type(pt) == "table" then
+					ReleaseCellTable(pt)
+				end
+				drag.previewPoints[i] = nil
+			end
+		else
+			drag.previewPoints = {}
+		end
+	else
+		drag.previewPoints = {}
+	end
+	lastPreviewWasNative = false
+end
+
+local function ControllerCameraTestClearDragPreviewCache()
+	for k in pairs(lastDragPreviewCache) do
+		lastDragPreviewCache[k] = nil
+	end
+	lastDragPreviewCache.active = false
+	for k in pairs(lastSelectedUnits) do
+		lastSelectedUnits[k] = nil
+	end
+	ClearCachedPreviewPoints()
+end
+
+-- Static pre-allocated structures for native route to avoid allocations
+local staticBlueprintTable = {
+	facing = 0,
+	units = {
+		{
+			blueprintUnitID = 1,
+			unitDefID = 0,
+			position = { 0, 0, 0 },
+			facing = 0
+		}
+	}
+}
+local staticStartPos = { 0, 0, 0 }
+local staticEndPos = { 0, 0, 0 }
+
+-- Scalar diagnostics for build placement
+local diagPlacementPreviewCells = 0
+local diagPlacementPreviewRebuildCount = 0
+local diagPlacementPreviewCacheHits = 0
+local diagPlacementPreviewCacheMisses = 0
+local diagPlacementPreviewLastRebuildReason = "none"
+local diagPlacementGridRows = 0
+local diagPlacementGridCols = 0
+local diagPlacementDrawCount = 0
+
 ControllerCameraTestAreaSelect = ControllerCameraTestAreaSelect or {
 	pressActive = false,
 	active = false,
@@ -2818,6 +2938,7 @@ function ControllerCameraTestUpdateDragPreview()
 	local drag = ControllerCameraTestDragCommand
 	if not drag.active then
 		ControllerCameraTestClearNativeBlueprintPreview()
+		ClearCachedPreviewPoints()
 		drag.previewPoints = {}
 		return
 	end
@@ -2833,8 +2954,70 @@ function ControllerCameraTestUpdateDragPreview()
 
 	drag.endX, drag.endY, drag.endZ = endX, endY, endZ
 
+	-- Caching Check
+	local currentOption = ControllerCameraTestBuildPlacement.option
+	local currentCmdID = currentOption and currentOption.cmdID or nil
+	local currentFacing = ControllerCameraTestBuildPlacement.facing or 0
+	local currentSpacing = ControllerCameraTestBuildPlacement.placementSpacing or 0
+	local currentPreferNative = ControllerCameraTestSettings.preferNativeBlueprint ~= false
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+
+	local needsRebuild = false
+	if not lastDragPreviewCache.active
+		or lastDragPreviewCache.mode ~= drag.mode
+		or lastDragPreviewCache.startX ~= startX
+		or lastDragPreviewCache.startY ~= startY
+		or lastDragPreviewCache.startZ ~= startZ
+		or lastDragPreviewCache.endX ~= endX
+		or lastDragPreviewCache.endY ~= endY
+		or lastDragPreviewCache.endZ ~= endZ
+		or lastDragPreviewCache.cmdID ~= currentCmdID
+		or lastDragPreviewCache.facing ~= currentFacing
+		or lastDragPreviewCache.spacing ~= currentSpacing
+		or lastDragPreviewCache.preferNative ~= currentPreferNative
+		or CheckSelectedUnitsChanged(selectedUnits)
+	then
+		needsRebuild = true
+	end
+
+	if not needsRebuild then
+		diagPlacementPreviewCacheHits = diagPlacementPreviewCacheHits + 1
+		return
+	end
+
+	-- Rebuilding
+	diagPlacementPreviewCacheMisses = diagPlacementPreviewCacheMisses + 1
+	diagPlacementPreviewRebuildCount = diagPlacementPreviewRebuildCount + 1
+
+	-- Determine rebuild reason
+	if not lastDragPreviewCache.active then
+		diagPlacementPreviewLastRebuildReason = "initial rebuild"
+	elseif lastDragPreviewCache.mode ~= drag.mode then
+		diagPlacementPreviewLastRebuildReason = "mode changed"
+	elseif lastDragPreviewCache.startX ~= startX or lastDragPreviewCache.startY ~= startY or lastDragPreviewCache.startZ ~= startZ then
+		diagPlacementPreviewLastRebuildReason = "start position changed"
+	elseif lastDragPreviewCache.endX ~= endX or lastDragPreviewCache.endY ~= endY or lastDragPreviewCache.endZ ~= endZ then
+		diagPlacementPreviewLastRebuildReason = "end position changed"
+	elseif lastDragPreviewCache.cmdID ~= currentCmdID then
+		diagPlacementPreviewLastRebuildReason = "cmdID changed"
+	elseif lastDragPreviewCache.facing ~= currentFacing then
+		diagPlacementPreviewLastRebuildReason = "facing changed"
+	elseif lastDragPreviewCache.spacing ~= currentSpacing then
+		diagPlacementPreviewLastRebuildReason = "spacing changed"
+	elseif lastDragPreviewCache.preferNative ~= currentPreferNative then
+		diagPlacementPreviewLastRebuildReason = "preferNative changed"
+	elseif CheckSelectedUnitsChanged(selectedUnits) then
+		diagPlacementPreviewLastRebuildReason = "selection changed"
+	else
+		diagPlacementPreviewLastRebuildReason = "unknown"
+	end
+
+	-- Clear previous preview points returning them to pool
+	ClearCachedPreviewPoints()
+
+	local buildPositions = {}
+
 	if drag.mode == "moveLine" or drag.mode == "fightLine" or drag.mode == "attackLine" then
-		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 		local mobileUnits = {}
 		for _, unitID in ipairs(selectedUnits) do
 			local unitDefID = Spring.GetUnitDefID(unitID)
@@ -2845,19 +3028,19 @@ function ControllerCameraTestUpdateDragPreview()
 		end
 
 		local N = #mobileUnits
-		local pts = {}
 		if N == 1 then
-			table.insert(pts, { endX, endY, endZ })
+			table.insert(buildPositions, GetCellTable(endX, endY, endZ, nil))
 		elseif N > 1 then
 			for i = 1, N do
 				local t = (i - 1) / (N - 1)
 				local x = startX + t * (endX - startX)
 				local z = startZ + t * (endZ - startZ)
 				local y = Spring.GetGroundHeight(x, z)
-				table.insert(pts, { x, y, z })
+				table.insert(buildPositions, GetCellTable(x, y, z, nil))
 			end
 		end
-		drag.previewPoints = pts
+		drag.previewPoints = buildPositions
+		lastPreviewWasNative = false
 
 	elseif drag.mode == "buildLine" or drag.mode == "buildGrid" or drag.mode == "buildBorder" then
 		local option = ControllerCameraTestBuildPlacement.option
@@ -2866,20 +3049,17 @@ function ControllerCameraTestUpdateDragPreview()
 			local facing = ControllerCameraTestBuildPlacement.facing or 0
 			local spacing = ControllerCameraTestBuildPlacement.placementSpacing or 0
 
-			local bp = {
-				facing = facing,
-				units = {
-					{
-						blueprintUnitID = 1,
-						unitDefID = unitDefID,
-						position = { 0, 0, 0 },
-						facing = 0
-					}
-				}
-			}
+			-- Update static structures to avoid allocations
+			staticBlueprintTable.facing = facing
+			staticBlueprintTable.units[1].unitDefID = unitDefID
 
-			local startPos = { startX, startY, startZ }
-			local endPos = { endX, endY, endZ }
+			staticStartPos[1] = startX
+			staticStartPos[2] = startY
+			staticStartPos[3] = startZ
+
+			staticEndPos[1] = endX
+			staticEndPos[2] = endY
+			staticEndPos[3] = endZ
 
 			local api = type(WG) == "table" and WG["api_blueprint"] or nil
 			local nativeModes = type(api) == "table" and api.BUILD_MODES or nil
@@ -2890,14 +3070,14 @@ function ControllerCameraTestUpdateDragPreview()
 				buildSplit = nativeModes.SPLIT,
 			} or {}
 			local apiMode = modeMap[drag.mode]
-			local buildPositions = {}
 
 			drag.nativeRouteUsed = false
 			drag.nativeRouteName = "unavailable"
 			drag.nativePreviewResult = "not attempted"
 			drag.customGridFallback = "yes"
+
 			if ControllerCameraTestSettings.preferNativeBlueprint ~= false and apiMode and type(api.calculateBuildPositions) == "function" then
-				local ok, res = pcall(api.calculateBuildPositions, bp, apiMode, startPos, endPos, spacing)
+				local ok, res = pcall(api.calculateBuildPositions, staticBlueprintTable, apiMode, staticStartPos, staticEndPos, spacing)
 				if ok and type(res) == "table" and #res > 0 then
 					buildPositions = res
 					drag.nativeRouteUsed = true
@@ -2907,11 +3087,10 @@ function ControllerCameraTestUpdateDragPreview()
 					if type(api.setActiveBlueprint) == "function"
 						and type(api.setBlueprintPositions) == "function"
 					then
-						local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 						if type(api.setActiveBuilders) == "function" then
 							pcall(api.setActiveBuilders, selectedUnits)
 						end
-						local previewOk = pcall(api.setActiveBlueprint, bp)
+						local previewOk = pcall(api.setActiveBlueprint, staticBlueprintTable)
 						local posOk = pcall(api.setBlueprintPositions, buildPositions)
 						if previewOk and posOk then
 							drag.nativePreviewResult = "native preview active"
@@ -2937,7 +3116,7 @@ function ControllerCameraTestUpdateDragPreview()
 						local dist = math.sqrt(dx*dx + dz*dz)
 						local stepSize = math.max(bw, bh) + spacing * 16
 						if dist < 2 then
-							table.insert(buildPositions, { startX, startY, startZ, facing })
+							table.insert(buildPositions, GetCellTable(startX, startY, startZ, facing))
 						else
 							local vx, vz = dx / dist, dz / dist
 							local numBuildings = math.floor(dist / stepSize) + 1
@@ -2946,7 +3125,7 @@ function ControllerCameraTestUpdateDragPreview()
 								local x = startX + i * stepSize * vx
 								local z = startZ + i * stepSize * vz
 								local y = Spring.GetGroundHeight(x, z)
-								table.insert(buildPositions, { x, y, z, facing })
+								table.insert(buildPositions, GetCellTable(x, y, z, facing))
 							end
 						end
 					elseif drag.mode == "buildGrid" then
@@ -2967,19 +3146,73 @@ function ControllerCameraTestUpdateDragPreview()
 								local x = startX + ix * stepX * signX
 								local z = startZ + iz * stepZ * signZ
 								local y = Spring.GetGroundHeight(x, z)
-								table.insert(buildPositions, { x, y, z, facing })
+								table.insert(buildPositions, GetCellTable(x, y, z, facing))
 							end
 						end
 					elseif drag.mode == "buildBorder" or drag.mode == "buildSplit" then
-						table.insert(buildPositions, { startX, startY, startZ, facing })
-						table.insert(buildPositions, { endX, endY, endZ, facing })
+						table.insert(buildPositions, GetCellTable(startX, startY, startZ, facing))
+						table.insert(buildPositions, GetCellTable(endX, endY, endZ, facing))
 					end
 				end
 			end
 
 			drag.previewPoints = buildPositions
+			lastPreviewWasNative = drag.nativeRouteUsed
 		end
 	end
+
+	-- Update diagnostic grid rows/cols
+	if drag.mode == "buildGrid" then
+		local option = ControllerCameraTestBuildPlacement.option
+		if option and type(option.cmdID) == "number" and option.cmdID < 0 then
+			local unitDefID = -option.cmdID
+			local unitDef = UnitDefs[unitDefID]
+			if unitDef then
+				local sizeX = unitDef.xsize * 8
+				local sizeZ = unitDef.zsize * 8
+				local bw, bh
+				if currentFacing % 2 == 1 then bw, bh = sizeZ, sizeX else bw, bh = sizeX, sizeZ end
+				local stepX = bw + currentSpacing * 16
+				local stepZ = bh + currentSpacing * 16
+				local dx = endX - startX
+				local dz = endZ - startZ
+				local numX = math.floor(math.abs(dx) / stepX) + 1
+				local numZ = math.floor(math.abs(dz) / stepZ) + 1
+				if numX * numZ > 100 then
+					numX = 10
+					numZ = 10
+				end
+				diagPlacementGridRows = numX
+				diagPlacementGridCols = numZ
+			else
+				diagPlacementGridRows = 0
+				diagPlacementGridCols = 0
+			end
+		else
+			diagPlacementGridRows = 0
+			diagPlacementGridCols = 0
+		end
+	else
+		diagPlacementGridRows = 0
+		diagPlacementGridCols = 0
+	end
+
+	diagPlacementPreviewCells = #buildPositions
+
+	-- Update cache inputs
+	lastDragPreviewCache.active = true
+	lastDragPreviewCache.mode = drag.mode
+	lastDragPreviewCache.startX = startX
+	lastDragPreviewCache.startY = startY
+	lastDragPreviewCache.startZ = startZ
+	lastDragPreviewCache.endX = endX
+	lastDragPreviewCache.endY = endY
+	lastDragPreviewCache.endZ = endZ
+	lastDragPreviewCache.cmdID = currentCmdID
+	lastDragPreviewCache.facing = currentFacing
+	lastDragPreviewCache.spacing = currentSpacing
+	lastDragPreviewCache.preferNative = currentPreferNative
+	UpdateSelectedUnitsCache(selectedUnits)
 end
 
 function ControllerCameraTestConfirmDragCommand(exitMode)
@@ -3191,6 +3424,7 @@ function ControllerCameraTestConfirmDragBuild(exitMode)
 	drag.lastMode = drag.mode
 	drag.active = false
 	ControllerCameraTestClearNativeBlueprintPreview()
+	ControllerCameraTestClearDragPreviewCache()
 
 	if exitMode then
 		ControllerCameraTestCancelPlacement("placed and exited")
@@ -5618,6 +5852,7 @@ function ControllerCameraTestCloseBuildMenu(reason)
 		or XboxController.normalLayoutSummary
 	latchSelectionDebugMessage("Build menu closed")
 	ControllerCameraTestRefreshBuildMenuDebug()
+	ControllerCameraTestClearDragPreviewCache()
 end
 
 function ControllerCameraTestToggleBuildMenu()
@@ -5725,6 +5960,7 @@ end
 
 function ControllerCameraTestSetPlacementOption(option)
 	local placement = ControllerCameraTestBuildPlacement
+	ControllerCameraTestClearDragPreviewCache()
 	if type(option) ~= "table" or type(option.cmdID) ~= "number" or option.cmdID >= 0 then
 		placement.active = false
 		placement.option = nil
@@ -5772,6 +6008,7 @@ function ControllerCameraTestCancelPlacement(reason)
 	placement.patternPressStartTime = 0
 	placement.patternHoldTriggered = false
 	latchSelectionDebugMessage("Placement cancelled")
+	ControllerCameraTestClearDragPreviewCache()
 end
 
 function ControllerCameraTestRotatePlacementFacing(delta)
@@ -7222,6 +7459,7 @@ end
 
 function widget:Shutdown()
 	ControllerCameraTestRemoveWGAPI()
+	ControllerCameraTestClearDragPreviewCache()
 end
 
 function widget:ViewResize(vsx, vsy)
@@ -9107,6 +9345,12 @@ function widget:DrawScreen()
 				"Native blueprint preview route: " .. tostring(ControllerCameraTestDragCommand.nativeRouteName),
 				"Native preview result: " .. tostring(ControllerCameraTestDragCommand.nativePreviewResult),
 				"Custom grid fallback: " .. tostring(ControllerCameraTestDragCommand.customGridFallback),
+				"Placement cells: " .. tostring(diagPlacementPreviewCells),
+				"Placement rebuilds: " .. tostring(diagPlacementPreviewRebuildCount),
+				"Placement cache hits/misses: " .. tostring(diagPlacementPreviewCacheHits) .. " / " .. tostring(diagPlacementPreviewCacheMisses),
+				"Placement rebuild reason: " .. tostring(diagPlacementPreviewLastRebuildReason),
+				"Placement grid size: " .. tostring(diagPlacementGridRows) .. " x " .. tostring(diagPlacementGridCols),
+				"Placement draw count: " .. tostring(diagPlacementDrawCount),
 				"Compact selected status: " .. tostring(ControllerCameraTestSelectedStatus.mode),
 				"Vanilla command panel: " .. tostring(ControllerCameraTestSelectedStatus.vanillaCommandPanelStatus),
 			},
@@ -9158,7 +9402,7 @@ function widget:DrawScreen()
 			"Key: " .. tostring(ControllerCameraTestKeyDebug.rawKey) .. " " .. tostring(ControllerCameraTestKeyDebug.label) .. " -> " .. tostring(ControllerCameraTestKeyDebug.matchedAction),
 			"Radial: " .. yesNo(ControllerCameraTestBuildMenu.open) .. " | Cat: " .. tostring(ControllerCameraTestBuildMenu.radialCategoryName) .. " | Highlight: " .. tostring(ControllerCameraTestBuildMenu.highlightedName) .. " (Q:" .. tostring(highlightedQueueCount) .. (factoryProgressKnown == "yes" and " P:" .. factoryProgressValue or "") .. ")",
 			"Placement: " .. tostring(ControllerCameraTestBuildPlacement.placementMode or "none") .. " | Pattern: " .. tostring(ControllerCameraTestBuildPlacement.placementPattern) .. " | Spacing: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing),
-			"Drag: Act=" .. yesNo(ControllerCameraTestDragCommand.active) .. " Mode=" .. tostring(ControllerCameraTestDragCommand.mode) .. " Pts=" .. tostring(ControllerCameraTestDragCommand.previewPoints and #ControllerCameraTestDragCommand.previewPoints or 0) .. " Path=" .. tostring(ControllerCameraTestDragCommand.singleUnitWaypointCount or 0) .. " Route=" .. (ControllerCameraTestDragCommand.nativeRouteUsed and "Native" or "Fallback"),
+			"Drag: Act=" .. yesNo(ControllerCameraTestDragCommand.active) .. " Mode=" .. tostring(ControllerCameraTestDragCommand.mode) .. " Pts=" .. tostring(ControllerCameraTestDragCommand.previewPoints and #ControllerCameraTestDragCommand.previewPoints or 0) .. " R:" .. tostring(diagPlacementPreviewRebuildCount) .. " H/M:" .. tostring(diagPlacementPreviewCacheHits) .. "/" .. tostring(diagPlacementPreviewCacheMisses) .. " G:" .. tostring(diagPlacementGridRows) .. "x" .. tostring(diagPlacementGridCols),
 			"Last Action: " .. tostring(ControllerCameraTestBuildMenu.lastAction or "none") .. " | Result: " .. tostring(ControllerCameraTestBuildMenu.radialLastAction or "none"),
 			"Selection Msg: " .. selectionDebugMessage .. " | Last cmd: " .. tostring(lastIssuedCommand)
 		}
@@ -9366,6 +9610,7 @@ function widget:DrawWorld()
 		and not (drag.nativeRouteUsed and drag.nativePreviewResult == "native preview active"
 			and string.sub(tostring(drag.mode), 1, 5) == "build")
 	then
+		diagPlacementDrawCount = diagPlacementDrawCount + 1
 		local startX, startY, startZ = drag.startX, drag.startY, drag.startZ
 		local endX = drag.endX or reticleWorldX
 		local endY = drag.endY or reticleWorldY
