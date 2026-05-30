@@ -397,11 +397,19 @@ ControllerCameraTestDgunMode = ControllerCameraTestDgunMode or {
 	targetX = 0,
 	targetY = 0,
 	targetZ = 0,
+	range = 280,
+	rangeSource = "fallback",
 	lastFireResult = "none",
 	lastExitReason = "none",
 	lastFireTime = 0,
+	lastMoveTime = 0,
+	moveActive = false,
+	lastMoveResult = "none",
+	moveTargetX = 0,
+	moveTargetY = 0,
+	moveTargetZ = 0,
 }
-ControllerCameraTestDgunAimRange = 600
+ControllerCameraTestDgunAimRange = 280
 ControllerCameraTestDebugSections = ControllerCameraTestDebugSections or {
 	Input = true,
 	Camera = false,
@@ -4060,6 +4068,10 @@ function ControllerCameraTestIsCommanderUnit(unitID)
 	return string.find(name, "commander", 1, true) ~= nil
 end
 
+local dgunMoveParams = { 0, 0, 0 }
+local dgunTargetParams = { 0, 0, 0 }
+local dgunStaticOptions = {}
+
 local function GetSelectedCommanderID()
 	if type(spGetSelectedUnits) ~= "function" then
 		return nil
@@ -4093,15 +4105,62 @@ local function FindActiveDgunCommandID()
 	return 2
 end
 
+local function GetCommanderDgunRange(commanderID)
+	local _, unitDef = ControllerCameraTestGetUnitDef(commanderID)
+	if type(unitDef) ~= "table" or type(unitDef.weapons) ~= "table" then
+		return nil, "no weapons"
+	end
+	for i = 1, #unitDef.weapons do
+		local w = unitDef.weapons[i]
+		if type(w) == "table" and w.weaponDef then
+			local wDef = WeaponDefs[w.weaponDef]
+			if type(wDef) == "table" then
+				local name = string.lower(tostring(wDef.name or "") .. " " .. tostring(wDef.label or ""))
+				if string.find(name, "dgun", 1, true) or string.find(name, "disintegrator", 1, true) then
+					if type(wDef.range) == "number" and wDef.range > 0 then
+						return wDef.range, "weaponDef (" .. tostring(wDef.name) .. ")"
+					end
+				end
+			end
+		end
+	end
+	for i = 1, #unitDef.weapons do
+		local w = unitDef.weapons[i]
+		if type(w) == "table" and w.weaponDef then
+			local wDef = WeaponDefs[w.weaponDef]
+			if type(wDef) == "table" then
+				if wDef.range and type(wDef.range) == "number" and wDef.range > 0 then
+					if wDef.manualFire or wDef.type == "DGun" then
+						return wDef.range, "weaponDef manualFire (" .. tostring(wDef.name) .. ")"
+					end
+				end
+			end
+		end
+	end
+	return nil, "fallback"
+end
+
 function ControllerCameraTestEnterDgunMode(commanderID)
 	local dgun = ControllerCameraTestDgunMode
 	dgun.active = true
 	dgun.commanderID = commanderID
 	dgun.lastExitReason = "none"
 	dgun.lastFireResult = "none"
+	dgun.lastMoveResult = "none"
+	dgun.moveActive = false
 
 	-- Resolve command ID once
 	dgun.cmdID = FindActiveDgunCommandID()
+
+	-- Resolve weapon range dynamically
+	local dynamicRange, rSource = GetCommanderDgunRange(commanderID)
+	if dynamicRange then
+		dgun.range = dynamicRange
+		dgun.rangeSource = rSource
+	else
+		dgun.range = 280
+		dgun.rangeSource = "fallback (constant)"
+	end
 
 	-- Initialize aim direction
 	dgun.aimX = 0
@@ -4133,8 +4192,8 @@ function ControllerCameraTestEnterDgunMode(commanderID)
 		dgun.aimX = initialDX
 		dgun.aimZ = initialDZ
 
-		dgun.targetX = cx + dgun.aimX * ControllerCameraTestDgunAimRange
-		dgun.targetZ = cz + dgun.aimZ * ControllerCameraTestDgunAimRange
+		dgun.targetX = cx + dgun.aimX * dgun.range
+		dgun.targetZ = cz + dgun.aimZ * dgun.range
 		dgun.targetY = spGetGroundHeight(dgun.targetX, dgun.targetZ) or cy
 	end
 
@@ -4174,9 +4233,70 @@ function ControllerCameraTestUpdateDgunAim(dt)
 		dgun.aimZ = ry / mag
 	end
 
-	dgun.targetX = cx + dgun.aimX * ControllerCameraTestDgunAimRange
-	dgun.targetZ = cz + dgun.aimZ * ControllerCameraTestDgunAimRange
+	dgun.targetX = cx + dgun.aimX * dgun.range
+	dgun.targetZ = cz + dgun.aimZ * dgun.range
 	dgun.targetY = spGetGroundHeight(dgun.targetX, dgun.targetZ) or cy
+end
+
+function ControllerCameraTestUpdateDgunMovement(dt)
+	local dgun = ControllerCameraTestDgunMode
+	if not dgun.active or not dgun.commanderID then
+		dgun.moveActive = false
+		return
+	end
+
+	local lx = normalizedLeftX or 0
+	local ly = normalizedLeftY or 0
+
+	local deadzone = 0.20
+	local mag = math.sqrt(lx * lx + ly * ly)
+
+	if mag <= deadzone then
+		dgun.moveActive = false
+		return
+	end
+
+	local now = debugEventTime
+	local elapsed = now - (dgun.lastMoveTime or 0)
+	if elapsed < 0.20 then
+		dgun.moveActive = true
+		return
+	end
+
+	dgun.lastMoveTime = now
+	dgun.moveActive = true
+
+	local cx, cy, cz = spGetUnitPosition(dgun.commanderID)
+	if not cx or not cz then
+		dgun.moveActive = false
+		return
+	end
+	cy = cy or 0
+
+	local dx = lx / mag
+	local dz = ly / mag
+
+	local step = 150
+	local tx = cx + dx * step
+	local tz = cz + dz * step
+	local ty = spGetGroundHeight(tx, tz) or cy
+
+	dgun.moveTargetX = tx
+	dgun.moveTargetY = ty
+	dgun.moveTargetZ = tz
+
+	dgunMoveParams[1] = tx
+	dgunMoveParams[2] = ty
+	dgunMoveParams[3] = tz
+
+	local moveCmdID = CMD and CMD.MOVE or 10
+
+	local ok, err = pcall(Spring.GiveOrderToUnit, dgun.commanderID, moveCmdID, dgunMoveParams, dgunStaticOptions)
+	if ok then
+		dgun.lastMoveResult = "issued to " .. string.format("%.1f, %.1f", tx, tz)
+	else
+		dgun.lastMoveResult = "failed: " .. tostring(err or "unknown")
+	end
 end
 
 function ControllerCameraTestHandleDgunModeInput(dt)
@@ -4204,35 +4324,53 @@ function ControllerCameraTestHandleDgunModeInput(dt)
 		end
 	end
 
+	if type(Spring.GetUnitTeam) == "function" then
+		local myTeamID = type(Spring.GetMyTeamID) == "function" and Spring.GetMyTeamID()
+		local ok, uTeam = pcall(Spring.GetUnitTeam, dgun.commanderID)
+		if ok and uTeam and myTeamID and uTeam ~= myTeamID then
+			ControllerCameraTestExitDgunMode("commander transferred")
+			return false
+		end
+	end
+
 	if ControllerCameraTestActionPressed("cancel") then
 		ControllerCameraTestExitDgunMode("user cancelled with B")
 		return true
 	end
 
 	ControllerCameraTestUpdateDgunAim(dt)
+	ControllerCameraTestUpdateDgunMovement(dt)
 
 	if ControllerCameraTestBindingPressed("RT") then
-		local now = Spring.GetTimer and Spring.GetTimer() or os.clock()
-		local elapsed = 1.0
-		if dgun.lastFireTime and type(Spring.DiffTimers) == "function" then
-			elapsed = Spring.DiffTimers(now, dgun.lastFireTime)
-		elseif dgun.lastFireTime then
-			elapsed = now - dgun.lastFireTime
-		end
+		local now = debugEventTime
+		local elapsed = now - (dgun.lastFireTime or 0)
 
 		if elapsed >= 0.15 then
 			dgun.lastFireTime = now
 
-			local targetX, targetY, targetZ = dgun.targetX, dgun.targetY, dgun.targetZ
-			local solvedCmdID = dgun.cmdID or 2
-
-			local ok, orderResult = pcall(spGiveOrderToUnit, dgun.commanderID, solvedCmdID, { targetX, targetY, targetZ }, 0)
-			if ok then
-				dgun.lastFireResult = "success"
-				latchSelectionDebugMessage("DGUN fired")
+			if not dgun.commanderID then
+				dgun.lastFireResult = "DGUN fire failed: invalid commander"
+				latchSelectionDebugMessage(dgun.lastFireResult)
+			elseif not dgun.targetX or not dgun.targetY or not dgun.targetZ then
+				dgun.lastFireResult = "DGUN fire failed: invalid target"
+				latchSelectionDebugMessage(dgun.lastFireResult)
+			elseif type(Spring.GiveOrderToUnit) ~= "function" then
+				dgun.lastFireResult = "DGUN fire failed: missing GiveOrderToUnit"
+				latchSelectionDebugMessage(dgun.lastFireResult)
 			else
-				dgun.lastFireResult = "failed: " .. tostring(orderResult or "unknown")
-				latchSelectionDebugMessage("DGUN fire failed: " .. tostring(orderResult or "unknown"))
+				local solvedCmdID = dgun.cmdID or 2
+				dgunTargetParams[1] = dgun.targetX
+				dgunTargetParams[2] = dgun.targetY
+				dgunTargetParams[3] = dgun.targetZ
+
+				local ok, orderResult = pcall(Spring.GiveOrderToUnit, dgun.commanderID, solvedCmdID, dgunTargetParams, dgunStaticOptions)
+				if ok then
+					dgun.lastFireResult = "DGUN fired cmdID " .. tostring(solvedCmdID)
+					latchSelectionDebugMessage("DGUN fired")
+				else
+					dgun.lastFireResult = "DGUN fire failed: pcall error " .. tostring(orderResult or "unknown")
+					latchSelectionDebugMessage(dgun.lastFireResult)
+				end
 			end
 		end
 	end
@@ -7963,10 +8101,7 @@ function ControllerCameraTestUpdateSmoothedCameraInputs(dt, menuOpen, areaActive
 	local smooth = ControllerCameraTestInputSmoothing
 	local dgun = ControllerCameraTestDgunMode
 	if dgun and dgun.active then
-		smooth.rotateX, smooth.pitchY, smooth.zoomY = 0, 0, 0
-		local curve = ControllerCameraTestSettings.stickCurve or 1.175
-		smooth.panX = ControllerCameraTestSmoothAxis(smooth.panX, ControllerCameraTestApplyInputCurve(normalizedLeftX, curve), dt)
-		smooth.panY = ControllerCameraTestSmoothAxis(smooth.panY, ControllerCameraTestApplyInputCurve(normalizedLeftY, curve), dt)
+		smooth.panX, smooth.panY, smooth.rotateX, smooth.pitchY, smooth.zoomY = 0, 0, 0, 0, 0
 	elseif menuOpen then
 		smooth.panX, smooth.panY, smooth.rotateX, smooth.pitchY, smooth.zoomY = 0, 0, 0, 0, 0
 	else
@@ -7989,7 +8124,7 @@ function ControllerCameraTestUpdateCameraControls(dt)
 	local dgunActive = ControllerCameraTestDgunMode.active
 	ControllerCameraTestUpdateSmoothedCameraInputs(dt, menuOpen, areaActive)
 	local smooth = ControllerCameraTestInputSmoothing
-	panActive = (not menuOpen) and (smooth.panX ~= 0 or smooth.panY ~= 0)
+	panActive = (not menuOpen and not dgunActive) and (smooth.panX ~= 0 or smooth.panY ~= 0)
 	rightStickYMode = dgunActive and "dgun aim" or (areaActive and "area radius" or (lbCameraModifierActive and "pitch" or "zoom"))
 	local zoomInput = (menuOpen or dgunActive) and 0 or smooth.zoomY
 	local pitchInput = (menuOpen or dgunActive) and 0 or smooth.pitchY
@@ -9478,10 +9613,15 @@ function widget:DrawScreen()
 				"DGUN mode active: " .. yesNo(ControllerCameraTestDgunMode.active),
 				"Commander unitID: " .. tostring(ControllerCameraTestDgunMode.commanderID or "none"),
 				"DGUN command ID: " .. tostring(ControllerCameraTestDgunMode.cmdID or "none"),
+				"DGUN range source: " .. tostring(ControllerCameraTestDgunMode.rangeSource or "none"),
+				"DGUN aim range: " .. tostring(ControllerCameraTestDgunMode.range or 280),
 				string.format("Aim vector: rx=%.3f rz=%.3f", ControllerCameraTestDgunMode.aimX, ControllerCameraTestDgunMode.aimZ),
 				string.format("Target world: x=%.1f y=%.1f z=%.1f", ControllerCameraTestDgunMode.targetX, ControllerCameraTestDgunMode.targetY, ControllerCameraTestDgunMode.targetZ),
 				"Last fire result: " .. tostring(ControllerCameraTestDgunMode.lastFireResult),
 				"Last exit reason: " .. tostring(ControllerCameraTestDgunMode.lastExitReason),
+				"Movement active: " .. yesNo(ControllerCameraTestDgunMode.moveActive),
+				string.format("Move target: x=%.1f z=%.1f", ControllerCameraTestDgunMode.moveTargetX or 0, ControllerCameraTestDgunMode.moveTargetZ or 0),
+				"Last move result: " .. tostring(ControllerCameraTestDgunMode.lastMoveResult),
 			},
 		},
 	}
@@ -9871,7 +10011,7 @@ function widget:DrawWorld()
 			-- Faint range circle (red)
 			gl.LineWidth(1.5)
 			gl.Color(1.0, 0.0, 0.0, 0.25)
-			gl.DrawGroundCircle(cx, cy, cz, ControllerCameraTestDgunAimRange, 64)
+			gl.DrawGroundCircle(cx, cy, cz, dgun.range or ControllerCameraTestDgunAimRange, 64)
 
 			-- Red target circle/marker at target point
 			gl.LineWidth(2.5)
