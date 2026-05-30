@@ -412,6 +412,7 @@ ControllerCameraTestDgunMode = ControllerCameraTestDgunMode or {
 	movementStickActive = false,
 }
 ControllerCameraTestDgunAimRange = 280
+ControllerCameraTestAreaCancelReason = "none"
 ControllerCameraTestDebugSections = ControllerCameraTestDebugSections or {
 	Input = true,
 	Camera = false,
@@ -5540,6 +5541,7 @@ function ControllerCameraTestClearStagedTacticalCommand(reason)
 	menu.stagedState = reason or "none"
 	menu.repeatPlacementActive = false
 	menu.repeatPlacementState = reason or "none"
+	ControllerCameraTestAreaCancelReason = reason or "none"
 	if reason then
 		menu.lastAction = tostring(reason)
 		menu.lastResult = tostring(reason)
@@ -5609,15 +5611,48 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 	if type(menu.stagedOption) ~= "table" then
 		return false
 	end
+
+	local option = menu.stagedOption
+	local drag = ControllerCameraTestDragCommand
+	local isAreaCmd = option.kind == "drag_area" or option.dragMode == "reclaimArea" or option.dragMode == "repairArea" or option.dragMode == "attackArea" or option.dragMode == "areaMex"
+
 	if ControllerCameraTestActionPressed("tacticalCancel") or ControllerCameraTestActionPressed("cancel") then
+		if drag.active and isAreaCmd then
+			drag.active = false
+			drag.startX, drag.startY, drag.startZ = nil, nil, nil
+			drag.endX, drag.endY, drag.endZ = nil, nil, nil
+		end
 		ControllerCameraTestClearStagedTacticalCommand("cancelled")
 		ControllerCameraTestLayerDebug.commandLayerAction = "Tactical staged command cancelled"
 		return true
 	end
-	if ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("select") then
-		ControllerCameraTestConfirmStagedTacticalCommand()
+
+	if isAreaCmd and drag.active then
+		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+	end
+
+	if ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction") then
+		if isAreaCmd then
+			if not drag.active then
+				if reticleHasWorldTarget and reticleWorldX then
+					drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
+					drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+					drag.active = true
+					drag.mode = option.dragMode
+					drag.cmdID = option.cmdID
+					drag.option = option
+					menu.stagedState = "dragging radius"
+					latchSelectionDebugMessage(option.name .. " center anchored")
+				end
+			else
+				ControllerCameraTestConfirmStagedTacticalCommand()
+			end
+		else
+			ControllerCameraTestConfirmStagedTacticalCommand()
+		end
 		return true
 	end
+
 	ControllerCameraTestLayerDebug.commandLayerAction = menu.repeatPlacementActive
 		and ("Tactical repeat: " .. tostring(menu.stagedName))
 		or ("Tactical staged: " .. tostring(menu.stagedName))
@@ -5635,12 +5670,17 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 
 	if option.kind == "drag_line" or option.kind == "drag_area" then
 		local drag = ControllerCameraTestDragCommand
+		local wasAlreadyAnchored = drag.active and (drag.startX ~= nil) and (option.kind == "drag_area")
 		drag.active = true
 		drag.mode = option.dragMode
 		drag.cmdID = option.cmdID
 		drag.option = option
-		drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
-		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		if not wasAlreadyAnchored then
+			drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
+			drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		else
+			drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		end
 		drag.pressActive = false
 		drag.pressButton = nil
 		ControllerCameraTestTacticalMenu.lastResult = "confirming staged drag: " .. tostring(option.name)
@@ -9607,7 +9647,34 @@ function widget:DrawScreen()
 	local activeGroupType = activeGroupEntry and (activeGroupEntry.typeName or ControllerCameraTestUnitTypeName(activeGroupEntry.unitDefID)) or "none"
 	local activeGroupAuto = ControllerCameraTestControlGroupAutoAddLabel(activeGroupEntry)
 	local activeGroupCount = activeGroupEntry and tostring(activeGroupEntry.count or #(activeGroupEntry.units or {})) or "0"
-	ControllerCameraTestTacticalMenu.debugRowsCount = 11
+	local areaStateStr = "none"
+	local activeMode = "none"
+	local centerPosStr = "nil"
+	local radiusStr = "nil"
+	local areaOption = ControllerCameraTestTacticalMenu.stagedOption
+	local drag = ControllerCameraTestDragCommand
+
+	if type(areaOption) == "table" then
+		local isAreaCmd = areaOption.kind == "drag_area" or areaOption.dragMode == "reclaimArea" or areaOption.dragMode == "repairArea" or areaOption.dragMode == "attackArea" or areaOption.dragMode == "areaMex"
+		if isAreaCmd then
+			activeMode = tostring(areaOption.dragMode or areaOption.name)
+			if not drag.active then
+				areaStateStr = "staged waiting for center"
+			else
+				areaStateStr = "dragging radius"
+				if drag.startX then
+					centerPosStr = string.format("%.1f, %.1f, %.1f", drag.startX, drag.startY, drag.startZ)
+					local dx = (drag.endX or reticleWorldX or 0) - drag.startX
+					local dz = (drag.endZ or reticleWorldZ or 0) - drag.startZ
+					local r = math.sqrt(dx*dx + dz*dz)
+					if r < 10 then r = 120 end
+					radiusStr = string.format("%.1f", r)
+				end
+			end
+		end
+	end
+
+	ControllerCameraTestTacticalMenu.debugRowsCount = 17
 
 	local controllerSections = {
 		{
@@ -9836,6 +9903,12 @@ function widget:DrawScreen()
 				"Tactical cache hits/misses: " .. tostring(ControllerCameraTestTacticalMenu.cacheHits) .. " / " .. tostring(ControllerCameraTestTacticalMenu.cacheMisses),
 				"Tactical cache reason: " .. tostring(ControllerCameraTestTacticalMenu.lastRebuildReason),
 				"Tactical result: " .. tostring(ControllerCameraTestTacticalMenu.lastResult),
+				"Area command state: " .. areaStateStr,
+				"Area command mode: " .. activeMode,
+				"Area center pos: " .. centerPosStr,
+				"Area current radius: " .. radiusStr,
+				"Area last confirm: " .. tostring(ControllerCameraTestTacticalMenu.lastResult or "none"),
+				"Area last cancel reason: " .. tostring(ControllerCameraTestAreaCancelReason),
 			},
 		},
 		{
