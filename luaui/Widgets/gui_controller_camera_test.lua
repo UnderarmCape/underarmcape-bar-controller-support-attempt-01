@@ -313,6 +313,7 @@ ControllerCameraTestTuning = ControllerCameraTestTuning or {
 	backHeld = false,
 	backComboUsed = false,
 	backQueueModifier = false,
+	backCommandLayerATapTime = -10,
 	lastAction = "none",
 }
 ControllerCameraTestSettingsUI = ControllerCameraTestSettingsUI or {
@@ -6383,21 +6384,32 @@ function ControllerCameraTestSetNormalUtilityAction(message)
 end
 
 function ControllerCameraTestHandleBackCommandLayerSelectTap()
-	if not IsButtonDown("back") then
+	if not ControllerCameraTestActionPressed("select") then
 		return false
 	end
 
+	local commandLayerBinding = ControllerCameraTestGetBinding("commandLayer")
+	if commandLayerBinding ~= "back" and commandLayerBinding ~= "view" and commandLayerBinding ~= "Back/View" then
+		return false
+	end
+	if not ControllerCameraTestActionDown("commandLayer") then
+		return false
+	end
+
+	local tuning = ControllerCameraTestTuning
 	local area = ControllerCameraTestAreaSelect
-	if (debugEventTime - (area.lastTapTime or -10)) <= 0.35 then
-		ControllerCameraTestTuning.backComboUsed = true
+	if (debugEventTime - (tuning.backCommandLayerATapTime or -10)) <= 0.35 then
+		tuning.backComboUsed = true
+		tuning.backCommandLayerATapTime = -10
 		if ControllerCameraTestFocusCommander() then
 			area.doubleTapAction = "Back+command-layer double-tap commander focused/selected"
+			ControllerCameraTestLayerDebug.commandLayerAction = "Back+A+A commander focus/select"
 		else
 			area.doubleTapAction = "Back+command-layer double-tap commander failed"
+			ControllerCameraTestLayerDebug.commandLayerAction = "Back+A+A commander focus failed"
 		end
-		area.lastTapTime = -10
 	else
-		area.lastTapTime = debugEventTime
+		tuning.backCommandLayerATapTime = debugEventTime
 		area.doubleTapAction = "Back+A first tap"
 		ControllerCameraTestLayerDebug.commandLayerAction = "Back+A first tap commander utility"
 	end
@@ -6406,47 +6418,60 @@ end
 
 function ControllerCameraTestHandleCommandLayerInput(dt)
 	if ControllerCameraTestHandleTacticalMenuInput() then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
+		return
+	end
+
+	-- Back/View is a command-layer modifier in presets; check its A+A utility before layer drag can consume A.
+	if ControllerCameraTestHandleBackCommandLayerSelectTap() then
 		return
 	end
 
 	if ControllerCameraTestHandleCommandLayerDragInputs(dt) then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		return
 	end
 
 	if ControllerCameraTestActionPressed("select") then
-		if ControllerCameraTestHandleBackCommandLayerSelectTap() then
-			return
-		end
 		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+A select-all disabled"
 		ControllerCameraTestCycleDebug.lastResult = "Layer+A select-all disabled"
 		latchSelectionDebugMessage("Layer+A reserved: select-all disabled")
 	elseif ControllerCameraTestActionPressed("cancel") then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		attemptStopCommand()
 		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+B stop"
 	elseif ControllerCameraTestActionPressed("smartAction") then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		attemptAttackCommand()
 		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+X attack/attack-move"
 	elseif ControllerCameraTestActionPressed("buildRadial") then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		ControllerCameraTestToggleTacticalMenu()
 		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+Y tactical menu"
 	elseif ControllerCameraTestActionPressed("commandUp") then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		ControllerCameraTestIssueGuardOrPatrol()
 	elseif ControllerCameraTestActionPressed("commandDown") then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		ControllerCameraTestIssueReclaimOrStop()
 	elseif ControllerCameraTestActionPressed("commandLeft") then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		if not ControllerCameraTestCycleQuickGroup(-1) then
 			ControllerCameraTestCycleSelection(-1)
 			ControllerCameraTestLayerDebug.commandLayerAction = "Layer+D-pad Left cycle selection"
 		end
 	elseif ControllerCameraTestActionPressed("commandRight") then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		if not ControllerCameraTestCycleQuickGroup(1) then
 			ControllerCameraTestCycleSelection(1)
 			ControllerCameraTestLayerDebug.commandLayerAction = "Layer+D-pad Right cycle selection"
 		end
 	elseif ControllerCameraTestActionPressed("pitchModifier") then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		ControllerCameraTestCycleSelection(-1)
 		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+LB previous selection"
 	elseif ControllerCameraTestActionPressed("controlGroupModifier") then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		ControllerCameraTestCycleSelection(1)
 		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+RB next selection"
 	end
@@ -6871,8 +6896,12 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	commandLayerActive = ControllerCameraTestActionDown("commandLayer")
 		and not ControllerCameraTestBuildPlacement.active
 		and not ControllerCameraTestBuildMenu.open
+	if not commandLayerActive then
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
+	end
 	if ControllerCameraTestSettingsUI.open then
 		commandLayerActive = false
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		ControllerCameraTestHandleSettingsUIInput()
 		ControllerCameraTestLayerDebug.modeSummary = "settings"
 		activeButtonLayoutSummary = "Settings: D-pad adjust, LB/RB category, A edit, B close, X/Y reset"
@@ -6880,6 +6909,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	end
 	if ControllerCameraTestIsGameplayInputBlocked() then
 		commandLayerActive = false
+		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		ControllerCameraTestLayerDebug.modeSummary = "external binding UI"
 		activeButtonLayoutSummary = "External binding UI active: gameplay input blocked"
 		ControllerCameraTestExternalBindingUI.lastAction = "gameplay input blocked"
