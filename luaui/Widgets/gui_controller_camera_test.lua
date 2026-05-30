@@ -164,7 +164,16 @@ ControllerCameraTestTacticalMenu = ControllerCameraTestTacticalMenu or {
 	stagedName = "none",
 	stagedKind = "none",
 	stagedState = "none",
+	repeatPlacementActive = false,
+	repeatPlacementState = "none",
 	radialLastAngle = 0,
+}
+ControllerCameraTestMemoryDebug = ControllerCameraTestMemoryDebug or {
+	lastSampleTime = -10,
+	luaKB = 0,
+	luaMB = "0.0",
+	lastResult = "not sampled",
+	audit = "no unbounded widget growth found",
 }
 ControllerCameraTestCycleDebug = ControllerCameraTestCycleDebug or {
 	lastResult = "none",
@@ -1130,6 +1139,26 @@ local function updateDebugLatchSummaries()
 	if selectionDebugExpiration <= debugEventTime then
 		selectionDebugMessage = "none"
 	end
+end
+
+function ControllerCameraTestUpdateMemoryDebug()
+	local memory = ControllerCameraTestMemoryDebug
+	if (debugEventTime - (memory.lastSampleTime or -10)) < 2 then
+		return
+	end
+	memory.lastSampleTime = debugEventTime
+	if type(collectgarbage) ~= "function" then
+		memory.lastResult = "collectgarbage unavailable"
+		return
+	end
+	local ok, kb = pcall(collectgarbage, "count")
+	if not ok or type(kb) ~= "number" then
+		memory.lastResult = "sample failed"
+		return
+	end
+	memory.luaKB = math.floor(kb + 0.5)
+	memory.luaMB = string.format("%.1f", kb / 1024)
+	memory.lastResult = "sampled"
 end
 
 local function getPreviewSummary(buttonStates, previewLabels)
@@ -4582,6 +4611,8 @@ function ControllerCameraTestStageTacticalCommand(option)
 	menu.stagedName = tostring(option.name or "Command")
 	menu.stagedKind = tostring(option.kind or "none")
 	menu.stagedState = "staged"
+	menu.repeatPlacementActive = false
+	menu.repeatPlacementState = "none"
 	menu.open = false
 	menu.lastAction = "staged " .. menu.stagedName
 	menu.lastResult = "staged: move reticle, A confirm, B cancel"
@@ -4597,6 +4628,8 @@ function ControllerCameraTestClearStagedTacticalCommand(reason)
 	menu.stagedName = "none"
 	menu.stagedKind = "none"
 	menu.stagedState = reason or "none"
+	menu.repeatPlacementActive = false
+	menu.repeatPlacementState = reason or "none"
 	if reason then
 		menu.lastAction = tostring(reason)
 		menu.lastResult = tostring(reason)
@@ -4611,19 +4644,58 @@ function ControllerCameraTestConfirmStagedTacticalCommand()
 		return false
 	end
 	local name = tostring(menu.stagedName or option.name or "Command")
+	local repeatHeld = ControllerCameraTestIsQueueModifierActive()
+	local repeatOption = {
+		name = option.name,
+		cmdID = option.cmdID,
+		kind = option.kind,
+		dragMode = option.dragMode,
+	}
 	menu.stagedOption = nil
 	menu.stagedName = name
 	menu.stagedKind = tostring(option.kind or "none")
 	menu.stagedState = "confirming"
+	menu.repeatPlacementActive = false
+	menu.repeatPlacementState = repeatHeld and "RT held" or "none"
 	menu.lastAction = "confirming " .. name
-	ControllerCameraTestExecuteTacticalCommand(option, false)
-	menu.stagedState = "confirmed"
+	local confirmed = ControllerCameraTestExecuteTacticalCommand(option, false)
+	if confirmed and repeatHeld then
+		menu.stagedOption = repeatOption
+		menu.stagedState = "repeat active"
+		menu.repeatPlacementActive = true
+		menu.repeatPlacementState = "RT held"
+		menu.lastAction = "repeat staged " .. name
+		menu.lastResult = "placed; repeat active while RT held"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Tactical repeat active: " .. name
+		latchSelectionDebugMessage(name .. " repeat active")
+	else
+		menu.stagedState = confirmed and "confirmed" or "confirm failed"
+		menu.repeatPlacementActive = false
+		menu.repeatPlacementState = confirmed and "none" or "confirm failed"
+	end
 	menu.stagedName = name
+	return confirmed
+end
+
+function ControllerCameraTestUpdateTacticalRepeatPlacement()
+	local menu = ControllerCameraTestTacticalMenu
+	if not menu.repeatPlacementActive then
+		return false
+	end
+	if ControllerCameraTestIsQueueModifierActive() then
+		return false
+	end
+	ControllerCameraTestClearStagedTacticalCommand("repeat cleared: RT released")
+	menu.repeatPlacementState = "RT released"
+	ControllerCameraTestLayerDebug.commandLayerAction = "Tactical repeat cleared: RT released"
 	return true
 end
 
 function ControllerCameraTestHandleStagedTacticalCommandInput()
 	local menu = ControllerCameraTestTacticalMenu
+	if ControllerCameraTestUpdateTacticalRepeatPlacement() then
+		return true
+	end
 	if type(menu.stagedOption) ~= "table" then
 		return false
 	end
@@ -4636,18 +4708,19 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 		ControllerCameraTestConfirmStagedTacticalCommand()
 		return true
 	end
-	ControllerCameraTestLayerDebug.commandLayerAction = "Tactical staged: " .. tostring(menu.stagedName)
+	ControllerCameraTestLayerDebug.commandLayerAction = menu.repeatPlacementActive
+		and ("Tactical repeat: " .. tostring(menu.stagedName))
+		or ("Tactical staged: " .. tostring(menu.stagedName))
 	return true
 end
 
 function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 	if type(option) ~= "table" then
 		ControllerCameraTestTacticalMenu.lastResult = "no tactical option"
-		return
+		return false
 	end
 	if stageTargeted and ControllerCameraTestTacticalCommandNeedsTarget(option) then
-		ControllerCameraTestStageTacticalCommand(option)
-		return
+		return ControllerCameraTestStageTacticalCommand(option)
 	end
 
 	if option.kind == "drag_line" or option.kind == "drag_area" then
@@ -4664,20 +4737,26 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 		ControllerCameraTestTacticalMenu.lastResult = drag.lastResult or ControllerCameraTestTacticalMenu.lastResult
 		latchSelectionDebugMessage(option.name .. " confirmed")
 		ControllerCameraTestTacticalMenu.open = false
-		return
+		drag.previewPoints = {}
+		drag.startX, drag.startY, drag.startZ = nil, nil, nil
+		drag.endX, drag.endY, drag.endZ = nil, nil, nil
+		return not tostring(ControllerCameraTestTacticalMenu.lastResult or ""):find("failed", 1, true)
 	elseif option.kind == "repeat_toggle" then
+		local ok = false
 		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 		if #selectedUnits > 0 then
 			local firstUnit = selectedUnits[1]
 			local states = type(Spring.GetUnitStates) == "function" and Spring.GetUnitStates(firstUnit)
 			local currentRepeat = states and states["repeat"]
 			local nextVal = currentRepeat and 0 or 1
-			local ok, count = ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPEAT, { nextVal }, "Repeat", nextVal == 1 and "ON" or "OFF", {})
+			local count
+			ok, count = ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPEAT, { nextVal }, "Repeat", nextVal == 1 and "ON" or "OFF", {})
 			ControllerCameraTestTacticalMenu.lastResult = ok and ("toggled for " .. tostring(count)) or "failed"
 		end
 		ControllerCameraTestTacticalMenu.open = false
-		return
+		return ok
 	elseif option.kind == "fire_state_cycle" then
+		local ok = false
 		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 		if #selectedUnits > 0 then
 			local firstUnit = selectedUnits[1]
@@ -4685,33 +4764,36 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 			local currentFireState = states and states.firestate or 2
 			local nextVal = (currentFireState + 1) % 3
 			local labels = { [0] = "Hold Fire", [1] = "Return Fire", [2] = "Fire At Will" }
-			local ok, count = ControllerCameraTestIssueOrderToSelectedUnits(CMD.FIRESTATE or 20, { nextVal }, "Fire State", labels[nextVal] or tostring(nextVal), {})
+			local count
+			ok, count = ControllerCameraTestIssueOrderToSelectedUnits(CMD.FIRESTATE or 20, { nextVal }, "Fire State", labels[nextVal] or tostring(nextVal), {})
 			ControllerCameraTestTacticalMenu.lastResult = ok and (labels[nextVal] .. " for " .. tostring(count)) or "failed"
 		end
 		ControllerCameraTestTacticalMenu.open = false
-		return
+		return ok
 	elseif option.kind == "factory_clear" then
 		local ok, count = ControllerCameraTestIssueOrderToSelectedUnits(CMD.STOP, {}, "Clear Queue", "factory", {})
 		ControllerCameraTestTacticalMenu.lastResult = ok and ("cleared " .. tostring(count) .. " factories") or "failed"
 		ControllerCameraTestTacticalMenu.open = false
-		return
+		return ok
 	elseif option.kind == "factory_repeat" then
+		local ok = false
 		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 		if #selectedUnits > 0 then
 			local states = type(Spring.GetUnitStates) == "function" and Spring.GetUnitStates(selectedUnits[1])
 			local currentRepeat = states and states["repeat"]
 			local nextVal = currentRepeat and 0 or 1
-			local ok, count = ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPEAT, { nextVal }, "Repeat", nextVal == 1 and "ON" or "OFF", {})
+			local count
+			ok, count = ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPEAT, { nextVal }, "Repeat", nextVal == 1 and "ON" or "OFF", {})
 			ControllerCameraTestTacticalMenu.lastResult = ok and ("toggled repeat for " .. tostring(count)) or "failed"
 		end
 		ControllerCameraTestTacticalMenu.open = false
-		return
+		return ok
 	end
 
 	if type(option.cmdID) ~= "number" then
 		ControllerCameraTestTacticalMenu.lastResult = tostring(option.name) .. " unavailable"
 		latchSelectionDebugMessage(tostring(option.name) .. " unavailable")
-		return
+		return false
 	end
 
 	local target = ControllerCameraTestGetReticleTargetInfo()
@@ -4723,7 +4805,7 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 		if not target.hasWorld then
 			ControllerCameraTestTacticalMenu.lastResult = option.name .. " failed: no ground"
 			latchSelectionDebugMessage(option.name .. " failed: no ground target")
-			return
+			return false
 		end
 		params = { target.x, target.y, target.z }
 		targetName = "ground"
@@ -4737,13 +4819,13 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 		else
 			ControllerCameraTestTacticalMenu.lastResult = "attack failed: no target"
 			latchSelectionDebugMessage("Attack failed: no target")
-			return
+			return false
 		end
 	elseif option.kind == "alliedUnit" then
 		if target.targetType ~= "unit" or not target.targetID or not ControllerCameraTestIsAlliedUnit(target.targetID) then
 			ControllerCameraTestTacticalMenu.lastResult = option.name .. " failed: no allied unit"
 			latchSelectionDebugMessage(option.name .. " failed: no allied unit target")
-			return
+			return false
 		end
 		params = { target.targetID }
 		targetName = "unit " .. tostring(target.targetID)
@@ -4760,7 +4842,7 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 		else
 			ControllerCameraTestTacticalMenu.lastResult = "reclaim failed: no target"
 			latchSelectionDebugMessage("Reclaim failed: no target")
-			return
+			return false
 		end
 	elseif option.kind == "repair" then
 		if target.targetType == "unit" and target.targetID and ControllerCameraTestIsAlliedUnit(target.targetID) then
@@ -4772,7 +4854,7 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 		else
 			ControllerCameraTestTacticalMenu.lastResult = "repair failed: no target"
 			latchSelectionDebugMessage("Repair failed: no target")
-			return
+			return false
 		end
 	end
 
@@ -4780,6 +4862,7 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 	ControllerCameraTestTacticalMenu.lastResult = ok and ("issued to " .. tostring(count)) or "failed"
 	ControllerCameraTestLayerDebug.commandLayerAction = option.name .. " " .. ControllerCameraTestTacticalMenu.lastResult
 	ControllerCameraTestTacticalMenu.open = false
+	return ok
 end
 
 function ControllerCameraTestHandleTacticalMenuInput()
@@ -7100,7 +7183,9 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.open and "Tactical: A/X stage, B/Y cancel, Back+RB toggle, D-pad/LB/RB choose"
 			or XboxController.commandLayoutSummary
 	elseif type(ControllerCameraTestTacticalMenu.stagedOption) == "table" then
-		activeButtonLayoutSummary = "Tactical staged: move reticle, A confirm, B cancel"
+		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.repeatPlacementActive
+			and "Tactical repeat: move reticle, A place again, release RT clear, B cancel"
+			or "Tactical staged: move reticle, A confirm, RT+A repeat, B cancel"
 	elseif ControllerCameraTestTacticalMenu.open then
 		activeButtonLayoutSummary = "Tactical: A/X stage, B/Y close, D-pad/LB/RB choose"
 	elseif ControllerCameraTestBuildPlacement.active then
@@ -8368,6 +8453,7 @@ function widget:DrawScreen()
 	if not ControllerCameraTestSettings.debugPanelVisible then
 		return
 	end
+	ControllerCameraTestUpdateMemoryDebug()
 
 	local function yesNo(value)
 		return value and "yes" or "no"
@@ -8745,7 +8831,18 @@ function widget:DrawScreen()
 				"Tactical command: " .. tostring(ControllerCameraTestTacticalMenu.highlightedName),
 				"Tactical staged: " .. tostring(ControllerCameraTestTacticalMenu.stagedName),
 				"Tactical stage state: " .. tostring(ControllerCameraTestTacticalMenu.stagedState),
+				"Tactical repeat: " .. yesNo(ControllerCameraTestTacticalMenu.repeatPlacementActive) .. " (" .. tostring(ControllerCameraTestTacticalMenu.repeatPlacementState) .. ")",
 				"Tactical result: " .. tostring(ControllerCameraTestTacticalMenu.lastResult),
+			},
+		},
+		{
+			key = "Memory",
+			title = "Lua Memory Audit",
+			lines = {
+				"Lua KB: " .. tostring(ControllerCameraTestMemoryDebug.luaKB),
+				"Lua MB: " .. tostring(ControllerCameraTestMemoryDebug.luaMB),
+				"Sample: " .. tostring(ControllerCameraTestMemoryDebug.lastResult),
+				"Audit: " .. tostring(ControllerCameraTestMemoryDebug.audit),
 			},
 		},
 		{
