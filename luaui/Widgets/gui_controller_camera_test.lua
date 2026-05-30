@@ -3706,7 +3706,7 @@ function ControllerCameraTestGetSmartCommandIDs()
 		descs,
 		lookup,
 		CMD.RESURRECT,
-		{ "resurrect", "resurrection", "ressurect", "revive", "restore", " rez " }
+		{ "resurrect", "resurrection", "ressurect", "revive", "restore", " rez ", " res " }
 	)
 	ids.reclaim, ids.reclaimSource = ControllerCameraTestFindActiveSmartCommandID(descs, lookup, CMD.RECLAIM, { "reclaim" })
 	ids.repair, ids.repairSource = ControllerCameraTestFindActiveSmartCommandID(descs, lookup, CMD.REPAIR, { "repair" })
