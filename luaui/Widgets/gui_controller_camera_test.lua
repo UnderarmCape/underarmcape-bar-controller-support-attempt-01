@@ -55,6 +55,12 @@ ControllerCameraTestCommandDebug = ControllerCameraTestCommandDebug or {
 	smartChosenCmdID = "none",
 	smartActionSource = "none",
 	smartLastResult = "none",
+	smartExactTargetID = "none",
+	smartOrderParams = "none",
+	smartAssistScale = "1.00",
+	smartEffectiveScreenRadius = "none",
+	smartEffectiveFeatureRadius = "none",
+	smartEffectiveUnitRadius = "none",
 	queueRemovalMode = "none",
 	queueRemovalSelectedCount = 0,
 	queueRemovalAttemptedCount = 0,
@@ -506,6 +512,7 @@ function ControllerCameraTestGetDefaultSettings()
 		cameraSmoothing = 0.06,
 		stickCurve = 1.175,
 		triggerCurve = 1.075,
+		smartAssistScale = 1.0,
 		singlePathSpacing = 96,
 		singlePathInterval = 0.10,
 		compactSelectedStatus = true,
@@ -558,6 +565,17 @@ ControllerCameraTestQuickGroups = ControllerCameraTestQuickGroups or {
 	lastSlot = "none",
 	currentSlot = 1,
 }
+ControllerCameraTestSelfDestruct = ControllerCameraTestSelfDestruct or {
+	chordActive = false,
+	holdStartTime = 0,
+	holdSeconds = 0.75,
+	attempted = false,
+	issued = false,
+	cmdID = "none",
+	lastResult = "none",
+	selectedCount = 0,
+	issuedCount = 0,
+}
 
 function ControllerCameraTestClampSetting(name, value)
 	value = tonumber(value)
@@ -582,6 +600,7 @@ function ControllerCameraTestClampSetting(name, value)
 		cameraSmoothing = { 0.0, 1.0 },
 		stickCurve = { 0.25, 5.0 },
 		triggerCurve = { 0.25, 5.0 },
+		smartAssistScale = { 0.0, 1.0 },
 		singlePathSpacing = { 16, 1024 },
 		singlePathInterval = { 0.02, 1.0 },
 	}
@@ -617,6 +636,7 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.cameraSmoothing = ControllerCameraTestClampSetting("cameraSmoothing", settings.cameraSmoothing or defaults.cameraSmoothing)
 	settings.stickCurve = ControllerCameraTestClampSetting("stickCurve", settings.stickCurve or defaults.stickCurve)
 	settings.triggerCurve = ControllerCameraTestClampSetting("triggerCurve", settings.triggerCurve or defaults.triggerCurve)
+	settings.smartAssistScale = ControllerCameraTestClampSetting("smartAssistScale", settings.smartAssistScale or defaults.smartAssistScale)
 	settings.singlePathSpacing = ControllerCameraTestClampSetting("singlePathSpacing", settings.singlePathSpacing or 96)
 	settings.singlePathInterval = ControllerCameraTestClampSetting("singlePathInterval", settings.singlePathInterval or 0.10)
 	settings.compactSelectedStatus = settings.compactSelectedStatus ~= false
@@ -644,6 +664,7 @@ function ControllerCameraTestSettingDefinitions()
 		{ key = "aHoldSeconds", label = "A hold seconds", step = 0.02, decimals = 2 },
 		{ key = "controlGroupAssignHoldSeconds", label = "Group hold seconds", step = 0.02, decimals = 2 },
 		{ key = "radialScale", label = "Radial scale", step = 0.05, decimals = 2 },
+		{ key = "smartAssistScale", label = "Smart X assist scale", step = 0.05, decimals = 2 },
 		{ key = "cameraSmoothing", label = "Camera smoothing", step = 0.01, decimals = 2 },
 		{ key = "stickCurve", label = "Stick curve", step = 0.05, decimals = 2 },
 		{ key = "triggerCurve", label = "Trigger curve", step = 0.05, decimals = 2 },
@@ -990,6 +1011,12 @@ local function resetControllerInputDebug()
 	ControllerCameraTestCommandDebug.smartChosenCmdID = "none"
 	ControllerCameraTestCommandDebug.smartActionSource = "none"
 	ControllerCameraTestCommandDebug.smartLastResult = "none"
+	ControllerCameraTestCommandDebug.smartExactTargetID = "none"
+	ControllerCameraTestCommandDebug.smartOrderParams = "none"
+	ControllerCameraTestCommandDebug.smartAssistScale = "1.00"
+	ControllerCameraTestCommandDebug.smartEffectiveScreenRadius = "none"
+	ControllerCameraTestCommandDebug.smartEffectiveFeatureRadius = "none"
+	ControllerCameraTestCommandDebug.smartEffectiveUnitRadius = "none"
 	clearButtonStateTracking()
 	clearDebugEventLatches()
 	resetReticleWorldTarget()
@@ -2052,6 +2079,7 @@ function ControllerCameraTestGetSettingsDefinitions()
 		singlePathInterval = { 0.02, 1.0, 0.01, "number", 2 },
 		radialScale = { 0.5, 3.0, 0.05, "number", 2 },
 		areaSelectRadius = { 40, 2000, 40, "number", 0 },
+		smartAssistScale = { 0.0, 1.0, 0.05, "number", 2 },
 		reticleSize = { 4, 100, 1, "number", 0 },
 		compactSelectedStatus = { 0, 1, 1, "boolean", 0 },
 		hideCompactStatusWhenRadialOpen = { 0, 1, 1, "boolean", 0 },
@@ -2189,6 +2217,7 @@ function ControllerCameraTestGetSettingsUICategories()
 		} },
 		{ key = "Selection", items = {
 			{ key = "areaSelectRadius", label = "Area select radius", step = 40, decimals = 0 },
+			{ key = "smartAssistScale", label = "Smart X Assist Radius Scale", step = 0.05, decimals = 2 },
 		} },
 		{ key = "Placement", items = {
 			{ key = "placementPopupEnabled", label = "Placement popup", type = "bool" },
@@ -2827,6 +2856,9 @@ function ControllerCameraTestResetSmartCommandDebug()
 	ControllerCameraTestCommandDebug.smartChosenCmdID = "none"
 	ControllerCameraTestCommandDebug.smartActionSource = "none"
 	ControllerCameraTestCommandDebug.smartLastResult = "pending"
+	ControllerCameraTestCommandDebug.smartExactTargetID = "none"
+	ControllerCameraTestCommandDebug.smartOrderParams = "none"
+	ControllerCameraTestUpdateSmartAssistDebug()
 end
 
 function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift)
@@ -3715,6 +3747,103 @@ function ControllerCameraTestGetSmartCommandIDs()
 	return ids
 end
 
+function ControllerCameraTestFindSelfDestructCommandID()
+	local lookup, descs = ControllerCameraTestBuildActiveCommandLookup()
+	if type(descs) == "table" then
+		for _, desc in ipairs(descs) do
+			local cmdID = desc and tonumber(desc.id or desc.cmdID)
+			if type(cmdID) == "number" and not desc.disabled then
+				local text = ControllerCameraTestSmartDescText(desc)
+				if text:find("selfd", 1, true)
+					or text:find("self destruct", 1, true)
+					or text:find("self-destruct", 1, true)
+					or text:find("selfdestroy", 1, true)
+					or text:find("self destroy", 1, true)
+				then
+					return cmdID, tostring(desc.action or desc.name or "activeCmdDesc")
+				end
+			end
+		end
+	end
+	if type(CMD.SELFD) == "number" and (type(lookup) ~= "table" or lookup[CMD.SELFD]) then
+		return CMD.SELFD, "CMD.SELFD"
+	end
+	return nil, "unavailable"
+end
+
+function ControllerCameraTestIssueSelfDestruct()
+	local state = ControllerCameraTestSelfDestruct
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	state.selectedCount = type(selectedUnits) == "table" and #selectedUnits or 0
+	state.issuedCount = 0
+	if state.selectedCount == 0 then
+		state.lastResult = "failed: no selected units"
+		latchSelectionDebugMessage("Self-destruct failed: no selected units")
+		return false
+	end
+	if type(spGiveOrderToUnit) ~= "function" then
+		state.lastResult = "failed: GiveOrderToUnit unavailable"
+		latchSelectionDebugMessage(state.lastResult)
+		return false
+	end
+	local cmdID, source = ControllerCameraTestFindSelfDestructCommandID()
+	state.cmdID = tostring(cmdID or "none") .. " (" .. tostring(source) .. ")"
+	if type(cmdID) ~= "number" then
+		state.lastResult = "failed: self-destruct command unavailable"
+		latchSelectionDebugMessage(state.lastResult)
+		return false
+	end
+	for _, unitID in ipairs(selectedUnits) do
+		local ok, result = pcall(spGiveOrderToUnit, unitID, cmdID, {}, {})
+		if ok and result ~= false then
+			state.issuedCount = state.issuedCount + 1
+		end
+	end
+	if state.issuedCount > 0 then
+		state.lastResult = "issued to " .. tostring(state.issuedCount) .. " / " .. tostring(state.selectedCount)
+		latchSelectionDebugMessage("Self-destruct issued to " .. tostring(state.issuedCount) .. " units")
+		return true
+	end
+	state.lastResult = "failed: no orders accepted"
+	latchSelectionDebugMessage(state.lastResult)
+	return false
+end
+
+function ControllerCameraTestHandleSelfDestructChord()
+	local state = ControllerCameraTestSelfDestruct
+	local chordActive = IsButtonDown("back")
+		and IsButtonDown("rightStickClick")
+		and IsButtonDown("RB")
+		and ControllerCameraTestBindingDown("RT")
+	if not chordActive then
+		if state.chordActive and not state.attempted then
+			state.lastResult = "cancelled before safety hold"
+		end
+		state.chordActive = false
+		state.holdStartTime = 0
+		state.attempted = false
+		state.issued = false
+		return false
+	end
+
+	if not state.chordActive then
+		state.chordActive = true
+		state.holdStartTime = debugEventTime
+		state.attempted = false
+		state.issued = false
+		state.lastResult = "safety hold started"
+	end
+
+	local elapsed = math.max(0, debugEventTime - (state.holdStartTime or debugEventTime))
+	if not state.attempted and elapsed >= (state.holdSeconds or 0.75) then
+		state.attempted = true
+		state.issued = ControllerCameraTestIssueSelfDestruct()
+	elseif not state.attempted then
+		state.lastResult = string.format("holding %.2f / %.2f", elapsed, state.holdSeconds or 0.75)
+	end
+	return true
+end
+
 function ControllerCameraTestFeatureIsResurrectable(featureID)
 	if not featureID or type(Spring.GetFeatureResurrect) ~= "function" then
 		return false
@@ -3799,6 +3928,19 @@ function ControllerCameraTestSmartWorldDistance(target)
 	local dx = x - reticleWorldX
 	local dz = z - reticleWorldZ
 	return math.sqrt((dx * dx) + (dz * dz))
+end
+
+function ControllerCameraTestSmartAssistScale()
+	return ControllerCameraTestClampSetting("smartAssistScale", ControllerCameraTestSettings.smartAssistScale or 1)
+end
+
+function ControllerCameraTestUpdateSmartAssistDebug()
+	local scale = ControllerCameraTestSmartAssistScale()
+	ControllerCameraTestCommandDebug.smartAssistScale = string.format("%.2f", scale)
+	ControllerCameraTestCommandDebug.smartEffectiveScreenRadius = string.format("%.1f", ControllerCameraTestSmartTargetScreenRadius * scale)
+	ControllerCameraTestCommandDebug.smartEffectiveFeatureRadius = string.format("%.1f", ControllerCameraTestSmartFeatureWorldRadius * scale)
+	ControllerCameraTestCommandDebug.smartEffectiveUnitRadius = string.format("%.1f", ControllerCameraTestSmartUnitWorldRadius * scale)
+	return scale
 end
 
 function ControllerCameraTestClassifySmartTarget(target, commandIDs)
@@ -3888,6 +4030,13 @@ function ControllerCameraTestFindAssistedSmartTarget(commandIDs)
 	local best = nil
 	local seenUnits = {}
 	local seenFeatures = {}
+	local scale = ControllerCameraTestUpdateSmartAssistDebug()
+	if scale <= 0 then
+		return nil
+	end
+	local screenRadius = ControllerCameraTestSmartTargetScreenRadius * scale
+	local featureWorldRadius = ControllerCameraTestSmartFeatureWorldRadius * scale
+	local unitWorldRadius = ControllerCameraTestSmartUnitWorldRadius * scale
 
 	local function consider(targetType, targetID, source, distance)
 		targetID = tonumber(targetID)
@@ -3917,7 +4066,7 @@ function ControllerCameraTestFindAssistedSmartTarget(commandIDs)
 			for _, featureID in ipairs(features) do
 				local target = { targetType = "feature", targetID = featureID }
 				local dist = ControllerCameraTestSmartScreenDistance(target)
-				if dist and dist <= ControllerCameraTestSmartTargetScreenRadius then
+				if dist and dist <= screenRadius then
 					consider("feature", featureID, "screen assist", dist)
 				end
 			end
@@ -3925,7 +4074,7 @@ function ControllerCameraTestFindAssistedSmartTarget(commandIDs)
 	end
 
 	if reticleWorldX and reticleWorldZ and type(Spring.GetFeaturesInCylinder) == "function" then
-		local ok, features = pcall(Spring.GetFeaturesInCylinder, reticleWorldX, reticleWorldZ, ControllerCameraTestSmartFeatureWorldRadius)
+		local ok, features = pcall(Spring.GetFeaturesInCylinder, reticleWorldX, reticleWorldZ, featureWorldRadius)
 		if ok and type(features) == "table" then
 			for _, featureID in ipairs(features) do
 				local target = { targetType = "feature", targetID = featureID }
@@ -3941,7 +4090,7 @@ function ControllerCameraTestFindAssistedSmartTarget(commandIDs)
 			for _, unitID in ipairs(units) do
 				local target = { targetType = "unit", targetID = unitID }
 				local dist = ControllerCameraTestSmartScreenDistance(target)
-				if dist and dist <= ControllerCameraTestSmartTargetScreenRadius then
+				if dist and dist <= screenRadius then
 					consider("unit", unitID, "screen assist", dist)
 				end
 			end
@@ -3949,7 +4098,7 @@ function ControllerCameraTestFindAssistedSmartTarget(commandIDs)
 	end
 
 	if reticleWorldX and reticleWorldZ and type(Spring.GetUnitsInCylinder) == "function" then
-		local ok, units = pcall(Spring.GetUnitsInCylinder, reticleWorldX, reticleWorldZ, ControllerCameraTestSmartUnitWorldRadius)
+		local ok, units = pcall(Spring.GetUnitsInCylinder, reticleWorldX, reticleWorldZ, unitWorldRadius)
 		if ok and type(units) == "table" then
 			for _, unitID in ipairs(units) do
 				local target = { targetType = "unit", targetID = unitID }
@@ -3989,8 +4138,13 @@ function ControllerCameraTestTrySmartAssistedCommand(exactTargetType, exactTarge
 	ControllerCameraTestCommandDebug.smartChosenCmdID = tostring(best.cmdID)
 	ControllerCameraTestCommandDebug.smartActionSource = tostring(best.source)
 	ControllerCameraTestCommandDebug.smartLastResult = tostring(best.debug or "smart assisted command")
+	ControllerCameraTestCommandDebug.smartOrderParams = type(best.params) == "table" and table.concat(best.params, ",") or "none"
 	latchSelectionDebugMessage(tostring(best.debug or "Smart X assisted command"))
-	issueOrderToSelection(best.cmdID, best.params, string.upper(string.sub(best.action, 1, 1)) .. string.sub(best.action, 2), best.targetName)
+	local actionName = string.upper(string.sub(best.action, 1, 1)) .. string.sub(best.action, 2)
+	local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(best.cmdID, best.params, actionName, best.targetName)
+	ControllerCameraTestCommandDebug.smartLastResult = ok
+		and (tostring(best.debug or "smart assisted command") .. "; issued to " .. tostring(issuedCount) .. "; fallback move blocked")
+		or (tostring(best.debug or "smart assisted command") .. "; issue failed; fallback move blocked")
 	return true
 end
 
@@ -4026,6 +4180,7 @@ local function attemptContextCommand()
 
 	local ok, targetType, targetID = pcall(Spring.TraceScreenRay, screenCenterX, screenCenterY)
 	ControllerCameraTestCommandDebug.smartExactTargetType = ok and tostring(targetType or "none") or "trace failed"
+	ControllerCameraTestCommandDebug.smartExactTargetID = ok and tostring(targetID or "none") or "none"
 	local params = {}
 	local targetString = "unknown"
 
@@ -8732,6 +8887,12 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		return
 	end
 
+	if ControllerCameraTestHandleSelfDestructChord() then
+		ControllerCameraTestLayerDebug.modeSummary = "self-destruct safety"
+		activeButtonLayoutSummary = "Self-destruct: hold Back/View + R3 + RB + RT"
+		return
+	end
+
 	-- Hook DGUN Mode Activation: Back + R3
 	if IsButtonDown("back") and WasButtonPressed("rightStickClick") then
 		local commanderID = GetSelectedCommanderID()
@@ -10509,15 +10670,21 @@ function widget:DrawScreen()
 				"Queue removal selected/attempted/removed: " .. tostring(ControllerCameraTestCommandDebug.queueRemovalSelectedCount) .. " / " .. tostring(ControllerCameraTestCommandDebug.queueRemovalAttemptedCount) .. " / " .. tostring(ControllerCameraTestCommandDebug.queueRemovalRemovedCount),
 				"Queue removal last q/tag: " .. tostring(ControllerCameraTestCommandDebug.queueRemovalLastQueueSize) .. " / " .. tostring(ControllerCameraTestCommandDebug.queueRemovalLastTag),
 				"Queue removal units: " .. tostring(ControllerCameraTestCommandDebug.queueRemovalUnitDetails),
+				"Self destruct chord: " .. yesNo(ControllerCameraTestSelfDestruct.chordActive) .. " hold=" .. string.format("%.2f", ControllerCameraTestSelfDestruct.chordActive and (debugEventTime - (ControllerCameraTestSelfDestruct.holdStartTime or debugEventTime)) or 0),
+				"Self destruct cmd/result: " .. tostring(ControllerCameraTestSelfDestruct.cmdID) .. " / " .. tostring(ControllerCameraTestSelfDestruct.lastResult),
+				"Self destruct selected/issued: " .. tostring(ControllerCameraTestSelfDestruct.selectedCount) .. " / " .. tostring(ControllerCameraTestSelfDestruct.issuedCount),
 				"Mex smart available: " .. tostring(ControllerCameraTestCommandDebug.mexSmartAvailable),
 				"Mex nearest spot: " .. tostring(ControllerCameraTestCommandDebug.mexNearestSpot),
 				"Mex building cmd ID: " .. tostring(ControllerCameraTestCommandDebug.mexBuildingCmdID),
 				"Mex action result: " .. tostring(ControllerCameraTestCommandDebug.mexActionResult),
 				"Mex ApplyPreviewCmds: " .. tostring(ControllerCameraTestCommandDebug.mexApplyPreviewPath),
 				"Mex fallback GiveOrder: " .. tostring(ControllerCameraTestCommandDebug.mexFallbackGiveOrderPath),
-				"Smart X exact target: " .. tostring(ControllerCameraTestCommandDebug.smartExactTargetType),
+				"Smart X exact target: " .. tostring(ControllerCameraTestCommandDebug.smartExactTargetType) .. " " .. tostring(ControllerCameraTestCommandDebug.smartExactTargetID),
 				"Smart X assist target: " .. tostring(ControllerCameraTestCommandDebug.smartAssistTargetType) .. " " .. tostring(ControllerCameraTestCommandDebug.smartAssistTargetID) .. " d=" .. tostring(ControllerCameraTestCommandDebug.smartAssistDistance),
+				"Smart X assist scale: " .. tostring(ControllerCameraTestCommandDebug.smartAssistScale),
+				"Smart X effective radii screen/feature/unit: " .. tostring(ControllerCameraTestCommandDebug.smartEffectiveScreenRadius) .. " / " .. tostring(ControllerCameraTestCommandDebug.smartEffectiveFeatureRadius) .. " / " .. tostring(ControllerCameraTestCommandDebug.smartEffectiveUnitRadius),
 				"Smart X action/cmd: " .. tostring(ControllerCameraTestCommandDebug.smartChosenAction) .. " / " .. tostring(ControllerCameraTestCommandDebug.smartChosenCmdID),
+				"Smart X params: " .. tostring(ControllerCameraTestCommandDebug.smartOrderParams),
 				"Smart X source/result: " .. tostring(ControllerCameraTestCommandDebug.smartActionSource) .. " / " .. tostring(ControllerCameraTestCommandDebug.smartLastResult),
 			},
 		},

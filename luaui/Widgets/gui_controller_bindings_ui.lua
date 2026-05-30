@@ -1857,6 +1857,19 @@ local function ControllerBindingsUIDrawSettingsDetails(x1, y1, x2, y2)
 	y = y - 34
 
 	if item.type ~= "boolean" and item.type ~= "action" then
+		local minVal = tonumber(item.min) or 0
+		local maxVal = tonumber(item.max) or 1
+		local numericVal = tonumber(val) or minVal
+		local pct = 0
+		if maxVal > minVal then
+			pct = math.max(0, math.min(1, (numericVal - minVal) / (maxVal - minVal)))
+		end
+		local sx1, sx2 = x1 + 20, x2 - 28
+		local sy1, sy2 = y - 8, y + 2
+		ControllerBindingsUIDrawRect(sx1, sy1, sx2, sy2, { 0.035, 0.055, 0.07, 0.95 })
+		ControllerBindingsUIDrawRect(sx1, sy1, sx1 + ((sx2 - sx1) * pct), sy2, { 0.26, 0.78, 0.88, 0.95 })
+		ControllerBindingsUIDrawOutline(sx1, sy1, sx2, sy2, { 0.22, 0.44, 0.52, 0.9 })
+		y = y - 24
 		local fmt = (item.decimals == 0 or not item.decimals) and "%.0f" or string.format("%%.%df", item.decimals)
 		local minStr = string.format(fmt, tonumber(item.min) or 0)
 		local maxStr = string.format(fmt, tonumber(item.max) or 0)
@@ -1906,6 +1919,8 @@ local function ControllerBindingsUIDrawSettingsDetails(x1, y1, x2, y2)
 			desc = "Automatically hide status panel when a radial menu is open."
 		elseif item.key == "areaSelectRadius" then
 			desc = "Default radius for selecting multiple units."
+		elseif item.key == "smartAssistScale" then
+			desc = "Scales Smart X assisted targeting down from the current maximum radius. 1.00 is full size; 0 disables assist."
 		elseif item.key == "reticleSize" then
 			desc = "Visual size of the gameplay reticle."
 		elseif item.key == "placementPopupEnabled" then
