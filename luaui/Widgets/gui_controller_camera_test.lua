@@ -258,6 +258,8 @@ local diagPlacementGridRows = 0
 local diagPlacementGridCols = 0
 local diagPlacementDrawCount = 0
 
+local ControllerCameraTestMexSpotSnapRadius = 160
+
 ControllerCameraTestAreaSelect = ControllerCameraTestAreaSelect or {
 	pressActive = false,
 	active = false,
@@ -2695,31 +2697,37 @@ function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift)
 	end
 	ControllerCameraTestCommandDebug.mexNearestSpot = "yes"
 
-	local controllerMexTriggerRadius = 80
+	local controllerMexTriggerRadius = ControllerCameraTestMexSpotSnapRadius or 160
 
-local spotX = nearestSpot.x or nearestSpot[1]
-local spotZ = nearestSpot.z or nearestSpot[3] or nearestSpot[2]
+	local spotX = nearestSpot.x or nearestSpot[1]
+	local spotZ = nearestSpot.z or nearestSpot[3] or nearestSpot[2]
 
-if not spotX or not spotZ then
-	ControllerCameraTestCommandDebug.mexNearestSpot = "no"
-	ControllerCameraTestCommandDebug.mexActionResult = "mex spot position unavailable, falling back to Move"
-	return false
-end
+	if not spotX or not spotZ then
+		ControllerCameraTestCommandDebug.mexNearestSpot = "no"
+		ControllerCameraTestCommandDebug.mexActionResult = "mex spot position unavailable, falling back to Move"
+		return false
+	end
 
-local dx = spotX - x
-local dz = spotZ - z
-local distSq = (dx * dx) + (dz * dz)
-local maxDistSq = controllerMexTriggerRadius * controllerMexTriggerRadius
+	local dx = spotX - x
+	local dz = spotZ - z
+	local distSq = (dx * dx) + (dz * dz)
+	local maxDistSq = controllerMexTriggerRadius * controllerMexTriggerRadius
 
-if distSq > maxDistSq then
-	ControllerCameraTestCommandDebug.mexNearestSpot = "no"
+	if distSq > maxDistSq then
+		ControllerCameraTestCommandDebug.mexNearestSpot = "no"
+		ControllerCameraTestCommandDebug.mexActionResult = string.format(
+			"not close enough to metal spot %.0f > %d, falling back to Move",
+			math.sqrt(distSq),
+			controllerMexTriggerRadius
+		)
+		return false
+	end
+
 	ControllerCameraTestCommandDebug.mexActionResult = string.format(
-		"not close enough to metal spot %.0f > %d, falling back to Move",
+		"snap-detected metal spot at dist %.1f <= %d",
 		math.sqrt(distSq),
 		controllerMexTriggerRadius
 	)
-	return false
-end
 
 	if type(builder.ExtractorCanBeBuiltOnSpot) == "function" and not builder.ExtractorCanBeBuiltOnSpot(nearestSpot, selectedMex) then
 		ControllerCameraTestCommandDebug.mexActionResult = "spot unavailable"
@@ -3321,7 +3329,7 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		latchSelectionDebugMessage(cmdName .. " confirmed!")
 		ControllerCameraTestSetCommandMarker(endX, endY, endZ, cmdName, "build")
 
-	elseif drag.mode == "reclaimArea" or drag.mode == "repairArea" or drag.mode == "attackArea" then
+	elseif drag.mode == "reclaimArea" or drag.mode == "repairArea" or drag.mode == "attackArea" or drag.mode == "areaMex" then
 		local dx = endX - startX
 		local dz = endZ - startZ
 		local r = math.sqrt(dx*dx + dz*dz)
@@ -3335,6 +3343,9 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		elseif drag.mode == "attackArea" then
 			cmdID = CMD.ATTACK
 			cmdName = "Attack Area"
+		elseif drag.mode == "areaMex" then
+			cmdID = drag.cmdID or (drag.option and drag.option.cmdID) or -100
+			cmdName = "Area Mex"
 		end
 
 		local params = { startX, startY, startZ, r }
@@ -3446,6 +3457,17 @@ function ControllerCameraTestCancelDrag(reason)
 	latchSelectionDebugMessage("Drag cancelled")
 end
 
+local function IsUnitInSelection(unitID)
+	if not tonumber(unitID) then return false end
+	local selectedUnits = type(Spring.GetSelectedUnits) == "function" and Spring.GetSelectedUnits() or {}
+	for i = 1, #selectedUnits do
+		if selectedUnits[i] == tonumber(unitID) then
+			return true
+		end
+	end
+	return false
+end
+
 local function attemptContextCommand()
 	local cmdID = 10 -- Fallback to Move (CMD.MOVE)
 	local cmdName = "Move"
@@ -3498,6 +3520,10 @@ local function attemptContextCommand()
 	elseif cmdID == 10 and reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ
 		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ, ControllerCameraTestIsQueueModifierActive())
 	then
+		return
+	elseif ok and targetType == "unit" and tonumber(targetID) and IsUnitInSelection(targetID) then
+		ControllerCameraTestCommandDebug.lastResult = "ignored self-target move"
+		latchSelectionDebugMessage("ignored self-target move")
 		return
 	elseif ok and (targetType == "unit" or targetType == "feature") and tonumber(targetID) then
 		params = { tonumber(targetID) }
@@ -4787,6 +4813,36 @@ ControllerCameraTestFactoryTacticalCommandTemplates = ControllerCameraTestFactor
 	{ name = "Stop", shortLabel = "Stop", cmdID = CMD.STOP, kind = "none" },
 }
 
+local function FindActiveAreaMexCommand()
+	if type(Spring.GetActiveCmdDescs) ~= "function" then
+		return nil
+	end
+	local ok, descs = pcall(Spring.GetActiveCmdDescs)
+	if not ok or type(descs) ~= "table" then
+		return nil
+	end
+
+	for _, desc in ipairs(descs) do
+		if desc and type(desc.id) == "number" then
+			local name = string.lower(tostring(desc.name or ""))
+			local action = string.lower(tostring(desc.action or ""))
+			local tooltip = string.lower(tostring(desc.tooltip or ""))
+
+			if name:find("area mex", 1, true)
+				or action == "areamex"
+				or name == "areamex"
+				or (name:find("mex", 1, true) and name:find("area", 1, true))
+				or (action:find("mex", 1, true) and action:find("area", 1, true))
+				or tooltip:find("area metal extractor", 1, true)
+				or tooltip:find("area build metal extractors", 1, true)
+			then
+				return desc
+			end
+		end
+	end
+	return nil
+end
+
 function ControllerCameraTestBuildActiveCommandLookup()
 	if type(Spring.GetActiveCmdDescs) ~= "function" then
 		return nil
@@ -4852,6 +4908,18 @@ function ControllerCameraTestRebuildTacticalCommandCache(reason)
 		local activeCommandLookup = ControllerCameraTestBuildActiveCommandLookup()
 		for _, option in ipairs(ControllerCameraTestTacticalCommandTemplates) do
 			ControllerCameraTestAppendTacticalCommand(commands, option, activeCommandLookup)
+		end
+		-- Dynamically check for Area Mex and append it!
+		local mexDesc = FindActiveAreaMexCommand()
+		if mexDesc then
+			local mexOption = {
+				name = mexDesc.name or "Area Mex",
+				shortLabel = mexDesc.name or "Area Mex",
+				cmdID = mexDesc.id,
+				kind = "drag_area",
+				dragMode = "areaMex"
+			}
+			commands[#commands + 1] = mexOption
 		end
 	end
 	menu.cachedCommands = commands
@@ -5145,6 +5213,8 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 		local drag = ControllerCameraTestDragCommand
 		drag.active = true
 		drag.mode = option.dragMode
+		drag.cmdID = option.cmdID
+		drag.option = option
 		drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
 		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
 		drag.pressActive = false
@@ -9618,7 +9688,7 @@ function widget:DrawWorld()
 
 		if endX and startX then
 			gl.LineWidth(3.0)
-			if drag.mode == "reclaimArea" or drag.mode == "repairArea" or drag.mode == "attackArea" then
+			if drag.mode == "reclaimArea" or drag.mode == "repairArea" or drag.mode == "attackArea" or drag.mode == "areaMex" then
 				local dx = endX - startX
 				local dz = endZ - startZ
 				local r = math.sqrt(dx*dx + dz*dz)
@@ -9628,6 +9698,8 @@ function widget:DrawWorld()
 					gl.Color(0.2, 0.8, 0.8, 0.65)
 				elseif drag.mode == "repairArea" then
 					gl.Color(0.2, 0.9, 0.3, 0.65)
+				elseif drag.mode == "areaMex" then
+					gl.Color(0.9, 0.7, 0.1, 0.65)
 				else
 					gl.Color(1.0, 0.2, 0.2, 0.65)
 				end
