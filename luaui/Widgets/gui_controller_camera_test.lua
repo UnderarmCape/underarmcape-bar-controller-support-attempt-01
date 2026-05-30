@@ -47,6 +47,14 @@ ControllerCameraTestCommandDebug = ControllerCameraTestCommandDebug or {
 	mexActionResult = "none",
 	mexApplyPreviewPath = "no",
 	mexFallbackGiveOrderPath = "no",
+	smartExactTargetType = "none",
+	smartAssistTargetType = "none",
+	smartAssistTargetID = "none",
+	smartAssistDistance = "none",
+	smartChosenAction = "none",
+	smartChosenCmdID = "none",
+	smartActionSource = "none",
+	smartLastResult = "none",
 	queueRemovalMode = "none",
 	queueRemovalSelectedCount = 0,
 	queueRemovalAttemptedCount = 0,
@@ -260,6 +268,9 @@ local diagPlacementDrawCount = 0
 
 local ControllerCameraTestMexSpotSnapRadius = 160
 local ControllerCameraTestAreaRadiusSensitivity = 1.5
+local ControllerCameraTestSmartTargetScreenRadius = 55
+local ControllerCameraTestSmartFeatureWorldRadius = 180
+local ControllerCameraTestSmartUnitWorldRadius = 160
 
 ControllerCameraTestAreaSelect = ControllerCameraTestAreaSelect or {
 	pressActive = false,
@@ -971,6 +982,14 @@ local function resetControllerInputDebug()
 	ControllerCameraTestCommandDebug.mexActionResult = "none"
 	ControllerCameraTestCommandDebug.mexApplyPreviewPath = "no"
 	ControllerCameraTestCommandDebug.mexFallbackGiveOrderPath = "no"
+	ControllerCameraTestCommandDebug.smartExactTargetType = "none"
+	ControllerCameraTestCommandDebug.smartAssistTargetType = "none"
+	ControllerCameraTestCommandDebug.smartAssistTargetID = "none"
+	ControllerCameraTestCommandDebug.smartAssistDistance = "none"
+	ControllerCameraTestCommandDebug.smartChosenAction = "none"
+	ControllerCameraTestCommandDebug.smartChosenCmdID = "none"
+	ControllerCameraTestCommandDebug.smartActionSource = "none"
+	ControllerCameraTestCommandDebug.smartLastResult = "none"
 	clearButtonStateTracking()
 	clearDebugEventLatches()
 	resetReticleWorldTarget()
@@ -2799,6 +2818,17 @@ function ControllerCameraTestResetMexCommandDebug()
 	ControllerCameraTestCommandDebug.mexFallbackGiveOrderPath = "no"
 end
 
+function ControllerCameraTestResetSmartCommandDebug()
+	ControllerCameraTestCommandDebug.smartExactTargetType = "none"
+	ControllerCameraTestCommandDebug.smartAssistTargetType = "none"
+	ControllerCameraTestCommandDebug.smartAssistTargetID = "none"
+	ControllerCameraTestCommandDebug.smartAssistDistance = "none"
+	ControllerCameraTestCommandDebug.smartChosenAction = "none"
+	ControllerCameraTestCommandDebug.smartChosenCmdID = "none"
+	ControllerCameraTestCommandDebug.smartActionSource = "none"
+	ControllerCameraTestCommandDebug.smartLastResult = "pending"
+end
+
 function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift)
 	ControllerCameraTestResetMexCommandDebug()
 
@@ -3645,11 +3675,331 @@ local function IsUnitInSelection(unitID)
 	return false
 end
 
+local function ControllerCameraTestSmartDescText(desc)
+	return string.lower(tostring(desc and desc.name or "") .. " " .. tostring(desc and desc.action or "") .. " " .. tostring(desc and desc.tooltip or ""))
+end
+
+function ControllerCameraTestFindActiveSmartCommandID(descs, lookup, fallbackCmdID, keywords)
+	if type(descs) == "table" then
+		for _, desc in ipairs(descs) do
+			local cmdID = desc and tonumber(desc.id or desc.cmdID)
+			if type(cmdID) == "number" and not desc.disabled then
+				local text = ControllerCameraTestSmartDescText(desc)
+				for _, keyword in ipairs(keywords or {}) do
+					if text:find(keyword, 1, true) then
+						return cmdID, tostring(desc.action or desc.name or "activeCmdDesc")
+					end
+				end
+			end
+		end
+	end
+	if type(fallbackCmdID) == "number" and (type(lookup) ~= "table" or lookup[fallbackCmdID]) then
+		return fallbackCmdID, "CMD constant"
+	end
+	return nil, "unavailable"
+end
+
+function ControllerCameraTestGetSmartCommandIDs()
+	local lookup, descs = ControllerCameraTestBuildActiveCommandLookup()
+	local ids = {}
+	ids.resurrect, ids.resurrectSource = ControllerCameraTestFindActiveSmartCommandID(
+		descs,
+		lookup,
+		CMD.RESURRECT,
+		{ "resurrect", "resurrection", "ressurect", "revive", "restore", " rez " }
+	)
+	ids.reclaim, ids.reclaimSource = ControllerCameraTestFindActiveSmartCommandID(descs, lookup, CMD.RECLAIM, { "reclaim" })
+	ids.repair, ids.repairSource = ControllerCameraTestFindActiveSmartCommandID(descs, lookup, CMD.REPAIR, { "repair" })
+	ids.guard, ids.guardSource = ControllerCameraTestFindActiveSmartCommandID(descs, lookup, CMD.GUARD, { "guard" })
+	ids.attack, ids.attackSource = ControllerCameraTestFindActiveSmartCommandID(descs, lookup, CMD.ATTACK, { "attack" })
+	return ids
+end
+
+function ControllerCameraTestFeatureIsResurrectable(featureID)
+	if not featureID or type(Spring.GetFeatureResurrect) ~= "function" then
+		return false
+	end
+	local ok, unitDefName = pcall(Spring.GetFeatureResurrect, featureID)
+	return ok and unitDefName ~= nil and tostring(unitDefName) ~= ""
+end
+
+function ControllerCameraTestFeatureIsReclaimable(featureID)
+	if not featureID then
+		return false
+	end
+	if type(Spring.GetFeatureResources) ~= "function" then
+		return true
+	end
+	local ok, metal, _, energy, _, reclaimLeft = pcall(Spring.GetFeatureResources, featureID)
+	if not ok then
+		return true
+	end
+	return (tonumber(metal) or 0) > 0
+		or (tonumber(energy) or 0) > 0
+		or (tonumber(reclaimLeft) or 0) > 0
+end
+
+function ControllerCameraTestUnitNeedsRepair(unitID)
+	if not unitID or type(Spring.GetUnitHealth) ~= "function" then
+		return false
+	end
+	local ok, health, maxHealth, _, _, buildProgress = pcall(Spring.GetUnitHealth, unitID)
+	if not ok then
+		return false
+	end
+	if type(health) == "number" and type(maxHealth) == "number" and health < (maxHealth - 1) then
+		return true
+	end
+	return type(buildProgress) == "number" and buildProgress < 1
+end
+
+function ControllerCameraTestSmartTargetPosition(target)
+	if type(target) ~= "table" then
+		return nil, nil, nil
+	end
+	if target.targetType == "unit" and type(spGetUnitPosition) == "function" then
+		local ok, x, y, z = pcall(spGetUnitPosition, target.targetID)
+		if ok then
+			return x, y, z
+		end
+	elseif target.targetType == "feature" and type(Spring.GetFeaturePosition) == "function" then
+		local ok, x, y, z = pcall(Spring.GetFeaturePosition, target.targetID)
+		if ok then
+			return x, y, z
+		end
+	end
+	return nil, nil, nil
+end
+
+function ControllerCameraTestSmartScreenDistance(target)
+	if type(Spring.WorldToScreenCoords) ~= "function" then
+		return nil
+	end
+	local x, y, z = ControllerCameraTestSmartTargetPosition(target)
+	if not x or not z then
+		return nil
+	end
+	local ok, sx, sy = pcall(Spring.WorldToScreenCoords, x, y or 0, z)
+	if not ok or type(sx) ~= "number" or type(sy) ~= "number" then
+		return nil
+	end
+	local dx = sx - screenCenterX
+	local dy = sy - screenCenterY
+	return math.sqrt((dx * dx) + (dy * dy))
+end
+
+function ControllerCameraTestSmartWorldDistance(target)
+	if not reticleWorldX or not reticleWorldZ then
+		return nil
+	end
+	local x, _, z = ControllerCameraTestSmartTargetPosition(target)
+	if not x or not z then
+		return nil
+	end
+	local dx = x - reticleWorldX
+	local dz = z - reticleWorldZ
+	return math.sqrt((dx * dx) + (dz * dz))
+end
+
+function ControllerCameraTestClassifySmartTarget(target, commandIDs)
+	if type(target) ~= "table" or type(commandIDs) ~= "table" then
+		return nil
+	end
+	if target.targetType == "feature" and tonumber(target.targetID) then
+		local featureID = tonumber(target.targetID)
+		if commandIDs.resurrect and ControllerCameraTestFeatureIsResurrectable(featureID) then
+			return {
+				priority = 1,
+				action = "resurrect",
+				cmdID = commandIDs.resurrect,
+				params = { ControllerCameraTestFeatureCommandID(featureID) },
+				targetName = "feature " .. tostring(featureID),
+				debug = "Smart X: resurrect target feature " .. tostring(featureID),
+			}
+		end
+		if commandIDs.reclaim and ControllerCameraTestFeatureIsReclaimable(featureID) then
+			return {
+				priority = 3,
+				action = "reclaim",
+				cmdID = commandIDs.reclaim,
+				params = { ControllerCameraTestFeatureCommandID(featureID) },
+				targetName = "feature " .. tostring(featureID),
+				debug = "Smart X: reclaim target feature " .. tostring(featureID),
+			}
+		end
+	elseif target.targetType == "unit" and tonumber(target.targetID) then
+		local unitID = tonumber(target.targetID)
+		if IsUnitInSelection(unitID) then
+			return nil
+		end
+		if ControllerCameraTestIsAlliedUnit(unitID) then
+			if commandIDs.repair and ControllerCameraTestUnitNeedsRepair(unitID) then
+				return {
+					priority = 2,
+					action = "repair",
+					cmdID = commandIDs.repair,
+					params = { unitID },
+					targetName = "unit " .. tostring(unitID),
+					debug = "Smart X: repair target unit " .. tostring(unitID),
+				}
+			end
+			if commandIDs.guard then
+				return {
+					priority = 4,
+					action = "guard",
+					cmdID = commandIDs.guard,
+					params = { unitID },
+					targetName = "unit " .. tostring(unitID),
+					debug = "Smart X: guard target unit " .. tostring(unitID),
+				}
+			end
+		elseif commandIDs.attack then
+			return {
+				priority = 5,
+				action = "attack",
+				cmdID = commandIDs.attack,
+				params = { unitID },
+				targetName = "unit " .. tostring(unitID),
+				debug = "Smart X: attack target unit " .. tostring(unitID),
+			}
+		end
+	end
+	return nil
+end
+
+function ControllerCameraTestConsiderSmartCandidate(best, target, commandIDs)
+	local classified = ControllerCameraTestClassifySmartTarget(target, commandIDs)
+	if not classified then
+		return best
+	end
+	classified.targetType = target.targetType
+	classified.targetID = target.targetID
+	classified.source = target.source or "assist"
+	classified.distance = target.distance or 0
+	if not best or classified.priority < best.priority
+		or (classified.priority == best.priority and classified.distance < best.distance)
+	then
+		return classified
+	end
+	return best
+end
+
+function ControllerCameraTestFindAssistedSmartTarget(commandIDs)
+	local best = nil
+	local seenUnits = {}
+	local seenFeatures = {}
+
+	local function consider(targetType, targetID, source, distance)
+		targetID = tonumber(targetID)
+		if not targetID then
+			return
+		end
+		if targetType == "unit" then
+			if seenUnits[targetID] then return end
+			seenUnits[targetID] = true
+		elseif targetType == "feature" then
+			if seenFeatures[targetID] then return end
+			seenFeatures[targetID] = true
+		else
+			return
+		end
+		best = ControllerCameraTestConsiderSmartCandidate(best, {
+			targetType = targetType,
+			targetID = targetID,
+			source = source,
+			distance = tonumber(distance) or 0,
+		}, commandIDs)
+	end
+
+	if type(Spring.GetVisibleFeatures) == "function" then
+		local ok, features = pcall(Spring.GetVisibleFeatures)
+		if ok and type(features) == "table" then
+			for _, featureID in ipairs(features) do
+				local target = { targetType = "feature", targetID = featureID }
+				local dist = ControllerCameraTestSmartScreenDistance(target)
+				if dist and dist <= ControllerCameraTestSmartTargetScreenRadius then
+					consider("feature", featureID, "screen assist", dist)
+				end
+			end
+		end
+	end
+
+	if reticleWorldX and reticleWorldZ and type(Spring.GetFeaturesInCylinder) == "function" then
+		local ok, features = pcall(Spring.GetFeaturesInCylinder, reticleWorldX, reticleWorldZ, ControllerCameraTestSmartFeatureWorldRadius)
+		if ok and type(features) == "table" then
+			for _, featureID in ipairs(features) do
+				local target = { targetType = "feature", targetID = featureID }
+				local dist = ControllerCameraTestSmartWorldDistance(target)
+				consider("feature", featureID, "world assist", dist)
+			end
+		end
+	end
+
+	if type(Spring.GetVisibleUnits) == "function" then
+		local ok, units = pcall(Spring.GetVisibleUnits)
+		if ok and type(units) == "table" then
+			for _, unitID in ipairs(units) do
+				local target = { targetType = "unit", targetID = unitID }
+				local dist = ControllerCameraTestSmartScreenDistance(target)
+				if dist and dist <= ControllerCameraTestSmartTargetScreenRadius then
+					consider("unit", unitID, "screen assist", dist)
+				end
+			end
+		end
+	end
+
+	if reticleWorldX and reticleWorldZ and type(Spring.GetUnitsInCylinder) == "function" then
+		local ok, units = pcall(Spring.GetUnitsInCylinder, reticleWorldX, reticleWorldZ, ControllerCameraTestSmartUnitWorldRadius)
+		if ok and type(units) == "table" then
+			for _, unitID in ipairs(units) do
+				local target = { targetType = "unit", targetID = unitID }
+				local dist = ControllerCameraTestSmartWorldDistance(target)
+				consider("unit", unitID, "world assist", dist)
+			end
+		end
+	end
+
+	return best
+end
+
+function ControllerCameraTestTrySmartAssistedCommand(exactTargetType, exactTargetID)
+	local commandIDs = ControllerCameraTestGetSmartCommandIDs()
+	local best = nil
+	if (exactTargetType == "unit" or exactTargetType == "feature") and tonumber(exactTargetID) then
+		best = ControllerCameraTestConsiderSmartCandidate(nil, {
+			targetType = exactTargetType,
+			targetID = tonumber(exactTargetID),
+			source = "exact trace",
+			distance = 0,
+		}, commandIDs)
+	end
+	if not best then
+		best = ControllerCameraTestFindAssistedSmartTarget(commandIDs)
+	end
+	if not best then
+		ControllerCameraTestCommandDebug.smartActionSource = "fallback"
+		ControllerCameraTestCommandDebug.smartLastResult = "Smart X: no assisted target, fallback move"
+		return false
+	end
+
+	ControllerCameraTestCommandDebug.smartAssistTargetType = tostring(best.targetType)
+	ControllerCameraTestCommandDebug.smartAssistTargetID = tostring(best.targetID)
+	ControllerCameraTestCommandDebug.smartAssistDistance = string.format("%.1f", best.distance or 0)
+	ControllerCameraTestCommandDebug.smartChosenAction = tostring(best.action)
+	ControllerCameraTestCommandDebug.smartChosenCmdID = tostring(best.cmdID)
+	ControllerCameraTestCommandDebug.smartActionSource = tostring(best.source)
+	ControllerCameraTestCommandDebug.smartLastResult = tostring(best.debug or "smart assisted command")
+	latchSelectionDebugMessage(tostring(best.debug or "Smart X assisted command"))
+	issueOrderToSelection(best.cmdID, best.params, string.upper(string.sub(best.action, 1, 1)) .. string.sub(best.action, 2), best.targetName)
+	return true
+end
+
 local function attemptContextCommand()
 	local cmdID = 10 -- Fallback to Move (CMD.MOVE)
 	local cmdName = "Move"
 
 	ControllerCameraTestResetMexCommandDebug()
+	ControllerCameraTestResetSmartCommandDebug()
 	ControllerCameraTestCommandDebug.defaultCmdIndex = "none"
 	ControllerCameraTestCommandDebug.defaultCmdID = "none"
 	ControllerCameraTestCommandDebug.defaultCmdType = "none"
@@ -3675,6 +4025,7 @@ local function attemptContextCommand()
 	ControllerCameraTestCommandDebug.isBuild = isBuild and "yes" or "no"
 
 	local ok, targetType, targetID = pcall(Spring.TraceScreenRay, screenCenterX, screenCenterY)
+	ControllerCameraTestCommandDebug.smartExactTargetType = ok and tostring(targetType or "none") or "trace failed"
 	local params = {}
 	local targetString = "unknown"
 
@@ -3697,9 +4048,15 @@ local function attemptContextCommand()
 	elseif cmdID == 10 and reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ
 		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ, ControllerCameraTestIsQueueModifierActive())
 	then
+		ControllerCameraTestCommandDebug.smartChosenAction = "mex"
+		ControllerCameraTestCommandDebug.smartActionSource = "mex snap"
+		ControllerCameraTestCommandDebug.smartLastResult = ControllerCameraTestCommandDebug.mexActionResult
+		return
+	elseif ControllerCameraTestTrySmartAssistedCommand(ok and targetType or nil, ok and targetID or nil) then
 		return
 	elseif ok and targetType == "unit" and tonumber(targetID) and IsUnitInSelection(targetID) then
 		ControllerCameraTestCommandDebug.lastResult = "ignored self-target move"
+		ControllerCameraTestCommandDebug.smartLastResult = "ignored self-target selected unit"
 		latchSelectionDebugMessage("ignored self-target move")
 		return
 	elseif ok and (targetType == "unit" or targetType == "feature") and tonumber(targetID) then
@@ -3708,8 +4065,10 @@ local function attemptContextCommand()
 	elseif reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
 		params = { reticleWorldX, reticleWorldY, reticleWorldZ }
 		targetString = "ground"
+		ControllerCameraTestCommandDebug.smartLastResult = "Smart X: no assisted target, fallback move"
 	else
 		ControllerCameraTestCommandDebug.lastResult = "context failed: no target"
+		ControllerCameraTestCommandDebug.smartLastResult = "context failed: no target"
 		latchSelectionDebugMessage("X context failed: no target")
 		return
 	end
@@ -10156,6 +10515,10 @@ function widget:DrawScreen()
 				"Mex action result: " .. tostring(ControllerCameraTestCommandDebug.mexActionResult),
 				"Mex ApplyPreviewCmds: " .. tostring(ControllerCameraTestCommandDebug.mexApplyPreviewPath),
 				"Mex fallback GiveOrder: " .. tostring(ControllerCameraTestCommandDebug.mexFallbackGiveOrderPath),
+				"Smart X exact target: " .. tostring(ControllerCameraTestCommandDebug.smartExactTargetType),
+				"Smart X assist target: " .. tostring(ControllerCameraTestCommandDebug.smartAssistTargetType) .. " " .. tostring(ControllerCameraTestCommandDebug.smartAssistTargetID) .. " d=" .. tostring(ControllerCameraTestCommandDebug.smartAssistDistance),
+				"Smart X action/cmd: " .. tostring(ControllerCameraTestCommandDebug.smartChosenAction) .. " / " .. tostring(ControllerCameraTestCommandDebug.smartChosenCmdID),
+				"Smart X source/result: " .. tostring(ControllerCameraTestCommandDebug.smartActionSource) .. " / " .. tostring(ControllerCameraTestCommandDebug.smartLastResult),
 			},
 		},
 		{
