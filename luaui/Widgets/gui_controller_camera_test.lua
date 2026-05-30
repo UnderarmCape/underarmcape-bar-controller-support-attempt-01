@@ -259,6 +259,7 @@ local diagPlacementGridCols = 0
 local diagPlacementDrawCount = 0
 
 local ControllerCameraTestMexSpotSnapRadius = 160
+local ControllerCameraTestAreaRadiusSensitivity = 1.5
 
 ControllerCameraTestAreaSelect = ControllerCameraTestAreaSelect or {
 	pressActive = false,
@@ -413,6 +414,19 @@ ControllerCameraTestDgunMode = ControllerCameraTestDgunMode or {
 }
 ControllerCameraTestDgunAimRange = 280
 ControllerCameraTestAreaCancelReason = "none"
+ControllerCameraTestAreaCommandDebug = ControllerCameraTestAreaCommandDebug or {
+	state = "none",
+	label = "none",
+	cmdID = "none",
+	action = "none",
+	descriptorSource = "none",
+	rawRadius = "none",
+	effectiveRadius = "none",
+	sensitivity = ControllerCameraTestAreaRadiusSensitivity,
+	colorProfile = "none",
+	iconSource = "none",
+	lastIssueResult = "none",
+}
 ControllerCameraTestDebugSections = ControllerCameraTestDebugSections or {
 	Input = true,
 	Camera = false,
@@ -2626,6 +2640,119 @@ function ControllerCameraTestCommandOptionsSummary(options)
 	return table.concat(options, ",")
 end
 
+ControllerCameraTestAreaCommandProfiles = ControllerCameraTestAreaCommandProfiles or {
+	reclaimArea = {
+		key = "reclaim",
+		label = "RECLAIM",
+		color = { 0.22, 0.95, 0.35, 0.68 },
+		centerColor = { 0.18, 1.0, 0.42, 0.95 },
+	},
+	resurrectArea = {
+		key = "resurrect",
+		label = "RES",
+		color = { 0.72, 0.36, 1.0, 0.72 },
+		centerColor = { 0.88, 0.62, 1.0, 0.96 },
+	},
+	repairArea = {
+		key = "repair",
+		label = "REPAIR",
+		color = { 1.0, 0.72, 0.18, 0.72 },
+		centerColor = { 1.0, 0.82, 0.28, 0.96 },
+	},
+	areaMex = {
+		key = "areaMex",
+		label = "MEX",
+		color = { 1.0, 0.82, 0.12, 0.72 },
+		centerColor = { 1.0, 0.9, 0.22, 0.96 },
+	},
+	attackArea = {
+		key = "attack",
+		label = "ATK",
+		color = { 1.0, 0.28, 0.12, 0.72 },
+		centerColor = { 1.0, 0.42, 0.22, 0.96 },
+	},
+	genericArea = {
+		key = "generic",
+		label = "AREA",
+		color = { 0.84, 0.88, 0.92, 0.68 },
+		centerColor = { 0.92, 0.96, 1.0, 0.95 },
+	},
+}
+
+function ControllerCameraTestGetAreaCommandProfile(optionOrMode)
+	local mode = type(optionOrMode) == "table" and optionOrMode.dragMode or optionOrMode
+	return ControllerCameraTestAreaCommandProfiles[mode] or ControllerCameraTestAreaCommandProfiles.genericArea
+end
+
+function ControllerCameraTestIsAreaTacticalOption(option)
+	if type(option) ~= "table" then
+		return false
+	end
+	return option.kind == "drag_area" or ControllerCameraTestAreaCommandProfiles[option.dragMode] ~= nil
+end
+
+function ControllerCameraTestAreaCommandRadius(startX, startZ, endX, endZ)
+	local dx = (endX or startX or 0) - (startX or 0)
+	local dz = (endZ or startZ or 0) - (startZ or 0)
+	local rawRadius = math.sqrt(dx * dx + dz * dz)
+	if rawRadius < 10 then
+		rawRadius = 120
+	end
+	return rawRadius, rawRadius * ControllerCameraTestAreaRadiusSensitivity
+end
+
+function ControllerCameraTestCopyTacticalOption(option)
+	if type(option) ~= "table" then
+		return nil
+	end
+	return {
+		name = option.name,
+		shortLabel = option.shortLabel,
+		cmdID = option.cmdID,
+		kind = option.kind,
+		dragMode = option.dragMode,
+		action = option.action,
+		descriptorSource = option.descriptorSource,
+		colorProfile = option.colorProfile,
+		iconLabel = option.iconLabel,
+		iconSource = option.iconSource,
+	}
+end
+
+function ControllerCameraTestUpdateAreaCommandDebug(state, option, rawRadius, effectiveRadius, result)
+	local debug = ControllerCameraTestAreaCommandDebug
+	local profile = ControllerCameraTestGetAreaCommandProfile(option)
+	debug.state = tostring(state or "none")
+	debug.label = tostring((option and (option.name or option.shortLabel)) or "none")
+	debug.cmdID = tostring(option and option.cmdID or "none")
+	debug.action = tostring(option and option.action or "none")
+	debug.descriptorSource = tostring(option and option.descriptorSource or "none")
+	debug.rawRadius = type(rawRadius) == "number" and string.format("%.1f", rawRadius) or "none"
+	debug.effectiveRadius = type(effectiveRadius) == "number" and string.format("%.1f", effectiveRadius) or "none"
+	debug.sensitivity = ControllerCameraTestAreaRadiusSensitivity
+	debug.colorProfile = tostring(option and option.colorProfile or (profile and profile.key) or "generic")
+	debug.iconSource = tostring(option and option.iconSource or "fallback text")
+	if result ~= nil and result ~= "preview" then
+		debug.lastIssueResult = tostring(result)
+	end
+end
+
+function ControllerCameraTestGetAreaOptionCommandID(option, mode)
+	if type(option) == "table" and type(option.cmdID) == "number" then
+		return option.cmdID
+	end
+	if mode == "reclaimArea" then
+		return CMD.RECLAIM
+	elseif mode == "repairArea" then
+		return CMD.REPAIR
+	elseif mode == "attackArea" then
+		return CMD.ATTACK
+	elseif mode == "resurrectArea" then
+		return CMD.RESURRECT
+	end
+	return nil
+end
+
 local function issueOrderToSelection(cmdID, params, cmdName, targetName, options)
 	-- 1. Check if we actually have units selected
 	local selectedUnits = type(Spring.GetSelectedUnits) == "function" and Spring.GetSelectedUnits() or {}
@@ -3355,44 +3482,62 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		latchSelectionDebugMessage(cmdName .. " confirmed!")
 		ControllerCameraTestSetCommandMarker(endX, endY, endZ, cmdName, "build")
 
-	elseif drag.mode == "reclaimArea" or drag.mode == "repairArea" or drag.mode == "attackArea" or drag.mode == "areaMex" then
-		local dx = endX - startX
-		local dz = endZ - startZ
-		local r = math.sqrt(dx*dx + dz*dz)
-		if r < 10 then r = 120 end
+	elseif ControllerCameraTestIsAreaTacticalOption(drag.option or { kind = "drag_area", dragMode = drag.mode }) then
+		local option = type(drag.option) == "table" and drag.option or { kind = "drag_area", dragMode = drag.mode }
+		local mode = option.dragMode or drag.mode
+		local rawRadius, effectiveRadius = ControllerCameraTestAreaCommandRadius(startX, startZ, endX, endZ)
+		local profile = ControllerCameraTestGetAreaCommandProfile(option)
+		local cmdID = ControllerCameraTestGetAreaOptionCommandID(option, mode)
+		local cmdName = tostring(option.name or profile.label or "Area Command")
 
-		local cmdID = CMD.RECLAIM
-		local cmdName = "Reclaim Area"
-		if drag.mode == "repairArea" then
-			cmdID = CMD.REPAIR
-			cmdName = "Repair Area"
-		elseif drag.mode == "attackArea" then
-			cmdID = CMD.ATTACK
-			cmdName = "Attack Area"
-		elseif drag.mode == "areaMex" then
-			cmdID = drag.cmdID or (drag.option and drag.option.cmdID) or -100
-			cmdName = "Area Mex"
+		if type(cmdID) ~= "number" then
+			drag.active = false
+			drag.lastResult = "failed unavailable cmdID"
+			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
+			ControllerCameraTestUpdateAreaCommandDebug("failed unavailable", option, rawRadius, effectiveRadius, drag.lastResult)
+			latchSelectionDebugMessage(cmdName .. " failed: unavailable")
+			return
 		end
 
-		local params = { startX, startY, startZ, r }
+		local params = { startX, startY, startZ, effectiveRadius }
 		local issued = 0
+		local lastError = nil
+		ControllerCameraTestCommandDebug.issuedCmdID = isQueueFront and tostring(CMD.INSERT or 140) or tostring(cmdID)
+		ControllerCameraTestCommandDebug.issuedParamsCount = isQueueFront and 7 or #params
 
 		if isQueueFront then
 			local cmdInsert = CMD.INSERT or 140
 			for _, unitID in ipairs(selectedUnits) do
-				local ok, err = pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, startX, startY, startZ, r }, { "alt" })
-				if ok then issued = issued + 1 end
+				local ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, startX, startY, startZ, effectiveRadius }, { "alt" })
+				if ok and result ~= false then
+					issued = issued + 1
+				else
+					lastError = tostring(result)
+				end
 			end
 		else
 			for _, unitID in ipairs(selectedUnits) do
-				local ok, err = pcall(spGiveOrderToUnit, unitID, cmdID, params, orderOptions)
-				if ok then issued = issued + 1 end
+				local ok, result = pcall(spGiveOrderToUnit, unitID, cmdID, params, orderOptions)
+				if ok and result ~= false then
+					issued = issued + 1
+				else
+					lastError = tostring(result)
+				end
 			end
 		end
 
-		drag.lastResult = "issued " .. cmdName .. " to " .. tostring(issued) .. " units"
-		latchSelectionDebugMessage(cmdName .. " confirmed!")
-		ControllerCameraTestSetCommandMarker(startX, startY, startZ, cmdName, "build")
+		if issued > 0 then
+			drag.lastResult = "issued cmdID " .. tostring(cmdID) .. " to " .. tostring(issued) .. " units"
+			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
+			latchSelectionDebugMessage(cmdName .. " confirmed!")
+			ControllerCameraTestSetCommandMarker(startX, startY, startZ, cmdName, profile.key or "area")
+			ControllerCameraTestUpdateAreaCommandDebug("confirmed", option, rawRadius, effectiveRadius, drag.lastResult)
+		else
+			drag.lastResult = "failed no orders accepted" .. (lastError and (": " .. lastError) or "")
+			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
+			latchSelectionDebugMessage(cmdName .. " failed: no orders accepted")
+			ControllerCameraTestUpdateAreaCommandDebug("failed bad params", option, rawRadius, effectiveRadius, drag.lastResult)
+		end
 	end
 
 	drag.lastMode = drag.mode
@@ -3470,6 +3615,7 @@ end
 
 function ControllerCameraTestCancelDrag(reason)
 	local drag = ControllerCameraTestDragCommand
+	local wasArea = type(drag.option) == "table" and ControllerCameraTestIsAreaTacticalOption(drag.option)
 	if drag.singleUnitPathActive then
 		drag.singleUnitPathResult = reason or "single path cancelled"
 	end
@@ -3479,6 +3625,11 @@ function ControllerCameraTestCancelDrag(reason)
 	drag.singleUnitPathUnitID = nil
 	drag.lastResult = reason or "cancelled"
 	drag.previewPoints = {}
+	drag.option = nil
+	drag.cmdID = nil
+	if wasArea then
+		ControllerCameraTestUpdateAreaCommandDebug("cancelled", nil, nil, nil, reason or "cancelled")
+	end
 	ControllerCameraTestClearNativeBlueprintPreview()
 	latchSelectionDebugMessage("Drag cancelled")
 end
@@ -5225,9 +5376,9 @@ ControllerCameraTestTacticalCommandTemplates = ControllerCameraTestTacticalComma
 	{ name = "Move Line", shortLabel = "Move Line", cmdID = CMD.MOVE, kind = "drag_line", dragMode = "moveLine" },
 	{ name = "Fight Line", shortLabel = "Fight Line", cmdID = CMD.FIGHT, kind = "drag_line", dragMode = "fightLine" },
 	{ name = "Attack Line", shortLabel = "Attack Line", cmdID = CMD.ATTACK, kind = "drag_line", dragMode = "attackLine" },
-	{ name = "Reclaim Area", shortLabel = "Reclaim Area", cmdID = CMD.RECLAIM, kind = "drag_area", dragMode = "reclaimArea" },
-	{ name = "Repair Area", shortLabel = "Repair Area", cmdID = CMD.REPAIR, kind = "drag_area", dragMode = "repairArea" },
-	{ name = "Attack Area", shortLabel = "Attack Area", cmdID = CMD.ATTACK, kind = "drag_area", dragMode = "attackArea" },
+	{ name = "Reclaim Area", shortLabel = "Reclaim Area", cmdID = CMD.RECLAIM, kind = "drag_area", dragMode = "reclaimArea", descriptorSource = "template", colorProfile = "reclaim", iconLabel = "RECLAIM", iconSource = "fallback text" },
+	{ name = "Repair Area", shortLabel = "Repair Area", cmdID = CMD.REPAIR, kind = "drag_area", dragMode = "repairArea", descriptorSource = "template", colorProfile = "repair", iconLabel = "REPAIR", iconSource = "fallback text" },
+	{ name = "Attack Area", shortLabel = "Attack Area", cmdID = CMD.ATTACK, kind = "drag_area", dragMode = "attackArea", descriptorSource = "template", colorProfile = "attack", iconLabel = "ATK", iconSource = "fallback text" },
 	{ name = "Patrol", shortLabel = "Patrol", cmdID = CMD.PATROL, kind = "ground" },
 	{ name = "Guard", shortLabel = "Guard", cmdID = CMD.GUARD, kind = "alliedUnit" },
 	{ name = "Fire State", shortLabel = "Fire State", cmdID = CMD.FIRESTATE or 20, kind = "fire_state_cycle" },
@@ -5238,34 +5389,102 @@ ControllerCameraTestFactoryTacticalCommandTemplates = ControllerCameraTestFactor
 	{ name = "Stop", shortLabel = "Stop", cmdID = CMD.STOP, kind = "none" },
 }
 
-local function FindActiveAreaMexCommand()
-	if type(Spring.GetActiveCmdDescs) ~= "function" then
-		return nil
-	end
-	local ok, descs = pcall(Spring.GetActiveCmdDescs)
-	if not ok or type(descs) ~= "table" then
-		return nil
-	end
+local function ControllerCameraTestCommandDescText(desc)
+	return string.lower(tostring(desc.name or "") .. " " .. tostring(desc.action or "") .. " " .. tostring(desc.tooltip or ""))
+end
 
-	for _, desc in ipairs(descs) do
-		if desc and type(desc.id) == "number" then
-			local name = string.lower(tostring(desc.name or ""))
-			local action = string.lower(tostring(desc.action or ""))
-			local tooltip = string.lower(tostring(desc.tooltip or ""))
-
-			if name:find("area mex", 1, true)
-				or action == "areamex"
-				or name == "areamex"
-				or (name:find("mex", 1, true) and name:find("area", 1, true))
-				or (action:find("mex", 1, true) and action:find("area", 1, true))
-				or tooltip:find("area metal extractor", 1, true)
-				or tooltip:find("area build metal extractors", 1, true)
-			then
-				return desc
-			end
+local function ControllerCameraTestTextHasAny(text, needles)
+	for _, needle in ipairs(needles) do
+		if text:find(needle, 1, true) then
+			return true
 		end
 	end
-	return nil
+	return false
+end
+
+local function ControllerCameraTestAreaIconLabel(label, fallback)
+	label = tostring(label or fallback or "AREA")
+	label = label:gsub("[^%w]", "")
+	if label == "" then
+		return fallback or "AREA"
+	end
+	return string.upper(string.sub(label, 1, 7))
+end
+
+local function ControllerCameraTestAreaOptionFromDesc(desc)
+	if type(desc) ~= "table" or desc.disabled then
+		return nil
+	end
+	local cmdID = tonumber(desc.id or desc.cmdID)
+	if type(cmdID) ~= "number" or cmdID < 0 then
+		return nil
+	end
+
+	local name = tostring(desc.name or desc.action or "Area Command")
+	local action = tostring(desc.action or "")
+	local lowerAction = string.lower(action)
+	local text = ControllerCameraTestCommandDescText(desc)
+	local dragMode, shortLabel, colorProfile, iconLabel
+
+	if text:find("area mex", 1, true)
+		or lowerAction == "areamex"
+		or string.lower(name) == "areamex"
+		or (text:find("mex", 1, true) and text:find("area", 1, true))
+		or text:find("area metal extractor", 1, true)
+		or text:find("area build metal extractors", 1, true)
+	then
+		dragMode = "areaMex"
+		shortLabel = "Area Mex"
+		colorProfile = "areaMex"
+		iconLabel = "MEX"
+	elseif ControllerCameraTestTextHasAny(text, { "resurrect", "resurrection", "ressurect", "revive", "restore" })
+		or lowerAction == "rez"
+		or lowerAction == "res"
+	then
+		dragMode = "resurrectArea"
+		shortLabel = "Resurrect Area"
+		colorProfile = "resurrect"
+		iconLabel = "RES"
+	elseif text:find("reclaim", 1, true) and (text:find("area", 1, true) or text:find("radius", 1, true)) then
+		dragMode = "reclaimArea"
+		shortLabel = "Reclaim Area"
+		colorProfile = "reclaim"
+		iconLabel = "RECLAIM"
+	elseif text:find("repair", 1, true) and (text:find("area", 1, true) or text:find("radius", 1, true)) then
+		dragMode = "repairArea"
+		shortLabel = "Repair Area"
+		colorProfile = "repair"
+		iconLabel = "REPAIR"
+	elseif text:find("attack", 1, true) and (text:find("area", 1, true) or text:find("radius", 1, true)) then
+		dragMode = "attackArea"
+		shortLabel = "Attack Area"
+		colorProfile = "attack"
+		iconLabel = "ATK"
+	elseif cmdID ~= CMD.RECLAIM and cmdID ~= CMD.REPAIR and cmdID ~= CMD.ATTACK
+		and (text:find("area", 1, true) or text:find("radius", 1, true))
+	then
+		dragMode = "genericArea"
+		shortLabel = name
+		colorProfile = "generic"
+		iconLabel = ControllerCameraTestAreaIconLabel(name, "AREA")
+	end
+
+	if not dragMode then
+		return nil
+	end
+
+	return {
+		name = name,
+		shortLabel = shortLabel or name,
+		cmdID = cmdID,
+		kind = "drag_area",
+		dragMode = dragMode,
+		action = action,
+		descriptorSource = "activeCmdDesc",
+		colorProfile = colorProfile,
+		iconLabel = iconLabel,
+		iconSource = "fallback text",
+	}
 end
 
 function ControllerCameraTestBuildActiveCommandLookup()
@@ -5278,11 +5497,12 @@ function ControllerCameraTestBuildActiveCommandLookup()
 	end
 	local lookup = {}
 	for _, desc in ipairs(descs) do
-		if desc and type(desc.id) == "number" then
-			lookup[desc.id] = true
+		local cmdID = desc and tonumber(desc.id or desc.cmdID)
+		if type(cmdID) == "number" then
+			lookup[cmdID] = true
 		end
 	end
-	return lookup
+	return lookup, descs
 end
 
 function ControllerCameraTestTacticalCommandAvailable(cmdID, activeCommandLookup)
@@ -5308,6 +5528,25 @@ function ControllerCameraTestAppendTacticalCommand(commands, option, activeComma
 	commands[#commands + 1] = option
 end
 
+function ControllerCameraTestAppendDynamicAreaCommands(commands, descs)
+	if type(descs) ~= "table" then
+		return
+	end
+	local seen = {}
+	for _, option in ipairs(commands) do
+		if type(option) == "table" and type(option.cmdID) == "number" then
+			seen[option.cmdID] = true
+		end
+	end
+	for _, desc in ipairs(descs) do
+		local option = ControllerCameraTestAreaOptionFromDesc(desc)
+		if option and not seen[option.cmdID] then
+			commands[#commands + 1] = option
+			seen[option.cmdID] = true
+		end
+	end
+end
+
 --------------------------------------------------------------------------------
 -- SECTION: Tactical radial
 --------------------------------------------------------------------------------
@@ -5330,22 +5569,11 @@ function ControllerCameraTestRebuildTacticalCommandCache(reason)
 			ControllerCameraTestAppendTacticalCommand(commands, option, nil)
 		end
 	else
-		local activeCommandLookup = ControllerCameraTestBuildActiveCommandLookup()
+		local activeCommandLookup, activeCommandDescs = ControllerCameraTestBuildActiveCommandLookup()
 		for _, option in ipairs(ControllerCameraTestTacticalCommandTemplates) do
 			ControllerCameraTestAppendTacticalCommand(commands, option, activeCommandLookup)
 		end
-		-- Dynamically check for Area Mex and append it!
-		local mexDesc = FindActiveAreaMexCommand()
-		if mexDesc then
-			local mexOption = {
-				name = mexDesc.name or "Area Mex",
-				shortLabel = mexDesc.name or "Area Mex",
-				cmdID = mexDesc.id,
-				kind = "drag_area",
-				dragMode = "areaMex"
-			}
-			commands[#commands + 1] = mexOption
-		end
+		ControllerCameraTestAppendDynamicAreaCommands(commands, activeCommandDescs)
 	end
 	menu.cachedCommands = commands
 	menu.cacheValid = true
@@ -5388,6 +5616,29 @@ function ControllerCameraTestGetTacticalCommands(forceRefresh, reason)
 	end
 	menu.cacheHits = (menu.cacheHits or 0) + 1
 	return menu.cachedCommands
+end
+
+function ControllerCameraTestFindTacticalAreaOptionByMode(dragMode, forceRefresh, reason)
+	local commands = ControllerCameraTestGetTacticalCommands(forceRefresh, reason or "area shortcut")
+	for _, option in ipairs(commands or {}) do
+		if type(option) == "table" and option.dragMode == dragMode and ControllerCameraTestIsAreaTacticalOption(option) then
+			return option
+		end
+	end
+	return nil
+end
+
+function ControllerCameraTestStageAreaCommandShortcut(dragMode, label)
+	local option = ControllerCameraTestFindTacticalAreaOptionByMode(dragMode, true, "area shortcut")
+	if option then
+		return ControllerCameraTestStageTacticalCommand(option)
+	end
+	local name = tostring(label or dragMode or "Area command")
+	ControllerCameraTestTacticalMenu.lastResult = name .. " unavailable"
+	ControllerCameraTestLayerDebug.commandLayerAction = name .. " unavailable"
+	ControllerCameraTestUpdateAreaCommandDebug("failed unavailable", nil, nil, nil, name .. " unavailable")
+	latchSelectionDebugMessage(name .. " unavailable")
+	return false
 end
 
 function ControllerCameraTestRefreshTacticalDebug(commands)
@@ -5513,21 +5764,19 @@ function ControllerCameraTestStageTacticalCommand(option)
 		menu.lastResult = "stage failed: no option"
 		return false
 	end
-	menu.stagedOption = {
-		name = option.name,
-		cmdID = option.cmdID,
-		kind = option.kind,
-		dragMode = option.dragMode,
-	}
+	menu.stagedOption = ControllerCameraTestCopyTacticalOption(option)
 	menu.stagedName = tostring(option.name or "Command")
 	menu.stagedKind = tostring(option.kind or "none")
-	menu.stagedState = "staged"
+	menu.stagedState = ControllerCameraTestIsAreaTacticalOption(option) and "staged waiting for center" or "staged"
 	menu.repeatPlacementActive = false
 	menu.repeatPlacementState = "none"
 	menu.open = false
 	menu.lastAction = "staged " .. menu.stagedName
 	menu.lastResult = "staged: move reticle, A confirm, B cancel"
 	ControllerCameraTestLayerDebug.commandLayerAction = menu.lastAction
+	if ControllerCameraTestIsAreaTacticalOption(option) then
+		ControllerCameraTestUpdateAreaCommandDebug(menu.stagedState, menu.stagedOption, nil, nil, "staged")
+	end
 	latchSelectionDebugMessage(menu.stagedName .. " staged")
 	return true
 end
@@ -5542,6 +5791,7 @@ function ControllerCameraTestClearStagedTacticalCommand(reason)
 	menu.repeatPlacementActive = false
 	menu.repeatPlacementState = reason or "none"
 	ControllerCameraTestAreaCancelReason = reason or "none"
+	ControllerCameraTestUpdateAreaCommandDebug(reason or "none", nil, nil, nil, reason or "cleared")
 	if reason then
 		menu.lastAction = tostring(reason)
 		menu.lastResult = tostring(reason)
@@ -5557,12 +5807,7 @@ function ControllerCameraTestConfirmStagedTacticalCommand()
 	end
 	local name = tostring(menu.stagedName or option.name or "Command")
 	local repeatHeld = ControllerCameraTestIsQueueModifierActive()
-	local repeatOption = {
-		name = option.name,
-		cmdID = option.cmdID,
-		kind = option.kind,
-		dragMode = option.dragMode,
-	}
+	local repeatOption = ControllerCameraTestCopyTacticalOption(option)
 	menu.stagedOption = nil
 	menu.stagedName = name
 	menu.stagedKind = tostring(option.kind or "none")
@@ -5579,6 +5824,9 @@ function ControllerCameraTestConfirmStagedTacticalCommand()
 		menu.lastAction = "repeat staged " .. name
 		menu.lastResult = "placed; repeat active while RT held"
 		ControllerCameraTestLayerDebug.commandLayerAction = "Tactical repeat active: " .. name
+		if ControllerCameraTestIsAreaTacticalOption(repeatOption) then
+			ControllerCameraTestUpdateAreaCommandDebug("staged waiting for center", repeatOption, nil, nil, "repeat active")
+		end
 		latchSelectionDebugMessage(name .. " repeat active")
 	else
 		menu.stagedState = confirmed and "confirmed" or "confirm failed"
@@ -5614,13 +5862,15 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 
 	local option = menu.stagedOption
 	local drag = ControllerCameraTestDragCommand
-	local isAreaCmd = option.kind == "drag_area" or option.dragMode == "reclaimArea" or option.dragMode == "repairArea" or option.dragMode == "attackArea" or option.dragMode == "areaMex"
+	local isAreaCmd = ControllerCameraTestIsAreaTacticalOption(option)
 
 	if ControllerCameraTestActionPressed("tacticalCancel") or ControllerCameraTestActionPressed("cancel") then
 		if drag.active and isAreaCmd then
 			drag.active = false
 			drag.startX, drag.startY, drag.startZ = nil, nil, nil
 			drag.endX, drag.endY, drag.endZ = nil, nil, nil
+			drag.option = nil
+			drag.cmdID = nil
 		end
 		ControllerCameraTestClearStagedTacticalCommand("cancelled")
 		ControllerCameraTestLayerDebug.commandLayerAction = "Tactical staged command cancelled"
@@ -5642,6 +5892,7 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 					drag.cmdID = option.cmdID
 					drag.option = option
 					menu.stagedState = "dragging radius"
+					ControllerCameraTestUpdateAreaCommandDebug("dragging radius", option, 120, 120 * ControllerCameraTestAreaRadiusSensitivity, "center anchored")
 					latchSelectionDebugMessage(option.name .. " center anchored")
 				end
 			else
@@ -5687,12 +5938,15 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 		pcall(ControllerCameraTestUpdateDragPreview)
 		ControllerCameraTestConfirmDragCommand(false)
 		ControllerCameraTestTacticalMenu.lastResult = drag.lastResult or ControllerCameraTestTacticalMenu.lastResult
-		latchSelectionDebugMessage(option.name .. " confirmed")
+		local confirmed = not tostring(ControllerCameraTestTacticalMenu.lastResult or ""):find("failed", 1, true)
+		latchSelectionDebugMessage(option.name .. (confirmed and " confirmed" or " failed"))
 		ControllerCameraTestTacticalMenu.open = false
 		drag.previewPoints = {}
 		drag.startX, drag.startY, drag.startZ = nil, nil, nil
 		drag.endX, drag.endY, drag.endZ = nil, nil, nil
-		return not tostring(ControllerCameraTestTacticalMenu.lastResult or ""):find("failed", 1, true)
+		drag.option = nil
+		drag.cmdID = nil
+		return confirmed
 	elseif option.kind == "repeat_toggle" then
 		local ok = false
 		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
@@ -7383,8 +7637,7 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 
 	if ControllerCameraTestActionPressed("smartAction") then
 		if ControllerCameraTestActionDown("pitchModifier") then
-			local attackAreaOption = { name = "Attack Area", shortLabel = "Attack Area", cmdID = CMD.ATTACK, kind = "drag_area", dragMode = "attackArea" }
-			ControllerCameraTestStageTacticalCommand(attackAreaOption)
+			ControllerCameraTestStageAreaCommandShortcut("attackArea", "Attack Area")
 			return true
 		end
 
@@ -8658,6 +8911,33 @@ function ControllerCameraTestDrawTacticalRadial()
 	gl.LineWidth(1)
 end
 
+function ControllerCameraTestDrawAreaCommandCenterLabel()
+	local drag = ControllerCameraTestDragCommand
+	if not drag.active or not drag.startX or not drag.startZ then
+		return
+	end
+	local option = type(drag.option) == "table" and drag.option or nil
+	if not option or not ControllerCameraTestIsAreaTacticalOption(option) or type(Spring.WorldToScreenCoords) ~= "function" then
+		return
+	end
+
+	local ok, sx, sy = pcall(Spring.WorldToScreenCoords, drag.startX, drag.startY or 0, drag.startZ)
+	if not ok or type(sx) ~= "number" or type(sy) ~= "number" then
+		return
+	end
+
+	local profile = ControllerCameraTestGetAreaCommandProfile(option)
+	local label = tostring(option.iconLabel or profile.label or "AREA")
+	local halfWidth = math.max(30, (#label * 4.8) + 16)
+	local halfHeight = 13
+	gl.Color(0, 0, 0, 0.58)
+	glRect(sx - halfWidth, sy - halfHeight, sx + halfWidth, sy + halfHeight)
+	local color = profile.centerColor or profile.color
+	gl.Color(color[1], color[2], color[3], color[4] or 0.95)
+	glText(label, sx, sy - 5, 13, "oc")
+	gl.Color(1, 1, 1, 1)
+end
+
 function ControllerCameraTestDrawQueueIndicator()
 	if not ControllerCameraTestIsQueueModifierActive() then
 		return
@@ -9454,6 +9734,7 @@ function widget:DrawScreen()
 	if not ControllerCameraTestSettingsUI.open then
 		ControllerCameraTestDrawQueueIndicator()
 		ControllerCameraTestDrawPlacementPatternPopup()
+		ControllerCameraTestDrawAreaCommandCenterLabel()
 	end
 	ControllerCameraTestDrawCompactSelectedStatusPanel()
 	if not ControllerCameraTestSettingsUI.open then
@@ -9647,15 +9928,17 @@ function widget:DrawScreen()
 	local activeGroupType = activeGroupEntry and (activeGroupEntry.typeName or ControllerCameraTestUnitTypeName(activeGroupEntry.unitDefID)) or "none"
 	local activeGroupAuto = ControllerCameraTestControlGroupAutoAddLabel(activeGroupEntry)
 	local activeGroupCount = activeGroupEntry and tostring(activeGroupEntry.count or #(activeGroupEntry.units or {})) or "0"
-	local areaStateStr = "none"
-	local activeMode = "none"
+	local areaStateStr = tostring(ControllerCameraTestAreaCommandDebug.state or "none")
+	local activeMode = tostring(ControllerCameraTestAreaCommandDebug.colorProfile or "none")
 	local centerPosStr = "nil"
 	local radiusStr = "nil"
+	local areaRawRadiusStr = tostring(ControllerCameraTestAreaCommandDebug.rawRadius or "none")
+	local areaEffectiveRadiusStr = tostring(ControllerCameraTestAreaCommandDebug.effectiveRadius or "none")
 	local areaOption = ControllerCameraTestTacticalMenu.stagedOption
 	local drag = ControllerCameraTestDragCommand
 
 	if type(areaOption) == "table" then
-		local isAreaCmd = areaOption.kind == "drag_area" or areaOption.dragMode == "reclaimArea" or areaOption.dragMode == "repairArea" or areaOption.dragMode == "attackArea" or areaOption.dragMode == "areaMex"
+		local isAreaCmd = ControllerCameraTestIsAreaTacticalOption(areaOption)
 		if isAreaCmd then
 			activeMode = tostring(areaOption.dragMode or areaOption.name)
 			if not drag.active then
@@ -9666,15 +9949,16 @@ function widget:DrawScreen()
 					centerPosStr = string.format("%.1f, %.1f, %.1f", drag.startX, drag.startY, drag.startZ)
 					local dx = (drag.endX or reticleWorldX or 0) - drag.startX
 					local dz = (drag.endZ or reticleWorldZ or 0) - drag.startZ
-					local r = math.sqrt(dx*dx + dz*dz)
-					if r < 10 then r = 120 end
-					radiusStr = string.format("%.1f", r)
+					local rawRadius, effectiveRadius = ControllerCameraTestAreaCommandRadius(drag.startX, drag.startZ, drag.endX or reticleWorldX, drag.endZ or reticleWorldZ)
+					radiusStr = string.format("%.1f", effectiveRadius)
+					areaRawRadiusStr = string.format("%.1f", rawRadius)
+					areaEffectiveRadiusStr = radiusStr
 				end
 			end
 		end
 	end
 
-	ControllerCameraTestTacticalMenu.debugRowsCount = 17
+	ControllerCameraTestTacticalMenu.debugRowsCount = 23
 
 	local controllerSections = {
 		{
@@ -9905,9 +10189,13 @@ function widget:DrawScreen()
 				"Tactical result: " .. tostring(ControllerCameraTestTacticalMenu.lastResult),
 				"Area command state: " .. areaStateStr,
 				"Area command mode: " .. activeMode,
+				"Area command label/cmdID: " .. tostring(ControllerCameraTestAreaCommandDebug.label) .. " / " .. tostring(ControllerCameraTestAreaCommandDebug.cmdID),
+				"Area command action/source: " .. tostring(ControllerCameraTestAreaCommandDebug.action) .. " / " .. tostring(ControllerCameraTestAreaCommandDebug.descriptorSource),
 				"Area center pos: " .. centerPosStr,
-				"Area current radius: " .. radiusStr,
-				"Area last confirm: " .. tostring(ControllerCameraTestTacticalMenu.lastResult or "none"),
+				"Area radius raw/effective: " .. areaRawRadiusStr .. " / " .. areaEffectiveRadiusStr,
+				"Area sensitivity/color: " .. tostring(ControllerCameraTestAreaCommandDebug.sensitivity) .. " / " .. tostring(ControllerCameraTestAreaCommandDebug.colorProfile),
+				"Area icon source: " .. tostring(ControllerCameraTestAreaCommandDebug.iconSource),
+				"Area last issue: " .. tostring(ControllerCameraTestAreaCommandDebug.lastIssueResult),
 				"Area last cancel reason: " .. tostring(ControllerCameraTestAreaCancelReason),
 			},
 		},
@@ -10281,23 +10569,17 @@ function widget:DrawWorld()
 
 		if endX and startX then
 			gl.LineWidth(3.0)
-			if drag.mode == "reclaimArea" or drag.mode == "repairArea" or drag.mode == "attackArea" or drag.mode == "areaMex" then
-				local dx = endX - startX
-				local dz = endZ - startZ
-				local r = math.sqrt(dx*dx + dz*dz)
-				if r < 10 then r = 120 end
-
-				if drag.mode == "reclaimArea" then
-					gl.Color(0.2, 0.8, 0.8, 0.65)
-				elseif drag.mode == "repairArea" then
-					gl.Color(0.2, 0.9, 0.3, 0.65)
-				elseif drag.mode == "areaMex" then
-					gl.Color(0.9, 0.7, 0.1, 0.65)
-				else
-					gl.Color(1.0, 0.2, 0.2, 0.65)
-				end
-				gl.DrawGroundCircle(startX, startY, startZ, r, 64)
+			if ControllerCameraTestAreaCommandProfiles[drag.mode] ~= nil
+				or (type(drag.option) == "table" and ControllerCameraTestIsAreaTacticalOption(drag.option))
+			then
+				local rawRadius, effectiveRadius = ControllerCameraTestAreaCommandRadius(startX, startZ, endX, endZ)
+				local option = type(drag.option) == "table" and drag.option or nil
+				local profile = ControllerCameraTestGetAreaCommandProfile(option or drag.mode)
+				local color = profile.color or ControllerCameraTestAreaCommandProfiles.genericArea.color
+				gl.Color(color[1], color[2], color[3], color[4] or 0.68)
+				gl.DrawGroundCircle(startX, startY, startZ, effectiveRadius, 64)
 				gl.DrawGroundCircle(startX, startY, startZ, 12, 16)
+				ControllerCameraTestUpdateAreaCommandDebug("dragging radius", option, rawRadius, effectiveRadius, "preview")
 			else
 				if drag.mode == "moveLine" or drag.mode == "singleMovePath" then
 					gl.Color(0.2, 0.8, 0.9, 0.7)
