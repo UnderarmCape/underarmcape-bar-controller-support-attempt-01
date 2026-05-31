@@ -1,4 +1,4 @@
-local versionNumber = "v1.0"
+local versionNumber = "v1.1"
 
 function widget:GetInfo()
 	return {
@@ -44,6 +44,27 @@ local lastObservedCommand = {
 	linkMatch = false,
 }
 
+local lastError = nil
+
+-- Safe call-in wrapper to prevent widget from auto-removing on runtime error
+local function safeCall(label, fn, ...)
+	local ok, result = pcall(fn, ...)
+	if not ok then
+		local errStr = tostring(result)
+		if lastError ~= errStr then
+			Spring.Echo("[SmartXMouseAudit] ERROR in " .. tostring(label) .. ": " .. errStr)
+			lastError = errStr
+		end
+		return nil
+	end
+	return result
+end
+
+-- Safe frame fetcher
+local function getFrame()
+	return Spring.GetGameFrame and Spring.GetGameFrame() or 0
+end
+
 -- Safe table serializer
 local function serializeTable(t)
 	if type(t) ~= "table" then
@@ -62,22 +83,28 @@ local function serializeTable(t)
 end
 
 local function CaptureClickSnapshot(x, y, button, eventType)
-	local traceType, traceID = Spring.TraceScreenRay(x, y)
-	local _, worldPosition = Spring.TraceScreenRay(x, y, true)
+	local traceType, traceID
+	if type(Spring.TraceScreenRay) == "function" then
+		traceType, traceID = Spring.TraceScreenRay(x, y)
+	end
+
 	local wx, wy, wz
-	if type(worldPosition) == "table" then
-		wx, wy, wz = worldPosition[1], worldPosition[2], worldPosition[3]
+	if type(Spring.TraceScreenRay) == "function" then
+		local _, worldPosition = Spring.TraceScreenRay(x, y, true)
+		if type(worldPosition) == "table" then
+			wx, wy, wz = worldPosition[1], worldPosition[2], worldPosition[3]
+		end
 	end
 
 	local targetName = "none"
 	if traceType == "unit" and traceID then
-		local unitDefID = Spring.GetUnitDefID(traceID)
-		if unitDefID and UnitDefs[unitDefID] then
+		local unitDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(traceID)
+		if unitDefID and UnitDefs and UnitDefs[unitDefID] then
 			targetName = UnitDefs[unitDefID].name
 		end
 	elseif traceType == "feature" and traceID then
-		local featureDefID = Spring.GetFeatureDefID(traceID)
-		if featureDefID and FeatureDefs[featureDefID] then
+		local featureDefID = type(Spring.GetFeatureDefID) == "function" and Spring.GetFeatureDefID(traceID)
+		if featureDefID and FeatureDefs and FeatureDefs[featureDefID] then
 			targetName = FeatureDefs[featureDefID].name
 		end
 	end
@@ -102,8 +129,8 @@ local function CaptureClickSnapshot(x, y, button, eventType)
 	local selectedUnits = type(Spring.GetSelectedUnits) == "function" and Spring.GetSelectedUnits() or {}
 	local counts = {}
 	for _, uID in ipairs(selectedUnits) do
-		local uDefID = Spring.GetUnitDefID(uID)
-		if uDefID and UnitDefs[uDefID] then
+		local uDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(uID)
+		if uDefID and UnitDefs and UnitDefs[uDefID] then
 			local name = UnitDefs[uDefID].name
 			counts[name] = (counts[name] or 0) + 1
 		end
@@ -118,8 +145,11 @@ local function CaptureClickSnapshot(x, y, button, eventType)
 	end
 
 	-- Active command
-	local activeCmdID, activeCmdType, activeCmdName = Spring.GetActiveCommand()
-	local activeCmdStr = activeCmdName or (activeCmdID and tostring(activeCmdID)) or "none"
+	local activeCmdStr = "none"
+	if type(Spring.GetActiveCommand) == "function" then
+		local activeCmdID, activeCmdType, activeCmdName = Spring.GetActiveCommand()
+		activeCmdStr = activeCmdName or (activeCmdID and tostring(activeCmdID)) or "none"
+	end
 
 	-- Update lastClickSnapshot
 	lastClickSnapshot.button = button
@@ -137,8 +167,8 @@ local function CaptureClickSnapshot(x, y, button, eventType)
 	lastClickSnapshot.mexZ = nearestMexZ
 	lastClickSnapshot.activeCmd = activeCmdStr
 	lastClickSnapshot.selectedSummary = selectedSummary
-	lastClickSnapshot.frame = Spring.GetBehaviorsFrame and Spring.GetBehaviorsFrame() or Spring.GetGameFrame() or 0
-	lastClickSnapshot.time = Spring.GetGameSeconds()
+	lastClickSnapshot.frame = getFrame()
+	lastClickSnapshot.time = type(Spring.GetGameSeconds) == "function" and Spring.GetGameSeconds() or 0
 
 	-- Spring.Echo on click
 	local clickMsg = string.format(
@@ -157,25 +187,43 @@ local function CaptureClickSnapshot(x, y, button, eventType)
 	Spring.Echo(clickMsg)
 end
 
-function widget:Initialize()
+local function InitializeUnsafe()
 	Spring.Echo("[SmartXMouseAudit] Initialized Controller SmartX Mouse Audit Widget v" .. versionNumber)
 end
 
-function widget:Shutdown()
+function widget:Initialize()
+	safeCall("Initialize", InitializeUnsafe)
+end
+
+local function ShutdownUnsafe()
 	Spring.Echo("[SmartXMouseAudit] Shutdown Controller SmartX Mouse Audit Widget")
 end
 
-function widget:MousePress(x, y, button)
+function widget:Shutdown()
+	safeCall("Shutdown", ShutdownUnsafe)
+end
+
+local function MousePressUnsafe(x, y, button)
 	CaptureClickSnapshot(x, y, button, "press")
 	return false -- propagate click
 end
 
-function widget:MouseRelease(x, y, button)
+function widget:MousePress(x, y, button)
+	local result = safeCall("MousePress", MousePressUnsafe, x, y, button)
+	return (result ~= nil) and result or false
+end
+
+local function MouseReleaseUnsafe(x, y, button)
 	CaptureClickSnapshot(x, y, button, "release")
 	return false -- propagate click
 end
 
-function widget:UnitCommand(unitID, unitDefID, unitTeam, cmdID, cmdOpts, cmdParams, cmdTag)
+function widget:MouseRelease(x, y, button)
+	local result = safeCall("MouseRelease", MouseReleaseUnsafe, x, y, button)
+	return (result ~= nil) and result or false
+end
+
+local function UnitCommandUnsafe(unitID, unitDefID, unitTeam, cmdID, cmdOpts, cmdParams, cmdTag)
 	-- Filter only for selected units to audit the exact actions resulting from player context selection clicks
 	local isSelected = false
 	local selectedUnits = type(Spring.GetSelectedUnits) == "function" and Spring.GetSelectedUnits() or {}
@@ -191,14 +239,14 @@ function widget:UnitCommand(unitID, unitDefID, unitTeam, cmdID, cmdOpts, cmdPara
 	end
 
 	local unitName = "unknown"
-	if unitDefID and UnitDefs[unitDefID] then
+	if unitDefID and UnitDefs and UnitDefs[unitDefID] then
 		unitName = UnitDefs[unitDefID].name
 	end
 
 	local cmdName = "unknown"
-	if CMD[cmdID] then
+	if CMD and CMD[cmdID] then
 		cmdName = CMD[cmdID]
-	elseif cmdID < 0 and UnitDefs[-cmdID] then
+	elseif cmdID < 0 and UnitDefs and UnitDefs[-cmdID] then
 		cmdName = "Build " .. UnitDefs[-cmdID].name
 	end
 
@@ -226,7 +274,7 @@ function widget:UnitCommand(unitID, unitDefID, unitTeam, cmdID, cmdOpts, cmdPara
 		end
 	end
 
-	local currentFrame = Spring.GetBehaviorsFrame and Spring.GetBehaviorsFrame() or Spring.GetGameFrame() or 0
+	local currentFrame = getFrame()
 
 	-- Match linked click
 	local linkedClickStr = "none"
@@ -271,7 +319,11 @@ function widget:UnitCommand(unitID, unitDefID, unitTeam, cmdID, cmdOpts, cmdPara
 	lastObservedCommand.linkMatch = (linkedClickStr ~= "none")
 end
 
-function widget:DrawScreen()
+function widget:UnitCommand(...)
+	safeCall("UnitCommand", UnitCommandUnsafe, ...)
+end
+
+local function DrawScreenUnsafe()
 	local vsx, vsy = Spring.GetViewGeometry()
 	if not vsx or not vsy then return end
 
@@ -285,20 +337,22 @@ function widget:DrawScreen()
 	gl.Color(0.08, 0.08, 0.1, 0.85)
 	gl.Rect(x1, y1, x1 + w, y1 + h)
 
-	-- Sleek Blue Border
+	-- Sleek Blue Border (using gl.BeginEnd with GL.LINE_LOOP)
 	gl.LineWidth(2.0)
 	gl.Color(0.25, 0.75, 1.0, 0.7)
-	gl.Line(x1, y1, x1 + w, y1)
-	gl.Line(x1 + w, y1, x1 + w, y1 + h)
-	gl.Line(x1 + w, y1 + h, x1, y1 + h)
-	gl.Line(x1, y1 + h, x1, y1)
+	gl.BeginEnd(GL.LINE_LOOP, function()
+		gl.Vertex(x1, y1)
+		gl.Vertex(x1 + w, y1)
+		gl.Vertex(x1 + w, y1 + h)
+		gl.Vertex(x1, y1 + h)
+	end)
 
 	-- Fetch current hover under mouse cursor
 	local mx, my = Spring.GetMouseState()
 	local traceType, traceID = "none", "none"
 	local wx, wy, wz
 	local targetName = "none"
-	if mx and my then
+	if mx and my and type(Spring.TraceScreenRay) == "function" then
 		local tType, tID = Spring.TraceScreenRay(mx, my)
 		if tType then
 			traceType = tType
@@ -310,13 +364,13 @@ function widget:DrawScreen()
 		end
 
 		if traceType == "unit" and tID then
-			local unitDefID = Spring.GetUnitDefID(tID)
-			if unitDefID and UnitDefs[unitDefID] then
+			local unitDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(tID)
+			if unitDefID and UnitDefs and UnitDefs[unitDefID] then
 				targetName = UnitDefs[unitDefID].name
 			end
 		elseif traceType == "feature" and tID then
-			local featureDefID = Spring.GetFeatureDefID(tID)
-			if featureDefID and FeatureDefs[featureDefID] then
+			local featureDefID = type(Spring.GetFeatureDefID) == "function" and Spring.GetFeatureDefID(tID)
+			if featureDefID and FeatureDefs and FeatureDefs[featureDefID] then
 				targetName = FeatureDefs[featureDefID].name
 			end
 		end
@@ -350,8 +404,11 @@ function widget:DrawScreen()
 	local selCount = #selectedUnits
 
 	-- Active command
-	local activeCmdID, activeCmdType, activeCmdName = Spring.GetActiveCommand()
-	local activeCmdStr = activeCmdName or (activeCmdID and tostring(activeCmdID)) or "none"
+	local activeCmdStr = "none"
+	if type(Spring.GetActiveCommand) == "function" then
+		local activeCmdID, activeCmdType, activeCmdName = Spring.GetActiveCommand()
+		activeCmdStr = activeCmdName or (activeCmdID and tostring(activeCmdID)) or "none"
+	end
 
 	-- Formatting Overlay Text
 	gl.Color(1, 1, 1, 1)
@@ -420,14 +477,22 @@ function widget:DrawScreen()
 	gl.Text(lastCmdStr, textX, textY, fontSize, "o")
 	textY = textY - leading
 
-	-- Comparison Note
-	local compNote = "Comparison: waiting for click..."
-	if lastObservedCommand.cmdID then
-		if lastObservedCommand.linkMatch then
-			compNote = "\255\000\255\000Linked to click! Command validated.\255\255\255\255"
-		else
-			compNote = "\255\255\128\000Unlinked command observed.\255\255\255\255"
+	-- Error reporting in overlay / Comparison Note
+	if lastError then
+		gl.Text("\255\255\000\000Err: " .. string.sub(lastError, 1, 35) .. "\255\255\255\255", textX, textY, fontSize, "o")
+	else
+		local compNote = "Comparison: waiting for click..."
+		if lastObservedCommand.cmdID then
+			if lastObservedCommand.linkMatch then
+				compNote = "\255\000\255\000Linked to click! Command validated.\255\255\255\255"
+			else
+				compNote = "\255\255\128\000Unlinked command observed.\255\255\255\255"
+			end
 		end
+		gl.Text(compNote, textX, textY, fontSize, "o")
 	end
-	gl.Text(compNote, textX, textY, fontSize, "o")
+end
+
+function widget:DrawScreen()
+	safeCall("DrawScreen", DrawScreenUnsafe)
 end
