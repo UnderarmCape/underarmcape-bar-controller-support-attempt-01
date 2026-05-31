@@ -2835,20 +2835,28 @@ local function issueOrderToSelection(cmdID, params, cmdName, targetName, options
 
 	local useInsert = (options == nil or #options == 0) and ControllerCameraTestIsQueueFrontModifierActive()
 
+	local finalOptsTable = useInsert and {"alt", "shift"} or orderOptions
+	local queuePreserveFlag = false
+	for _, opt in ipairs(finalOptsTable) do
+		if opt == "shift" then
+			queuePreserveFlag = true
+		end
+	end
+
 	ControllerCameraTestCommandDebug.issuedCmdID = useInsert and tostring(CMD.INSERT or 140) or tostring(cmdID)
 	ControllerCameraTestCommandDebug.issuedParamsCount = useInsert and (paramsCount + 3) or paramsCount
-	ControllerCameraTestCommandDebug.lastOptions = useInsert and "alt" or ControllerCameraTestCommandOptionsSummary(orderOptions)
+	ControllerCameraTestCommandDebug.lastOptions = useInsert and "alt,shift" or ControllerCameraTestCommandOptionsSummary(orderOptions)
 
 	if ControllerCameraTestSettings.debugPanelVisible and ControllerCameraTestIsQueueFrontModifierActive() then
 		Spring.Echo(string.format(
-			"[ControllerQueueDebug] Path: issueOrderToSelection | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | Y_priority: %s",
+			"[ControllerQueueDebug] Path: issueOrderToSelection | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | queue_preserve: %s",
 			tostring(cmdID),
 			serializeTable(params),
 			tostring(ControllerCameraTestIsQueueFrontModifierActive()),
 			tostring(ControllerCameraTestIsQueueModifierActive()),
-			serializeTable(useInsert and {"alt"} or orderOptions),
+			serializeTable(finalOptsTable),
 			tostring(useInsert),
-			tostring(ControllerCameraTestIsQueueFrontModifierActive() and ControllerCameraTestIsQueueModifierActive())
+			tostring(queuePreserveFlag)
 		))
 	end
 
@@ -2868,7 +2876,7 @@ local function issueOrderToSelection(cmdID, params, cmdName, targetName, options
 			for i = 1, paramsCount do
 				insertParams[#insertParams + 1] = params[i]
 			end
-			orderOk, orderResult = pcall(Spring.GiveOrder, cmdInsert, insertParams, { "alt" })
+			orderOk, orderResult = pcall(Spring.GiveOrder, cmdInsert, insertParams, { "alt", "shift" })
 		else
 			orderOk, orderResult = pcall(Spring.GiveOrder, cmdID, params, orderOptions)
 		end
@@ -3033,18 +3041,18 @@ function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift, for
 		if #builders > 0 then
 			local cmdInsert = CMD.INSERT or 140
 			for _, unitID in ipairs(builders) do
-				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, -selectedMex, 0, buildCmd[2], buildCmd[3], buildCmd[4], buildCmd[5] }, { "alt" })
+				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, -selectedMex, 0, buildCmd[2], buildCmd[3], buildCmd[4], buildCmd[5] }, { "alt", "shift" })
 			end
 			if ControllerCameraTestSettings.debugPanelVisible then
 				Spring.Echo(string.format(
-					"[ControllerQueueDebug] Path: AttemptMexBuildSmartAction | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | Y_priority: %s",
+					"[ControllerQueueDebug] Path: AttemptMexBuildSmartAction | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | queue_preserve: %s",
 					tostring(-selectedMex),
 					serializeTable({ buildCmd[2], buildCmd[3], buildCmd[4], buildCmd[5] }),
 					tostring(ControllerCameraTestIsQueueFrontModifierActive()),
 					tostring(ControllerCameraTestIsQueueModifierActive()),
-					"alt",
+					serializeTable(useQueueFront and {"alt", "shift"} or {"shift"}),
 					tostring(useQueueFront),
-					tostring(ControllerCameraTestIsQueueFrontModifierActive() and ControllerCameraTestIsQueueModifierActive())
+					tostring(true)
 				))
 			end
 			lastIssuedCommand = "Mex Build Prepend (" .. tostring(-selectedMex) .. ")"
@@ -3107,14 +3115,14 @@ local function ControllerCameraTestIssueBuildOrders(builders, unitDefID, buildPo
 
 	if ControllerCameraTestSettings.debugPanelVisible and (useQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
 		Spring.Echo(string.format(
-			"[ControllerQueueDebug] Path: IssueBuildOrders | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | Y_priority: %s",
+			"[ControllerQueueDebug] Path: IssueBuildOrders | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | queue_preserve: %s",
 			tostring(-unitDefID),
 			serializeTable(buildPositions),
 			tostring(ControllerCameraTestIsQueueFrontModifierActive()),
 			tostring(ControllerCameraTestIsQueueModifierActive()),
-			"alt",
+			serializeTable(useQueueFront and {"alt", "shift"} or {"shift"}),
 			tostring(useQueueFront),
-			tostring(ControllerCameraTestIsQueueFrontModifierActive() and ControllerCameraTestIsQueueModifierActive())
+			tostring(true)
 		))
 	end
 
@@ -3123,7 +3131,7 @@ local function ControllerCameraTestIssueBuildOrders(builders, unitDefID, buildPo
 			local bp = buildPositions[i]
 			local bx, by, bz, bfacing = bp[1], bp[2], bp[3], bp[4] or 0
 			for _, unitID in ipairs(builders) do
-				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, -unitDefID, 0, bx, by, bz, bfacing }, { "alt" })
+				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, -unitDefID, 0, bx, by, bz, bfacing }, { "alt", "shift" })
 			end
 		end
 		return true
@@ -3637,14 +3645,14 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		local cmdInsert = CMD.INSERT or 140
 		if ControllerCameraTestSettings.debugPanelVisible and (isQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
 			Spring.Echo(string.format(
-				"[ControllerQueueDebug] Path: ConfirmDragCommandLine | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | Y_priority: %s",
+				"[ControllerQueueDebug] Path: ConfirmDragCommandLine | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | queue_preserve: %s",
 				tostring(cmdID),
 				serializeTable(points),
 				tostring(ControllerCameraTestIsQueueFrontModifierActive()),
 				tostring(ControllerCameraTestIsQueueModifierActive()),
-				"alt",
+				serializeTable(isQueueFront and {"alt", "shift"} or {"shift"}),
 				tostring(isQueueFront),
-				tostring(ControllerCameraTestIsQueueFrontModifierActive() and ControllerCameraTestIsQueueModifierActive())
+				tostring(true)
 			))
 		end
 
@@ -3652,7 +3660,7 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 			for i = #points, 1, -1 do
 				local pt = points[i]
 				local unitID = mobileUnits[i]
-				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, pt[1], pt[2], pt[3] }, { "alt" })
+				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, pt[1], pt[2], pt[3] }, { "alt", "shift" })
 			end
 		else
 			for i, pt in ipairs(points) do
@@ -3690,21 +3698,21 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 
 		if ControllerCameraTestSettings.debugPanelVisible and (isQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
 			Spring.Echo(string.format(
-				"[ControllerQueueDebug] Path: ConfirmDragCommandArea | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | Y_priority: %s",
+				"[ControllerQueueDebug] Path: ConfirmDragCommandArea | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | queue_preserve: %s",
 				tostring(cmdID),
 				serializeTable(params),
 				tostring(ControllerCameraTestIsQueueFrontModifierActive()),
 				tostring(ControllerCameraTestIsQueueModifierActive()),
-				"alt",
+				serializeTable(isQueueFront and {"alt", "shift"} or {"shift"}),
 				tostring(isQueueFront),
-				tostring(ControllerCameraTestIsQueueFrontModifierActive() and ControllerCameraTestIsQueueModifierActive())
+				tostring(true)
 			))
 		end
 
 		if isQueueFront then
 			local cmdInsert = CMD.INSERT or 140
 			for _, unitID in ipairs(selectedUnits) do
-				local ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, startX, startY, startZ, effectiveRadius }, { "alt" })
+				local ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, startX, startY, startZ, effectiveRadius }, { "alt", "shift" })
 				if ok and result ~= false then
 					issued = issued + 1
 				else
@@ -4427,34 +4435,39 @@ local function attemptContextCommand()
 
 	if isGuardTarget then
 		local selectedUnits = type(Spring.GetSelectedUnits) == "function" and Spring.GetSelectedUnits() or {}
-		local selectedTypes = {}
-		for _, uID in ipairs(selectedUnits) do
-			local uDefID = Spring.GetUnitDefID(uID)
-			if uDefID then
-				local uDef = UnitDefs[uDefID]
-				if uDef then
-					selectedTypes[uDef.name] = (selectedTypes[uDef.name] or 0) + 1
+
+		if ControllerCameraTestSettings.debugPanelVisible then
+			local selectedTypes = {}
+			for _, uID in ipairs(selectedUnits) do
+				local uDefID = Spring.GetUnitDefID(uID)
+				if uDefID then
+					local uDef = UnitDefs[uDefID]
+					if uDef then
+						selectedTypes[uDef.name] = (selectedTypes[uDef.name] or 0) + 1
+					end
 				end
 			end
-		end
-		local typesStr = ""
-		for uName, count in pairs(selectedTypes) do
-			if typesStr ~= "" then typesStr = typesStr .. ", " end
-			typesStr = typesStr .. uName .. " (" .. tostring(count) .. ")"
-		end
+			local typesStr = ""
+			for uName, count in pairs(selectedTypes) do
+				if typesStr ~= "" then typesStr = typesStr .. ", " end
+				typesStr = typesStr .. uName .. " (" .. tostring(count) .. ")"
+			end
 
-		Spring.Echo(string.format(
-			"[SmartXGuard] TargetType: %s | TargetID: %s | SelectedCount: %d | SelectedTypes: {%s} | IntendedAction: %s | FallbackCmdID: %d | Result: blocked Move fallback",
-			tostring(guardReason),
-			tostring(guardID or "none"),
-			#selectedUnits,
-			typesStr,
-			"Move fallback to " .. tostring(targetString),
-			cmdID
-		))
+			Spring.Echo(string.format(
+				"[SmartXGuard] TargetType: %s | TargetID: %s | SelectedCount: %d | SelectedTypes: {%s} | IntendedAction: %s | FallbackCmdID: %d | Result: blocked Move fallback",
+				tostring(guardReason),
+				tostring(guardID or "none"),
+				#selectedUnits,
+				typesStr,
+				"Move fallback to " .. tostring(targetString),
+				cmdID
+			))
+		end
 
 		ControllerCameraTestCommandDebug.lastResult = "SmartXGuard blocked Move fallback over " .. tostring(guardReason)
-		latchSelectionDebugMessage("Smart X: blocked Move fallback over " .. tostring(guardReason))
+		if ControllerCameraTestSettings.debugPanelVisible then
+			latchSelectionDebugMessage("Smart X: blocked Move fallback over " .. tostring(guardReason))
+		end
 		return
 	end
 
@@ -4717,22 +4730,30 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 	local useInsert = (options == nil or #options == 0) and ControllerCameraTestIsQueueFrontModifierActive()
 	local finalOpts = type(options) == "table" and options or ControllerCameraTestGetCommandOptions()
 
+	local finalOptsTable = useInsert and {"alt", "shift"} or finalOpts
+	local queuePreserveFlag = false
+	for _, opt in ipairs(finalOptsTable) do
+		if opt == "shift" then
+			queuePreserveFlag = true
+		end
+	end
+
 	if ControllerCameraTestSettings.debugPanelVisible and ControllerCameraTestIsQueueFrontModifierActive() then
 		Spring.Echo(string.format(
-			"[ControllerQueueDebug] Path: IssueOrderToSelectedUnits | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | Y_priority: %s",
+			"[ControllerQueueDebug] Path: IssueOrderToSelectedUnits | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | queue_preserve: %s",
 			tostring(cmdID),
 			serializeTable(params),
 			tostring(ControllerCameraTestIsQueueFrontModifierActive()),
 			tostring(ControllerCameraTestIsQueueModifierActive()),
-			serializeTable(useInsert and {"alt"} or finalOpts),
+			serializeTable(finalOptsTable),
 			tostring(useInsert),
-			tostring(ControllerCameraTestIsQueueFrontModifierActive() and ControllerCameraTestIsQueueModifierActive())
+			tostring(queuePreserveFlag)
 		))
 	end
 
 	ControllerCameraTestCommandDebug.issuedCmdID = useInsert and tostring(CMD.INSERT or 140) or tostring(cmdID)
 	ControllerCameraTestCommandDebug.issuedParamsCount = useInsert and (#params + 3) or #params
-	ControllerCameraTestCommandDebug.lastOptions = useInsert and "alt" or ControllerCameraTestCommandOptionsSummary(finalOpts)
+	ControllerCameraTestCommandDebug.lastOptions = useInsert and "alt,shift" or ControllerCameraTestCommandOptionsSummary(finalOpts)
 	if type(cmdID) ~= "number" then
 		ControllerCameraTestCommandDebug.lastResult = "command unavailable"
 		latchSelectionDebugMessage(tostring(cmdName) .. " unavailable")
@@ -4758,7 +4779,7 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 			for i = 1, #params do
 				insertParams[#insertParams + 1] = params[i]
 			end
-			ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, insertParams, { "alt" })
+			ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, insertParams, { "alt", "shift" })
 		else
 			ok, result = pcall(spGiveOrderToUnit, unitID, cmdID, params, finalOpts)
 		end
@@ -8510,6 +8531,7 @@ function ControllerCameraTestHandleNormalAInput(dt)
 		-- Prepare live brush selection state
 		area.brushedUnits = {}
 		area.initialSelection = {}
+		area.lastBrushedCount = 0
 		area.filterRadialOpen = false
 		area.highlightedFilter = nil
 		area.currentFilter = area.currentFilter or "All Mobile"
@@ -8559,8 +8581,6 @@ function ControllerCameraTestHandleNormalAInput(dt)
 								area.highlightedFilter = "Air"
 							end
 						end
-					else
-						area.highlightedFilter = nil
 					end
 				end
 
@@ -8575,7 +8595,7 @@ function ControllerCameraTestHandleNormalAInput(dt)
 			end
 
 			-- Perform live selection brush scanning and touch-accumulation
-			if reticleHasWorldTarget and reticleWorldX and reticleWorldZ and type(spGetVisibleAlliedUnits) == "function" then
+			if reticleHasWorldTarget and reticleWorldX and reticleWorldZ and type(ControllerCameraTestGetVisibleAlliedUnits) == "function" then
 				local radiusSq = area.radius * area.radius
 				for _, unitID in ipairs(ControllerCameraTestGetVisibleAlliedUnits()) do
 					local x, _, z = spGetUnitPosition(unitID)
@@ -8611,20 +8631,28 @@ function ControllerCameraTestHandleNormalAInput(dt)
 				end
 			end
 
-			-- Apply the accumulated brush selection immediately
-			local finalSelection = {}
-			if area.initialSelection then
-				for uID in pairs(area.initialSelection) do
-					finalSelection[#finalSelection + 1] = uID
-				end
+			-- Apply the accumulated brush selection only when count changes
+			local brushedCount = 0
+			for _ in pairs(area.brushedUnits) do
+				brushedCount = brushedCount + 1
 			end
-			for uID in pairs(area.brushedUnits) do
-				if not area.initialSelection or not area.initialSelection[uID] then
-					finalSelection[#finalSelection + 1] = uID
+
+			if brushedCount > 0 and brushedCount ~= (area.lastBrushedCount or 0) then
+				area.lastBrushedCount = brushedCount
+				local finalSelection = {}
+				if area.initialSelection then
+					for uID in pairs(area.initialSelection) do
+						finalSelection[#finalSelection + 1] = uID
+					end
 				end
-			end
-			if #finalSelection > 0 then
-				pcall(spSelectUnitArray, finalSelection, false)
+				for uID in pairs(area.brushedUnits) do
+					if not area.initialSelection or not area.initialSelection[uID] then
+						finalSelection[#finalSelection + 1] = uID
+					end
+				end
+				if #finalSelection > 0 then
+					pcall(spSelectUnitArray, finalSelection, false)
+				end
 			end
 		end
 	end
@@ -9401,14 +9429,22 @@ end
 function ControllerCameraTestUpdateSmoothedCameraInputs(dt, menuOpen, areaActive)
 	local smooth = ControllerCameraTestInputSmoothing
 	local dgun = ControllerCameraTestDgunMode
+	local area = ControllerCameraTestAreaSelect
+	local filterRadialOpen = area and area.active and area.filterRadialOpen
+
 	if dgun and dgun.active then
 		smooth.panX, smooth.panY, smooth.rotateX, smooth.pitchY, smooth.zoomY = 0, 0, 0, 0, 0
 	elseif menuOpen then
 		smooth.panX, smooth.panY, smooth.rotateX, smooth.pitchY, smooth.zoomY = 0, 0, 0, 0, 0
 	else
 		local curve = ControllerCameraTestSettings.stickCurve or 1.175
-		smooth.panX = ControllerCameraTestSmoothAxis(smooth.panX, ControllerCameraTestApplyInputCurve(normalizedLeftX, curve), dt)
-		smooth.panY = ControllerCameraTestSmoothAxis(smooth.panY, ControllerCameraTestApplyInputCurve(normalizedLeftY, curve), dt)
+		if filterRadialOpen then
+			smooth.panX = 0
+			smooth.panY = 0
+		else
+			smooth.panX = ControllerCameraTestSmoothAxis(smooth.panX, ControllerCameraTestApplyInputCurve(normalizedLeftX, curve), dt)
+			smooth.panY = ControllerCameraTestSmoothAxis(smooth.panY, ControllerCameraTestApplyInputCurve(normalizedLeftY, curve), dt)
+		end
 		smooth.rotateX = ControllerCameraTestSmoothAxis(smooth.rotateX, ControllerCameraTestApplyInputCurve(normalizedRightX, curve), dt)
 		local yInput = ControllerCameraTestApplyInputCurve(-normalizedRightY, curve)
 		smooth.pitchY = ControllerCameraTestSmoothAxis(smooth.pitchY, (lbCameraModifierActive and not areaActive) and yInput or 0, dt)
@@ -11544,22 +11580,19 @@ function widget:DrawWorld()
 	end
 
 	if ControllerCameraTestAreaSelect.active and reticleHasWorldTarget then
-		-- Pronounced center reticle
+		local R = ControllerCameraTestAreaSelect.radius
+		-- Stroke
 		gl.LineWidth(2.5)
-		gl.Color(0.25, 0.75, 1.0, 0.8)
-		gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, 24, 24)
+		gl.Color(0.25, 0.75, 1.0, 0.75)
+		gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, R, 48)
 
-		-- Low-opacity concentric filled rings
-		gl.LineWidth(1.0)
-		gl.Color(0.25, 0.75, 1.0, 0.12)
-		for r = 2, 22, 4 do
-			gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, r, 16)
+		-- Fill (concentric rings for smooth look, 22% opacity)
+		gl.LineWidth(2.0)
+		gl.Color(0.25, 0.75, 1.0, 0.22)
+		local step = R / 25
+		for r = step, R - step/2, step do
+			gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, r, 32)
 		end
-
-		-- Larger outer selection ring
-		gl.LineWidth(2)
-		gl.Color(0.25, 0.75, 1.0, 0.55)
-		gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, ControllerCameraTestAreaSelect.radius, 48)
 	end
 
 	if ControllerCameraTestBuildPlacement.active and reticleHasWorldTarget then
