@@ -27,6 +27,16 @@ local spTraceScreenRay = Spring.TraceScreenRay
 local spSelectUnitArray = Spring.SelectUnitArray
 local spGetSelectedUnits = Spring.GetSelectedUnits
 local spGiveOrderToUnit = Spring.GiveOrderToUnit
+
+local function serializeTable(t)
+	if type(t) ~= "table" then return tostring(t) end
+	local s = {}
+	for i = 1, #t do
+		s[#s + 1] = tostring(t[i])
+	end
+	return "{" .. table.concat(s, ", ") .. "}"
+end
+
 local lastIssuedCommand = "none"
 --------------------------------------------------------------------------------
 -- SECTION: State tables and settings defaults
@@ -1889,7 +1899,7 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "smartAction", label = "Smart Action", default = "X", group = "Core" },
 		{ action = "buildRadial", label = "Build / Factory Radial", default = "Y", group = "Core" },
 		{ action = "commandLayer", label = "Command Layer", default = "RT", group = "Modifiers" },
-		{ action = "insertNextCommandModifier", label = "Do Next / Insert Command Modifier", default = "RB", group = "Queue" },
+		{ action = "insertNextCommandModifier", label = "Do Next / Insert Command Modifier", default = "LB", group = "Queue" },
 		{ action = "appendQueueModifier", label = "Append Queue / Shift Modifier", default = "RT", group = "Queue" },
 		{ action = "controlGroupModifier", label = "Group Layer Modifier", default = "start", group = "Modifiers" },
 		{ action = "pitchModifier", label = "Pitch / Idle Type Modifier", default = "LB", group = "Modifiers" },
@@ -2877,7 +2887,7 @@ function ControllerCameraTestResetSmartCommandDebug()
 	ControllerCameraTestUpdateSmartAssistDebug()
 end
 
-function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift)
+function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift, forceQueueFront)
 	ControllerCameraTestResetMexCommandDebug()
 
 	local builder = WG and WG.resource_spot_builder
@@ -2977,6 +2987,46 @@ function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift)
 	ControllerCameraTestCommandDebug.issuedParamsCount = #params
 	ControllerCameraTestCommandDebug.lastOptions = forceShift and "shift" or "none"
 
+	local useQueueFront = forceQueueFront or ControllerCameraTestIsQueueFrontModifierActive()
+	if useQueueFront then
+		-- Find which selected units can actually build this mex
+		local builders = {}
+		for _, unitID in ipairs(selectedUnits) do
+			if mexConstructors[unitID] then
+				for _, buildable in pairs(mexConstructors[unitID].building) do
+					if -buildable == selectedMex then
+						builders[#builders + 1] = unitID
+						break
+					end
+				end
+			end
+		end
+
+		if #builders > 0 then
+			local cmdInsert = CMD.INSERT or 140
+			for _, unitID in ipairs(builders) do
+				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, -selectedMex, 0, buildCmd[2], buildCmd[3], buildCmd[4], buildCmd[5] }, { "alt" })
+			end
+			if ControllerCameraTestSettings.debugPanelVisible then
+				Spring.Echo(string.format(
+					"[ControllerQueueDebug] Path: AttemptMexBuildSmartAction | LB_insert: %s | RT_append: %s | cmdID: %s | params: %s | options: %s | applied: %s",
+					tostring(ControllerCameraTestIsQueueFrontModifierActive()),
+					tostring(ControllerCameraTestIsQueueModifierActive()),
+					tostring(-selectedMex),
+					serializeTable({ buildCmd[2], buildCmd[3], buildCmd[4], buildCmd[5] }),
+					"alt",
+					tostring(useQueueFront)
+				))
+			end
+			lastIssuedCommand = "Mex Build Prepend (" .. tostring(-selectedMex) .. ")"
+			ControllerCameraTestCommandDebug.mexApplyPreviewPath = "custom_insert"
+			ControllerCameraTestCommandDebug.lastResult = "mex via custom insert"
+			ControllerCameraTestCommandDebug.mexActionResult = "issued via custom insert"
+			latchSelectionDebugMessage("X mex build prepend: " .. tostring(-selectedMex))
+			return true
+		end
+	end
+
 	if type(builder.ApplyPreviewCmds) == "function" then
 		local _, _, _, shift = Spring.GetModKeyState()
 		shift = forceShift or shift
@@ -3025,6 +3075,18 @@ local function ControllerCameraTestIssueBuildOrders(builders, unitDefID, buildPo
 	local firstOpts = useQueue and { "shift" } or {}
 	ControllerCameraTestCommandDebug.lastOptions = useQueueFront and "queue-front" or ControllerCameraTestCommandOptionsSummary(firstOpts)
 	local restOpts = { "shift" }
+
+	if ControllerCameraTestSettings.debugPanelVisible and (useQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
+		Spring.Echo(string.format(
+			"[ControllerQueueDebug] Path: IssueBuildOrders | LB_insert: %s | RT_append: %s | cmdID: %s | params: %s | options: %s | applied: %s",
+			tostring(ControllerCameraTestIsQueueFrontModifierActive()),
+			tostring(ControllerCameraTestIsQueueModifierActive()),
+			tostring(-unitDefID),
+			serializeTable(buildPositions),
+			"alt",
+			tostring(useQueueFront)
+		))
+	end
 
 	if useQueueFront then
 		for i = #buildPositions, 1, -1 do
@@ -3543,6 +3605,18 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		end
 
 		local cmdInsert = CMD.INSERT or 140
+		if ControllerCameraTestSettings.debugPanelVisible and (isQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
+			Spring.Echo(string.format(
+				"[ControllerQueueDebug] Path: ConfirmDragCommandLine | LB_insert: %s | RT_append: %s | cmdID: %s | params: %s | options: %s | applied: %s",
+				tostring(ControllerCameraTestIsQueueFrontModifierActive()),
+				tostring(ControllerCameraTestIsQueueModifierActive()),
+				tostring(cmdID),
+				serializeTable(points),
+				"alt",
+				tostring(isQueueFront)
+			))
+		end
+
 		if isQueueFront then
 			for i = #points, 1, -1 do
 				local pt = points[i]
@@ -3582,6 +3656,18 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		local lastError = nil
 		ControllerCameraTestCommandDebug.issuedCmdID = isQueueFront and tostring(CMD.INSERT or 140) or tostring(cmdID)
 		ControllerCameraTestCommandDebug.issuedParamsCount = isQueueFront and 7 or #params
+
+		if ControllerCameraTestSettings.debugPanelVisible and (isQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
+			Spring.Echo(string.format(
+				"[ControllerQueueDebug] Path: ConfirmDragCommandArea | LB_insert: %s | RT_append: %s | cmdID: %s | params: %s | options: %s | applied: %s",
+				tostring(ControllerCameraTestIsQueueFrontModifierActive()),
+				tostring(ControllerCameraTestIsQueueModifierActive()),
+				tostring(cmdID),
+				serializeTable(params),
+				"alt",
+				tostring(isQueueFront)
+			))
+		end
 
 		if isQueueFront then
 			local cmdInsert = CMD.INSERT or 140
@@ -4221,7 +4307,7 @@ local function attemptContextCommand()
 		params = { reticleWorldX, reticleWorldY, reticleWorldZ, facing }
 		targetString = "build pos"
 	elseif cmdID == 10 and reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ
-		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ, ControllerCameraTestIsQueueModifierActive())
+		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ, ControllerCameraTestIsQueueModifierActive(), ControllerCameraTestIsQueueFrontModifierActive())
 	then
 		ControllerCameraTestCommandDebug.smartChosenAction = "mex"
 		ControllerCameraTestCommandDebug.smartActionSource = "mex snap"
@@ -4527,6 +4613,18 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 
 	local useInsert = options == nil and ControllerCameraTestIsQueueFrontModifierActive()
 	local finalOpts = type(options) == "table" and options or ControllerCameraTestGetCommandOptions()
+
+	if ControllerCameraTestSettings.debugPanelVisible and ControllerCameraTestIsQueueFrontModifierActive() then
+		Spring.Echo(string.format(
+			"[ControllerQueueDebug] Path: IssueOrderToSelectedUnits | LB_insert: %s | RT_append: %s | cmdID: %s | params: %s | options: %s | applied: %s",
+			tostring(ControllerCameraTestIsQueueFrontModifierActive()),
+			tostring(ControllerCameraTestIsQueueModifierActive()),
+			tostring(cmdID),
+			serializeTable(params),
+			serializeTable(finalOpts),
+			tostring(useInsert)
+		))
+	end
 
 	ControllerCameraTestCommandDebug.issuedCmdID = useInsert and tostring(CMD.INSERT or 140) or tostring(cmdID)
 	ControllerCameraTestCommandDebug.issuedParamsCount = useInsert and (#params + 3) or #params
@@ -7526,6 +7624,7 @@ end
 function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	local menu = ControllerCameraTestBuildMenu
 	local queueActive = ControllerCameraTestIsQueueModifierActive()
+	local useQueueFront = (ControllerCameraTestBuildPlacement.active and ControllerCameraTestBuildPlacement.queueFrontActive) or ControllerCameraTestIsQueueFrontModifierActive()
 	local orderOptions = ControllerCameraTestGetCommandOptions()
 	ControllerCameraTestBuildPlacement.queueActive = queueActive
 	ControllerCameraTestCommandDebug.lastOptions = ControllerCameraTestCommandOptionsSummary(orderOptions)
@@ -7600,7 +7699,7 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	end
 
 	if ControllerCameraTestIsMexBuildCommand(option.cmdID)
-		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ, queueActive)
+		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ, queueActive, useQueueFront)
 	then
 		menu.placementResult = "mex smart action"
 		menu.placementParamsCount = 4
@@ -7639,6 +7738,18 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 
 	local useQueueFront = ControllerCameraTestBuildPlacement.active and ControllerCameraTestBuildPlacement.queueFrontActive
 	local cmdInsert = CMD.INSERT or 140
+
+	if ControllerCameraTestSettings.debugPanelVisible and (useQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
+		Spring.Echo(string.format(
+			"[ControllerQueueDebug] Path: ConfirmBuildPlacement | LB_insert: %s | RT_append: %s | cmdID: %s | params: %s | options: %s | applied: %s",
+			tostring(ControllerCameraTestIsQueueFrontModifierActive()),
+			tostring(ControllerCameraTestIsQueueModifierActive()),
+			tostring(option.cmdID),
+			serializeTable(params),
+			"alt",
+			tostring(useQueueFront)
+		))
+	end
 
 	for _, unitID in ipairs(selectedUnits) do
 		local orderOk, orderResult
