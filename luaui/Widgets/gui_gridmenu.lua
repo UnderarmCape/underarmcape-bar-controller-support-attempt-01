@@ -124,6 +124,8 @@ local startDefID
 
 -- Configurable values
 local stickToBottom = false
+local controllerCompactEnabled = false
+local controllerCompactScale = 1.0
 local alwaysReturn = false
 local autoSelectFirst = true
 local alwaysShow = false
@@ -1429,6 +1431,18 @@ function widget:Initialize()
 	WG["buildmenu"].getSize = function()
 		return backgroundRect.y, backgroundRect.yEnd
 	end
+	WG["buildmenu"].setControllerCompactScale = function(enabled, scale)
+		local clampedScale = math.max(0.50, math.min(1.00, scale or 1.0))
+		local boolEnabled = not not enabled
+		if boolEnabled ~= controllerCompactEnabled or clampedScale ~= controllerCompactScale then
+			controllerCompactEnabled = boolEnabled
+			controllerCompactScale = clampedScale
+			widget:ViewResize()
+		end
+	end
+	WG["buildmenu"].getControllerCompactScale = function()
+		return controllerCompactEnabled, controllerCompactScale
+	end
 	WG["buildmenu"].reloadBindings = function()
 		reloadBindings()
 		refreshCommands()
@@ -1563,6 +1577,9 @@ function widget:ViewResize()
 	UiElement = WG.FlowUI.Draw.Element
 	UiButton = WG.FlowUI.Draw.Button
 	categoryFontSize = 0.013 * ui_scale * vsy
+	if not stickToBottom and controllerCompactEnabled and controllerCompactScale and controllerCompactScale < 1.0 then
+		categoryFontSize = categoryFontSize * controllerCompactScale
+	end
 	hotkeyFontSize = categoryFontSize + 5
 	pageFontSize = categoryFontSize
 	categoryButtonHeight = math_floor(2.3 * categoryFontSize * ui_scale)
@@ -1637,6 +1654,10 @@ function widget:ViewResize()
 		local width = 0.2125 -- hardcoded width to match bottom element
 		width = width / (vsx / vsy) * 1.78 -- make smaller for ultrawide screens
 		width = width * ui_scale
+
+		if controllerCompactEnabled and controllerCompactScale and controllerCompactScale < 1.0 then
+			width = width * controllerCompactScale
+		end
 
 		-- 0.14 is the space required to put this above the bottom-left UI element
 		local posYEnd = math_floor(0.14 * ui_scale * vsy) + widgetSpaceMargin
