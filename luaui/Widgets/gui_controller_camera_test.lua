@@ -160,6 +160,9 @@ ControllerCameraTestDragCommand = ControllerCameraTestDragCommand or {
 	singleUnitLastIssueTime = 0,
 	singleUnitPathResult = "none",
 	singleUnitWaypointCount = 0,
+	queueFrontInsertActive = false,
+	queueFrontInsertPos = 0,
+	queueFrontInsertResult = "none",
 }
 
 -- Table pool for build drag preview cells to avoid per-frame allocations
@@ -3201,6 +3204,36 @@ end
 --------------------------------------------------------------------------------
 -- SECTION: Drag/path commands
 --------------------------------------------------------------------------------
+function ControllerCameraTestUpdateQueueFrontDragInsertState()
+	local drag = ControllerCameraTestDragCommand
+	if not ControllerCameraTestIsQueueFrontModifierActive() then
+		if drag.queueFrontInsertActive then
+			drag.queueFrontInsertResult = "reset: insert modifier released"
+		end
+		drag.queueFrontInsertActive = false
+		drag.queueFrontInsertPos = 0
+		return false
+	end
+
+	if not drag.queueFrontInsertActive then
+		drag.queueFrontInsertActive = true
+		drag.queueFrontInsertPos = 0
+		drag.queueFrontInsertResult = "started at pos 0"
+	end
+	return true
+end
+
+function ControllerCameraTestNextQueueFrontDragInsertPos()
+	if not ControllerCameraTestUpdateQueueFrontDragInsertState() then
+		return nil
+	end
+	local drag = ControllerCameraTestDragCommand
+	local insertPos = tonumber(drag.queueFrontInsertPos) or 0
+	drag.queueFrontInsertPos = insertPos + 1
+	drag.queueFrontInsertResult = "used pos " .. tostring(insertPos)
+	return insertPos
+end
+
 function ControllerCameraTestIssueSingleUnitPathPoint(isFirst)
 	local drag = ControllerCameraTestDragCommand
 	if not drag.singleUnitPathActive or not drag.singleUnitPathUnitID
@@ -3224,11 +3257,29 @@ function ControllerCameraTestIssueSingleUnitPathPoint(isFirst)
 		return false
 	end
 
+	local queueFrontActive = ControllerCameraTestIsQueueFrontModifierActive()
 	local options = {}
-	if not isFirst or ControllerCameraTestIsQueueModifierActive() then
-		options = { "shift" }
+	local ok, result
+	if queueFrontActive then
+		if type(CMD.INSERT) ~= "number" then
+			drag.singleUnitPathResult = "INSERT unavailable"
+			return false
+		end
+		local insertPos = ControllerCameraTestNextQueueFrontDragInsertPos() or 0
+		ok, result = pcall(spGiveOrderToUnit, drag.singleUnitPathUnitID, CMD.INSERT, { insertPos, CMD.MOVE, 0, reticleWorldX, reticleWorldY, reticleWorldZ }, { "alt" })
+		options = { "alt" }
+		ControllerCameraTestCommandDebug.issuedCmdID = tostring(CMD.INSERT)
+		ControllerCameraTestCommandDebug.issuedParamsCount = 6
+		ControllerCameraTestCommandDebug.lastOptions = "alt (INSERT path pos " .. tostring(insertPos) .. ")"
+	else
+		if not isFirst or ControllerCameraTestIsQueueModifierActive() then
+			options = { "shift" }
+		end
+		ok, result = pcall(spGiveOrderToUnit, drag.singleUnitPathUnitID, CMD.MOVE, { reticleWorldX, reticleWorldY, reticleWorldZ }, options)
+		ControllerCameraTestCommandDebug.issuedCmdID = tostring(CMD.MOVE)
+		ControllerCameraTestCommandDebug.issuedParamsCount = 3
+		ControllerCameraTestCommandDebug.lastOptions = ControllerCameraTestCommandOptionsSummary(options)
 	end
-	local ok, result = pcall(spGiveOrderToUnit, drag.singleUnitPathUnitID, CMD.MOVE, { reticleWorldX, reticleWorldY, reticleWorldZ }, options)
 	if not ok or result == false then
 		drag.singleUnitPathResult = "waypoint rejected"
 		return false
@@ -3240,9 +3291,6 @@ function ControllerCameraTestIssueSingleUnitPathPoint(isFirst)
 	drag.singleUnitLastIssueTime = debugEventTime
 	drag.singleUnitWaypointCount = #drag.singleUnitPathPoints
 	drag.singleUnitPathResult = "recording " .. tostring(drag.singleUnitWaypointCount) .. " waypoints"
-	ControllerCameraTestCommandDebug.issuedCmdID = tostring(CMD.MOVE)
-	ControllerCameraTestCommandDebug.issuedParamsCount = 3
-	ControllerCameraTestCommandDebug.lastOptions = ControllerCameraTestCommandOptionsSummary(options)
 	ControllerCameraTestCommandDebug.lastResult = "single path waypoint accepted"
 	return true
 end
@@ -3656,16 +3704,21 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		end
 
 		local cmdInsert = CMD.INSERT
+		local lineInsertPos = nil
+		if isQueueFront then
+			lineInsertPos = ControllerCameraTestNextQueueFrontDragInsertPos() or 0
+		end
 		if ControllerCameraTestSettings.debugPanelVisible and (isQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
 			Spring.Echo(string.format(
-				"[ControllerQueueDebug] Path: ConfirmDragCommandLine | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | queue_preserve: %s",
+				"[ControllerQueueDebug] Path: ConfirmDragCommandLine | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | insert_pos: %s | queue_preserve: %s",
 				tostring(cmdID),
 				serializeTable(points),
 				tostring(ControllerCameraTestIsQueueFrontModifierActive()),
 				tostring(ControllerCameraTestIsQueueModifierActive()),
 				serializeTable(isQueueFront and {"alt"} or {"shift"}),
 				tostring(isQueueFront),
-				"true (INSERT at pos 0 preserves queue)"
+				tostring(lineInsertPos or "none"),
+				"true (INSERT position advances while modifier is held)"
 			))
 		end
 
@@ -3674,7 +3727,7 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 				local pt = points[i]
 				local unitID = mobileUnits[i]
 				-- Vanilla INSERT: {pos, cmdID, encodedOpts, ...params}, outer {"alt"} only
-				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, pt[1], pt[2], pt[3] }, { "alt" })
+				pcall(spGiveOrderToUnit, unitID, cmdInsert, { lineInsertPos or 0, cmdID, 0, pt[1], pt[2], pt[3] }, { "alt" })
 			end
 		else
 			for i, pt in ipairs(points) do
@@ -9528,6 +9581,7 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 
 	ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
+	ControllerCameraTestUpdateQueueFrontDragInsertState()
 	if ControllerCameraTestIsGameplayInputBlocked() then
 		updateReticleWorldTarget()
 		if controllerMode and reticleVisible and type(spWarpMouse) == "function" then spWarpMouse(screenCenterX, screenCenterY) end
@@ -11665,6 +11719,8 @@ function widget:DrawWorld()
 	-- Drag command previews
 	local drag = ControllerCameraTestDragCommand
 	if drag and drag.active and drag.startX
+		and drag.mode ~= "moveLine"
+		and drag.mode ~= "singleMovePath"
 		and not (drag.nativeRouteUsed and drag.nativePreviewResult == "native preview active"
 			and string.sub(tostring(drag.mode), 1, 5) == "build")
 	then
