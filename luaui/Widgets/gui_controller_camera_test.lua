@@ -1846,6 +1846,34 @@ local function attemptReticleSelection()
 	end
 
 	local unitID = tonumber(targetID)
+
+	-- RT + A: accumulate this unit into the existing selection (individual multi-select)
+	-- RT alone = append modifier (ControllerCameraTestIsQueueModifierActive)
+	-- This lets the user pick units one-by-one while holding RT
+	if ControllerCameraTestIsQueueModifierActive() then
+		local existing = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+		local merged = {}
+		local seen = {}
+		for _, id in ipairs(existing) do
+			merged[#merged + 1] = id
+			seen[id] = true
+		end
+		if not seen[unitID] then
+			merged[#merged + 1] = unitID
+		end
+		local selectOk = pcall(spSelectUnitArray, merged, false)
+		if not selectOk then
+			lastSelectionResult = "unavailable"
+			latchSelectionDebugMessage("RT+A select failed")
+			return
+		end
+		lastReticleSelectedUnitID = tostring(unitID)
+		lastSelectionResult = "RT+A merged"
+		latchSelectionDebugMessage("RT+A added unit " .. tostring(unitID) .. " (" .. tostring(#merged) .. " total)")
+		return
+	end
+
+	-- Normal A (no RT): replace selection
 	local selectOk = pcall(spSelectUnitArray, { unitID }, false)
 	if not selectOk then
 		lastSelectionResult = "unavailable"
@@ -2812,7 +2840,10 @@ local function issueOrderToSelection(cmdID, params, cmdName, targetName, options
 
 	local useInsert = (options == nil or #options == 0) and ControllerCameraTestIsQueueFrontModifierActive()
 
-	local finalOptsTable = useInsert and {"alt", "shift"} or orderOptions
+	-- INSERT outer options: vanilla cmd_commandinsert uses {"alt"} only.
+	-- Do NOT use {"alt","shift"} - "shift" would append the INSERT cmd itself
+	-- to the queue instead of executing it immediately at position 0.
+	local finalOptsTable = useInsert and {"alt"} or orderOptions
 	local queuePreserveFlag = false
 	for _, opt in ipairs(finalOptsTable) do
 		if opt == "shift" then
@@ -2820,9 +2851,9 @@ local function issueOrderToSelection(cmdID, params, cmdName, targetName, options
 		end
 	end
 
-	ControllerCameraTestCommandDebug.issuedCmdID = useInsert and tostring(CMD.INSERT or 140) or tostring(cmdID)
+	ControllerCameraTestCommandDebug.issuedCmdID = useInsert and tostring(CMD.INSERT) or tostring(cmdID)
 	ControllerCameraTestCommandDebug.issuedParamsCount = useInsert and (paramsCount + 3) or paramsCount
-	ControllerCameraTestCommandDebug.lastOptions = useInsert and "alt,shift" or ControllerCameraTestCommandOptionsSummary(orderOptions)
+	ControllerCameraTestCommandDebug.lastOptions = useInsert and "alt (INSERT front)" or ControllerCameraTestCommandOptionsSummary(orderOptions)
 
 	if ControllerCameraTestSettings.debugPanelVisible and ControllerCameraTestIsQueueFrontModifierActive() then
 		Spring.Echo(string.format(
@@ -2833,7 +2864,7 @@ local function issueOrderToSelection(cmdID, params, cmdName, targetName, options
 			tostring(ControllerCameraTestIsQueueModifierActive()),
 			serializeTable(finalOptsTable),
 			tostring(useInsert),
-			tostring(queuePreserveFlag)
+			"true (INSERT at pos 0 preserves queue)"
 		))
 	end
 
@@ -2848,12 +2879,15 @@ local function issueOrderToSelection(cmdID, params, cmdName, targetName, options
 	if type(Spring.GiveOrder) == "function" then
 		local orderOk, orderResult
 		if useInsert then
-			local cmdInsert = CMD.INSERT or 140
+			-- Vanilla INSERT format: CMD.INSERT, {pos, cmdID, encodedOpts, ...params}, {"alt"}
+			-- pos=0 inserts at front; encodedOpts=0 means no special sub-command options
+			-- Outer {"alt"} is required by engine; do NOT add "shift" here
+			local cmdInsert = CMD.INSERT
 			local insertParams = { 0, cmdID, 0 }
 			for i = 1, paramsCount do
 				insertParams[#insertParams + 1] = params[i]
 			end
-			orderOk, orderResult = pcall(Spring.GiveOrder, cmdInsert, insertParams, { "alt", "shift" })
+			orderOk, orderResult = pcall(Spring.GiveOrder, cmdInsert, insertParams, { "alt" })
 		else
 			orderOk, orderResult = pcall(Spring.GiveOrder, cmdID, params, orderOptions)
 		end
@@ -3016,9 +3050,10 @@ function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift, for
 		end
 
 		if #builders > 0 then
-			local cmdInsert = CMD.INSERT or 140
+			local cmdInsert = CMD.INSERT
 			for _, unitID in ipairs(builders) do
-				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, -selectedMex, 0, buildCmd[2], buildCmd[3], buildCmd[4], buildCmd[5] }, { "alt", "shift" })
+				-- Vanilla INSERT: {pos, cmdID, encodedOpts, ...params}, outer {"alt"} only
+				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, -selectedMex, 0, buildCmd[2], buildCmd[3], buildCmd[4], buildCmd[5] }, { "alt" })
 			end
 			if ControllerCameraTestSettings.debugPanelVisible then
 				Spring.Echo(string.format(
@@ -3085,7 +3120,7 @@ function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift, for
 end
 
 local function ControllerCameraTestIssueBuildOrders(builders, unitDefID, buildPositions, useQueue, useQueueFront)
-	local cmdInsert = CMD.INSERT or 140
+	local cmdInsert = CMD.INSERT
 	local firstOpts = useQueue and { "shift" } or {}
 	ControllerCameraTestCommandDebug.lastOptions = useQueueFront and "queue-front" or ControllerCameraTestCommandOptionsSummary(firstOpts)
 	local restOpts = { "shift" }
@@ -3097,9 +3132,9 @@ local function ControllerCameraTestIssueBuildOrders(builders, unitDefID, buildPo
 			serializeTable(buildPositions),
 			tostring(ControllerCameraTestIsQueueFrontModifierActive()),
 			tostring(ControllerCameraTestIsQueueModifierActive()),
-			serializeTable(useQueueFront and {"alt", "shift"} or {"shift"}),
+			serializeTable(useQueueFront and {"alt"} or {"shift"}),
 			tostring(useQueueFront),
-			tostring(true)
+			"true (INSERT at pos 0 preserves queue)"
 		))
 	end
 
@@ -3108,7 +3143,8 @@ local function ControllerCameraTestIssueBuildOrders(builders, unitDefID, buildPo
 			local bp = buildPositions[i]
 			local bx, by, bz, bfacing = bp[1], bp[2], bp[3], bp[4] or 0
 			for _, unitID in ipairs(builders) do
-				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, -unitDefID, 0, bx, by, bz, bfacing }, { "alt", "shift" })
+				-- Vanilla INSERT: {pos, cmdID, encodedOpts, ...params}, outer {"alt"} only
+				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, -unitDefID, 0, bx, by, bz, bfacing }, { "alt" })
 			end
 		end
 		return true
@@ -3619,7 +3655,7 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 			cmdName = "Attack Line"
 		end
 
-		local cmdInsert = CMD.INSERT or 140
+		local cmdInsert = CMD.INSERT
 		if ControllerCameraTestSettings.debugPanelVisible and (isQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
 			Spring.Echo(string.format(
 				"[ControllerQueueDebug] Path: ConfirmDragCommandLine | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | queue_preserve: %s",
@@ -3627,9 +3663,9 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 				serializeTable(points),
 				tostring(ControllerCameraTestIsQueueFrontModifierActive()),
 				tostring(ControllerCameraTestIsQueueModifierActive()),
-				serializeTable(isQueueFront and {"alt", "shift"} or {"shift"}),
+				serializeTable(isQueueFront and {"alt"} or {"shift"}),
 				tostring(isQueueFront),
-				tostring(true)
+				"true (INSERT at pos 0 preserves queue)"
 			))
 		end
 
@@ -3637,7 +3673,8 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 			for i = #points, 1, -1 do
 				local pt = points[i]
 				local unitID = mobileUnits[i]
-				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, pt[1], pt[2], pt[3] }, { "alt", "shift" })
+				-- Vanilla INSERT: {pos, cmdID, encodedOpts, ...params}, outer {"alt"} only
+				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, pt[1], pt[2], pt[3] }, { "alt" })
 			end
 		else
 			for i, pt in ipairs(points) do
@@ -3670,7 +3707,7 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		local params = { startX, startY, startZ, effectiveRadius }
 		local issued = 0
 		local lastError = nil
-		ControllerCameraTestCommandDebug.issuedCmdID = isQueueFront and tostring(CMD.INSERT or 140) or tostring(cmdID)
+		ControllerCameraTestCommandDebug.issuedCmdID = isQueueFront and tostring(CMD.INSERT) or tostring(cmdID)
 		ControllerCameraTestCommandDebug.issuedParamsCount = isQueueFront and 7 or #params
 
 		if ControllerCameraTestSettings.debugPanelVisible and (isQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
@@ -3680,16 +3717,17 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 				serializeTable(params),
 				tostring(ControllerCameraTestIsQueueFrontModifierActive()),
 				tostring(ControllerCameraTestIsQueueModifierActive()),
-				serializeTable(isQueueFront and {"alt", "shift"} or {"shift"}),
+				serializeTable(isQueueFront and {"alt"} or {"shift"}),
 				tostring(isQueueFront),
-				tostring(true)
+				"true (INSERT at pos 0 preserves queue)"
 			))
 		end
 
 		if isQueueFront then
-			local cmdInsert = CMD.INSERT or 140
+			local cmdInsert = CMD.INSERT
 			for _, unitID in ipairs(selectedUnits) do
-				local ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, startX, startY, startZ, effectiveRadius }, { "alt", "shift" })
+				-- Vanilla INSERT: {pos, cmdID, encodedOpts, ...params}, outer {"alt"} only
+				local ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, startX, startY, startZ, effectiveRadius }, { "alt" })
 				if ok and result ~= false then
 					issued = issued + 1
 				else
@@ -4720,7 +4758,10 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 	local useInsert = (options == nil or #options == 0) and ControllerCameraTestIsQueueFrontModifierActive()
 	local finalOpts = type(options) == "table" and options or ControllerCameraTestGetCommandOptions()
 
-	local finalOptsTable = useInsert and {"alt", "shift"} or finalOpts
+	-- INSERT outer options: vanilla cmd_commandinsert uses {"alt"} only.
+	-- Do NOT use {"alt","shift"} - "shift" would append the INSERT cmd itself
+	-- to the queue instead of executing it immediately at position 0.
+	local finalOptsTable = useInsert and {"alt"} or finalOpts
 	local queuePreserveFlag = false
 	for _, opt in ipairs(finalOptsTable) do
 		if opt == "shift" then
@@ -4737,13 +4778,13 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 			tostring(ControllerCameraTestIsQueueModifierActive()),
 			serializeTable(finalOptsTable),
 			tostring(useInsert),
-			tostring(queuePreserveFlag)
+			"true (INSERT at pos 0 preserves queue)"
 		))
 	end
 
-	ControllerCameraTestCommandDebug.issuedCmdID = useInsert and tostring(CMD.INSERT or 140) or tostring(cmdID)
+	ControllerCameraTestCommandDebug.issuedCmdID = useInsert and tostring(CMD.INSERT) or tostring(cmdID)
 	ControllerCameraTestCommandDebug.issuedParamsCount = useInsert and (#params + 3) or #params
-	ControllerCameraTestCommandDebug.lastOptions = useInsert and "alt,shift" or ControllerCameraTestCommandOptionsSummary(finalOpts)
+	ControllerCameraTestCommandDebug.lastOptions = useInsert and "alt (INSERT front)" or ControllerCameraTestCommandOptionsSummary(finalOpts)
 	if type(cmdID) ~= "number" then
 		ControllerCameraTestCommandDebug.lastResult = "command unavailable"
 		latchSelectionDebugMessage(tostring(cmdName) .. " unavailable")
@@ -4761,15 +4802,16 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 	end
 
 	local issuedCount = 0
-	local cmdInsert = CMD.INSERT or 140
+	local cmdInsert = CMD.INSERT
 	for _, unitID in ipairs(selectedUnits) do
 		local ok, result
 		if useInsert then
+			-- Vanilla INSERT: {pos, cmdID, encodedOpts, ...params}, outer {"alt"} only
 			local insertParams = { 0, cmdID, 0 }
 			for i = 1, #params do
 				insertParams[#insertParams + 1] = params[i]
 			end
-			ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, insertParams, { "alt", "shift" })
+			ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, insertParams, { "alt" })
 		else
 			ok, result = pcall(spGiveOrderToUnit, unitID, cmdID, params, finalOpts)
 		end
@@ -6194,6 +6236,11 @@ local function ControllerCameraTestAreaOptionFromDesc(desc)
 	local text = ControllerCameraTestCommandDescText(desc)
 	local dragMode, shortLabel, colorProfile, iconLabel
 
+	-- AREA MEX CLUE (for future implementation):
+	-- Mouse audit reports Active Command ID = 11 when the Area Mex button is active
+	-- in vanilla mouse/keyboard BAR. Future Area Mex implementation should investigate
+	-- cmdID 11 and the vanilla BAR Area Mex APIs before recreating behavior manually.
+	-- Do NOT implement Area Mex execution here yet - only detection/classification.
 	if text:find("area mex", 1, true)
 		or lowerAction == "areamex"
 		or string.lower(name) == "areamex"
@@ -7771,7 +7818,7 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 		local optionsToIssue = orderOptions
 
 		if queueFrontActive then
-			cmdToIssue = CMD.INSERT or 140
+			cmdToIssue = CMD.INSERT
 			paramsToIssue = { 0, option.cmdID, 0 }
 			optionsToIssue = { "alt" }
 		end
@@ -7852,7 +7899,7 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	local issuedCount = 0
 
 	local useQueueFront = ControllerCameraTestBuildPlacement.active and ControllerCameraTestBuildPlacement.queueFrontActive
-	local cmdInsert = CMD.INSERT or 140
+	local cmdInsert = CMD.INSERT
 
 	if ControllerCameraTestSettings.debugPanelVisible and (useQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
 		Spring.Echo(string.format(
@@ -8206,7 +8253,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 				local optionsToIssue = orderOptions
 
 				if queueFrontActive then
-					cmdToIssue = CMD.INSERT or 140
+					cmdToIssue = CMD.INSERT
 					paramsToIssue = { 0, option.cmdID, 0 }
 					optionsToIssue = { "alt" }
 				end
