@@ -486,7 +486,7 @@ local function ControllerBindingsUISetSettingValue(item, value)
 end
 
 local function ControllerBindingsUIResetSettingValue(item)
-	if not item or ControllerBindingsUIIsRowMalformed(item) then return end
+	if not item or type(item) ~= "table" or ControllerBindingsUIIsRowMalformed(item) then return end
 	if item.source == "bindingsUI" then
 		if item.type == "action" then
 			if item.key == "bindingsUILayout.resetLayout" then
@@ -1006,7 +1006,7 @@ end
 
 local function ControllerBindingsUIResetSelected()
 	local action = ControllerBindingsUISelectedAction()
-	if not action then
+	if not action or type(action) ~= "table" or not action.action then
 		return
 	end
 	if action.group == "Presets" then
@@ -1021,7 +1021,7 @@ local function ControllerBindingsUIResetSelected()
 	if ok then
 		ControllerBindingsUI.currentPreset = "Custom"
 	end
-	ControllerBindingsUISetToast(ok and ("Reset " .. action.label) or "ResetBinding failed")
+	ControllerBindingsUISetToast(ok and ("Reset " .. (action.label or action.action or "binding")) or "ResetBinding failed")
 end
 
 local function ControllerBindingsUIResetAll()

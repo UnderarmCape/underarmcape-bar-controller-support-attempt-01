@@ -1692,7 +1692,7 @@ function widget:Initialize()
 	end
 	WG['buildmenu'].setMaxPosY = function(value)
 		maxPosY = value
-		clear()
+		widget:ViewResize()
 	end
 	WG['buildmenu'].reloadBindings = function()
 		bindBuildUnits(self)

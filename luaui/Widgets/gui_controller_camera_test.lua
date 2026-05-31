@@ -2111,7 +2111,7 @@ function ControllerCameraTestGetSettingsDefinitions()
 						key = item.key,
 						label = item.label,
 						group = cat.key,
-						type = item.type or r[4],
+						type = (item.type == "bool" and "boolean") or item.type or r[4],
 						min = r[1],
 						max = r[2],
 						step = item.step or r[3],
@@ -2313,7 +2313,7 @@ function ControllerCameraTestResetSettingToDefault(settingKey)
 	if defaults[settingKey] ~= nil then
 		ControllerCameraTestSettings[settingKey] = defaults[settingKey]
 		ControllerCameraTestApplySettingsDefaults()
-		ControllerCameraTestSettingsUI.lastAction = "reset " .. tostring(settingKey)
+		if ControllerCameraTestSettingsUI then ControllerCameraTestSettingsUI.lastAction = "reset " .. tostring(settingKey) end
 	end
 end
 
@@ -2325,7 +2325,7 @@ function ControllerCameraTestResetSettingsCategory(category)
 			ControllerCameraTestResetSettingToDefault(item.key)
 		end
 	end
-	ControllerCameraTestSettingsUI.lastAction = "reset " .. tostring(category.key)
+	if ControllerCameraTestSettingsUI then ControllerCameraTestSettingsUI.lastAction = "reset " .. tostring(category.key) end
 end
 
 function ControllerCameraTestGetPressedBindingInput()
