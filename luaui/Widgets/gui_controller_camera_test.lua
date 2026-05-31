@@ -2264,45 +2264,22 @@ function ControllerCameraTestGetSettingsUICategory()
 	return category
 end
 
-local LEGACY_CONTROLLER_SETTINGS_UI_ENABLED = false
-
 function ControllerCameraTestToggleSettingsUI(forceOpen)
-	if not LEGACY_CONTROLLER_SETTINGS_UI_ENABLED then
-		if WG.BARControllerBindingsUI and WG.BARControllerBindingsUI.Toggle then
-			if forceOpen == false then
-				if WG.BARControllerBindingsUI.Close then
-					WG.BARControllerBindingsUI.Close()
-				end
-			elseif forceOpen == true then
-				if WG.BARControllerBindingsUI.Open then
-					WG.BARControllerBindingsUI.Open()
-				end
-			else
-				WG.BARControllerBindingsUI.Toggle()
+	if WG.BARControllerBindingsUI and WG.BARControllerBindingsUI.Toggle then
+		if forceOpen == false then
+			if WG.BARControllerBindingsUI.Close then
+				WG.BARControllerBindingsUI.Close()
+			end
+		elseif forceOpen == true then
+			if WG.BARControllerBindingsUI.Open then
+				WG.BARControllerBindingsUI.Open()
 			end
 		else
-			Spring.Echo("BAR Controller Support: Legacy settings UI is disabled. Binding/Settings UI is unavailable.")
+			WG.BARControllerBindingsUI.Toggle()
 		end
-		return
+	else
+		Spring.Echo("BAR Controller Support: Binding/Settings UI is unavailable.")
 	end
-	local ui = ControllerCameraTestSettingsUI
-	ui.open = forceOpen == nil and not ui.open or forceOpen
-	ui.bindingCaptureAction = nil
-	ControllerCameraTestBindings.captureAction = nil
-	ui.lastAction = ui.open and "settings opened" or "settings closed"
-	if ui.open then
-		ControllerCameraTestEnsureBindings()
-		ControllerCameraTestCycleDebug.lbPressActive = false
-		ControllerCameraTestCycleDebug.lbHadPitchMotion = false
-		ControllerCameraTestControlGroups.leftPressActive = false
-		if ControllerCameraTestDragCommand.active then
-			ControllerCameraTestCancelDrag("cancelled by settings")
-		end
-		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
-			ControllerCameraTestCancelAreaSelect("cancelled by settings")
-		end
-	end
-	latchSelectionDebugMessage(ui.lastAction)
 end
 
 function ControllerCameraTestAdjustSettingFromUI(settingKey, delta, step)
