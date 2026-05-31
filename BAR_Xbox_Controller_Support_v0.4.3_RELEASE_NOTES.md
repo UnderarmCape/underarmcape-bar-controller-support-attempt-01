@@ -2,15 +2,18 @@
 
 This is the normal v0.4.3 release for BAR Xbox Controller Support. It is not a prerelease.
 
-This release updates the BAR-side controller widgets and release documentation after the v0.4.2 Smart X calibration release.
+This release updates the BAR-side controller widgets, release documentation, and full installer after the v0.4.2 Smart X calibration release.
 
 ## Important Requirement
 
-This mod is not widget-only. It requires:
+This mod is not widget-only. The included v0.4.3 installer installs:
 
 - Custom controller-enabled Recoil/BAR engine.
+- Controller-support `BAR.sdd`.
+- `BYAR Chobby.sdd`.
 - `gui_controller_camera_test.lua`
 - `gui_controller_bindings_ui.lua`
+- `devmode.txt` and the controller camera cardinal-lock setting.
 
 Required engine release:
 
@@ -34,6 +37,7 @@ Optional diagnostic widget:
 - Removed redundant blue controller move preview overlay.
 - Preserved vanilla move path arrows/waypoints.
 - Added/fixed RT + A individual multi-select accumulation.
+- Restored the full all-in-one installer behavior: engine + BAR.sdd + Chobby + widgets.
 
 ## Preserved Smart X Fixes
 
@@ -112,4 +116,3 @@ Optional:
 ```text
 /luaui enablewidget "Controller SmartX Mouse Audit"
 ```
-

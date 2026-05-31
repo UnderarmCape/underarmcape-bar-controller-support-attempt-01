@@ -4,10 +4,13 @@ This is the v0.4.3 Queue Polish release for BAR Xbox Controller Support.
 
 Important: this is not a widget-only mod.
 
-You need both:
+The included installer installs the full controller-support local setup:
 
 - The custom controller-enabled Recoil/BAR engine.
+- The controller-support `BAR.sdd` branch.
+- `BYAR Chobby.sdd`.
 - The LuaUI controller widgets included in this package.
+- `devmode.txt` and the camera cardinal-lock setting used by the controller build.
 
 Required engine release:
 
@@ -33,15 +36,14 @@ Optional diagnostic widget:
 
 ## Quick Install
 
-1. Install the custom controller-enabled engine above if you have not already done so.
-2. Extract this v0.4.3 release ZIP.
-3. Run:
+1. Extract this v0.4.3 release ZIP.
+2. Run:
 
 ```text
 Install_BAR_Controller_Support_v0.4.3_QUEUE_POLISH.bat
 ```
 
-The installer backs up your existing controller widgets and copies the v0.4.3 widgets into your active local `BAR.sdd`.
+The installer backs up existing engine/BAR/Chobby folders when present, stages replacements first, then installs the custom engine, `BAR.sdd`, `BYAR Chobby.sdd`, and v0.4.3 widgets.
 
 ## v0.4.3 Highlights
 

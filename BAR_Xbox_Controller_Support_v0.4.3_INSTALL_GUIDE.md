@@ -4,7 +4,7 @@ Release: v0.4.3 Queue Polish
 
 ## Read This First
 
-BAR Xbox Controller Support v0.4.3 is not widget-only. The Lua widgets require the controller polling API from the custom controller-enabled Recoil/BAR engine.
+BAR Xbox Controller Support v0.4.3 is not widget-only. The included installer is the full installer: it installs the custom controller-enabled Recoil/BAR engine, controller-support `BAR.sdd`, `BYAR Chobby.sdd`, and the v0.4.3 LuaUI widgets.
 
 Required engine release:
 
@@ -26,24 +26,29 @@ Optional diagnostic widget:
 
 ## Installation Steps
 
-1. Install or verify the custom controller-enabled engine from the release above.
-2. Extract `BAR_Xbox_Controller_Support_v0.4.3_QUEUE_POLISH.zip`.
-3. Run `Install_BAR_Controller_Support_v0.4.3_QUEUE_POLISH.bat`.
+1. Extract `BAR_Xbox_Controller_Support_v0.4.3_QUEUE_POLISH.zip`.
+2. Run `Install_BAR_Controller_Support_v0.4.3_QUEUE_POLISH.bat`.
+3. Let the installer download/stage the custom engine, clone/stage `BAR.sdd`, clone/stage `BYAR Chobby.sdd`, install widgets, create `devmode.txt`, and run final verification.
 4. Launch BAR and load the local controller-support `BAR.sdd`.
 5. Confirm both required widgets load.
 6. Apply or reset controller presets if you are upgrading from an older test build.
 
-The v0.4.3 installer backs up existing controller widget files before copying the new ones.
+The v0.4.3 installer backs up existing engine, `BAR.sdd`, and `BYAR Chobby.sdd` folders before replacing them.
 
 ## What The Installer Updates
 
-The installer copies:
+The installer installs or updates:
 
+- Custom controller-enabled Recoil 2025.06.24 engine.
+- `BAR.sdd` from `controller-support-current-master-engine-shim`.
+- `BYAR Chobby.sdd`.
 - `gui_controller_camera_test.lua`
 - `gui_controller_bindings_ui.lua`
 - `gui_controller_smartx_mouse_audit.lua`, if present in the package
+- `%LOCALAPPDATA%\Programs\Beyond-All-Reason\data\devmode.txt`
+- `CamSpringLockCardinalDirections = 0` in `springsettings.cfg`
 
-The installer does not replace the engine. It checks for BAR folders, warns about the engine requirement, and points to the required engine release.
+It also clears stale cache/fontcache/archive cache/infolog state and renames old `LuaUI`, `LuaMenu`, and `chobby_config.json` folders/files if present.
 
 ## v0.4.3 Manual Verification
 
@@ -89,4 +94,3 @@ Existing controls:
 - Selected-unit type cycling with D-pad Left/Right.
 
 Do not treat Area Mex as fixed in v0.4.3. The only recorded Area Mex clue is that the mouse audit reports Active Command ID = 11 when Area Mex is active.
-
