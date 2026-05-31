@@ -8,10 +8,10 @@ if /I not "%~1"=="__RUN__" (
     echo BAR Xbox Controller Support v0.4.3 - Queue Polish
     echo ============================================================
     echo.
-    echo This installer updates the LuaUI controller widgets only.
+    echo This installer bootstraps/updates BAR.sdd and LuaUI widgets only.
     echo It DOES NOT install the custom controller-enabled engine.
     echo.
-    echo A custom controller-enabled Recoil/BAR engine is required:
+    echo A custom controller-enabled Recoil/BAR engine is still required:
     echo https://github.com/UnderarmCape/controllersupport-RecoilEngine-attempt-01/releases/tag/controller-support-recoil-2025-06-24-compat
     echo.
     powershell -NoProfile -ExecutionPolicy Bypass -Command "& '%~f0' __RUN__ '!BOOT_LOG!' 2>&1 | Tee-Object -FilePath '!BOOT_LOG!'; Write-Host ''; Write-Host '============================================================'; Write-Host 'LOG SAVED HERE:'; Write-Host '!BOOT_LOG!'; Write-Host '============================================================'; Write-Host ''; Write-Host 'Window will stay open. Type exit or close it manually.'; cmd /k"
@@ -26,6 +26,9 @@ echo BAR Xbox Controller Support v0.4.3 - Queue Polish
 echo ============================================================
 echo.
 echo IMPORTANT: this is not a widget-only mod.
+echo This installer bootstraps/updates BAR.sdd and LuaUI widgets only.
+echo It DOES NOT install or swap the required custom controller-enabled engine.
+echo.
 echo Required engine release:
 echo   Repo: UnderarmCape/controllersupport-RecoilEngine-attempt-01
 echo   Tag: controller-support-recoil-2025-06-24-compat
@@ -41,10 +44,12 @@ echo Log:
 echo "%INSTALL_LOG%"
 echo.
 
+set "BAR_REPO=https://github.com/UnderarmCape/underarmcape-bar-controller-support-attempt-01.git"
+set "BAR_BRANCH=controller-support-current-master-engine-shim"
 set "BAR_ROOT=%LOCALAPPDATA%\Programs\Beyond-All-Reason"
 set "BAR_DATA=%BAR_ROOT%\data"
-set "BAR_GAMES=%BAR_DATA%\games"
-set "DST_BAR=%BAR_GAMES%\BAR.sdd"
+set "DST_GAMES=%BAR_DATA%\games"
+set "DST_BAR=%DST_GAMES%\BAR.sdd"
 set "DST_WIDGETS=%DST_BAR%\luaui\Widgets"
 set "ENGINE_ROOT=%BAR_DATA%\engine"
 set "PREFERRED_ENGINE_SLOT=recoil_2025.06.24"
@@ -57,27 +62,39 @@ for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss
 
 set "BACKUP_ROOT=%BAR_DATA%\controller-support-widget-backups\v0.4.3_QUEUE_POLISH_%STAMP%"
 set "WORK=%TEMP%\BAR-Controller-Support-v0.4.3-QUEUE-POLISH-%STAMP%"
+set "STAGE_BAR=%DST_GAMES%\BAR.sdd.controller-stage-%STAMP%"
 
-echo Checking BAR install folders...
+echo Preparing folders...
 echo.
 
-if not exist "%BAR_ROOT%" (
-    set "FAIL_MESSAGE=BAR install folder was not found: %BAR_ROOT%"
-    goto FAIL
-)
+mkdir "%BAR_DATA%" 2>nul
+mkdir "%DST_GAMES%" 2>nul
+mkdir "%WORK%" 2>nul
+mkdir "%BACKUP_ROOT%" 2>nul
 
 if not exist "%BAR_DATA%" (
-    set "FAIL_MESSAGE=BAR data folder was not found: %BAR_DATA%"
+    set "FAIL_MESSAGE=Could not create BAR data folder: %BAR_DATA%"
     goto FAIL
 )
 
-if not exist "%DST_BAR%" (
-    set "FAIL_MESSAGE=BAR.sdd was not found: %DST_BAR%"
+if not exist "%DST_GAMES%" (
+    set "FAIL_MESSAGE=Could not create BAR games folder: %DST_GAMES%"
     goto FAIL
 )
 
-if not exist "%DST_WIDGETS%" (
-    set "FAIL_MESSAGE=BAR widget folder was not found: %DST_WIDGETS%"
+if not exist "%WORK%" (
+    set "FAIL_MESSAGE=Could not create temp folder: %WORK%"
+    goto FAIL
+)
+
+if not exist "%BACKUP_ROOT%" (
+    set "FAIL_MESSAGE=Could not create backup folder: %BACKUP_ROOT%"
+    goto FAIL
+)
+
+where powershell >nul 2>nul
+if errorlevel 1 (
+    set "FAIL_MESSAGE=PowerShell was not found. This installer needs PowerShell to validate UTF-8 widget files and download release assets if local files are missing."
     goto FAIL
 )
 
@@ -97,22 +114,30 @@ if defined ENGINE_SLOT (
     echo WARNING: no recoil_* engine slot with spring.exe was detected under:
     echo   %ENGINE_ROOT%
     echo.
-    echo The widgets will still be copied, but controller input requires the custom controller-enabled engine.
+    echo The BAR.sdd/widgets can still be installed, but controller input requires the custom controller-enabled engine.
+    echo Install it separately from:
+    echo   https://github.com/UnderarmCape/controllersupport-RecoilEngine-attempt-01/releases/tag/controller-support-recoil-2025-06-24-compat
     echo.
 )
 
-mkdir "%WORK%" 2>nul
-mkdir "%BACKUP_ROOT%" 2>nul
+if not exist "%DST_BAR%" (
+    call :BootstrapBar
+    if errorlevel 1 goto FAIL
+) else (
+    echo Existing BAR.sdd found. Updating controller widgets only.
+    echo   %DST_BAR%
+    echo.
+    call :VerifyBar "%DST_BAR%" "Existing BAR.sdd" base
+    if errorlevel 1 goto FAIL
+)
 
-if not exist "%WORK%" (
-    set "FAIL_MESSAGE=Could not create temp folder: %WORK%"
+if not exist "%DST_WIDGETS%" (
+    set "FAIL_MESSAGE=BAR widget folder was not found after BAR.sdd setup: %DST_WIDGETS%"
     goto FAIL
 )
 
-if not exist "%BACKUP_ROOT%" (
-    set "FAIL_MESSAGE=Could not create backup folder: %BACKUP_ROOT%"
-    goto FAIL
-)
+call :EnsureDevMode
+if errorlevel 1 goto FAIL
 
 call :InstallWidget "gui_controller_camera_test.lua" required
 if errorlevel 1 goto FAIL
@@ -123,16 +148,26 @@ if errorlevel 1 goto FAIL
 call :InstallWidget "gui_controller_smartx_mouse_audit.lua" optional
 if errorlevel 1 goto FAIL
 
+call :VerifyBar "%DST_BAR%" "Final BAR.sdd" controller
+if errorlevel 1 goto FAIL
+
 echo.
 echo ============================================================
 echo INSTALL COMPLETE
 echo ============================================================
 echo.
+echo BAR.sdd:
+echo "%DST_BAR%"
+echo.
 echo Backups were saved to:
 echo "%BACKUP_ROOT%"
 echo.
+echo This installer did not install or replace the custom engine.
+echo Required engine release:
+echo   https://github.com/UnderarmCape/controllersupport-RecoilEngine-attempt-01/releases/tag/controller-support-recoil-2025-06-24-compat
+echo.
 echo Next steps:
-echo   1. Confirm the custom controller-enabled engine is installed.
+echo   1. Confirm the custom controller-enabled engine is installed separately.
 echo   2. Launch BAR.
 echo   3. Load your local controller-support BAR.sdd.
 echo   4. Confirm these widgets are enabled/loaded:
@@ -141,6 +176,104 @@ echo      - Controller Bindings UI
 echo.
 echo Optional diagnostic widget:
 echo   /luaui enablewidget "Controller SmartX Mouse Audit"
+echo.
+exit /b 0
+
+:BootstrapBar
+echo BAR.sdd was not found. Creating it by cloning the controller-support BAR branch.
+echo Destination:
+echo   %DST_BAR%
+echo Source:
+echo   %BAR_REPO%
+echo Branch:
+echo   %BAR_BRANCH%
+echo.
+
+git --version >nul 2>nul
+if errorlevel 1 (
+    set "FAIL_MESSAGE=BAR.sdd is missing and Git is required to clone the controller-support BAR.sdd branch. Install Git for Windows or manually download the release package."
+    exit /b 1
+)
+
+rmdir /s /q "%STAGE_BAR%" 2>nul
+
+git -c core.longpaths=true clone --depth 1 --branch "%BAR_BRANCH%" --single-branch "%BAR_REPO%" "%STAGE_BAR%"
+if errorlevel 1 (
+    set "FAIL_MESSAGE=Failed to clone BAR.sdd controller-support branch into staging folder: %STAGE_BAR%"
+    exit /b 1
+)
+
+call :VerifyBar "%STAGE_BAR%" "Staged BAR.sdd" controller
+if errorlevel 1 exit /b 1
+
+if exist "%DST_BAR%" (
+    set "FAIL_MESSAGE=BAR.sdd appeared unexpectedly before staged move: %DST_BAR%"
+    exit /b 1
+)
+
+move "%STAGE_BAR%" "%DST_BAR%" >nul
+if errorlevel 1 (
+    set "FAIL_MESSAGE=Could not move staged BAR.sdd into place from %STAGE_BAR% to %DST_BAR%"
+    exit /b 1
+)
+
+call :VerifyBar "%DST_BAR%" "Final cloned BAR.sdd" controller
+if errorlevel 1 exit /b 1
+
+echo BAR.sdd created successfully.
+echo.
+exit /b 0
+
+:VerifyBar
+set "VERIFY_BAR=%~1"
+set "VERIFY_LABEL=%~2"
+set "VERIFY_MODE=%~3"
+
+if not exist "%VERIFY_BAR%\modinfo.lua" (
+    set "FAIL_MESSAGE=%VERIFY_LABEL% verification failed: missing modinfo.lua at %VERIFY_BAR%\modinfo.lua"
+    exit /b 1
+)
+
+if not exist "%VERIFY_BAR%\common\constants.lua" (
+    set "FAIL_MESSAGE=%VERIFY_LABEL% verification failed: missing common\constants.lua at %VERIFY_BAR%\common\constants.lua"
+    exit /b 1
+)
+
+if not exist "%VERIFY_BAR%\luaui\Widgets" (
+    set "FAIL_MESSAGE=%VERIFY_LABEL% verification failed: missing luaui\Widgets at %VERIFY_BAR%\luaui\Widgets"
+    exit /b 1
+)
+
+if /I "%VERIFY_MODE%"=="controller" (
+    if not exist "%VERIFY_BAR%\luaui\Widgets\gui_controller_camera_test.lua" (
+        set "FAIL_MESSAGE=%VERIFY_LABEL% verification failed: missing gui_controller_camera_test.lua"
+        exit /b 1
+    )
+
+    if not exist "%VERIFY_BAR%\luaui\Widgets\gui_controller_bindings_ui.lua" (
+        set "FAIL_MESSAGE=%VERIFY_LABEL% verification failed: missing gui_controller_bindings_ui.lua"
+        exit /b 1
+    )
+)
+
+exit /b 0
+
+:EnsureDevMode
+if exist "%BAR_DATA%\devmode.txt" (
+    echo Existing devmode.txt found and preserved:
+    echo   %BAR_DATA%\devmode.txt
+    echo.
+    exit /b 0
+)
+
+> "%BAR_DATA%\devmode.txt" echo devmode enabled by BAR Xbox Controller Support installer
+if errorlevel 1 (
+    set "FAIL_MESSAGE=Failed to create devmode.txt at %BAR_DATA%\devmode.txt"
+    exit /b 1
+)
+
+echo Created devmode.txt:
+echo   %BAR_DATA%\devmode.txt
 echo.
 exit /b 0
 
@@ -228,5 +361,16 @@ echo.
 echo Backup folder:
 echo "%BACKUP_ROOT%"
 echo.
+echo Work folder:
+echo "%WORK%"
+echo.
+echo BAR.sdd target:
+echo "%DST_BAR%"
+echo.
+echo BAR.sdd staging folder:
+echo "%STAGE_BAR%"
+echo.
+echo Engine install remains separate. Required engine release:
+echo https://github.com/UnderarmCape/controllersupport-RecoilEngine-attempt-01/releases/tag/controller-support-recoil-2025-06-24-compat
+echo.
 exit /b 1
-
