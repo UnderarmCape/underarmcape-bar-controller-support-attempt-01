@@ -68,6 +68,8 @@ local maxColls = 5
 local smartOrderUnits = true
 
 local maxPosY = 0.74
+local controllerCompactEnabled = false
+local controllerCompactScale = 1.0
 
 local disableInputWhenSpec = false		-- disable specs selecting buildoptions
 
@@ -555,6 +557,14 @@ function widget:ViewResize()
 		-- make pixel aligned
 		width = math_floor(width * vsx) / vsx
 		height = math_floor(height * vsy) / vsy
+
+		if controllerCompactEnabled and controllerCompactScale and controllerCompactScale < 1.0 then
+			local posY2_val = posY - height
+			width = width * controllerCompactScale
+			height = height * controllerCompactScale
+			posX2 = math_floor(width * vsx)
+			posY = posY2_val + height
+		end
 	end
 
 	backgroundRect = { posX, (posY - height) * vsy, posX2, posY * vsy }
@@ -1693,6 +1703,18 @@ function widget:Initialize()
 	WG['buildmenu'].setMaxPosY = function(value)
 		maxPosY = value
 		widget:ViewResize()
+	end
+	WG['buildmenu'].setControllerCompactScale = function(enabled, scale)
+		local clampedScale = math.max(0.50, math.min(1.00, scale or 1.0))
+		local boolEnabled = not not enabled
+		if boolEnabled ~= controllerCompactEnabled or clampedScale ~= controllerCompactScale then
+			controllerCompactEnabled = boolEnabled
+			controllerCompactScale = clampedScale
+			widget:ViewResize()
+		end
+	end
+	WG['buildmenu'].getControllerCompactScale = function()
+		return controllerCompactEnabled, controllerCompactScale
 	end
 	WG['buildmenu'].reloadBindings = function()
 		bindBuildUnits(self)

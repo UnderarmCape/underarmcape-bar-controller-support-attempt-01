@@ -522,7 +522,7 @@ function ControllerCameraTestGetDefaultSettings()
 		debugPanelVisible = true,
 		helpOverlayVisible = false,
 		compactBuildMenuEnabled = true,
-		compactBuildMenuMaxPosY = 0.58,
+		compactBuildMenuScale = 0.85,
 	}
 end
 
@@ -606,7 +606,7 @@ function ControllerCameraTestClampSetting(name, value)
 		smartAssistScale = { 0.0, 1.0 },
 		singlePathSpacing = { 16, 1024 },
 		singlePathInterval = { 0.02, 1.0 },
-		compactBuildMenuMaxPosY = { 0.00, 0.74 },
+		compactBuildMenuScale = { 0.50, 1.00 },
 	}
 	local range = ranges[name]
 	if not range then
@@ -643,7 +643,7 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.smartAssistScale = ControllerCameraTestClampSetting("smartAssistScale", settings.smartAssistScale or defaults.smartAssistScale)
 	settings.singlePathSpacing = ControllerCameraTestClampSetting("singlePathSpacing", settings.singlePathSpacing or 96)
 	settings.singlePathInterval = ControllerCameraTestClampSetting("singlePathInterval", settings.singlePathInterval or 0.10)
-	settings.compactBuildMenuMaxPosY = ControllerCameraTestClampSetting("compactBuildMenuMaxPosY", settings.compactBuildMenuMaxPosY or 0.58)
+	settings.compactBuildMenuScale = ControllerCameraTestClampSetting("compactBuildMenuScale", settings.compactBuildMenuScale or 0.85)
 	settings.compactBuildMenuEnabled = settings.compactBuildMenuEnabled ~= false
 	settings.compactSelectedStatus = settings.compactSelectedStatus ~= false
 	settings.hideCompactStatusWhenRadialOpen = settings.hideCompactStatusWhenRadialOpen ~= false
@@ -888,10 +888,8 @@ selectionDebugMessage = "none"
 selectionDebugExpiration = 0
 controllerMode = false
 reticleVisible = false
-local originalBuildMenuMaxPosY = nil
-local lastAppliedBuildMenuMaxPosY = nil
-local lastCompactBuildMenuState = nil
-local wasBuildMenuAvailable = false
+local lastCompactScaleEnabled = nil
+local lastCompactScaleValue = nil
 screenCenterX = 0
 screenCenterY = 0
 reticleTargetType = "unavailable"
@@ -2098,7 +2096,7 @@ function ControllerCameraTestGetSettingsDefinitions()
 		debugPanelVisible = { 0, 1, 1, "boolean", 0 },
 		helpOverlayVisible = { 0, 1, 1, "boolean", 0 },
 		compactBuildMenuEnabled = { 0, 1, 1, "boolean", 0 },
-		compactBuildMenuMaxPosY = { 0.00, 0.74, 0.01, "number", 2 },
+		compactBuildMenuScale = { 0.50, 1.00, 0.01, "number", 2 },
 	}
 
 	local defs = {}
@@ -2235,7 +2233,7 @@ function ControllerCameraTestGetSettingsUICategories()
 			{ key = "placementPopupEnabled", label = "Placement popup", type = "bool" },
 			{ key = "preferNativeBlueprint", label = "Prefer native blueprint", type = "bool" },
 			{ key = "compactBuildMenuEnabled", label = "Compact Build Menu Override", type = "bool" },
-			{ key = "compactBuildMenuMaxPosY", label = "Compact Build Menu MaxPosY", step = 0.01, decimals = 2 },
+			{ key = "compactBuildMenuScale", label = "Compact Build Menu Scale", step = 0.01, decimals = 2 },
 		} },
 		{ key = "UI", items = {
 			{ key = "reticleSize", label = "Reticle size", step = 1, decimals = 0 },
@@ -8829,8 +8827,8 @@ function widget:Shutdown()
 	if ControllerCameraTestExitDgunMode then
 		ControllerCameraTestExitDgunMode("widget shutdown")
 	end
-	if originalBuildMenuMaxPosY ~= nil and WG.buildmenu and type(WG.buildmenu.setMaxPosY) == "function" then
-		pcall(WG.buildmenu.setMaxPosY, originalBuildMenuMaxPosY)
+	if WG.buildmenu and type(WG.buildmenu.setControllerCompactScale) == "function" then
+		pcall(WG.buildmenu.setControllerCompactScale, false, 1.0)
 	end
 end
 
@@ -9146,30 +9144,25 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 end
 
 function ControllerCameraTestUpdateBuildMenuCompact()
-	local hasBuildMenu = WG.buildmenu and type(WG.buildmenu.getMaxPosY) == "function" and type(WG.buildmenu.setMaxPosY) == "function"
+	local hasBuildMenu = WG.buildmenu and type(WG.buildmenu.setControllerCompactScale) == "function"
 	if not hasBuildMenu then
-		wasBuildMenuAvailable = false
 		return
 	end
 
 	local isCompactDesired = (ControllerCameraTestSettings.compactBuildMenuEnabled == true) and (controllerMode == true)
-	local targetMaxPosY = ControllerCameraTestSettings.compactBuildMenuMaxPosY or 0.58
+	local targetScale = ControllerCameraTestSettings.compactBuildMenuScale or 0.85
 
-	if not wasBuildMenuAvailable or originalBuildMenuMaxPosY == nil then
-		originalBuildMenuMaxPosY = WG.buildmenu.getMaxPosY()
-		wasBuildMenuAvailable = true
-	end
+	local desiredEnabled = isCompactDesired
+	local desiredScale = isCompactDesired and targetScale or 1.0
 
-	local currentTargetPosY = isCompactDesired and targetMaxPosY or originalBuildMenuMaxPosY
-
-	if currentTargetPosY ~= lastAppliedBuildMenuMaxPosY or isCompactDesired ~= lastCompactBuildMenuState then
-		local ok, err = pcall(WG.buildmenu.setMaxPosY, currentTargetPosY)
+	if desiredEnabled ~= lastCompactScaleEnabled or desiredScale ~= lastCompactScaleValue then
+		local ok, err = pcall(WG.buildmenu.setControllerCompactScale, desiredEnabled, desiredScale)
 		if ok then
-			lastAppliedBuildMenuMaxPosY = currentTargetPosY
-			lastCompactBuildMenuState = isCompactDesired
+			lastCompactScaleEnabled = desiredEnabled
+			lastCompactScaleValue = desiredScale
 		else
 			if ControllerCameraTestSettings.debugPanelVisible then
-				Spring.Echo("[Controller Build Menu] Error calling setMaxPosY: " .. tostring(err))
+				Spring.Echo("[Controller Build Menu] Error calling setControllerCompactScale: " .. tostring(err))
 			end
 		end
 	end
