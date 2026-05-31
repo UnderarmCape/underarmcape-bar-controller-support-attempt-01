@@ -3880,7 +3880,7 @@ function ControllerCameraTestGetSmartCommandIDs()
 		descs,
 		lookup,
 		CMD.RESURRECT,
-		{ "resurrect", "resurrection", "ressurect", "revive", "restore", " rez ", " res " }
+		{ "resurrect", "resurrection", "ressurect", "revive", " rez ", " res " }
 	)
 	ids.reclaim, ids.reclaimSource = ControllerCameraTestFindActiveSmartCommandID(descs, lookup, CMD.RECLAIM, { "reclaim" })
 	ids.repair, ids.repairSource = ControllerCameraTestFindActiveSmartCommandID(descs, lookup, CMD.REPAIR, { "repair" })
@@ -4257,7 +4257,7 @@ function ControllerCameraTestFindAssistedSmartTarget(commandIDs)
 	return best
 end
 
-function ControllerCameraTestTrySmartAssistedCommand(exactTargetType, exactTargetID)
+function ControllerCameraTestTrySmartAssistedCommand(exactTargetType, exactTargetID, exactOnly)
 	local commandIDs = ControllerCameraTestGetSmartCommandIDs()
 	local best = nil
 	if (exactTargetType == "unit" or exactTargetType == "feature") and tonumber(exactTargetID) then
@@ -4268,7 +4268,7 @@ function ControllerCameraTestTrySmartAssistedCommand(exactTargetType, exactTarge
 			distance = 0,
 		}, commandIDs)
 	end
-	if not best then
+	if not best and not exactOnly then
 		best = ControllerCameraTestFindAssistedSmartTarget(commandIDs)
 	end
 	if not best then
@@ -4325,6 +4325,10 @@ local function attemptContextCommand()
 	ControllerCameraTestCommandDebug.isBuild = isBuild and "yes" or "no"
 
 	local ok, targetType, targetID = pcall(Spring.TraceScreenRay, screenCenterX, screenCenterY)
+	local exactTargetType = ok and targetType or nil
+	local exactTargetID = ok and targetID or nil
+	local hasExactTarget = (exactTargetType == "unit" or exactTargetType == "feature") and tonumber(exactTargetID)
+
 	ControllerCameraTestCommandDebug.smartExactTargetType = ok and tostring(targetType or "none") or "trace failed"
 	ControllerCameraTestCommandDebug.smartExactTargetID = ok and tostring(targetID or "none") or "none"
 	local params = {}
@@ -4346,6 +4350,8 @@ local function attemptContextCommand()
 		end
 		params = { reticleWorldX, reticleWorldY, reticleWorldZ, facing }
 		targetString = "build pos"
+	elseif hasExactTarget and ControllerCameraTestTrySmartAssistedCommand(exactTargetType, exactTargetID, true) then
+		return
 	elseif cmdID == 10 and reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ
 		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ, ControllerCameraTestIsQueueModifierActive(), ControllerCameraTestIsQueueFrontModifierActive())
 	then
@@ -4353,7 +4359,7 @@ local function attemptContextCommand()
 		ControllerCameraTestCommandDebug.smartActionSource = "mex snap"
 		ControllerCameraTestCommandDebug.smartLastResult = ControllerCameraTestCommandDebug.mexActionResult
 		return
-	elseif ControllerCameraTestTrySmartAssistedCommand(ok and targetType or nil, ok and targetID or nil) then
+	elseif ControllerCameraTestTrySmartAssistedCommand(nil, nil) then
 		return
 	elseif ok and targetType == "unit" and tonumber(targetID) and IsUnitInSelection(targetID) then
 		ControllerCameraTestCommandDebug.lastResult = "ignored self-target move"
@@ -4408,8 +4414,8 @@ local function attemptContextCommand()
 				local dx = spotX - reticleWorldX
 				local dz = spotZ - reticleWorldZ
 				local distSq = (dx * dx) + (dz * dz)
-				local controllerMexTriggerRadius = ControllerCameraTestMexSpotSnapRadius or 160
-				if distSq <= (controllerMexTriggerRadius * controllerMexTriggerRadius) then
+				local SMART_X_MEX_CONTEXT_RADIUS = 55
+				if distSq <= (SMART_X_MEX_CONTEXT_RADIUS * SMART_X_MEX_CONTEXT_RADIUS) then
 					nearMexSpot = true
 					mexSpotID = string.format("%.0f,%.0f", spotX, spotZ)
 				end
@@ -4426,10 +4432,17 @@ local function attemptContextCommand()
 			isGuardTarget = true
 			guardReason = "feature"
 			guardID = targetID
-		elseif nearMexSpot then
+		elseif ok and targetType == "unit" and tonumber(targetID) and not IsUnitInSelection(targetID) then
 			isGuardTarget = true
-			guardReason = "mex spot"
-			guardID = mexSpotID
+			guardReason = "unit"
+			guardID = targetID
+		elseif nearMexSpot then
+			-- Only block Move if there is no exact target taking precedence
+			if not (ok and (targetType == "unit" or targetType == "feature") and tonumber(targetID)) then
+				isGuardTarget = true
+				guardReason = "mex spot"
+				guardID = mexSpotID
+			end
 		end
 	end
 

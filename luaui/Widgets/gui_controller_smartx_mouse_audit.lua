@@ -1,4 +1,4 @@
-local versionNumber = "v1.1"
+local versionNumber = "v1.2"
 
 function widget:GetInfo()
 	return {
@@ -24,6 +24,7 @@ local lastClickSnapshot = {
 	traceType = nil,
 	traceID = nil,
 	targetName = nil,
+	targetContext = "none",
 	mexX = nil,
 	mexZ = nil,
 	mexDist = nil,
@@ -42,6 +43,8 @@ local lastObservedCommand = {
 	unitDefName = nil,
 	unitID = nil,
 	linkMatch = false,
+	frameDelta = nil,
+	clickTarget = nil,
 }
 
 local lastError = nil
@@ -87,7 +90,7 @@ local function CaptureClickSnapshot(x, y, button, eventType)
 	if type(Spring.TraceScreenRay) == "function" then
 		traceType, traceID = Spring.TraceScreenRay(x, y)
 	end
-
+	
 	local wx, wy, wz
 	if type(Spring.TraceScreenRay) == "function" then
 		local _, worldPosition = Spring.TraceScreenRay(x, y, true)
@@ -151,6 +154,12 @@ local function CaptureClickSnapshot(x, y, button, eventType)
 		activeCmdStr = activeCmdName or (activeCmdID and tostring(activeCmdID)) or "none"
 	end
 
+	-- Target context details
+	local targetContext = string.format("button%d %s on %s", button, eventType, traceType or "none")
+	if targetName ~= "none" then
+		targetContext = targetContext .. " (" .. targetName .. ")"
+	end
+
 	-- Update lastClickSnapshot
 	lastClickSnapshot.button = button
 	lastClickSnapshot.eventType = eventType
@@ -162,6 +171,7 @@ local function CaptureClickSnapshot(x, y, button, eventType)
 	lastClickSnapshot.traceType = traceType or "none"
 	lastClickSnapshot.traceID = traceID or "none"
 	lastClickSnapshot.targetName = targetName
+	lastClickSnapshot.targetContext = targetContext
 	lastClickSnapshot.mexDist = mexDist
 	lastClickSnapshot.mexX = nearestMexX
 	lastClickSnapshot.mexZ = nearestMexZ
@@ -276,13 +286,12 @@ local function UnitCommandUnsafe(unitID, unitDefID, unitTeam, cmdID, cmdOpts, cm
 
 	local currentFrame = getFrame()
 
-	-- Match linked click
+	-- Match linked click (increased from 30 to 90 frames window for more thorough auditing)
 	local linkedClickStr = "none"
 	local timeDiff = 999999
 	if lastClickSnapshot.frame then
 		timeDiff = currentFrame - lastClickSnapshot.frame
-		-- Accept click as linked if within 30 frames (1 second) of command dispatch
-		if timeDiff >= 0 and timeDiff <= 30 then
+		if timeDiff >= 0 and timeDiff <= 90 then
 			linkedClickStr = string.format("button%d_%s", lastClickSnapshot.button, lastClickSnapshot.eventType)
 		end
 	end
@@ -317,6 +326,8 @@ local function UnitCommandUnsafe(unitID, unitDefID, unitTeam, cmdID, cmdOpts, cm
 	lastObservedCommand.unitDefName = unitName
 	lastObservedCommand.unitID = unitID
 	lastObservedCommand.linkMatch = (linkedClickStr ~= "none")
+	lastObservedCommand.frameDelta = (linkedClickStr ~= "none") and timeDiff or nil
+	lastObservedCommand.clickTarget = (linkedClickStr ~= "none") and lastClickSnapshot.targetContext or nil
 end
 
 function widget:UnitCommand(...)
@@ -328,8 +339,8 @@ local function DrawScreenUnsafe()
 	if not vsx or not vsy then return end
 
 	-- Overlay Position: Top Right
-	local w = 260
-	local h = 210
+	local w = 270
+	local h = 230
 	local x1 = vsx - w - 20
 	local y1 = vsy - h - 100
 
@@ -337,7 +348,7 @@ local function DrawScreenUnsafe()
 	gl.Color(0.08, 0.08, 0.1, 0.85)
 	gl.Rect(x1, y1, x1 + w, y1 + h)
 
-	-- Sleek Blue Border (using gl.BeginEnd with GL.LINE_LOOP)
+	-- Sleek Blue Border
 	gl.LineWidth(2.0)
 	gl.Color(0.25, 0.75, 1.0, 0.7)
 	gl.BeginEnd(GL.LINE_LOOP, function()
@@ -412,13 +423,13 @@ local function DrawScreenUnsafe()
 
 	-- Formatting Overlay Text
 	gl.Color(1, 1, 1, 1)
-	local fontSize = 12
-	local textY = y1 + h - 20
+	local fontSize = 11
+	local textY = y1 + h - 18
 	local textX = x1 + 10
-	local leading = 15
+	local leading = 13.5
 
 	-- Title
-	gl.Text("\255\064\192\255SmartX Mouse Audit\255\255\255\255", textX, textY, fontSize, "o")
+	gl.Text("\255\064\192\255SmartX Mouse Audit " .. versionNumber .. "\255\255\255\255", textX, textY, fontSize + 1, "o")
 	textY = textY - leading - 5
 
 	-- Hover Target
@@ -447,35 +458,62 @@ local function DrawScreenUnsafe()
 
 	-- Active Command
 	gl.Text("Active Cmd: " .. activeCmdStr, textX, textY, fontSize, "o")
-	textY = textY - leading - 5
+	textY = textY - leading - 4
 
 	-- Last click snapshot
 	local lastClickStr = "Last Click: none"
 	if lastClickSnapshot.button then
 		lastClickStr = string.format(
-			"Last Click: button%d %s at %d,%d",
+			"Last Click: button%d %s at f=%d",
 			lastClickSnapshot.button,
 			lastClickSnapshot.eventType,
-			lastClickSnapshot.screenX or 0,
-			lastClickSnapshot.screenY or 0
+			lastClickSnapshot.frame or 0
 		)
 	end
 	gl.Text(lastClickStr, textX, textY, fontSize, "o")
 	textY = textY - leading
 
+	-- Last click target context
+	local contextStr = "Context: " .. tostring(lastClickSnapshot.targetContext or "none")
+	if string.len(contextStr) > 42 then
+		contextStr = string.sub(contextStr, 1, 39) .. "..."
+	end
+	gl.Text(contextStr, textX, textY, fontSize, "o")
+	textY = textY - leading - 3
+
 	-- Last UnitCommand
 	local lastCmdStr = "Last Cmd: none"
 	if lastObservedCommand.cmdID then
-		local paramsCount = lastObservedCommand.params and #lastObservedCommand.params or 0
 		lastCmdStr = string.format(
-			"Last Cmd: %s (%d) params=%d",
+			"Last Cmd: %s (%d)",
 			lastObservedCommand.cmdName or "unknown",
-			lastObservedCommand.cmdID,
-			paramsCount
+			lastObservedCommand.cmdID
 		)
 	end
 	gl.Text(lastCmdStr, textX, textY, fontSize, "o")
 	textY = textY - leading
+
+	-- Params & Options
+	local paramsStr = "Params: " .. serializeTable(lastObservedCommand.params)
+	if string.len(paramsStr) > 42 then
+		paramsStr = string.sub(paramsStr, 1, 39) .. "..."
+	end
+	gl.Text(paramsStr, textX, textY, fontSize, "o")
+	textY = textY - leading
+
+	local optsStr = "Opts: none"
+	if lastObservedCommand.opts then
+		local o = lastObservedCommand.opts
+		local list = {}
+		if o.shift then list[#list + 1] = "shift" end
+		if o.ctrl then list[#list + 1] = "ctrl" end
+		if o.alt then list[#list + 1] = "alt" end
+		if o.meta then list[#list + 1] = "meta" end
+		if o.right then list[#list + 1] = "right" end
+		optsStr = "Opts: {" .. table.concat(list, ",") .. "}"
+	end
+	gl.Text(optsStr, textX, textY, fontSize, "o")
+	textY = textY - leading - 4
 
 	-- Error reporting in overlay / Comparison Note
 	if lastError then
@@ -484,7 +522,10 @@ local function DrawScreenUnsafe()
 		local compNote = "Comparison: waiting for click..."
 		if lastObservedCommand.cmdID then
 			if lastObservedCommand.linkMatch then
-				compNote = "\255\000\255\000Linked to click! Command validated.\255\255\255\255"
+				compNote = string.format("\255\000\255\000Linked! dt=%d click=%s\255\255\255\255", lastObservedCommand.frameDelta or 0, lastObservedCommand.clickTarget or "none")
+				if string.len(compNote) > 42 then
+					compNote = string.sub(compNote, 1, 39) .. "..."
+				end
 			else
 				compNote = "\255\255\128\000Unlinked command observed.\255\255\255\255"
 			end
