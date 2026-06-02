@@ -5,10 +5,13 @@ set "INSTALLER_NAME=BAR Controller Support v0.4.3 Queue Polish - AIO Clean Insta
 set "ENGINE_SLOT=recoil_2025.06.24"
 set "SELF_DIR=%~dp0"
 if "%SELF_DIR:~-1%"=="\" set "SELF_DIR=%SELF_DIR:~0,-1%"
-set "PAYLOAD_ROOT=%SELF_DIR%\payload"
-set "PAYLOAD_ENGINE=%PAYLOAD_ROOT%\engine"
-set "PAYLOAD_BAR=%PAYLOAD_ROOT%\bar_sdd"
-set "PAYLOAD_LUA=%PAYLOAD_ROOT%\lua_widgets"
+set "EXTRACTED_PAYLOAD_ROOT=%SELF_DIR%\payload"
+set "PAYLOAD_ZIP_PATTERN=BAR_Controller_Support_v0.4.3_QUEUE_POLISH_AIO_PAYLOAD_*.zip"
+set "PAYLOAD_ROOT="
+set "PAYLOAD_ENGINE="
+set "PAYLOAD_BAR="
+set "PAYLOAD_LUA="
+set "BAR_FOLDER="
 set "BAR_ROOT=%LOCALAPPDATA%\Programs\Beyond-All-Reason"
 set "BAR_DATA=%BAR_ROOT%\data"
 set "DST_GAMES=%BAR_DATA%\games"
@@ -29,6 +32,7 @@ call :ResolveDesktop
 for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%I"
 set "LOG_FILE=%DESKTOP%\BAR_Controller_v0.4.3_QUEUE_POLISH_AIO_CLEAN_INSTALL_%STAMP%.log"
 set "STAGE=%TEMP%\BAR_Controller_AIO_Clean_%STAMP%"
+set "STAGE_PAYLOAD=%STAGE%\release_payload"
 set "STAGE_ENGINE=%STAGE%\engine"
 set "STAGE_BAR=%STAGE%\BAR.sdd"
 set "BACKUP=%BAR_DATA%\controller-support-v043-aio-clean-backups\%STAMP%"
@@ -39,6 +43,9 @@ call :Log "============================================================"
 call :Log "Installer folder: %SELF_DIR%"
 call :Log "Log file: %LOG_FILE%"
 call :Log ""
+
+call :ResolvePayloadSource
+if errorlevel 1 goto FAIL
 
 call :ValidatePayload
 if errorlevel 1 goto FAIL
@@ -124,6 +131,73 @@ echo(!MSG!
 >> "%LOG_FILE%" echo(!MSG!
 exit /b 0
 
+:SetPayloadFolders
+set "PAYLOAD_ENGINE=%PAYLOAD_ROOT%\engine"
+set "PAYLOAD_BAR=%PAYLOAD_ROOT%\bar_sdd"
+set "PAYLOAD_LUA=%PAYLOAD_ROOT%\lua_widgets"
+exit /b 0
+
+:ResolvePayloadSource
+if exist "%EXTRACTED_PAYLOAD_ROOT%\engine\" if exist "%EXTRACTED_PAYLOAD_ROOT%\bar_sdd\" if exist "%EXTRACTED_PAYLOAD_ROOT%\lua_widgets\" (
+    set "PAYLOAD_ROOT=%EXTRACTED_PAYLOAD_ROOT%"
+    call :SetPayloadFolders
+    call :Log "Using extracted payload folder beside BAT:"
+    call :Log "%PAYLOAD_ROOT%"
+    exit /b 0
+)
+
+set /a PAYLOAD_ARCHIVE_COUNT=0
+for %%F in ("%SELF_DIR%\%PAYLOAD_ZIP_PATTERN%") do (
+    if exist "%%~fF" set /a PAYLOAD_ARCHIVE_COUNT+=1
+)
+
+if "%PAYLOAD_ARCHIVE_COUNT%"=="0" (
+    set "FAIL_MESSAGE=Missing payload ZIPs. Download all PAYLOAD ZIP files from the release and place them in the same folder as this BAT."
+    exit /b 1
+)
+
+call :ValidatePayloadZipSet
+if errorlevel 1 exit /b 1
+
+call :Log "Extracting %PAYLOAD_ARCHIVE_COUNT% release PAYLOAD ZIP file(s) into temporary staging..."
+mkdir "%STAGE_PAYLOAD%" >nul 2>&1
+if not exist "%STAGE_PAYLOAD%\" (
+    set "FAIL_MESSAGE=Could not create temporary payload staging folder."
+    exit /b 1
+)
+
+for %%F in ("%SELF_DIR%\%PAYLOAD_ZIP_PATTERN%") do (
+    if exist "%%~fF" (
+        call :Log "Extracting %%~nxF"
+        set "ZIP_PATH=%%~fF"
+        set "DEST_PATH=%STAGE_PAYLOAD%"
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath $env:ZIP_PATH -DestinationPath $env:DEST_PATH -Force"
+        if errorlevel 1 (
+            set "FAIL_MESSAGE=Failed to extract release PAYLOAD ZIP %%~nxF."
+            exit /b 1
+        )
+    )
+)
+
+set "PAYLOAD_ROOT=%STAGE_PAYLOAD%\payload"
+call :SetPayloadFolders
+
+if not exist "%PAYLOAD_ROOT%\" (
+    set "FAIL_MESSAGE=Extracted PAYLOAD ZIPs did not reconstruct a payload folder."
+    exit /b 1
+)
+call :Log "Combined payload root:"
+call :Log "%PAYLOAD_ROOT%"
+exit /b 0
+
+:ValidatePayloadZipSet
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $dir=$env:SELF_DIR; $pattern=$env:PAYLOAD_ZIP_PATTERN; $files=@(Get-ChildItem -LiteralPath $dir -Filter $pattern -File | Sort-Object Name); if ($files.Count -eq 0) { throw 'Missing payload ZIPs. Download all PAYLOAD ZIP files from the release and place them in the same folder as this BAT.' }; $info=@(); foreach ($f in $files) { if ($f.Name -notmatch 'PAYLOAD_(\d+)_OF_(\d+)\.zip$') { throw ('Invalid PAYLOAD ZIP name: ' + $f.Name) }; $info += [pscustomobject]@{ Index=[int]$matches[1]; Total=[int]$matches[2]; Name=$f.Name; Length=$f.Length } }; $totals=@($info.Total | Sort-Object -Unique); if ($totals.Count -ne 1) { throw 'PAYLOAD ZIP files disagree about the expected payload count.' }; $total=[int]$totals[0]; if ($files.Count -ne $total) { throw ('Partial PAYLOAD ZIP set: expected ' + $total + ' file(s), found ' + $files.Count + '. Download all PAYLOAD ZIP files from the release.') }; for ($i=1; $i -le $total; $i++) { if (-not @($info | Where-Object { $_.Index -eq $i }).Count) { throw ('Missing PAYLOAD ZIP ' + $i + ' of ' + $total + '. Download all PAYLOAD ZIP files from the release.') } }; foreach ($item in $info) { if ($item.Length -ge 2147483648) { throw ('PAYLOAD ZIP exceeds GitHub per-file size limit: ' + $item.Name) } }; Write-Host ('Found complete PAYLOAD ZIP set: ' + $files.Count + ' file(s).')"
+if errorlevel 1 (
+    set "FAIL_MESSAGE=Invalid or incomplete PAYLOAD ZIP set. Download all PAYLOAD ZIP files from the release and place them in the same folder as this BAT."
+    exit /b 1
+)
+exit /b 0
+
 :ValidatePayload
 call :Log "Validating local AIO payload..."
 if not exist "%PAYLOAD_ENGINE%\" (
@@ -154,14 +228,23 @@ if not "%ENGINE_ZIP_COUNT%"=="1" (
 
 set /a BAR_ZIP_COUNT=0
 set "BAR_ZIP="
+set "BAR_FOLDER="
 for %%F in ("%PAYLOAD_BAR%\*.zip") do (
     if exist "%%~fF" (
         set /a BAR_ZIP_COUNT+=1
         set "BAR_ZIP=%%~fF"
     )
 )
-if not "%BAR_ZIP_COUNT%"=="1" (
-    set "FAIL_MESSAGE=Expected exactly one BAR.sdd ZIP in payload\bar_sdd, found %BAR_ZIP_COUNT%."
+if "%BAR_ZIP_COUNT%"=="0" (
+    if exist "%PAYLOAD_BAR%\BAR.sdd\modinfo.lua" if exist "%PAYLOAD_BAR%\BAR.sdd\luaui\" set "BAR_FOLDER=%PAYLOAD_BAR%\BAR.sdd"
+    if not defined BAR_FOLDER if exist "%PAYLOAD_BAR%\modinfo.lua" if exist "%PAYLOAD_BAR%\luaui\" set "BAR_FOLDER=%PAYLOAD_BAR%"
+)
+if "%BAR_ZIP_COUNT%"=="0" if not defined BAR_FOLDER (
+    set "FAIL_MESSAGE=Expected one BAR.sdd ZIP or a reconstructed BAR.sdd folder in payload\bar_sdd."
+    exit /b 1
+)
+if %BAR_ZIP_COUNT% GTR 1 (
+    set "FAIL_MESSAGE=Expected at most one BAR.sdd ZIP in payload\bar_sdd, found %BAR_ZIP_COUNT%."
     exit /b 1
 )
 
@@ -175,13 +258,15 @@ if "%LUA_COUNT%"=="0" (
 )
 
 call :Log "Engine payload ZIP: %ENGINE_ZIP%"
-call :Log "BAR.sdd payload ZIP: %BAR_ZIP%"
+if defined BAR_ZIP call :Log "BAR.sdd payload ZIP: %BAR_ZIP%"
+if defined BAR_FOLDER call :Log "BAR.sdd payload folder: %BAR_FOLDER%"
 call :Log "Lua widget count: %LUA_COUNT%"
 exit /b 0
 
 :StagePayload
 call :Log "Staging payload under %STAGE% ..."
-if exist "%STAGE%" rmdir /s /q "%STAGE%" >nul 2>&1
+if exist "%STAGE_ENGINE%" rmdir /s /q "%STAGE_ENGINE%" >nul 2>&1
+if exist "%STAGE_BAR%" rmdir /s /q "%STAGE_BAR%" >nul 2>&1
 mkdir "%STAGE_ENGINE%" >nul 2>&1
 mkdir "%STAGE_BAR%" >nul 2>&1
 if not exist "%STAGE_ENGINE%\" (
@@ -202,10 +287,15 @@ if not exist "%STAGE_ENGINE%\spring.exe" (
     exit /b 1
 )
 
-call :ExpandZip "%BAR_ZIP%" "%STAGE_BAR%"
-if errorlevel 1 exit /b 1
-call :FlattenBar
-if errorlevel 1 exit /b 1
+if defined BAR_ZIP (
+    call :ExpandZip "%BAR_ZIP%" "%STAGE_BAR%"
+    if errorlevel 1 exit /b 1
+    call :FlattenBar
+    if errorlevel 1 exit /b 1
+) else (
+    call :CopyBarFolderToStage
+    if errorlevel 1 exit /b 1
+)
 if not exist "%STAGE_BAR%\modinfo.lua" (
     set "FAIL_MESSAGE=BAR.sdd extraction did not contain modinfo.lua."
     exit /b 1
@@ -236,6 +326,19 @@ for %%F in ("%PAYLOAD_LUA%\*.lua") do (
 )
 
 call :Log "Payload staging and verification passed."
+exit /b 0
+
+:CopyBarFolderToStage
+if not defined BAR_FOLDER (
+    set "FAIL_MESSAGE=BAR.sdd folder payload was not defined."
+    exit /b 1
+)
+set "SRC_BAR_FOLDER=%BAR_FOLDER%"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; Get-ChildItem -LiteralPath $env:SRC_BAR_FOLDER -Force | Copy-Item -Destination $env:STAGE_BAR -Recurse -Force"
+if errorlevel 1 (
+    set "FAIL_MESSAGE=Failed to copy reconstructed BAR.sdd folder into staging."
+    exit /b 1
+)
 exit /b 0
 
 :ExpandZip

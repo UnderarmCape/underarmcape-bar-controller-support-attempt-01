@@ -3,14 +3,26 @@ BAR Controller Support v0.4.3 Queue Polish - AIO Clean Install
 
 This is the recommended clean installer for normal users.
 
-Download BAR_Controller_Support_v0.4.3_QUEUE_POLISH_AIO_CLEAN_INSTALL.zip,
-extract the ZIP first, then run:
+This release is distributed as a small installer BAT plus PAYLOAD ZIP files
+because GitHub release assets must stay under the per-file upload limit.
+
+Download these files from the release:
+
+* Install_BAR_Controller_Support_v0.4.3_QUEUE_POLISH_AIO_CLEAN_INSTALL.bat
+* README_AIO_CLEAN_INSTALL.txt
+* All files named BAR_Controller_Support_v0.4.3_QUEUE_POLISH_AIO_PAYLOAD_*.zip
+
+Put all downloaded files in the same folder, then double-click:
 
 Install_BAR_Controller_Support_v0.4.3_QUEUE_POLISH_AIO_CLEAN_INSTALL.bat
 
+Do not manually extract the PAYLOAD ZIP files. The BAT extracts and validates
+them automatically.
+
 No Git is required.
 No GitHub CLI is required.
-No internet connection is required during install.
+No internet connection is required during install after the release files have
+been downloaded.
 
 What this installer includes
 ----------------------------
@@ -50,6 +62,15 @@ The tested smooth and working setup is:
 
 Installer behavior
 ------------------
+
+The installer first extracts all sibling PAYLOAD ZIP files into a temporary
+staging folder, reconstructs the logical payload folder, and validates it.
+
+The combined payload must include:
+
+* payload\engine
+* payload\bar_sdd
+* payload\lua_widgets
 
 The installer backs up existing active folders before replacing them:
 

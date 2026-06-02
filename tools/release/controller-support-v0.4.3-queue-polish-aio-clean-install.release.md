@@ -2,9 +2,16 @@
 
 This is the current recommended installer for normal users.
 
-Download the AIO ZIP, extract it, and run:
+This release is distributed as a small installer BAT plus PAYLOAD ZIP files because GitHub release assets must stay under the per-file upload limit.
 
-Install_BAR_Controller_Support_v0.4.3_QUEUE_POLISH_AIO_CLEAN_INSTALL.bat
+## Install
+
+1. Download the BAT, README, and all PAYLOAD ZIP files.
+2. Keep them in the same folder.
+3. Run `Install_BAR_Controller_Support_v0.4.3_QUEUE_POLISH_AIO_CLEAN_INSTALL.bat`.
+4. The BAT extracts, validates, and installs the payload automatically.
+
+Do not manually extract the PAYLOAD ZIP files.
 
 ## Why this release exists
 
@@ -28,15 +35,14 @@ Older full BAR.sdd packaging caused periodic RTSS frametime stutter. Testing con
 * No GitHub CLI requirement
 * No internet requirement during install
 
-## Install
+## Release Assets
 
-1. Download BAR_Controller_Support_v0.4.3_QUEUE_POLISH_AIO_CLEAN_INSTALL.zip
-2. Extract the ZIP
-3. Run Install_BAR_Controller_Support_v0.4.3_QUEUE_POLISH_AIO_CLEAN_INSTALL.bat
-4. Launch BAR normally
-5. Go to Settings > Developer
-6. Start Singleplayer: Beyond All Reason Dev
-7. Watch RTSS and test Xbox controller input
+Download all of these files into the same folder:
+
+* `Install_BAR_Controller_Support_v0.4.3_QUEUE_POLISH_AIO_CLEAN_INSTALL.bat`
+* `README_AIO_CLEAN_INSTALL.txt`
+* `BAR_Controller_Support_v0.4.3_QUEUE_POLISH_AIO_PAYLOAD_1_OF_2.zip`
+* `BAR_Controller_Support_v0.4.3_QUEUE_POLISH_AIO_PAYLOAD_2_OF_2.zip`
 
 ## Notes
 
