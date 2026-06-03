@@ -6405,6 +6405,12 @@ local TacticalCategories = {
 		left = { key = "special", label = "Special / Context", shortLabel = "Special", hint = "D-pad Left" },
 	},
 	ByKey = {},
+	Colors = {
+		utility = { 0.25, 0.75, 0.95 },
+		combat = { 0.95, 0.35, 0.22 },
+		buildArea = { 0.32, 0.85, 0.44 },
+		special = { 0.72, 0.35, 0.88 },
+	},
 }
 
 for _, direction in ipairs(TacticalCategories.Order) do
@@ -6440,18 +6446,56 @@ function TacticalCategories.OptionText(option)
 end
 
 function TacticalCategories.IsHiddenTacticalOption(option)
-	local cmdID = option and tonumber(option.cmdID)
+	if type(option) ~= "table" then
+		return true
+	end
+	local cmdID = option.cmdID and tonumber(option.cmdID)
 	local text = TacticalCategories.OptionText(option)
-	local action = string.lower(tostring(option and option.action or ""))
+	local lowerName = string.lower(option.name or option.shortLabel or "")
+	local action = string.lower(tostring(option.action or ""))
+
+	-- Check explicit command IDs first
 	if cmdID == CMD.STOP or cmdID == CMD.MOVE or cmdID == CMD.PATROL then
 		return true
 	end
-	if action == "stop" or action == "move" or action == "patrol" then
+
+	-- Check name, action, or serialized text for forbidden keywords
+	if lowerName:find("move", 1, true)
+		or lowerName:find("patrol", 1, true)
+		or lowerName:find("stop", 1, true)
+		or lowerName:find("blueprint", 1, true)
+		or lowerName:find("formation", 1, true)
+	then
+		-- Keep "move state" / "movestate" as it is a utility state cycle command
+		if not lowerName:find("move state", 1, true) and not lowerName:find("movestate", 1, true) then
+			return true
+		end
+	end
+
+	if action:find("move", 1, true)
+		or action:find("patrol", 1, true)
+		or action:find("stop", 1, true)
+		or action:find("blueprint", 1, true)
+		or action:find("formation", 1, true)
+	then
+		if not action:find("move state", 1, true) and not action:find("movestate", 1, true) then
+			return true
+		end
+	end
+
+	if text:find("place blueprint", 1, true)
+		or text:find("blueprint", 1, true)
+		or text:find("move line", 1, true)
+		or text:find("line move", 1, true)
+		or text:find("moveline", 1, true)
+		or text:find("formation move", 1, true)
+		or text:find("custom formation", 1, true)
+		or text:find("patrol line", 1, true)
+		or text:find("fight line", 1, true)
+	then
 		return true
 	end
-	if text:find("place blueprint", 1, true) or text:find("blueprint", 1, true) then
-		return true
-	end
+
 	return false
 end
 
@@ -6484,6 +6528,7 @@ function TacticalCategories.CategoryForOption(option)
 		or cmdID == CMD.REPEAT
 		or cmdID == TacticalCategories.CmdMoveState
 		or cmdID == TacticalCategories.CmdHighPriority
+		or cmdID == (CMD.FIRESTATE or 20)
 		or kind == "repeat_toggle"
 		or kind == "move_state_cycle"
 		or kind == "fire_state_cycle"
@@ -6491,6 +6536,7 @@ function TacticalCategories.CategoryForOption(option)
 		or text:find("move state", 1, true)
 		or text:find("high priority", 1, true)
 		or text:find("priority", 1, true)
+		or text:find("fire state", 1, true)
 	then
 		return "utility"
 	end
@@ -6510,23 +6556,41 @@ function TacticalCategories.CategoryForOption(option)
 	then
 		return "combat"
 	end
+
+	-- Strict whitelist for Special / Context
+	local lowerName = string.lower(option.name or option.shortLabel or "")
 	if mode == "resurrectArea"
-		or text:find("resurrect", 1, true)
+		or cmdID == CMD.CAPTURE
+		or cmdID == (CMD.LOAD_UNITS or 75)
+		or cmdID == (CMD.UNLOAD_UNITS or 80)
+		or cmdID == (CMD.CLOAK or 90)
+		or cmdID == (CMD.SELFD or 70)
+		or cmdID == (CMD.RESURRECT or 125)
+		or lowerName:find("capture", 1, true)
+		or lowerName:find("resurrect", 1, true)
+		or lowerName:find("load", 1, true)
+		or lowerName:find("unload", 1, true)
+		or lowerName:find("transport", 1, true)
+		or lowerName:find("cloak", 1, true)
+		or lowerName:find("self destruct", 1, true)
+		or lowerName:find("self-destruct", 1, true)
+		or lowerName:find("selfd", 1, true)
+		or lowerName:find("on/off", 1, true)
+		or lowerName:find("on-off", 1, true)
 		or text:find("capture", 1, true)
-		or text:find("transport", 1, true)
+		or text:find("resurrect", 1, true)
 		or text:find("load", 1, true)
 		or text:find("unload", 1, true)
+		or text:find("transport", 1, true)
 		or text:find("cloak", 1, true)
 		or text:find("self destruct", 1, true)
 		or text:find("self-destruct", 1, true)
-		or text:find("selfd", 1, true)
 	then
 		return "special"
 	end
-	if mode ~= "" or kind ~= "" then
-		return "special"
-	end
-	return "special"
+
+	-- Unknown commands return nil to keep them hidden
+	return nil
 end
 
 function TacticalCategories.AreaIconLabel(label, fallback)
@@ -10304,9 +10368,23 @@ function ControllerCameraTestDrawTacticalRadial()
 	local itemW = math.min(180, math.max(86, minView * 0.11 * radialScale))
 	local itemH = 40 * radialScale
 
+	local catColor = TacticalCategories.Colors[currentCategory.key] or { 1, 1, 1 }
+
 	gl.Color(0, 0, 0, 0.46)
 	ControllerCameraTestDrawCircle2D(cx, cy, radius * 1.28, 42)
-	gl.Color(0.95, 0.32, 0.24, 0.74)
+
+	-- Center Circle Border
+	gl.Color(catColor[1] * 0.5, catColor[2] * 0.5, catColor[3] * 0.5, 0.64)
+	gl.LineWidth(1.5)
+	gl.BeginEnd(GL.LINE_LOOP, function()
+		for i = 0, 30 do
+			local theta = i * (2 * math.pi / 30)
+			gl.Vertex(cx + radius * 0.36 * math.cos(theta), cy + radius * 0.36 * math.sin(theta))
+		end
+	end)
+
+	-- Outer Ring Accent using Active Category Color
+	gl.Color(catColor[1], catColor[2], catColor[3], 0.74)
 	gl.LineWidth(2.5)
 	gl.BeginEnd(GL.LINE_LOOP, function()
 		for i = 0, 44 do
@@ -10315,47 +10393,60 @@ function ControllerCameraTestDrawTacticalRadial()
 		end
 	end)
 
+	-- Compact category chips positioned closer to center (0.55 * radius)
 	for _, direction in ipairs(TacticalCategories.Order) do
 		local category = TacticalCategories.ByDirection[direction]
 		local selected = category.key == currentCategory.key
+		local cellColor = TacticalCategories.Colors[category.key] or { 1, 1, 1 }
 		local dx, dy = 0, 0
 		if direction == "up" then
-			dy = radius * 0.92
+			dy = radius * 0.55
 		elseif direction == "down" then
-			dy = -radius * 0.92
+			dy = -radius * 0.55
 		elseif direction == "left" then
-			dx = -radius * 0.92
+			dx = -radius * 0.55
 		elseif direction == "right" then
-			dx = radius * 0.92
+			dx = radius * 0.55
 		end
-		local chipW = math.min(168, math.max(94, #category.shortLabel * 7.5 + 26))
-		local chipH = 26 * radialScale
+		local chipW = math.min(130, math.max(86, #category.shortLabel * 7.0 + 16))
+		local chipH = 22 * radialScale
 		local x = cx + dx
 		local y = cy + dy
-		gl.Color(selected and 0.95 or 0.08, selected and 0.38 or 0.10, selected and 0.24 or 0.13, selected and 0.88 or 0.7)
-		gl.Rect(x - chipW / 2, y - chipH / 2, x + chipW / 2, y + chipH / 2)
-		gl.Color(selected and 1 or 0.62, selected and 0.94 or 0.72, selected and 0.68 or 0.82, selected and 1 or 0.82)
-		gl.LineWidth(selected and 2.2 or 1.1)
+
+		if selected then
+			gl.Color(cellColor[1] * 0.15, cellColor[2] * 0.15, cellColor[3] * 0.15, 0.88)
+			gl.Rect(x - chipW / 2, y - chipH / 2, x + chipW / 2, y + chipH / 2)
+			gl.Color(cellColor[1], cellColor[2], cellColor[3], 0.95)
+			gl.LineWidth(2.2)
+		else
+			gl.Color(0.04, 0.05, 0.06, 0.48)
+			gl.Rect(x - chipW / 2, y - chipH / 2, x + chipW / 2, y + chipH / 2)
+			gl.Color(cellColor[1] * 0.38, cellColor[2] * 0.38, cellColor[3] * 0.38, 0.54)
+			gl.LineWidth(1.0)
+		end
+
 		gl.BeginEnd(GL.LINE_LOOP, function()
 			gl.Vertex(x - chipW / 2, y - chipH / 2)
 			gl.Vertex(x + chipW / 2, y - chipH / 2)
 			gl.Vertex(x + chipW / 2, y + chipH / 2)
 			gl.Vertex(x - chipW / 2, y + chipH / 2)
 		end)
-		gl.Color(1, 1, 1, selected and 1 or 0.78)
-		gl.Text(category.shortLabel, x, y - 5, selected and 11 or 10, "oc")
+
+		gl.Color(selected and { 1, 1, 1, 1.0 } or { 0.72, 0.72, 0.72, 0.68 })
+		gl.Text(category.shortLabel, x, y - 4, selected and 10 or 9, "oc")
 	end
 
 	if n <= 0 then
-		gl.Color(1, 1, 1, 1)
-		gl.Text(currentCategory.label, cx, cy + 14, 15, "oc")
+		gl.Color(catColor[1], catColor[2], catColor[3], 1.0)
+		gl.Text(currentCategory.label, cx, cy + 18, 14, "oc")
 		gl.Color(1, 1, 1, 0.74)
-		gl.Text("No available commands", cx, cy - 10, 12, "oc")
-		gl.Color(1, 1, 1, 0.62)
-		gl.Text("D-pad chooses category", cx, cy - 30, 10, "oc")
+		gl.Text("No available commands", cx, cy - 2, 11, "oc")
+		gl.Color(1, 1, 1, 0.55)
+		gl.Text("D-pad chooses category  |  B/Y cancel", cx, cy - 20, 9, "oc")
 		return
 	end
 
+	-- Option rendering inheriting category color theme
 	for i, option in ipairs(commands) do
 		local angle = ((i - 1) * (2 * math.pi / n)) - (math.pi / 2)
 		local x = cx + radius * math.cos(angle)
@@ -10364,13 +10455,17 @@ function ControllerCameraTestDrawTacticalRadial()
 		local label = option.shortLabel or option.name or "Command"
 
 		if selected then
-			gl.Color(0.95, 0.36, 0.26, 0.88)
+			gl.Color(catColor[1] * 0.8, catColor[2] * 0.8, catColor[3] * 0.8, 0.82)
+			gl.Rect(x - itemW / 2, y - itemH / 2, x + itemW / 2, y + itemH / 2)
+			gl.Color(catColor[1], catColor[2], catColor[3], 1.0)
+			gl.LineWidth(2.5)
 		else
-			gl.Color(0.10, 0.12, 0.15, 0.74)
+			gl.Color(0.06, 0.08, 0.10, 0.78)
+			gl.Rect(x - itemW / 2, y - itemH / 2, x + itemW / 2, y + itemH / 2)
+			gl.Color(catColor[1] * 0.45, catColor[2] * 0.45, catColor[3] * 0.45, 0.64)
+			gl.LineWidth(1.2)
 		end
-		gl.Rect(x - itemW / 2, y - itemH / 2, x + itemW / 2, y + itemH / 2)
-		gl.Color(selected and 1 or 0.55, selected and 0.92 or 0.7, selected and 0.62 or 0.78, selected and 1 or 0.88)
-		gl.LineWidth(selected and 2.5 or 1.2)
+
 		gl.BeginEnd(GL.LINE_LOOP, function()
 			gl.Vertex(x - itemW / 2, y - itemH / 2)
 			gl.Vertex(x + itemW / 2, y - itemH / 2)
@@ -10378,24 +10473,35 @@ function ControllerCameraTestDrawTacticalRadial()
 			gl.Vertex(x - itemW / 2, y + itemH / 2)
 		end)
 
-		gl.Color(1, 1, 1, selected and 1 or 0.82)
+		gl.Color(selected and { 1, 1, 1, 1.0 } or { 0.82, 0.82, 0.82, 0.86 })
 		gl.Text(label, x, y - 5, selected and 13 or 11, "oc")
 	end
 
 	local current = commands[menu.selectedIndex]
 	gl.Color(0.08, 0.10, 0.13, 0.76)
 	ControllerCameraTestDrawCircle2D(cx, cy, radius * 0.36, 30)
-	gl.Color(1, 0.92, 0.72, 1)
-	gl.Text(currentCategory.label, cx, cy + 28, 13, "oc")
+
+	-- Center Circle Border
+	gl.Color(catColor[1] * 0.5, catColor[2] * 0.5, catColor[3] * 0.5, 0.64)
+	gl.LineWidth(1.5)
+	gl.BeginEnd(GL.LINE_LOOP, function()
+		for i = 0, 30 do
+			local theta = i * (2 * math.pi / 30)
+			gl.Vertex(cx + radius * 0.36 * math.cos(theta), cy + radius * 0.36 * math.sin(theta))
+		end
+	end)
+
+	gl.Color(catColor[1], catColor[2], catColor[3], 1.0)
+	gl.Text(currentCategory.label, cx, cy + 28, 12, "oc")
 	gl.Color(1, 1, 1, 1)
-	gl.Text(current and current.name or "Tactical", cx, cy + 8, 15, "oc")
-	gl.Color(1, 1, 1, 0.86)
-	gl.Text("LS choose  A/X confirm  B/Y close", cx, cy - 16, 10, "oc")
-	gl.Color(1, 1, 1, 0.68)
-	gl.Text("D-pad: U utility  R combat  D build/area  L special", cx, cy - 32, 9, "oc")
+	gl.Text(current and current.name or "Tactical", cx, cy + 8, 14, "oc")
+	gl.Color(1, 1, 1, 0.82)
+	gl.Text("LS choose  A/X confirm  B/Y close", cx, cy - 14, 10, "oc")
+	gl.Color(1, 1, 1, 0.64)
+	gl.Text("D-pad: U utility  R combat  D build/area  L special", cx, cy - 28, 9, "oc")
 	if ControllerCameraTestIsQueueModifierActive() then
 		gl.Color(0.35, 0.95, 0.65, 1)
-		gl.Text("APPEND", cx, cy - 48, 11, "oc")
+		gl.Text("APPEND", cx, cy - 44, 11, "oc")
 	end
 	gl.Color(1, 1, 1, 1)
 	gl.LineWidth(1)
