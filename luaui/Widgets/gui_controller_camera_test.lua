@@ -2761,7 +2761,12 @@ ControllerCameraTestAreaCommandProfiles = ControllerCameraTestAreaCommandProfile
 	},
 }
 
+local ControllerCameraTestDefaultAreaMexRadius = 500
+local ControllerCameraTestAreaMexRadiusStep = 80
+local ControllerCameraTestAreaMexMinRadius = 120
+local ControllerCameraTestAreaMexMaxRadius = 1200
 local ControllerCameraTestAreaMexWarningLogged = false
+ControllerCameraTestAreaMexAimRadius = ControllerCameraTestAreaMexAimRadius or ControllerCameraTestDefaultAreaMexRadius
 
 function ControllerCameraTestGetAreaCommandProfile(optionOrMode)
 	local mode = type(optionOrMode) == "table" and optionOrMode.dragMode or optionOrMode
@@ -2790,9 +2795,26 @@ function ControllerCameraTestAreaCommandRadius(startX, startZ, endX, endZ)
 end
 
 function ControllerCameraTestAreaMexRadius()
-	-- Route A Area Mex uses a fixed controller radius because engine mouse-drag
-	-- collection is bypassed. Reuse the existing Area radius setting for now.
-	return clamp(tonumber(ControllerCameraTestSettings.areaSelectRadius) or 320, 120, 1200)
+	-- Route A Area Mex bypasses engine mouse-drag collection, so it owns a
+	-- controller aim radius without changing the general area-selection brush.
+	ControllerCameraTestAreaMexAimRadius = clamp(
+		tonumber(ControllerCameraTestAreaMexAimRadius) or ControllerCameraTestDefaultAreaMexRadius,
+		ControllerCameraTestAreaMexMinRadius,
+		ControllerCameraTestAreaMexMaxRadius
+	)
+	return ControllerCameraTestAreaMexAimRadius
+end
+
+function ControllerCameraTestAdjustAreaMexRadius(delta)
+	if delta == 0 then
+		return ControllerCameraTestAreaMexRadius()
+	end
+	ControllerCameraTestAreaMexAimRadius = clamp(
+		ControllerCameraTestAreaMexRadius() + (delta * ControllerCameraTestAreaMexRadiusStep),
+		ControllerCameraTestAreaMexMinRadius,
+		ControllerCameraTestAreaMexMaxRadius
+	)
+	return ControllerCameraTestAreaMexAimRadius
 end
 
 function ControllerCameraTestIsFiniteNumber(value)
@@ -6862,6 +6884,11 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 	end
 
 	if ControllerCameraTestIsAreaMexOption(option) then
+		if ControllerCameraTestActionPressed("commandLeft") then
+			ControllerCameraTestAdjustAreaMexRadius(-1)
+		elseif ControllerCameraTestActionPressed("commandRight") then
+			ControllerCameraTestAdjustAreaMexRadius(1)
+		end
 		local radius = ControllerCameraTestAreaMexRadius()
 		ControllerCameraTestUpdateAreaCommandDebug("staged aim", option, radius, radius, "preview")
 	elseif isAreaCmd and drag.active then
@@ -9584,7 +9611,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 			or XboxController.commandLayoutSummary
 	elseif type(ControllerCameraTestTacticalMenu.stagedOption) == "table" then
 		if ControllerCameraTestIsAreaMexOption(ControllerCameraTestTacticalMenu.stagedOption) then
-			activeButtonLayoutSummary = "Area Mex: move reticle, A/X confirm, RT appends, B cancel"
+			activeButtonLayoutSummary = "Area Mex: move reticle, D-pad L/R radius, A/X confirm, RT appends, B cancel"
 		else
 			activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.repeatPlacementActive
 				and "Tactical repeat: move reticle, A place again, release RT clear, B cancel"
@@ -10086,6 +10113,27 @@ end
 
 function ControllerCameraTestDrawAreaCommandCenterLabel()
 	local drag = ControllerCameraTestDragCommand
+	local stagedOption = ControllerCameraTestTacticalMenu and ControllerCameraTestTacticalMenu.stagedOption
+	local stagedAreaMex = ControllerCameraTestIsAreaMexOption(stagedOption)
+	if stagedAreaMex and reticleHasWorldTarget and type(Spring.WorldToScreenCoords) == "function" then
+		local ok, sx, sy = pcall(Spring.WorldToScreenCoords, reticleWorldX, reticleWorldY or 0, reticleWorldZ)
+		if not ok or type(sx) ~= "number" or type(sy) ~= "number" then
+			return
+		end
+
+		local label = "MEX R:" .. tostring(math.floor(ControllerCameraTestAreaMexRadius()))
+		local halfWidth = math.max(42, (#label * 4.8) + 16)
+		local halfHeight = 13
+		local profile = ControllerCameraTestGetAreaCommandProfile(stagedOption)
+		gl.Color(0, 0, 0, 0.58)
+		glRect(sx - halfWidth, sy - halfHeight, sx + halfWidth, sy + halfHeight)
+		local color = profile.centerColor or profile.color
+		gl.Color(color[1], color[2], color[3], color[4] or 0.95)
+		glText(label, sx, sy - 5, 13, "oc")
+		gl.Color(1, 1, 1, 1)
+		return
+	end
+
 	if not drag.active or not drag.startX or not drag.startZ then
 		return
 	end
