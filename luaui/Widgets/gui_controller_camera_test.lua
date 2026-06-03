@@ -6391,36 +6391,39 @@ ControllerCameraTestFactoryTacticalCommandTemplates = ControllerCameraTestFactor
 	{ name = "Stop", shortLabel = "Stop", cmdID = CMD.STOP, kind = "none" },
 }
 
-local ControllerCameraTestCmdMoveState = (CMD and CMD.MOVE_STATE) or 50
-local ControllerCameraTestCmdHighPriority = (GameCMD and GameCMD.PRIORITY) or 34571
-local ControllerCameraTestCmdRestore = (CMD and CMD.RESTORE) or 110
-local ControllerCameraTestCmdAreaMex = (GameCMD and GameCMD.AREA_MEX) or 30100
+local TacticalCategories = {
+	CmdMoveState = (CMD and CMD.MOVE_STATE) or 50,
+	CmdHighPriority = (GameCMD and GameCMD.PRIORITY) or 34571,
+	CmdRestore = (CMD and CMD.RESTORE) or 110,
+	CmdAreaMex = (GameCMD and GameCMD.AREA_MEX) or 30100,
 
-local ControllerCameraTestTacticalCategoryOrder = { "up", "right", "down", "left" }
-local ControllerCameraTestTacticalCategoryByDirection = {
-	up = { key = "utility", label = "Utility / States", shortLabel = "Utility", hint = "D-pad Up" },
-	right = { key = "combat", label = "Combat", shortLabel = "Combat", hint = "D-pad Right" },
-	down = { key = "buildArea", label = "Build / Economy / Area", shortLabel = "Build / Area", hint = "D-pad Down" },
-	left = { key = "special", label = "Special / Context", shortLabel = "Special", hint = "D-pad Left" },
+	Order = { "up", "right", "down", "left" },
+	ByDirection = {
+		up = { key = "utility", label = "Utility / States", shortLabel = "Utility", hint = "D-pad Up" },
+		right = { key = "combat", label = "Combat", shortLabel = "Combat", hint = "D-pad Right" },
+		down = { key = "buildArea", label = "Build / Economy / Area", shortLabel = "Build / Area", hint = "D-pad Down" },
+		left = { key = "special", label = "Special / Context", shortLabel = "Special", hint = "D-pad Left" },
+	},
+	ByKey = {},
 }
-local ControllerCameraTestTacticalCategoryByKey = {}
-for _, direction in ipairs(ControllerCameraTestTacticalCategoryOrder) do
-	local category = ControllerCameraTestTacticalCategoryByDirection[direction]
+
+for _, direction in ipairs(TacticalCategories.Order) do
+	local category = TacticalCategories.ByDirection[direction]
 	category.direction = direction
-	ControllerCameraTestTacticalCategoryByKey[category.key] = category
+	TacticalCategories.ByKey[category.key] = category
 end
 
-local function ControllerCameraTestTacticalCategoryInfo(keyOrDirection)
-	return ControllerCameraTestTacticalCategoryByKey[keyOrDirection]
-		or ControllerCameraTestTacticalCategoryByDirection[keyOrDirection]
-		or ControllerCameraTestTacticalCategoryByKey.buildArea
+function TacticalCategories.Info(keyOrDirection)
+	return TacticalCategories.ByKey[keyOrDirection]
+		or TacticalCategories.ByDirection[keyOrDirection]
+		or TacticalCategories.ByKey.buildArea
 end
 
-local function ControllerCameraTestCommandDescText(desc)
+function TacticalCategories.CommandDescText(desc)
 	return string.lower(tostring(desc.name or "") .. " " .. tostring(desc.action or "") .. " " .. tostring(desc.tooltip or ""))
 end
 
-local function ControllerCameraTestTextHasAny(text, needles)
+function TacticalCategories.TextHasAny(text, needles)
 	for _, needle in ipairs(needles) do
 		if text:find(needle, 1, true) then
 			return true
@@ -6429,16 +6432,16 @@ local function ControllerCameraTestTextHasAny(text, needles)
 	return false
 end
 
-local function ControllerCameraTestOptionText(option)
+function TacticalCategories.OptionText(option)
 	return string.lower(tostring(option and option.name or "")
 		.. " " .. tostring(option and option.shortLabel or "")
 		.. " " .. tostring(option and option.action or "")
 		.. " " .. tostring(option and option.tooltip or ""))
 end
 
-local function ControllerCameraTestIsHiddenTacticalOption(option)
+function TacticalCategories.IsHiddenTacticalOption(option)
 	local cmdID = option and tonumber(option.cmdID)
-	local text = ControllerCameraTestOptionText(option)
+	local text = TacticalCategories.OptionText(option)
 	local action = string.lower(tostring(option and option.action or ""))
 	if cmdID == CMD.STOP or cmdID == CMD.MOVE or cmdID == CMD.PATROL then
 		return true
@@ -6452,8 +6455,8 @@ local function ControllerCameraTestIsHiddenTacticalOption(option)
 	return false
 end
 
-local function ControllerCameraTestTacticalCategoryForOption(option)
-	if type(option) ~= "table" or ControllerCameraTestIsHiddenTacticalOption(option) then
+function TacticalCategories.CategoryForOption(option)
+	if type(option) ~= "table" or TacticalCategories.IsHiddenTacticalOption(option) then
 		return nil
 	end
 	if option.tacticalCategory then
@@ -6463,24 +6466,24 @@ local function ControllerCameraTestTacticalCategoryForOption(option)
 	local cmdID = tonumber(option.cmdID)
 	local kind = tostring(option.kind or "")
 	local mode = tostring(option.dragMode or "")
-	local text = ControllerCameraTestOptionText(option)
+	local text = TacticalCategories.OptionText(option)
 	local action = string.lower(tostring(option.action or ""))
 
 	if mode == "areaMex"
 		or mode == "restoreArea"
 		or mode == "repairArea"
 		or mode == "reclaimArea"
-		or cmdID == ControllerCameraTestCmdAreaMex
+		or cmdID == TacticalCategories.CmdAreaMex
 		or cmdID == CMD.REPAIR
 		or cmdID == CMD.RECLAIM
-		or cmdID == ControllerCameraTestCmdRestore
+		or cmdID == TacticalCategories.CmdRestore
 	then
 		return "buildArea"
 	end
 	if cmdID == CMD.WAIT
 		or cmdID == CMD.REPEAT
-		or cmdID == ControllerCameraTestCmdMoveState
-		or cmdID == ControllerCameraTestCmdHighPriority
+		or cmdID == TacticalCategories.CmdMoveState
+		or cmdID == TacticalCategories.CmdHighPriority
 		or kind == "repeat_toggle"
 		or kind == "move_state_cycle"
 		or kind == "fire_state_cycle"
@@ -6526,7 +6529,7 @@ local function ControllerCameraTestTacticalCategoryForOption(option)
 	return "special"
 end
 
-local function ControllerCameraTestAreaIconLabel(label, fallback)
+function TacticalCategories.AreaIconLabel(label, fallback)
 	label = tostring(label or fallback or "AREA")
 	label = label:gsub("[^%w]", "")
 	if label == "" then
@@ -6535,7 +6538,7 @@ local function ControllerCameraTestAreaIconLabel(label, fallback)
 	return string.upper(string.sub(label, 1, 7))
 end
 
-local function ControllerCameraTestAreaOptionFromDesc(desc)
+function TacticalCategories.AreaOptionFromDesc(desc)
 	if type(desc) ~= "table" or desc.disabled then
 		return nil
 	end
@@ -6548,13 +6551,13 @@ local function ControllerCameraTestAreaOptionFromDesc(desc)
 	local action = tostring(desc.action or "")
 	local lowerAction = string.lower(action)
 	local lowerName = string.lower(name)
-	local text = ControllerCameraTestCommandDescText(desc)
+	local text = TacticalCategories.CommandDescText(desc)
 	local dragMode, shortLabel, colorProfile, iconLabel
 
 	-- Area Mex is routed through WG.controllerAreaMex.issueArea from the staged
 	-- tactical aim mode; cmd_area_mex.lua owns the direct executor.
 	if text:find("area mex", 1, true)
-		or cmdID == ControllerCameraTestCmdAreaMex
+		or cmdID == TacticalCategories.CmdAreaMex
 		or lowerAction == "areamex"
 		or string.lower(name) == "areamex"
 		or (text:find("mex", 1, true) and text:find("area", 1, true))
@@ -6565,12 +6568,12 @@ local function ControllerCameraTestAreaOptionFromDesc(desc)
 		shortLabel = "Area Mex"
 		colorProfile = "areaMex"
 		iconLabel = "MEX"
-	elseif lowerName:find("restore", 1, true) or lowerAction:find("restore", 1, true) or cmdID == ((CMD and CMD.RESTORE) or 110) then
+	elseif lowerName:find("restore", 1, true) or lowerAction:find("restore", 1, true) or cmdID == TacticalCategories.CmdRestore then
 		dragMode = "restoreArea"
 		shortLabel = "Restore Area"
 		colorProfile = "restore"
 		iconLabel = "RESTORE"
-	elseif ControllerCameraTestTextHasAny(text, { "resurrect", "resurrection", "ressurect", "revive" })
+	elseif TacticalCategories.TextHasAny(text, { "resurrect", "resurrection", "ressurect", "revive" })
 		or lowerAction == "rez"
 		or lowerAction == "res"
 	then
@@ -6599,7 +6602,7 @@ local function ControllerCameraTestAreaOptionFromDesc(desc)
 		dragMode = "genericArea"
 		shortLabel = name
 		colorProfile = "generic"
-		iconLabel = ControllerCameraTestAreaIconLabel(name, "AREA")
+		iconLabel = TacticalCategories.AreaIconLabel(name, "AREA")
 	end
 
 	if not dragMode then
@@ -6620,10 +6623,10 @@ local function ControllerCameraTestAreaOptionFromDesc(desc)
 	}
 end
 
-local function ControllerCameraTestTacticalOptionFromDesc(desc)
-	local areaOption = ControllerCameraTestAreaOptionFromDesc(desc)
+function TacticalCategories.TacticalOptionFromDesc(desc)
+	local areaOption = TacticalCategories.AreaOptionFromDesc(desc)
 	if areaOption then
-		areaOption.tacticalCategory = ControllerCameraTestTacticalCategoryForOption(areaOption)
+		areaOption.tacticalCategory = TacticalCategories.CategoryForOption(areaOption)
 		return areaOption
 	end
 	if type(desc) ~= "table" or desc.disabled then
@@ -6637,7 +6640,7 @@ local function ControllerCameraTestTacticalOptionFromDesc(desc)
 
 	local name = tostring(desc.name or desc.action or "Command")
 	local action = tostring(desc.action or "")
-	local lowerText = ControllerCameraTestCommandDescText(desc)
+	local lowerText = TacticalCategories.CommandDescText(desc)
 	local option = {
 		name = name,
 		shortLabel = name,
@@ -6650,7 +6653,7 @@ local function ControllerCameraTestTacticalOptionFromDesc(desc)
 	if cmdID == CMD.REPEAT or lowerText:find("repeat", 1, true) then
 		option.kind = "repeat_toggle"
 		option.shortLabel = "Repeat"
-	elseif cmdID == ControllerCameraTestCmdMoveState
+	elseif cmdID == TacticalCategories.CmdMoveState
 		or lowerText:find("move state", 1, true)
 		or lowerText:find("hold position", 1, true)
 	then
@@ -6675,7 +6678,7 @@ local function ControllerCameraTestTacticalOptionFromDesc(desc)
 		option.shortLabel = "Set Target"
 	end
 
-	option.tacticalCategory = ControllerCameraTestTacticalCategoryForOption(option)
+	option.tacticalCategory = TacticalCategories.CategoryForOption(option)
 	if not option.tacticalCategory then
 		return nil
 	end
@@ -6717,7 +6720,7 @@ function ControllerCameraTestAppendTacticalCommand(commands, option, activeComma
 	if type(option) ~= "table" then
 		return
 	end
-	if (option.cmdID == ControllerCameraTestCmdMoveState or option.cmdID == ControllerCameraTestCmdHighPriority)
+	if (option.cmdID == TacticalCategories.CmdMoveState or option.cmdID == TacticalCategories.CmdHighPriority)
 		and (type(activeCommandLookup) ~= "table" or activeCommandLookup[option.cmdID] ~= true)
 	then
 		return
@@ -6725,7 +6728,7 @@ function ControllerCameraTestAppendTacticalCommand(commands, option, activeComma
 	if option.cmdID ~= nil and not ControllerCameraTestTacticalCommandAvailable(option.cmdID, activeCommandLookup) then
 		return
 	end
-	local category = ControllerCameraTestTacticalCategoryForOption(option)
+	local category = TacticalCategories.CategoryForOption(option)
 	if not category then
 		return
 	end
@@ -6744,7 +6747,7 @@ function ControllerCameraTestAppendDynamicTacticalCommands(commands, descs)
 		end
 	end
 	for _, desc in ipairs(descs) do
-		local option = ControllerCameraTestTacticalOptionFromDesc(desc)
+		local option = TacticalCategories.TacticalOptionFromDesc(desc)
 		if option and not seen[option.cmdID] then
 			commands[#commands + 1] = option
 			seen[option.cmdID] = true
@@ -6764,12 +6767,12 @@ end
 
 function ControllerCameraTestBuildTacticalCategoryCommands(commands)
 	local byKey = {}
-	for _, direction in ipairs(ControllerCameraTestTacticalCategoryOrder) do
-		local category = ControllerCameraTestTacticalCategoryByDirection[direction]
+	for _, direction in ipairs(TacticalCategories.Order) do
+		local category = TacticalCategories.ByDirection[direction]
 		byKey[category.key] = {}
 	end
 	for _, option in ipairs(commands or {}) do
-		local categoryKey = ControllerCameraTestTacticalCategoryForOption(option)
+		local categoryKey = TacticalCategories.CategoryForOption(option)
 		if categoryKey and byKey[categoryKey] then
 			option.tacticalCategory = categoryKey
 			byKey[categoryKey][#byKey[categoryKey] + 1] = option
@@ -6780,7 +6783,7 @@ end
 
 function ControllerCameraTestRefreshTacticalCategoryCommands()
 	local menu = ControllerCameraTestTacticalMenu
-	local category = ControllerCameraTestTacticalCategoryInfo(menu.categoryKey or menu.categoryDirection or "down")
+	local category = TacticalCategories.Info(menu.categoryKey or menu.categoryDirection or "down")
 	menu.categoryKey = category.key
 	menu.categoryLabel = category.label
 	menu.categoryDirection = category.direction
@@ -6941,7 +6944,7 @@ end
 
 function ControllerCameraTestSelectTacticalCategory(direction, reason)
 	local menu = ControllerCameraTestTacticalMenu
-	local category = ControllerCameraTestTacticalCategoryInfo(direction)
+	local category = TacticalCategories.Info(direction)
 	menu.categoryKey = category.key
 	menu.categoryLabel = category.label
 	menu.categoryDirection = category.direction
@@ -7230,7 +7233,7 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 				nextVal = 0
 			end
 			local count
-			ok, count = ControllerCameraTestIssueOrderToSelectedUnits(ControllerCameraTestCmdMoveState, { nextVal }, "Move State", tostring(nextVal), {})
+			ok, count = ControllerCameraTestIssueOrderToSelectedUnits(TacticalCategories.CmdMoveState, { nextVal }, "Move State", tostring(nextVal), {})
 			ControllerCameraTestTacticalMenu.lastResult = ok and ("move state for " .. tostring(count)) or "failed"
 		end
 		ControllerCameraTestTacticalMenu.open = false
@@ -8852,31 +8855,6 @@ function ControllerCameraTestSelectAreaUnits()
 	ControllerCameraTestLayerDebug.areaSelect = area.lastResult
 end
 
-function ControllerCameraTestFilterAreaSelection(unitIDs, includeBuildings)
-	if type(unitIDs) ~= "table" then
-		return {}
-	end
-	if includeBuildings then
-		return ControllerCameraTestFilterValidUnits(unitIDs)
-	end
-
-	local mobileUnits = {}
-	local buildingUnits = {}
-	for _, unitID in ipairs(unitIDs) do
-		local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
-		if ControllerCameraTestIsMobileUnitDef(unitDef) then
-			mobileUnits[#mobileUnits + 1] = unitID
-		else
-			buildingUnits[#buildingUnits + 1] = unitID
-		end
-	end
-
-	if #mobileUnits > 0 then
-		return ControllerCameraTestFilterValidUnits(mobileUnits)
-	end
-	return ControllerCameraTestFilterValidUnits(buildingUnits)
-end
-
 function ControllerCameraTestHandleNormalXInput(dt)
 	local drag = ControllerCameraTestDragCommand
 	local HOLD_SECONDS = ControllerCameraTestSettings.xHoldSeconds or 0.14
@@ -9163,6 +9141,10 @@ function ControllerCameraTestHandleNormalAInput(dt)
 		end
 	end
 
+	if ControllerCameraTestHandleBackCommandLayerSelectTap() then
+		return
+	end
+
 	if ControllerCameraTestActionReleased("select") and area.pressActive then
 		if area.active then
 			-- Already selected live! Just finalize and clean up brush state.
@@ -9189,7 +9171,7 @@ function ControllerCameraTestHandleNormalAInput(dt)
 			elseif #selectedUnits == 0 then
 				ControllerCameraTestAreaSelect.lastResult = "double tap empty ignored"
 				ControllerCameraTestAreaSelect.doubleTapAction = "empty ignored"
-				ControllerCameraTestLayerDebug.normalUtilityAction = "Double-tap empty ignored"
+				ControllerCameraTestLayerDebug.normalUtilityAction = "Double-tap A empty: no action"
 				latchSelectionDebugMessage("Double-tap A empty: no action")
 			else
 				ControllerCameraTestAreaSelect.lastResult = "double tap ignored: units selected"
@@ -10313,7 +10295,7 @@ function ControllerCameraTestDrawTacticalRadial()
 	menu.hitboxCount = 0
 	local commands = ControllerCameraTestGetTacticalCommands(false, "draw")
 	local n = #commands
-	local currentCategory = ControllerCameraTestTacticalCategoryInfo(menu.categoryKey or "buildArea")
+	local currentCategory = TacticalCategories.Info(menu.categoryKey or "buildArea")
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 	local minView = math.min(viewSizeX, viewSizeY)
@@ -10333,8 +10315,8 @@ function ControllerCameraTestDrawTacticalRadial()
 		end
 	end)
 
-	for _, direction in ipairs(ControllerCameraTestTacticalCategoryOrder) do
-		local category = ControllerCameraTestTacticalCategoryByDirection[direction]
+	for _, direction in ipairs(TacticalCategories.Order) do
+		local category = TacticalCategories.ByDirection[direction]
 		local selected = category.key == currentCategory.key
 		local dx, dy = 0, 0
 		if direction == "up" then
