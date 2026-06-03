@@ -2761,12 +2761,7 @@ ControllerCameraTestAreaCommandProfiles = ControllerCameraTestAreaCommandProfile
 	},
 }
 
-local ControllerCameraTestDefaultAreaMexRadius = 500
-local ControllerCameraTestAreaMexRadiusStep = 80
-local ControllerCameraTestAreaMexMinRadius = 120
-local ControllerCameraTestAreaMexMaxRadius = 1200
 local ControllerCameraTestAreaMexWarningLogged = false
-ControllerCameraTestAreaMexAimRadius = ControllerCameraTestAreaMexAimRadius or ControllerCameraTestDefaultAreaMexRadius
 
 function ControllerCameraTestGetAreaCommandProfile(optionOrMode)
 	local mode = type(optionOrMode) == "table" and optionOrMode.dragMode or optionOrMode
@@ -2794,62 +2789,11 @@ function ControllerCameraTestAreaCommandRadius(startX, startZ, endX, endZ)
 	return rawRadius, rawRadius * ControllerCameraTestAreaRadiusSensitivity
 end
 
-function ControllerCameraTestAreaMexRadius()
-	-- Route A Area Mex bypasses engine mouse-drag collection, so it owns a
-	-- controller aim radius without changing the general area-selection brush.
-	ControllerCameraTestAreaMexAimRadius = clamp(
-		tonumber(ControllerCameraTestAreaMexAimRadius) or ControllerCameraTestDefaultAreaMexRadius,
-		ControllerCameraTestAreaMexMinRadius,
-		ControllerCameraTestAreaMexMaxRadius
-	)
-	return ControllerCameraTestAreaMexAimRadius
-end
-
-function ControllerCameraTestAdjustAreaMexRadius(delta)
-	if delta == 0 then
-		return ControllerCameraTestAreaMexRadius()
-	end
-	ControllerCameraTestAreaMexAimRadius = clamp(
-		ControllerCameraTestAreaMexRadius() + (delta * ControllerCameraTestAreaMexRadiusStep),
-		ControllerCameraTestAreaMexMinRadius,
-		ControllerCameraTestAreaMexMaxRadius
-	)
-	return ControllerCameraTestAreaMexAimRadius
-end
-
 function ControllerCameraTestIsFiniteNumber(value)
 	return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
-function ControllerCameraTestGetAreaMexAimPoint()
-	if reticleHasWorldTarget
-		and ControllerCameraTestIsFiniteNumber(reticleWorldX)
-		and ControllerCameraTestIsFiniteNumber(reticleWorldY)
-		and ControllerCameraTestIsFiniteNumber(reticleWorldZ)
-	then
-		return reticleWorldX, reticleWorldY, reticleWorldZ
-	end
-
-	if type(spTraceScreenRay) ~= "function" then
-		return nil, "TraceScreenRay unavailable"
-	end
-
-	local ok, _, worldPosition = pcall(spTraceScreenRay, screenCenterX, screenCenterY, true)
-	if ok and type(worldPosition) == "table" then
-		local x = tonumber(worldPosition[1])
-		local y = tonumber(worldPosition[2])
-		local z = tonumber(worldPosition[3])
-		if ControllerCameraTestIsFiniteNumber(x)
-			and ControllerCameraTestIsFiniteNumber(y)
-			and ControllerCameraTestIsFiniteNumber(z)
-		then
-			return x, y, z
-		end
-	end
-	return nil, "no ground target"
-end
-
-function ControllerCameraTestIssueAreaMexRouteA(option)
+function ControllerCameraTestIssueAreaMexRouteA(option, x, y, z, radius)
 	local api = WG and WG.controllerAreaMex
 	if type(api) ~= "table" or type(api.issueArea) ~= "function" then
 		if not ControllerCameraTestAreaMexWarningLogged then
@@ -2859,12 +2803,13 @@ function ControllerCameraTestIssueAreaMexRouteA(option)
 		return false, "Route A API unavailable"
 	end
 
-	local x, y, z = ControllerCameraTestGetAreaMexAimPoint()
-	if not x then
-		return false, y or "no ground target"
+	if not (ControllerCameraTestIsFiniteNumber(x)
+		and ControllerCameraTestIsFiniteNumber(y)
+		and ControllerCameraTestIsFiniteNumber(z))
+	then
+		return false, "invalid ground target"
 	end
 
-	local radius = ControllerCameraTestAreaMexRadius()
 	if not ControllerCameraTestIsFiniteNumber(radius) or radius <= 0 then
 		return false, "invalid radius"
 	end
@@ -3860,12 +3805,14 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		local cmdName = tostring(option.name or profile.label or "Area Command")
 
 		if ControllerCameraTestIsAreaMexOption(option) then
-			local issued, reason = ControllerCameraTestIssueAreaMexRouteA(option)
+			local issued, reason = ControllerCameraTestIssueAreaMexRouteA(option, startX, startY, startZ, effectiveRadius)
 			drag.lastResult = issued and "Area Mex Route A issued" or ("Area Mex failed: " .. tostring(reason))
 			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
 			if not issued then
 				ControllerCameraTestUpdateAreaCommandDebug("failed", option, rawRadius, effectiveRadius, drag.lastResult)
 				latchSelectionDebugMessage(cmdName .. " failed: " .. tostring(reason))
+			else
+				ControllerCameraTestUpdateAreaCommandDebug("confirmed", option, rawRadius, effectiveRadius, "Route A issued")
 			end
 		elseif type(cmdID) ~= "number" then
 			drag.active = false
@@ -6753,9 +6700,7 @@ function ControllerCameraTestStageTacticalCommand(option)
 	menu.stagedOption = ControllerCameraTestCopyTacticalOption(option)
 	menu.stagedName = tostring(option.name or "Command")
 	menu.stagedKind = tostring(option.kind or "none")
-	menu.stagedState = ControllerCameraTestIsAreaMexOption(option)
-		and "staged aim"
-		or (ControllerCameraTestIsAreaTacticalOption(option) and "staged waiting for center" or "staged")
+	menu.stagedState = ControllerCameraTestIsAreaTacticalOption(option) and "staged waiting for center" or "staged"
 	menu.repeatPlacementActive = false
 	menu.repeatPlacementState = "none"
 	menu.open = false
@@ -6794,26 +6739,8 @@ function ControllerCameraTestConfirmStagedTacticalCommand()
 		return false
 	end
 	local name = tostring(menu.stagedName or option.name or "Command")
-	local repeatHeld = ControllerCameraTestIsQueueModifierActive() and not ControllerCameraTestIsAreaMexOption(option)
+	local repeatHeld = ControllerCameraTestIsQueueModifierActive()
 	local repeatOption = ControllerCameraTestCopyTacticalOption(option)
-	if ControllerCameraTestIsAreaMexOption(option) then
-		menu.stagedOption = nil
-		menu.stagedName = name
-		menu.stagedKind = tostring(option.kind or "none")
-		menu.stagedState = "confirming"
-		menu.repeatPlacementActive = false
-		menu.repeatPlacementState = "none"
-		menu.lastAction = "confirming " .. name
-		local confirmed, reason = ControllerCameraTestIssueAreaMexRouteA(option)
-		menu.stagedState = confirmed and "confirmed" or "confirm failed"
-		menu.lastResult = confirmed and "Area Mex Route A issued" or ("Area Mex failed: " .. tostring(reason))
-		ControllerCameraTestLayerDebug.commandLayerAction = menu.lastResult
-		if not confirmed then
-			ControllerCameraTestUpdateAreaCommandDebug("failed", option, nil, ControllerCameraTestAreaMexRadius(), menu.lastResult)
-			latchSelectionDebugMessage(name .. " failed: " .. tostring(reason))
-		end
-		return confirmed
-	end
 	menu.stagedOption = nil
 	menu.stagedName = name
 	menu.stagedKind = tostring(option.kind or "none")
@@ -6883,22 +6810,12 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 		return true
 	end
 
-	if ControllerCameraTestIsAreaMexOption(option) then
-		if ControllerCameraTestActionPressed("commandLeft") then
-			ControllerCameraTestAdjustAreaMexRadius(-1)
-		elseif ControllerCameraTestActionPressed("commandRight") then
-			ControllerCameraTestAdjustAreaMexRadius(1)
-		end
-		local radius = ControllerCameraTestAreaMexRadius()
-		ControllerCameraTestUpdateAreaCommandDebug("staged aim", option, radius, radius, "preview")
-	elseif isAreaCmd and drag.active then
+	if isAreaCmd and drag.active then
 		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
 	end
 
 	if ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction") then
-		if ControllerCameraTestIsAreaMexOption(option) then
-			ControllerCameraTestConfirmStagedTacticalCommand()
-		elseif isAreaCmd then
+		if isAreaCmd then
 			if not drag.active then
 				if reticleHasWorldTarget and reticleWorldX then
 					drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
@@ -9610,13 +9527,11 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.open and "Tactical: A/X stage, B/Y cancel, Back+RB toggle, D-pad/LB/RB choose"
 			or XboxController.commandLayoutSummary
 	elseif type(ControllerCameraTestTacticalMenu.stagedOption) == "table" then
-		if ControllerCameraTestIsAreaMexOption(ControllerCameraTestTacticalMenu.stagedOption) then
-			activeButtonLayoutSummary = "Area Mex: move reticle, D-pad L/R radius, A/X confirm, RT appends, B cancel"
-		else
-			activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.repeatPlacementActive
-				and "Tactical repeat: move reticle, A place again, release RT clear, B cancel"
-				or "Tactical staged: move reticle, A confirm, RT+A repeat, B cancel"
-		end
+		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.repeatPlacementActive
+			and "Tactical repeat: move reticle, A place again, release RT clear, B cancel"
+			or (ControllerCameraTestIsAreaTacticalOption(ControllerCameraTestTacticalMenu.stagedOption)
+				and "Tactical area: A anchor center, move reticle resize, A confirm, B cancel"
+				or "Tactical staged: move reticle, A confirm, RT+A repeat, B cancel")
 	elseif ControllerCameraTestTacticalMenu.open then
 		activeButtonLayoutSummary = "Tactical: A/X stage, B/Y close, D-pad/LB/RB choose"
 	elseif ControllerCameraTestBuildPlacement.active then
@@ -10113,27 +10028,6 @@ end
 
 function ControllerCameraTestDrawAreaCommandCenterLabel()
 	local drag = ControllerCameraTestDragCommand
-	local stagedOption = ControllerCameraTestTacticalMenu and ControllerCameraTestTacticalMenu.stagedOption
-	local stagedAreaMex = ControllerCameraTestIsAreaMexOption(stagedOption)
-	if stagedAreaMex and reticleHasWorldTarget and type(Spring.WorldToScreenCoords) == "function" then
-		local ok, sx, sy = pcall(Spring.WorldToScreenCoords, reticleWorldX, reticleWorldY or 0, reticleWorldZ)
-		if not ok or type(sx) ~= "number" or type(sy) ~= "number" then
-			return
-		end
-
-		local label = "MEX R:" .. tostring(math.floor(ControllerCameraTestAreaMexRadius()))
-		local halfWidth = math.max(42, (#label * 4.8) + 16)
-		local halfHeight = 13
-		local profile = ControllerCameraTestGetAreaCommandProfile(stagedOption)
-		gl.Color(0, 0, 0, 0.58)
-		glRect(sx - halfWidth, sy - halfHeight, sx + halfWidth, sy + halfHeight)
-		local color = profile.centerColor or profile.color
-		gl.Color(color[1], color[2], color[3], color[4] or 0.95)
-		glText(label, sx, sy - 5, 13, "oc")
-		gl.Color(1, 1, 1, 1)
-		return
-	end
-
 	if not drag.active or not drag.startX or not drag.startZ then
 		return
 	end
@@ -11855,17 +11749,6 @@ function widget:DrawWorld()
 		for r = step, R - step/2, step do
 			gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, r, 32)
 		end
-	end
-
-	local stagedOption = ControllerCameraTestTacticalMenu and ControllerCameraTestTacticalMenu.stagedOption
-	if ControllerCameraTestIsAreaMexOption(stagedOption) and reticleHasWorldTarget then
-		local R = ControllerCameraTestAreaMexRadius()
-		local profile = ControllerCameraTestGetAreaCommandProfile(stagedOption)
-		local color = profile.color or ControllerCameraTestAreaCommandProfiles.areaMex.color
-		gl.LineWidth(3.0)
-		gl.Color(color[1], color[2], color[3], color[4] or 0.72)
-		gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, R, 64)
-		gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, 14, 16)
 	end
 
 	if ControllerCameraTestBuildPlacement.active and reticleHasWorldTarget then
