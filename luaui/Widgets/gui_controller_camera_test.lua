@@ -322,6 +322,11 @@ ControllerCameraTestTacticalMenu = ControllerCameraTestTacticalMenu or {
 	repeatPlacementState = "none",
 	radialLastAngle = 0,
 	cachedCommands = nil,
+	allCachedCommands = nil,
+	categoryCommands = nil,
+	categoryKey = "buildArea",
+	categoryLabel = "Build / Economy / Area",
+	categoryDirection = "down",
 	cacheValid = false,
 	cacheSelectionKey = "none",
 	cacheLastRefreshTime = -10,
@@ -2907,6 +2912,7 @@ function ControllerCameraTestCopyTacticalOption(option)
 		colorProfile = option.colorProfile,
 		iconLabel = option.iconLabel,
 		iconSource = option.iconSource,
+		tacticalCategory = option.tacticalCategory,
 	}
 end
 
@@ -6367,6 +6373,8 @@ ControllerCameraTestTacticalCommandTemplates = ControllerCameraTestTacticalComma
 	{ name = "Stop", shortLabel = "Stop", cmdID = CMD.STOP, kind = "none" },
 	{ name = "Wait", shortLabel = "Wait", cmdID = CMD.WAIT, kind = "none" },
 	{ name = "Repeat", shortLabel = "Repeat", cmdID = CMD.REPEAT, kind = "repeat_toggle" },
+	{ name = "Move State", shortLabel = "Move State", cmdID = (CMD and CMD.MOVE_STATE) or 50, kind = "move_state_cycle" },
+	{ name = "High Priority", shortLabel = "High Prio", cmdID = (GameCMD and GameCMD.PRIORITY) or 34571, kind = "none" },
 	{ name = "Move Line", shortLabel = "Move Line", cmdID = CMD.MOVE, kind = "drag_line", dragMode = "moveLine" },
 	{ name = "Fight Line", shortLabel = "Fight Line", cmdID = CMD.FIGHT, kind = "drag_line", dragMode = "fightLine" },
 	{ name = "Attack Line", shortLabel = "Attack Line", cmdID = CMD.ATTACK, kind = "drag_line", dragMode = "attackLine" },
@@ -6383,6 +6391,31 @@ ControllerCameraTestFactoryTacticalCommandTemplates = ControllerCameraTestFactor
 	{ name = "Stop", shortLabel = "Stop", cmdID = CMD.STOP, kind = "none" },
 }
 
+local ControllerCameraTestCmdMoveState = (CMD and CMD.MOVE_STATE) or 50
+local ControllerCameraTestCmdHighPriority = (GameCMD and GameCMD.PRIORITY) or 34571
+local ControllerCameraTestCmdRestore = (CMD and CMD.RESTORE) or 110
+local ControllerCameraTestCmdAreaMex = (GameCMD and GameCMD.AREA_MEX) or 30100
+
+local ControllerCameraTestTacticalCategoryOrder = { "up", "right", "down", "left" }
+local ControllerCameraTestTacticalCategoryByDirection = {
+	up = { key = "utility", label = "Utility / States", shortLabel = "Utility", hint = "D-pad Up" },
+	right = { key = "combat", label = "Combat", shortLabel = "Combat", hint = "D-pad Right" },
+	down = { key = "buildArea", label = "Build / Economy / Area", shortLabel = "Build / Area", hint = "D-pad Down" },
+	left = { key = "special", label = "Special / Context", shortLabel = "Special", hint = "D-pad Left" },
+}
+local ControllerCameraTestTacticalCategoryByKey = {}
+for _, direction in ipairs(ControllerCameraTestTacticalCategoryOrder) do
+	local category = ControllerCameraTestTacticalCategoryByDirection[direction]
+	category.direction = direction
+	ControllerCameraTestTacticalCategoryByKey[category.key] = category
+end
+
+local function ControllerCameraTestTacticalCategoryInfo(keyOrDirection)
+	return ControllerCameraTestTacticalCategoryByKey[keyOrDirection]
+		or ControllerCameraTestTacticalCategoryByDirection[keyOrDirection]
+		or ControllerCameraTestTacticalCategoryByKey.buildArea
+end
+
 local function ControllerCameraTestCommandDescText(desc)
 	return string.lower(tostring(desc.name or "") .. " " .. tostring(desc.action or "") .. " " .. tostring(desc.tooltip or ""))
 end
@@ -6394,6 +6427,103 @@ local function ControllerCameraTestTextHasAny(text, needles)
 		end
 	end
 	return false
+end
+
+local function ControllerCameraTestOptionText(option)
+	return string.lower(tostring(option and option.name or "")
+		.. " " .. tostring(option and option.shortLabel or "")
+		.. " " .. tostring(option and option.action or "")
+		.. " " .. tostring(option and option.tooltip or ""))
+end
+
+local function ControllerCameraTestIsHiddenTacticalOption(option)
+	local cmdID = option and tonumber(option.cmdID)
+	local text = ControllerCameraTestOptionText(option)
+	local action = string.lower(tostring(option and option.action or ""))
+	if cmdID == CMD.STOP or cmdID == CMD.MOVE or cmdID == CMD.PATROL then
+		return true
+	end
+	if action == "stop" or action == "move" or action == "patrol" then
+		return true
+	end
+	if text:find("place blueprint", 1, true) or text:find("blueprint", 1, true) then
+		return true
+	end
+	return false
+end
+
+local function ControllerCameraTestTacticalCategoryForOption(option)
+	if type(option) ~= "table" or ControllerCameraTestIsHiddenTacticalOption(option) then
+		return nil
+	end
+	if option.tacticalCategory then
+		return option.tacticalCategory
+	end
+
+	local cmdID = tonumber(option.cmdID)
+	local kind = tostring(option.kind or "")
+	local mode = tostring(option.dragMode or "")
+	local text = ControllerCameraTestOptionText(option)
+	local action = string.lower(tostring(option.action or ""))
+
+	if mode == "areaMex"
+		or mode == "restoreArea"
+		or mode == "repairArea"
+		or mode == "reclaimArea"
+		or cmdID == ControllerCameraTestCmdAreaMex
+		or cmdID == CMD.REPAIR
+		or cmdID == CMD.RECLAIM
+		or cmdID == ControllerCameraTestCmdRestore
+	then
+		return "buildArea"
+	end
+	if cmdID == CMD.WAIT
+		or cmdID == CMD.REPEAT
+		or cmdID == ControllerCameraTestCmdMoveState
+		or cmdID == ControllerCameraTestCmdHighPriority
+		or kind == "repeat_toggle"
+		or kind == "move_state_cycle"
+		or kind == "fire_state_cycle"
+		or text:find("hold position", 1, true)
+		or text:find("move state", 1, true)
+		or text:find("high priority", 1, true)
+		or text:find("priority", 1, true)
+	then
+		return "utility"
+	end
+	if cmdID == CMD.FIGHT
+		or cmdID == CMD.ATTACK
+		or cmdID == CMD.GUARD
+		or mode == "fightLine"
+		or mode == "attackLine"
+		or mode == "attackArea"
+		or kind == "attack"
+		or kind == "alliedUnit"
+		or action == "settarget"
+		or text:find("set target", 1, true)
+		or text:find("fight", 1, true)
+		or text:find("attack", 1, true)
+		or text:find("guard", 1, true)
+	then
+		return "combat"
+	end
+	if mode == "resurrectArea"
+		or text:find("resurrect", 1, true)
+		or text:find("capture", 1, true)
+		or text:find("transport", 1, true)
+		or text:find("load", 1, true)
+		or text:find("unload", 1, true)
+		or text:find("cloak", 1, true)
+		or text:find("self destruct", 1, true)
+		or text:find("self-destruct", 1, true)
+		or text:find("selfd", 1, true)
+	then
+		return "special"
+	end
+	if mode ~= "" or kind ~= "" then
+		return "special"
+	end
+	return "special"
 end
 
 local function ControllerCameraTestAreaIconLabel(label, fallback)
@@ -6424,6 +6554,7 @@ local function ControllerCameraTestAreaOptionFromDesc(desc)
 	-- Area Mex is routed through WG.controllerAreaMex.issueArea from the staged
 	-- tactical aim mode; cmd_area_mex.lua owns the direct executor.
 	if text:find("area mex", 1, true)
+		or cmdID == ControllerCameraTestCmdAreaMex
 		or lowerAction == "areamex"
 		or string.lower(name) == "areamex"
 		or (text:find("mex", 1, true) and text:find("area", 1, true))
@@ -6489,6 +6620,68 @@ local function ControllerCameraTestAreaOptionFromDesc(desc)
 	}
 end
 
+local function ControllerCameraTestTacticalOptionFromDesc(desc)
+	local areaOption = ControllerCameraTestAreaOptionFromDesc(desc)
+	if areaOption then
+		areaOption.tacticalCategory = ControllerCameraTestTacticalCategoryForOption(areaOption)
+		return areaOption
+	end
+	if type(desc) ~= "table" or desc.disabled then
+		return nil
+	end
+
+	local cmdID = tonumber(desc.id or desc.cmdID)
+	if type(cmdID) ~= "number" or cmdID < 0 then
+		return nil
+	end
+
+	local name = tostring(desc.name or desc.action or "Command")
+	local action = tostring(desc.action or "")
+	local lowerText = ControllerCameraTestCommandDescText(desc)
+	local option = {
+		name = name,
+		shortLabel = name,
+		cmdID = cmdID,
+		kind = "none",
+		action = action,
+		descriptorSource = "activeCmdDesc",
+	}
+
+	if cmdID == CMD.REPEAT or lowerText:find("repeat", 1, true) then
+		option.kind = "repeat_toggle"
+		option.shortLabel = "Repeat"
+	elseif cmdID == ControllerCameraTestCmdMoveState
+		or lowerText:find("move state", 1, true)
+		or lowerText:find("hold position", 1, true)
+	then
+		option.kind = "move_state_cycle"
+		option.shortLabel = "Move State"
+	elseif lowerText:find("selfd", 1, true)
+		or lowerText:find("self destruct", 1, true)
+		or lowerText:find("self-destruct", 1, true)
+		or lowerText:find("selfdestroy", 1, true)
+		or lowerText:find("self destroy", 1, true)
+	then
+		option.kind = "self_destruct"
+		option.shortLabel = "Self Destruct"
+	elseif cmdID == CMD.GUARD or lowerText:find("guard", 1, true) then
+		option.kind = "alliedUnit"
+		option.shortLabel = "Guard"
+	elseif cmdID == CMD.ATTACK or lowerText:find("attack", 1, true) then
+		option.kind = "attack"
+		option.shortLabel = lowerText:find("area", 1, true) and "Area Attack" or "Attack"
+	elseif lowerText:find("set target", 1, true) or string.lower(action) == "settarget" then
+		option.kind = "attack"
+		option.shortLabel = "Set Target"
+	end
+
+	option.tacticalCategory = ControllerCameraTestTacticalCategoryForOption(option)
+	if not option.tacticalCategory then
+		return nil
+	end
+	return option
+end
+
 function ControllerCameraTestBuildActiveCommandLookup()
 	if type(Spring.GetActiveCmdDescs) ~= "function" then
 		return nil
@@ -6524,13 +6717,23 @@ function ControllerCameraTestAppendTacticalCommand(commands, option, activeComma
 	if type(option) ~= "table" then
 		return
 	end
+	if (option.cmdID == ControllerCameraTestCmdMoveState or option.cmdID == ControllerCameraTestCmdHighPriority)
+		and (type(activeCommandLookup) ~= "table" or activeCommandLookup[option.cmdID] ~= true)
+	then
+		return
+	end
 	if option.cmdID ~= nil and not ControllerCameraTestTacticalCommandAvailable(option.cmdID, activeCommandLookup) then
 		return
 	end
+	local category = ControllerCameraTestTacticalCategoryForOption(option)
+	if not category then
+		return
+	end
+	option.tacticalCategory = category
 	commands[#commands + 1] = option
 end
 
-function ControllerCameraTestAppendDynamicAreaCommands(commands, descs)
+function ControllerCameraTestAppendDynamicTacticalCommands(commands, descs)
 	if type(descs) ~= "table" then
 		return
 	end
@@ -6541,7 +6744,7 @@ function ControllerCameraTestAppendDynamicAreaCommands(commands, descs)
 		end
 	end
 	for _, desc in ipairs(descs) do
-		local option = ControllerCameraTestAreaOptionFromDesc(desc)
+		local option = ControllerCameraTestTacticalOptionFromDesc(desc)
 		if option and not seen[option.cmdID] then
 			commands[#commands + 1] = option
 			seen[option.cmdID] = true
@@ -6557,6 +6760,37 @@ function ControllerCameraTestBuildTacticalSelectionKey(selectedUnits, isFactory)
 	local first = count > 0 and selectedUnits[1] or "none"
 	local last = count > 0 and selectedUnits[count] or "none"
 	return tostring(isFactory and "factory" or "unit") .. ":" .. tostring(count) .. ":" .. tostring(first) .. ":" .. tostring(last)
+end
+
+function ControllerCameraTestBuildTacticalCategoryCommands(commands)
+	local byKey = {}
+	for _, direction in ipairs(ControllerCameraTestTacticalCategoryOrder) do
+		local category = ControllerCameraTestTacticalCategoryByDirection[direction]
+		byKey[category.key] = {}
+	end
+	for _, option in ipairs(commands or {}) do
+		local categoryKey = ControllerCameraTestTacticalCategoryForOption(option)
+		if categoryKey and byKey[categoryKey] then
+			option.tacticalCategory = categoryKey
+			byKey[categoryKey][#byKey[categoryKey] + 1] = option
+		end
+	end
+	return byKey
+end
+
+function ControllerCameraTestRefreshTacticalCategoryCommands()
+	local menu = ControllerCameraTestTacticalMenu
+	local category = ControllerCameraTestTacticalCategoryInfo(menu.categoryKey or menu.categoryDirection or "down")
+	menu.categoryKey = category.key
+	menu.categoryLabel = category.label
+	menu.categoryDirection = category.direction
+	menu.cachedCommands = (type(menu.categoryCommands) == "table" and menu.categoryCommands[category.key]) or {}
+	menu.optionCount = #menu.cachedCommands
+	if menu.selectedIndex < 1 or menu.selectedIndex > #menu.cachedCommands then
+		menu.selectedIndex = 1
+	end
+	local option = menu.cachedCommands[menu.selectedIndex]
+	menu.highlightedName = option and option.name or "none"
 end
 
 function ControllerCameraTestRebuildTacticalCommandCache(reason)
@@ -6575,22 +6809,29 @@ function ControllerCameraTestRebuildTacticalCommandCache(reason)
 		for _, option in ipairs(ControllerCameraTestTacticalCommandTemplates) do
 			ControllerCameraTestAppendTacticalCommand(commands, option, activeCommandLookup)
 		end
-		ControllerCameraTestAppendDynamicAreaCommands(commands, activeCommandDescs)
+		local selfDestructCmdID = ControllerCameraTestFindSelfDestructCommandID()
+		if type(selfDestructCmdID) == "number" then
+			ControllerCameraTestAppendTacticalCommand(commands, {
+				name = "Self Destruct",
+				shortLabel = "Self Destruct",
+				cmdID = selfDestructCmdID,
+				kind = "self_destruct",
+				descriptorSource = "activeCmdDesc",
+			}, activeCommandLookup)
+		end
+		ControllerCameraTestAppendDynamicTacticalCommands(commands, activeCommandDescs)
 	end
-	menu.cachedCommands = commands
+	menu.allCachedCommands = commands
+	menu.categoryCommands = ControllerCameraTestBuildTacticalCategoryCommands(commands)
+	ControllerCameraTestRefreshTacticalCategoryCommands()
 	menu.cacheValid = true
 	menu.cacheSelectionKey = selectionKey
 	menu.cacheLastRefreshTime = debugEventTime
-	menu.optionCount = #commands
+	menu.optionCount = #menu.cachedCommands
 	menu.optionsRebuildCount = (menu.optionsRebuildCount or 0) + 1
 	menu.cacheMisses = (menu.cacheMisses or 0) + 1
 	menu.lastRebuildReason = tostring(reason or "refresh")
-	if menu.selectedIndex < 1 or menu.selectedIndex > #commands then
-		menu.selectedIndex = 1
-	end
-	local option = commands[menu.selectedIndex]
-	menu.highlightedName = option and option.name or "none"
-	return commands
+	return menu.cachedCommands
 end
 
 function ControllerCameraTestMaybeRefreshTacticalCommandCache()
@@ -6683,6 +6924,8 @@ function ControllerCameraTestToggleTacticalMenu()
 	menu.open = not menu.open
 	if menu.open then
 		ControllerCameraTestMemoryDebug.tacticalOpenCount = (ControllerCameraTestMemoryDebug.tacticalOpenCount or 0) + 1
+		menu.categoryKey = menu.categoryKey or "buildArea"
+		menu.categoryDirection = menu.categoryDirection or "down"
 		ControllerCameraTestGetTacticalCommands(true, "menu opened")
 	else
 		menu.cacheValid = false
@@ -6694,6 +6937,19 @@ end
 
 function ControllerCameraTestTacticalTogglePressed()
 	return ControllerCameraTestBindingPressed("RB") or ControllerCameraTestActionPressed("buildRadial")
+end
+
+function ControllerCameraTestSelectTacticalCategory(direction, reason)
+	local menu = ControllerCameraTestTacticalMenu
+	local category = ControllerCameraTestTacticalCategoryInfo(direction)
+	menu.categoryKey = category.key
+	menu.categoryLabel = category.label
+	menu.categoryDirection = category.direction
+	menu.selectedIndex = 1
+	ControllerCameraTestRefreshTacticalCategoryCommands()
+	menu.lastAction = tostring(reason or "category") .. ": " .. category.label
+	latchSelectionDebugMessage("Tactical: " .. category.label)
+	return true
 end
 
 function ControllerCameraTestCycleTacticalCommand(delta)
@@ -6963,6 +7219,28 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 		end
 		ControllerCameraTestTacticalMenu.open = false
 		return ok
+	elseif option.kind == "move_state_cycle" then
+		local ok = false
+		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+		if #selectedUnits > 0 then
+			local states = type(Spring.GetUnitStates) == "function" and Spring.GetUnitStates(selectedUnits[1])
+			local currentMoveState = states and (states.movestate or states.moveState) or 1
+			local nextVal = (tonumber(currentMoveState) or 1) + 1
+			if nextVal > 2 then
+				nextVal = 0
+			end
+			local count
+			ok, count = ControllerCameraTestIssueOrderToSelectedUnits(ControllerCameraTestCmdMoveState, { nextVal }, "Move State", tostring(nextVal), {})
+			ControllerCameraTestTacticalMenu.lastResult = ok and ("move state for " .. tostring(count)) or "failed"
+		end
+		ControllerCameraTestTacticalMenu.open = false
+		return ok
+	elseif option.kind == "self_destruct" then
+		local ok = ControllerCameraTestIssueSelfDestruct()
+		ControllerCameraTestTacticalMenu.lastResult = ControllerCameraTestSelfDestruct.lastResult
+		ControllerCameraTestLayerDebug.commandLayerAction = "Self Destruct " .. tostring(ControllerCameraTestSelfDestruct.lastResult or "")
+		ControllerCameraTestTacticalMenu.open = false
+		return ok
 	elseif option.kind == "fire_state_cycle" then
 		local ok = false
 		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
@@ -7089,11 +7367,17 @@ function ControllerCameraTestHandleTacticalMenuInput()
 		menu.lastAction = "cancelled"
 		latchSelectionDebugMessage("Tactical menu cancelled")
 		changed = true
-	elseif WasButtonPressed("dpadUp") or WasButtonPressed("dpadLeft") or ControllerCameraTestActionPressed("radialPrevPage") then
-		ControllerCameraTestCycleTacticalCommand(-1)
+	elseif WasButtonPressed("dpadUp") then
+		ControllerCameraTestSelectTacticalCategory("up", "D-pad category")
 		changed = true
-	elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadRight") or ControllerCameraTestActionPressed("radialNextPage") then
-		ControllerCameraTestCycleTacticalCommand(1)
+	elseif WasButtonPressed("dpadRight") then
+		ControllerCameraTestSelectTacticalCategory("right", "D-pad category")
+		changed = true
+	elseif WasButtonPressed("dpadDown") then
+		ControllerCameraTestSelectTacticalCategory("down", "D-pad category")
+		changed = true
+	elseif WasButtonPressed("dpadLeft") then
+		ControllerCameraTestSelectTacticalCategory("left", "D-pad category")
 		changed = true
 	elseif ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("radialQuick") then
 		local commands = ControllerCameraTestGetTacticalCommands(false, "select")
@@ -9593,7 +9877,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 
 	ControllerCameraTestLayerDebug.modeSummary = ControllerCameraTestGetModeSummary()
 	if commandLayerActive then
-		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.open and "Tactical: A/X stage, B/Y cancel, Back+RB toggle, D-pad/LB/RB choose"
+		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.open and "Tactical: D-pad category, LS choose, A/X confirm, B/Y cancel"
 			or XboxController.commandLayoutSummary
 	elseif type(ControllerCameraTestTacticalMenu.stagedOption) == "table" then
 		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.repeatPlacementActive
@@ -10029,6 +10313,7 @@ function ControllerCameraTestDrawTacticalRadial()
 	menu.hitboxCount = 0
 	local commands = ControllerCameraTestGetTacticalCommands(false, "draw")
 	local n = #commands
+	local currentCategory = ControllerCameraTestTacticalCategoryInfo(menu.categoryKey or "buildArea")
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 	local minView = math.min(viewSizeX, viewSizeY)
@@ -10048,9 +10333,44 @@ function ControllerCameraTestDrawTacticalRadial()
 		end
 	end)
 
+	for _, direction in ipairs(ControllerCameraTestTacticalCategoryOrder) do
+		local category = ControllerCameraTestTacticalCategoryByDirection[direction]
+		local selected = category.key == currentCategory.key
+		local dx, dy = 0, 0
+		if direction == "up" then
+			dy = radius * 0.92
+		elseif direction == "down" then
+			dy = -radius * 0.92
+		elseif direction == "left" then
+			dx = -radius * 0.92
+		elseif direction == "right" then
+			dx = radius * 0.92
+		end
+		local chipW = math.min(168, math.max(94, #category.shortLabel * 7.5 + 26))
+		local chipH = 26 * radialScale
+		local x = cx + dx
+		local y = cy + dy
+		gl.Color(selected and 0.95 or 0.08, selected and 0.38 or 0.10, selected and 0.24 or 0.13, selected and 0.88 or 0.7)
+		gl.Rect(x - chipW / 2, y - chipH / 2, x + chipW / 2, y + chipH / 2)
+		gl.Color(selected and 1 or 0.62, selected and 0.94 or 0.72, selected and 0.68 or 0.82, selected and 1 or 0.82)
+		gl.LineWidth(selected and 2.2 or 1.1)
+		gl.BeginEnd(GL.LINE_LOOP, function()
+			gl.Vertex(x - chipW / 2, y - chipH / 2)
+			gl.Vertex(x + chipW / 2, y - chipH / 2)
+			gl.Vertex(x + chipW / 2, y + chipH / 2)
+			gl.Vertex(x - chipW / 2, y + chipH / 2)
+		end)
+		gl.Color(1, 1, 1, selected and 1 or 0.78)
+		gl.Text(category.shortLabel, x, y - 5, selected and 11 or 10, "oc")
+	end
+
 	if n <= 0 then
 		gl.Color(1, 1, 1, 1)
-		gl.Text("No tactical commands", cx, cy, 16, "oc")
+		gl.Text(currentCategory.label, cx, cy + 14, 15, "oc")
+		gl.Color(1, 1, 1, 0.74)
+		gl.Text("No available commands", cx, cy - 10, 12, "oc")
+		gl.Color(1, 1, 1, 0.62)
+		gl.Text("D-pad chooses category", cx, cy - 30, 10, "oc")
 		return
 	end
 
@@ -10084,12 +10404,16 @@ function ControllerCameraTestDrawTacticalRadial()
 	gl.Color(0.08, 0.10, 0.13, 0.76)
 	ControllerCameraTestDrawCircle2D(cx, cy, radius * 0.36, 30)
 	gl.Color(1, 0.92, 0.72, 1)
-	gl.Text(current and current.name or "Tactical", cx, cy + 22, 15, "oc")
+	gl.Text(currentCategory.label, cx, cy + 28, 13, "oc")
+	gl.Color(1, 1, 1, 1)
+	gl.Text(current and current.name or "Tactical", cx, cy + 8, 15, "oc")
 	gl.Color(1, 1, 1, 0.86)
-	gl.Text("A/X stage  B/Y close", cx, cy - 2, 11, "oc")
+	gl.Text("LS choose  A/X confirm  B/Y close", cx, cy - 16, 10, "oc")
+	gl.Color(1, 1, 1, 0.68)
+	gl.Text("D-pad: U utility  R combat  D build/area  L special", cx, cy - 32, 9, "oc")
 	if ControllerCameraTestIsQueueModifierActive() then
 		gl.Color(0.35, 0.95, 0.65, 1)
-		gl.Text("APPEND", cx, cy - 20, 11, "oc")
+		gl.Text("APPEND", cx, cy - 48, 11, "oc")
 	end
 	gl.Color(1, 1, 1, 1)
 	gl.LineWidth(1)
