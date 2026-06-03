@@ -4336,6 +4336,9 @@ function ControllerCameraTestClassifySmartTarget(target, commandIDs)
 					debug = "Smart X: repair target unit " .. tostring(unitID),
 				}
 			end
+			-- TODO: Future transport Smart X load request
+			-- For light/heavy air transports, Smart X over a pickup-capable unit should prefer LOAD UNIT instead of Guard.
+			-- Add an easy unload/dropoff hotkey for carried units.
 			if commandIDs.guard then
 				return {
 					priority = 4,
@@ -6492,6 +6495,13 @@ function TacticalCategories.IsHiddenTacticalOption(option)
 		or text:find("custom formation", 1, true)
 		or text:find("patrol line", 1, true)
 		or text:find("fight line", 1, true)
+		or text:find("fightline", 1, true)
+		or text:find("line fight", 1, true)
+		or text:find("linefight", 1, true)
+		or text:find("build line", 1, true)
+		or text:find("buildline", 1, true)
+		or text:find("line build", 1, true)
+		or text:find("linebuild", 1, true)
 	then
 		return true
 	end
@@ -6575,8 +6585,6 @@ function TacticalCategories.CategoryForOption(option)
 		or lowerName:find("self destruct", 1, true)
 		or lowerName:find("self-destruct", 1, true)
 		or lowerName:find("selfd", 1, true)
-		or lowerName:find("on/off", 1, true)
-		or lowerName:find("on-off", 1, true)
 		or text:find("capture", 1, true)
 		or text:find("resurrect", 1, true)
 		or text:find("load", 1, true)
@@ -9808,6 +9816,13 @@ function ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	end
 	latchDebugButtonEvents(pressedButtonStates, pressedRecentlyExpirations)
 	latchDebugButtonEvents(releasedButtonStates, releasedRecentlyExpirations)
+
+	-- TODO: Future modifier button hotkeys request
+	-- Add easy modifier + face-button hotkeys for the big frequent commands:
+	-- - Reclaim
+	-- - Repair
+	-- - Patrol
+	-- Possibly LB + A/B/X/Y, final mapping TBD.
 end
 
 function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
@@ -10355,6 +10370,14 @@ function ControllerCameraTestDrawTacticalRadial()
 		return
 	end
 
+	gl.PushMatrix()
+
+	local function DrawTacticalTextBold(text, x, y, size, options)
+		gl.Text(text, x, y, size, options)
+		gl.Text(text, x - 0.5, y, size, options)
+		gl.Text(text, x + 0.5, y, size, options)
+	end
+
 	menu.drawCount = (menu.drawCount or 0) + 1
 	menu.hitboxCount = 0
 	local commands = ControllerCameraTestGetTacticalCommands(false, "draw")
@@ -10364,9 +10387,9 @@ function ControllerCameraTestDrawTacticalRadial()
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 	local minView = math.min(viewSizeX, viewSizeY)
 	local radialScale = ControllerCameraTestSettings.radialScale or 1
-	local radius = math.min(430, math.max(160, minView * 0.22 * radialScale))
-	local itemW = math.min(180, math.max(86, minView * 0.11 * radialScale))
-	local itemH = 40 * radialScale
+	local radius = math.min(480, math.max(180, minView * 0.25 * radialScale))
+	local itemW = math.min(220, math.max(100, minView * 0.13 * radialScale))
+	local itemH = 46 * radialScale
 
 	local catColor = TacticalCategories.Colors[currentCategory.key] or { 1, 1, 1 }
 
@@ -10379,7 +10402,7 @@ function ControllerCameraTestDrawTacticalRadial()
 	gl.BeginEnd(GL.LINE_LOOP, function()
 		for i = 0, 30 do
 			local theta = i * (2 * math.pi / 30)
-			gl.Vertex(cx + radius * 0.36 * math.cos(theta), cy + radius * 0.36 * math.sin(theta))
+			gl.Vertex(cx + radius * 0.38 * math.cos(theta), cy + radius * 0.38 * math.sin(theta))
 		end
 	end)
 
@@ -10393,23 +10416,23 @@ function ControllerCameraTestDrawTacticalRadial()
 		end
 	end)
 
-	-- Compact category chips positioned closer to center (0.55 * radius)
+	-- Compact category chips positioned closer to center (0.52 * radius)
 	for _, direction in ipairs(TacticalCategories.Order) do
 		local category = TacticalCategories.ByDirection[direction]
 		local selected = category.key == currentCategory.key
 		local cellColor = TacticalCategories.Colors[category.key] or { 1, 1, 1 }
 		local dx, dy = 0, 0
 		if direction == "up" then
-			dy = radius * 0.55
+			dy = radius * 0.52
 		elseif direction == "down" then
-			dy = -radius * 0.55
+			dy = -radius * 0.52
 		elseif direction == "left" then
-			dx = -radius * 0.55
+			dx = -radius * 0.52
 		elseif direction == "right" then
-			dx = radius * 0.55
+			dx = radius * 0.52
 		end
-		local chipW = math.min(130, math.max(86, #category.shortLabel * 7.0 + 16))
-		local chipH = 22 * radialScale
+		local chipW = math.min(150, math.max(96, #category.shortLabel * 8.5 + 20))
+		local chipH = 26 * radialScale
 		local x = cx + dx
 		local y = cy + dy
 
@@ -10433,16 +10456,17 @@ function ControllerCameraTestDrawTacticalRadial()
 		end)
 
 		gl.Color(selected and { 1, 1, 1, 1.0 } or { 0.72, 0.72, 0.72, 0.68 })
-		gl.Text(category.shortLabel, x, y - 4, selected and 10 or 9, "oc")
+		DrawTacticalTextBold(category.shortLabel, x, y - 5, selected and 14 or 12, "oc")
 	end
 
 	if n <= 0 then
 		gl.Color(catColor[1], catColor[2], catColor[3], 1.0)
-		gl.Text(currentCategory.label, cx, cy + 18, 14, "oc")
-		gl.Color(1, 1, 1, 0.74)
-		gl.Text("No available commands", cx, cy - 2, 11, "oc")
-		gl.Color(1, 1, 1, 0.55)
-		gl.Text("D-pad chooses category  |  B/Y cancel", cx, cy - 20, 9, "oc")
+		DrawTacticalTextBold(currentCategory.label, cx, cy + 24, 18, "oc")
+		gl.Color(1, 1, 1, 0.80)
+		DrawTacticalTextBold("No available commands", cx, cy - 2, 14, "oc")
+		gl.Color(1, 1, 1, 0.65)
+		DrawTacticalTextBold("D-pad chooses category  |  B/Y cancel", cx, cy - 24, 11, "oc")
+		gl.PopMatrix()
 		return
 	end
 
@@ -10474,12 +10498,12 @@ function ControllerCameraTestDrawTacticalRadial()
 		end)
 
 		gl.Color(selected and { 1, 1, 1, 1.0 } or { 0.82, 0.82, 0.82, 0.86 })
-		gl.Text(label, x, y - 5, selected and 13 or 11, "oc")
+		DrawTacticalTextBold(label, x, y - 6, selected and 16 or 13, "oc")
 	end
 
 	local current = commands[menu.selectedIndex]
 	gl.Color(0.08, 0.10, 0.13, 0.76)
-	ControllerCameraTestDrawCircle2D(cx, cy, radius * 0.36, 30)
+	ControllerCameraTestDrawCircle2D(cx, cy, radius * 0.38, 30)
 
 	-- Center Circle Border
 	gl.Color(catColor[1] * 0.5, catColor[2] * 0.5, catColor[3] * 0.5, 0.64)
@@ -10487,24 +10511,26 @@ function ControllerCameraTestDrawTacticalRadial()
 	gl.BeginEnd(GL.LINE_LOOP, function()
 		for i = 0, 30 do
 			local theta = i * (2 * math.pi / 30)
-			gl.Vertex(cx + radius * 0.36 * math.cos(theta), cy + radius * 0.36 * math.sin(theta))
+			gl.Vertex(cx + radius * 0.38 * math.cos(theta), cy + radius * 0.38 * math.sin(theta))
 		end
 	end)
 
 	gl.Color(catColor[1], catColor[2], catColor[3], 1.0)
-	gl.Text(currentCategory.label, cx, cy + 28, 12, "oc")
+	DrawTacticalTextBold(currentCategory.label, cx, cy + 32, 15, "oc")
 	gl.Color(1, 1, 1, 1)
-	gl.Text(current and current.name or "Tactical", cx, cy + 8, 14, "oc")
-	gl.Color(1, 1, 1, 0.82)
-	gl.Text("LS choose  A/X confirm  B/Y close", cx, cy - 14, 10, "oc")
-	gl.Color(1, 1, 1, 0.64)
-	gl.Text("D-pad: U utility  R combat  D build/area  L special", cx, cy - 28, 9, "oc")
+	DrawTacticalTextBold(current and current.name or "Tactical", cx, cy + 8, 18, "oc")
+	gl.Color(1, 1, 1, 0.85)
+	DrawTacticalTextBold("LS choose  A/X confirm  B/Y close", cx, cy - 16, 12, "oc")
+	gl.Color(1, 1, 1, 0.70)
+	DrawTacticalTextBold("D-pad: U utility  R combat  D build/area  L special", cx, cy - 34, 11, "oc")
 	if ControllerCameraTestIsQueueModifierActive() then
 		gl.Color(0.35, 0.95, 0.65, 1)
-		gl.Text("APPEND", cx, cy - 44, 11, "oc")
+		DrawTacticalTextBold("APPEND", cx, cy - 52, 13, "oc")
 	end
 	gl.Color(1, 1, 1, 1)
 	gl.LineWidth(1)
+
+	gl.PopMatrix()
 end
 
 function ControllerCameraTestDrawAreaCommandCenterLabel()
