@@ -6289,11 +6289,10 @@ local function ControllerCameraTestAreaOptionFromDesc(desc)
 	local text = ControllerCameraTestCommandDescText(desc)
 	local dragMode, shortLabel, colorProfile, iconLabel
 
-	-- AREA MEX CLUE (for future implementation):
-	-- Mouse audit reports Active Command ID = 11 when the Area Mex button is active
-	-- in vanilla mouse/keyboard BAR. Future Area Mex implementation should investigate
-	-- cmdID 11 and the vanilla BAR Area Mex APIs before recreating behavior manually.
-	-- Do NOT implement Area Mex execution here yet - only detection/classification.
+	-- TODO Route A Area Mex:
+	-- Once controller area-drag UX has reliable world center/radius data, call
+	-- WG.controllerAreaMex.issueArea({ x, y, z, radius }, { "shift" }) instead
+	-- of relying on SetActiveCommand mouse-drag params.
 	if text:find("area mex", 1, true)
 		or lowerAction == "areamex"
 		or string.lower(name) == "areamex"
