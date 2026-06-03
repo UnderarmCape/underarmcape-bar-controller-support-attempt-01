@@ -27,6 +27,7 @@ local spTraceScreenRay = Spring.TraceScreenRay
 local spSelectUnitArray = Spring.SelectUnitArray
 local spGetSelectedUnits = Spring.GetSelectedUnits
 local spGiveOrderToUnit = Spring.GiveOrderToUnit
+local spGiveOrderToUnitArray = Spring.GiveOrderToUnitArray
 
 local function serializeTable(t)
 	if type(t) ~= "table" then return tostring(t) end
@@ -2735,6 +2736,12 @@ ControllerCameraTestAreaCommandProfiles = ControllerCameraTestAreaCommandProfile
 		color = { 0.72, 0.36, 1.0, 0.72 },
 		centerColor = { 0.88, 0.62, 1.0, 0.96 },
 	},
+	restoreArea = {
+		key = "restore",
+		label = "RESTORE",
+		color = { 0.42, 0.78, 1.0, 0.72 },
+		centerColor = { 0.62, 0.9, 1.0, 0.96 },
+	},
 	repairArea = {
 		key = "repair",
 		label = "REPAIR",
@@ -2770,6 +2777,10 @@ end
 
 function ControllerCameraTestIsAreaMexOption(option)
 	return type(option) == "table" and option.dragMode == "areaMex"
+end
+
+function ControllerCameraTestIsRestoreAreaOption(option)
+	return type(option) == "table" and option.dragMode == "restoreArea"
 end
 
 function ControllerCameraTestIsAreaTacticalOption(option)
@@ -2839,6 +2850,48 @@ function ControllerCameraTestIssueAreaMexRouteA(option, x, y, z, radius)
 	return true, "Route A issued"
 end
 
+function ControllerCameraTestIssueRestoreRouteA(option, x, y, z, radius, queueHeld)
+	if type(spGiveOrderToUnitArray) ~= "function" then
+		return false, "GiveOrderToUnitArray unavailable"
+	end
+
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if type(selectedUnits) ~= "table" or #selectedUnits <= 0 then
+		return false, "no selected units"
+	end
+
+	if not (ControllerCameraTestIsFiniteNumber(x)
+		and ControllerCameraTestIsFiniteNumber(y)
+		and ControllerCameraTestIsFiniteNumber(z))
+	then
+		return false, "invalid ground target"
+	end
+
+	if not ControllerCameraTestIsFiniteNumber(radius) or radius <= 0 then
+		return false, "invalid radius"
+	end
+
+	local cmdID = (CMD and CMD.RESTORE) or 110
+	local opts = queueHeld and { "shift" } or {}
+	local params = { x, y, z, radius }
+	local ok, result = pcall(spGiveOrderToUnitArray, selectedUnits, cmdID, params, opts)
+	if not ok then
+		return false, tostring(result)
+	end
+	if result == false then
+		return false, "order rejected"
+	end
+
+	local name = tostring((option and option.name) or "Restore Area")
+	ControllerCameraTestCommandDebug.issuedCmdID = tostring(cmdID)
+	ControllerCameraTestCommandDebug.issuedParamsCount = #params
+	ControllerCameraTestCommandDebug.lastOptions = queueHeld and "shift" or "none"
+	ControllerCameraTestCommandDebug.lastResult = "Restore Route A issued"
+	ControllerCameraTestSetCommandMarker(x, y, z, name, "restore")
+	latchSelectionDebugMessage(name .. " confirmed!")
+	return true, "Route A issued"
+end
+
 function ControllerCameraTestCopyTacticalOption(option)
 	if type(option) ~= "table" then
 		return nil
@@ -2885,6 +2938,8 @@ function ControllerCameraTestGetAreaOptionCommandID(option, mode)
 		return CMD.REPAIR
 	elseif mode == "attackArea" then
 		return CMD.ATTACK
+	elseif mode == "restoreArea" then
+		return (CMD and CMD.RESTORE) or 110
 	elseif mode == "resurrectArea" then
 		return CMD.RESURRECT
 	end
@@ -3807,6 +3862,16 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		if ControllerCameraTestIsAreaMexOption(option) then
 			local issued, reason = ControllerCameraTestIssueAreaMexRouteA(option, startX, startY, startZ, effectiveRadius)
 			drag.lastResult = issued and "Area Mex Route A issued" or ("Area Mex failed: " .. tostring(reason))
+			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
+			if not issued then
+				ControllerCameraTestUpdateAreaCommandDebug("failed", option, rawRadius, effectiveRadius, drag.lastResult)
+				latchSelectionDebugMessage(cmdName .. " failed: " .. tostring(reason))
+			else
+				ControllerCameraTestUpdateAreaCommandDebug("confirmed", option, rawRadius, effectiveRadius, "Route A issued")
+			end
+		elseif ControllerCameraTestIsRestoreAreaOption(option) then
+			local issued, reason = ControllerCameraTestIssueRestoreRouteA(option, startX, startY, startZ, effectiveRadius, ControllerCameraTestIsQueueModifierActive())
+			drag.lastResult = issued and "Restore Route A issued" or ("Restore failed: " .. tostring(reason))
 			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
 			if not issued then
 				ControllerCameraTestUpdateAreaCommandDebug("failed", option, rawRadius, effectiveRadius, drag.lastResult)
@@ -6352,6 +6417,7 @@ local function ControllerCameraTestAreaOptionFromDesc(desc)
 	local name = tostring(desc.name or desc.action or "Area Command")
 	local action = tostring(desc.action or "")
 	local lowerAction = string.lower(action)
+	local lowerName = string.lower(name)
 	local text = ControllerCameraTestCommandDescText(desc)
 	local dragMode, shortLabel, colorProfile, iconLabel
 
@@ -6368,16 +6434,19 @@ local function ControllerCameraTestAreaOptionFromDesc(desc)
 		shortLabel = "Area Mex"
 		colorProfile = "areaMex"
 		iconLabel = "MEX"
-	elseif ControllerCameraTestTextHasAny(text, { "resurrect", "resurrection", "ressurect", "revive", "restore" })
+	elseif lowerName:find("restore", 1, true) or lowerAction:find("restore", 1, true) or cmdID == ((CMD and CMD.RESTORE) or 110) then
+		dragMode = "restoreArea"
+		shortLabel = "Restore Area"
+		colorProfile = "restore"
+		iconLabel = "RESTORE"
+	elseif ControllerCameraTestTextHasAny(text, { "resurrect", "resurrection", "ressurect", "revive" })
 		or lowerAction == "rez"
 		or lowerAction == "res"
 	then
 		dragMode = "resurrectArea"
-		-- Differentiate "Restore Area" vs "Resurrect Area" based on the descriptor text/action
-		local isRestore = text:find("restore", 1, true) and not text:find("resurrect", 1, true)
-		shortLabel = isRestore and "Restore Area" or "Resurrect Area"
+		shortLabel = "Resurrect Area"
 		colorProfile = "resurrect"
-		iconLabel = isRestore and "RESTORE" or "RES"
+		iconLabel = "RES"
 	elseif text:find("reclaim", 1, true) and (text:find("area", 1, true) or text:find("radius", 1, true)) then
 		dragMode = "reclaimArea"
 		shortLabel = "Reclaim Area"
