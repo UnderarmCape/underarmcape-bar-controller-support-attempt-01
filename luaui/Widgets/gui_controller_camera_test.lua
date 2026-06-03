@@ -2761,9 +2761,15 @@ ControllerCameraTestAreaCommandProfiles = ControllerCameraTestAreaCommandProfile
 	},
 }
 
+local ControllerCameraTestAreaMexWarningLogged = false
+
 function ControllerCameraTestGetAreaCommandProfile(optionOrMode)
 	local mode = type(optionOrMode) == "table" and optionOrMode.dragMode or optionOrMode
 	return ControllerCameraTestAreaCommandProfiles[mode] or ControllerCameraTestAreaCommandProfiles.genericArea
+end
+
+function ControllerCameraTestIsAreaMexOption(option)
+	return type(option) == "table" and option.dragMode == "areaMex"
 end
 
 function ControllerCameraTestIsAreaTacticalOption(option)
@@ -2781,6 +2787,89 @@ function ControllerCameraTestAreaCommandRadius(startX, startZ, endX, endZ)
 		rawRadius = 120
 	end
 	return rawRadius, rawRadius * ControllerCameraTestAreaRadiusSensitivity
+end
+
+function ControllerCameraTestAreaMexRadius()
+	-- Route A Area Mex uses a fixed controller radius because engine mouse-drag
+	-- collection is bypassed. Reuse the existing Area radius setting for now.
+	return clamp(tonumber(ControllerCameraTestSettings.areaSelectRadius) or 320, 120, 1200)
+end
+
+function ControllerCameraTestIsFiniteNumber(value)
+	return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+end
+
+function ControllerCameraTestGetAreaMexAimPoint()
+	if reticleHasWorldTarget
+		and ControllerCameraTestIsFiniteNumber(reticleWorldX)
+		and ControllerCameraTestIsFiniteNumber(reticleWorldY)
+		and ControllerCameraTestIsFiniteNumber(reticleWorldZ)
+	then
+		return reticleWorldX, reticleWorldY, reticleWorldZ
+	end
+
+	if type(spTraceScreenRay) ~= "function" then
+		return nil, "TraceScreenRay unavailable"
+	end
+
+	local ok, _, worldPosition = pcall(spTraceScreenRay, screenCenterX, screenCenterY, true)
+	if ok and type(worldPosition) == "table" then
+		local x = tonumber(worldPosition[1])
+		local y = tonumber(worldPosition[2])
+		local z = tonumber(worldPosition[3])
+		if ControllerCameraTestIsFiniteNumber(x)
+			and ControllerCameraTestIsFiniteNumber(y)
+			and ControllerCameraTestIsFiniteNumber(z)
+		then
+			return x, y, z
+		end
+	end
+	return nil, "no ground target"
+end
+
+function ControllerCameraTestIssueAreaMexRouteA(option)
+	local api = WG and WG.controllerAreaMex
+	if type(api) ~= "table" or type(api.issueArea) ~= "function" then
+		if not ControllerCameraTestAreaMexWarningLogged then
+			ControllerCameraTestAreaMexWarningLogged = true
+			Spring.Echo("[ControllerAreaMex] Route A API unavailable; Area Mex not issued")
+		end
+		return false, "Route A API unavailable"
+	end
+
+	local x, y, z = ControllerCameraTestGetAreaMexAimPoint()
+	if not x then
+		return false, y or "no ground target"
+	end
+
+	local radius = ControllerCameraTestAreaMexRadius()
+	if not ControllerCameraTestIsFiniteNumber(radius) or radius <= 0 then
+		return false, "invalid radius"
+	end
+
+	-- cmd_area_mex.lua owns the executor; controller code supplies synthesized
+	-- {x, y, z, radius} because controller activation cannot populate engine
+	-- mouse-drag area params.
+	local queueHeld = ControllerCameraTestIsQueueModifierActive()
+	local ok, result, reason = pcall(api.issueArea, x, y, z, radius, { shift = queueHeld })
+	if not ok then
+		return false, tostring(result)
+	end
+	if result == false then
+		return false, tostring(reason or "issue failed")
+	end
+
+	local name = tostring((option and option.name) or "Area Mex")
+	ControllerCameraTestCommandDebug.issuedCmdID = tostring((option and option.cmdID) or "RouteA")
+	ControllerCameraTestCommandDebug.issuedParamsCount = 4
+	ControllerCameraTestCommandDebug.lastOptions = queueHeld and "shift" or "none"
+	ControllerCameraTestCommandDebug.lastResult = "Area Mex Route A issued"
+	ControllerCameraTestCommandDebug.mexApplyPreviewPath = "RouteA"
+	ControllerCameraTestCommandDebug.mexActionResult = "issued Area Mex area"
+	ControllerCameraTestSetCommandMarker(x, y, z, name, "areaMex")
+	ControllerCameraTestUpdateAreaCommandDebug("confirmed", option, radius, radius, "Route A issued")
+	latchSelectionDebugMessage(name .. " confirmed!")
+	return true, "Route A issued"
 end
 
 function ControllerCameraTestCopyTacticalOption(option)
@@ -3748,67 +3837,75 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		local cmdID = ControllerCameraTestGetAreaOptionCommandID(option, mode)
 		local cmdName = tostring(option.name or profile.label or "Area Command")
 
-		if type(cmdID) ~= "number" then
+		if ControllerCameraTestIsAreaMexOption(option) then
+			local issued, reason = ControllerCameraTestIssueAreaMexRouteA(option)
+			drag.lastResult = issued and "Area Mex Route A issued" or ("Area Mex failed: " .. tostring(reason))
+			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
+			if not issued then
+				ControllerCameraTestUpdateAreaCommandDebug("failed", option, rawRadius, effectiveRadius, drag.lastResult)
+				latchSelectionDebugMessage(cmdName .. " failed: " .. tostring(reason))
+			end
+		elseif type(cmdID) ~= "number" then
 			drag.active = false
 			drag.lastResult = "failed unavailable cmdID"
 			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
 			ControllerCameraTestUpdateAreaCommandDebug("failed unavailable", option, rawRadius, effectiveRadius, drag.lastResult)
 			latchSelectionDebugMessage(cmdName .. " failed: unavailable")
 			return
-		end
+		else
+			local params = { startX, startY, startZ, effectiveRadius }
+			local issued = 0
+			local lastError = nil
+			ControllerCameraTestCommandDebug.issuedCmdID = isQueueFront and tostring(CMD.INSERT) or tostring(cmdID)
+			ControllerCameraTestCommandDebug.issuedParamsCount = isQueueFront and 7 or #params
 
-		local params = { startX, startY, startZ, effectiveRadius }
-		local issued = 0
-		local lastError = nil
-		ControllerCameraTestCommandDebug.issuedCmdID = isQueueFront and tostring(CMD.INSERT) or tostring(cmdID)
-		ControllerCameraTestCommandDebug.issuedParamsCount = isQueueFront and 7 or #params
+			if ControllerCameraTestSettings.debugPanelVisible and (isQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
+				Spring.Echo(string.format(
+					"[ControllerQueueDebug] Path: ConfirmDragCommandArea | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | queue_preserve: %s",
+					tostring(cmdID),
+					serializeTable(params),
+					tostring(ControllerCameraTestIsQueueFrontModifierActive()),
+					tostring(ControllerCameraTestIsQueueModifierActive()),
+					serializeTable(isQueueFront and {"alt"} or {"shift"}),
+					tostring(isQueueFront),
+					"true (INSERT at pos 0 preserves queue)"
+				))
+			end
 
-		if ControllerCameraTestSettings.debugPanelVisible and (isQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
-			Spring.Echo(string.format(
-				"[ControllerQueueDebug] Path: ConfirmDragCommandArea | cmdID: %s | params: %s | Y_insert: %s | RT_append: %s | final_options: %s | wrapper_used: %s | queue_preserve: %s",
-				tostring(cmdID),
-				serializeTable(params),
-				tostring(ControllerCameraTestIsQueueFrontModifierActive()),
-				tostring(ControllerCameraTestIsQueueModifierActive()),
-				serializeTable(isQueueFront and {"alt"} or {"shift"}),
-				tostring(isQueueFront),
-				"true (INSERT at pos 0 preserves queue)"
-			))
-		end
-
-		if isQueueFront then
-			local cmdInsert = CMD.INSERT
-			for _, unitID in ipairs(selectedUnits) do
-				-- Vanilla INSERT: {pos, cmdID, encodedOpts, ...params}, outer {"alt"} only
-				local ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, startX, startY, startZ, effectiveRadius }, { "alt" })
-				if ok and result ~= false then
-					issued = issued + 1
-				else
-					lastError = tostring(result)
+			if isQueueFront then
+				local cmdInsert = CMD.INSERT
+				for _, unitID in ipairs(selectedUnits) do
+					-- Vanilla INSERT: {pos, cmdID, encodedOpts, ...params}, outer {"alt"} only
+					local ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, cmdID, 0, startX, startY, startZ, effectiveRadius }, { "alt" })
+					if ok and result ~= false then
+						issued = issued + 1
+					else
+						lastError = tostring(result)
+					end
+				end
+			else
+				for _, unitID in ipairs(selectedUnits) do
+					local ok, result = pcall(spGiveOrderToUnit, unitID, cmdID, params, orderOptions)
+					if ok and result ~= false then
+						issued = issued + 1
+					else
+						lastError = tostring(result)
+					end
 				end
 			end
-		else
-			for _, unitID in ipairs(selectedUnits) do
-				local ok, result = pcall(spGiveOrderToUnit, unitID, cmdID, params, orderOptions)
-				if ok and result ~= false then
-					issued = issued + 1
-				else
-					lastError = tostring(result)
-				end
-			end
-		end
 
-		if issued > 0 then
-			drag.lastResult = "issued cmdID " .. tostring(cmdID) .. " to " .. tostring(issued) .. " units"
-			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
-			latchSelectionDebugMessage(cmdName .. " confirmed!")
-			ControllerCameraTestSetCommandMarker(startX, startY, startZ, cmdName, profile.key or "area")
-			ControllerCameraTestUpdateAreaCommandDebug("confirmed", option, rawRadius, effectiveRadius, drag.lastResult)
-		else
-			drag.lastResult = "failed no orders accepted" .. (lastError and (": " .. lastError) or "")
-			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
-			latchSelectionDebugMessage(cmdName .. " failed: no orders accepted")
-			ControllerCameraTestUpdateAreaCommandDebug("failed bad params", option, rawRadius, effectiveRadius, drag.lastResult)
+			if issued > 0 then
+				drag.lastResult = "issued cmdID " .. tostring(cmdID) .. " to " .. tostring(issued) .. " units"
+				ControllerCameraTestCommandDebug.lastResult = drag.lastResult
+				latchSelectionDebugMessage(cmdName .. " confirmed!")
+				ControllerCameraTestSetCommandMarker(startX, startY, startZ, cmdName, profile.key or "area")
+				ControllerCameraTestUpdateAreaCommandDebug("confirmed", option, rawRadius, effectiveRadius, drag.lastResult)
+			else
+				drag.lastResult = "failed no orders accepted" .. (lastError and (": " .. lastError) or "")
+				ControllerCameraTestCommandDebug.lastResult = drag.lastResult
+				latchSelectionDebugMessage(cmdName .. " failed: no orders accepted")
+				ControllerCameraTestUpdateAreaCommandDebug("failed bad params", option, rawRadius, effectiveRadius, drag.lastResult)
+			end
 		end
 	end
 
@@ -6289,10 +6386,8 @@ local function ControllerCameraTestAreaOptionFromDesc(desc)
 	local text = ControllerCameraTestCommandDescText(desc)
 	local dragMode, shortLabel, colorProfile, iconLabel
 
-	-- TODO Route A Area Mex:
-	-- Once controller area-drag UX has reliable world center/radius data, call
-	-- WG.controllerAreaMex.issueArea({ x, y, z, radius }, { "shift" }) instead
-	-- of relying on SetActiveCommand mouse-drag params.
+	-- Area Mex is routed through WG.controllerAreaMex.issueArea from the staged
+	-- tactical aim mode; cmd_area_mex.lua owns the direct executor.
 	if text:find("area mex", 1, true)
 		or lowerAction == "areamex"
 		or string.lower(name) == "areamex"
@@ -6636,7 +6731,9 @@ function ControllerCameraTestStageTacticalCommand(option)
 	menu.stagedOption = ControllerCameraTestCopyTacticalOption(option)
 	menu.stagedName = tostring(option.name or "Command")
 	menu.stagedKind = tostring(option.kind or "none")
-	menu.stagedState = ControllerCameraTestIsAreaTacticalOption(option) and "staged waiting for center" or "staged"
+	menu.stagedState = ControllerCameraTestIsAreaMexOption(option)
+		and "staged aim"
+		or (ControllerCameraTestIsAreaTacticalOption(option) and "staged waiting for center" or "staged")
 	menu.repeatPlacementActive = false
 	menu.repeatPlacementState = "none"
 	menu.open = false
@@ -6675,8 +6772,26 @@ function ControllerCameraTestConfirmStagedTacticalCommand()
 		return false
 	end
 	local name = tostring(menu.stagedName or option.name or "Command")
-	local repeatHeld = ControllerCameraTestIsQueueModifierActive()
+	local repeatHeld = ControllerCameraTestIsQueueModifierActive() and not ControllerCameraTestIsAreaMexOption(option)
 	local repeatOption = ControllerCameraTestCopyTacticalOption(option)
+	if ControllerCameraTestIsAreaMexOption(option) then
+		menu.stagedOption = nil
+		menu.stagedName = name
+		menu.stagedKind = tostring(option.kind or "none")
+		menu.stagedState = "confirming"
+		menu.repeatPlacementActive = false
+		menu.repeatPlacementState = "none"
+		menu.lastAction = "confirming " .. name
+		local confirmed, reason = ControllerCameraTestIssueAreaMexRouteA(option)
+		menu.stagedState = confirmed and "confirmed" or "confirm failed"
+		menu.lastResult = confirmed and "Area Mex Route A issued" or ("Area Mex failed: " .. tostring(reason))
+		ControllerCameraTestLayerDebug.commandLayerAction = menu.lastResult
+		if not confirmed then
+			ControllerCameraTestUpdateAreaCommandDebug("failed", option, nil, ControllerCameraTestAreaMexRadius(), menu.lastResult)
+			latchSelectionDebugMessage(name .. " failed: " .. tostring(reason))
+		end
+		return confirmed
+	end
 	menu.stagedOption = nil
 	menu.stagedName = name
 	menu.stagedKind = tostring(option.kind or "none")
@@ -6746,12 +6861,17 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 		return true
 	end
 
-	if isAreaCmd and drag.active then
+	if ControllerCameraTestIsAreaMexOption(option) then
+		local radius = ControllerCameraTestAreaMexRadius()
+		ControllerCameraTestUpdateAreaCommandDebug("staged aim", option, radius, radius, "preview")
+	elseif isAreaCmd and drag.active then
 		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
 	end
 
 	if ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction") then
-		if isAreaCmd then
+		if ControllerCameraTestIsAreaMexOption(option) then
+			ControllerCameraTestConfirmStagedTacticalCommand()
+		elseif isAreaCmd then
 			if not drag.active then
 				if reticleHasWorldTarget and reticleWorldX then
 					drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
@@ -9463,9 +9583,13 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.open and "Tactical: A/X stage, B/Y cancel, Back+RB toggle, D-pad/LB/RB choose"
 			or XboxController.commandLayoutSummary
 	elseif type(ControllerCameraTestTacticalMenu.stagedOption) == "table" then
-		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.repeatPlacementActive
-			and "Tactical repeat: move reticle, A place again, release RT clear, B cancel"
-			or "Tactical staged: move reticle, A confirm, RT+A repeat, B cancel"
+		if ControllerCameraTestIsAreaMexOption(ControllerCameraTestTacticalMenu.stagedOption) then
+			activeButtonLayoutSummary = "Area Mex: move reticle, A/X confirm, RT appends, B cancel"
+		else
+			activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.repeatPlacementActive
+				and "Tactical repeat: move reticle, A place again, release RT clear, B cancel"
+				or "Tactical staged: move reticle, A confirm, RT+A repeat, B cancel"
+		end
 	elseif ControllerCameraTestTacticalMenu.open then
 		activeButtonLayoutSummary = "Tactical: A/X stage, B/Y close, D-pad/LB/RB choose"
 	elseif ControllerCameraTestBuildPlacement.active then
@@ -11683,6 +11807,17 @@ function widget:DrawWorld()
 		for r = step, R - step/2, step do
 			gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, r, 32)
 		end
+	end
+
+	local stagedOption = ControllerCameraTestTacticalMenu and ControllerCameraTestTacticalMenu.stagedOption
+	if ControllerCameraTestIsAreaMexOption(stagedOption) and reticleHasWorldTarget then
+		local R = ControllerCameraTestAreaMexRadius()
+		local profile = ControllerCameraTestGetAreaCommandProfile(stagedOption)
+		local color = profile.color or ControllerCameraTestAreaCommandProfiles.areaMex.color
+		gl.LineWidth(3.0)
+		gl.Color(color[1], color[2], color[3], color[4] or 0.72)
+		gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, R, 64)
+		gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, 14, 16)
 	end
 
 	if ControllerCameraTestBuildPlacement.active and reticleHasWorldTarget then
