@@ -2788,6 +2788,10 @@ function ControllerCameraTestIsRestoreAreaOption(option)
 	return type(option) == "table" and option.dragMode == "restoreArea"
 end
 
+function ControllerCameraTestIsRepairAreaOption(option)
+	return type(option) == "table" and option.dragMode == "repairArea"
+end
+
 function ControllerCameraTestIsAreaTacticalOption(option)
 	if type(option) ~= "table" then
 		return false
@@ -2893,6 +2897,48 @@ function ControllerCameraTestIssueRestoreRouteA(option, x, y, z, radius, queueHe
 	ControllerCameraTestCommandDebug.lastOptions = queueHeld and "shift" or "none"
 	ControllerCameraTestCommandDebug.lastResult = "Restore Route A issued"
 	ControllerCameraTestSetCommandMarker(x, y, z, name, "restore")
+	latchSelectionDebugMessage(name .. " confirmed!")
+	return true, "Route A issued"
+end
+
+function ControllerCameraTestIssueRepairAreaRouteA(option, x, y, z, radius, queueHeld)
+	if type(spGiveOrderToUnitArray) ~= "function" then
+		return false, "GiveOrderToUnitArray unavailable"
+	end
+
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if type(selectedUnits) ~= "table" or #selectedUnits <= 0 then
+		return false, "no selected units"
+	end
+
+	if not (ControllerCameraTestIsFiniteNumber(x)
+		and ControllerCameraTestIsFiniteNumber(y)
+		and ControllerCameraTestIsFiniteNumber(z))
+	then
+		return false, "invalid ground target"
+	end
+
+	if not ControllerCameraTestIsFiniteNumber(radius) or radius <= 0 then
+		return false, "invalid radius"
+	end
+
+	local cmdID = (CMD and CMD.REPAIR) or 40
+	local opts = queueHeld and { "shift" } or {}
+	local params = { x, y, z, radius }
+	local ok, result = pcall(spGiveOrderToUnitArray, selectedUnits, cmdID, params, opts)
+	if not ok then
+		return false, tostring(result)
+	end
+	if result == false then
+		return false, "order rejected"
+	end
+
+	local name = tostring((option and option.name) or "Repair Area")
+	ControllerCameraTestCommandDebug.issuedCmdID = tostring(cmdID)
+	ControllerCameraTestCommandDebug.issuedParamsCount = #params
+	ControllerCameraTestCommandDebug.lastOptions = queueHeld and "shift" or "none"
+	ControllerCameraTestCommandDebug.lastResult = "Repair Route A issued"
+	ControllerCameraTestSetCommandMarker(x, y, z, name, "repair")
 	latchSelectionDebugMessage(name .. " confirmed!")
 	return true, "Route A issued"
 end
@@ -3878,6 +3924,16 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		elseif ControllerCameraTestIsRestoreAreaOption(option) then
 			local issued, reason = ControllerCameraTestIssueRestoreRouteA(option, startX, startY, startZ, effectiveRadius, ControllerCameraTestIsQueueModifierActive())
 			drag.lastResult = issued and "Restore Route A issued" or ("Restore failed: " .. tostring(reason))
+			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
+			if not issued then
+				ControllerCameraTestUpdateAreaCommandDebug("failed", option, rawRadius, effectiveRadius, drag.lastResult)
+				latchSelectionDebugMessage(cmdName .. " failed: " .. tostring(reason))
+			else
+				ControllerCameraTestUpdateAreaCommandDebug("confirmed", option, rawRadius, effectiveRadius, "Route A issued")
+			end
+		elseif ControllerCameraTestIsRepairAreaOption(option) then
+			local issued, reason = ControllerCameraTestIssueRepairAreaRouteA(option, startX, startY, startZ, effectiveRadius, ControllerCameraTestIsQueueModifierActive())
+			drag.lastResult = issued and "Repair Route A issued" or ("Repair failed: " .. tostring(reason))
 			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
 			if not issued then
 				ControllerCameraTestUpdateAreaCommandDebug("failed", option, rawRadius, effectiveRadius, drag.lastResult)
@@ -6457,6 +6513,33 @@ function TacticalCategories.IsHiddenTacticalOption(option)
 	local lowerName = string.lower(option.name or option.shortLabel or "")
 	local action = string.lower(tostring(option.action or ""))
 
+	-- Block High Priority command
+	if cmdID == 34571 or cmdID == TacticalCategories.CmdHighPriority then
+		return true
+	end
+	if lowerName == "high priority" or lowerName == "priority"
+		or action == "high priority" or action == "priority" or action == "highpriority"
+	then
+		return true
+	end
+
+	-- Block wait subtypes
+	if lowerName == "gather wait" or lowerName == "gatherwait"
+		or lowerName == "squad wait" or lowerName == "squadwait"
+		or lowerName == "death wait" or lowerName == "deathwait"
+		or lowerName == "time wait" or lowerName == "timewait"
+		or action == "gather wait" or action == "gatherwait"
+		or action == "squad wait" or action == "squadwait"
+		or action == "death wait" or action == "deathwait"
+		or action == "time wait" or action == "timewait"
+		or text:find("gather wait", 1, true) or text:find("gatherwait", 1, true)
+		or text:find("squad wait", 1, true) or text:find("squadwait", 1, true)
+		or text:find("death wait", 1, true) or text:find("deathwait", 1, true)
+		or text:find("time wait", 1, true) or text:find("timewait", 1, true)
+	then
+		return true
+	end
+
 	-- Globally block by cmdID if they are unwanted commands
 	if cmdID == CMD.MOVE
 		or cmdID == CMD.STOP
@@ -6559,19 +6642,16 @@ function TacticalCategories.CategoryForOption(option)
 	-- 1. UTILITY WHITELIST
 	if cmdID == CMD.WAIT
 		or cmdID == CMD.REPEAT
-		or cmdID == TacticalCategories.CmdHighPriority
 		or cmdID == (CMD.SELFD or 70)
 		or kind == "repeat_toggle"
 		or kind == "factory_repeat"
-		or lowerName:find("wait", 1, true)
+		or (lowerName:find("wait", 1, true) and not lowerName:find("gather", 1, true) and not lowerName:find("squad", 1, true) and not lowerName:find("death", 1, true) and not lowerName:find("time", 1, true))
 		or lowerName:find("repeat", 1, true)
-		or lowerName:find("priority", 1, true)
 		or lowerName:find("self destruct", 1, true)
 		or lowerName:find("self-destruct", 1, true)
 		or lowerName:find("selfd", 1, true)
-		or text:find("wait", 1, true)
+		or (text:find("wait", 1, true) and not text:find("gather", 1, true) and not text:find("squad", 1, true) and not text:find("death", 1, true) and not text:find("time", 1, true))
 		or text:find("repeat", 1, true)
-		or text:find("priority", 1, true)
 		or text:find("self destruct", 1, true)
 		or text:find("self-destruct", 1, true)
 	then

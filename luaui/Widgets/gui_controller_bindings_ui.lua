@@ -129,7 +129,7 @@ local ControllerBindingsUI = {
 	settingsPages = { "Camera", "Input", "Radials", "Selection", "Placement", "UI" },
 	settingsPageIndex = 1,
 	settingsItemIndex = 1,
-	currentPreset = "Balanced RTS",
+	currentPreset = "Build-First Commander",
 	pendingPresetName = nil,
 }
 
@@ -701,16 +701,6 @@ local function ControllerBindingsUIRebuildCategories()
 		name = "Presets",
 		actions = {
 			{
-				action = "preset_balanced",
-				label = "Balanced RTS",
-				actionLabel = "Balanced RTS",
-				default = "",
-				group = "Presets",
-				sourceGroup = "Presets",
-				readOnly = true,
-				description = "General-purpose default layout with balanced combat & base building.",
-			},
-			{
 				action = "preset_buildfirst",
 				label = "Build-First Commander",
 				actionLabel = "Build-First Commander",
@@ -792,50 +782,7 @@ local function ControllerBindingsUIConfirmApplyPreset()
 	end
 
 	local map = {}
-	if presetName == "Balanced RTS" then
-		map = {
-			select = "A",
-			cancel = "B",
-			smartAction = "X",
-			buildRadial = "RB",
-			commandLayer = "back",
-			insertNextCommandModifier = "Y",
-			appendQueueModifier = "RT",
-			controlGroupModifier = "start",
-			pitchModifier = "LB",
-			removeQueuedCommand = "leftStickClick",
-			removeLastQueuedCommand = "rightStickClick",
-			radialSelect = "A",
-			radialCancel = "B",
-			radialQuick = "X",
-			radialClose = "Y",
-			radialPrevPage = "LB",
-			radialNextPage = "RB",
-			place = "A",
-			placeStay = "X",
-			cancelPlacement = "B",
-			rotateBuildingLeft = "dpadLeft",
-			rotateBuildingRight = "dpadRight",
-			spacingUp = "dpadUp",
-			spacingDown = "dpadDown",
-			patternPrev = "LB",
-			patternNext = "none",
-			tacticalSelect = "A",
-			tacticalCancel = "B",
-			tacticalClose = "Y",
-			commandUp = "dpadUp",
-			commandDown = "dpadDown",
-			commandLeft = "dpadLeft",
-			commandRight = "dpadRight",
-			idlePrev = "dpadLeft",
-			idleNext = "dpadRight",
-			groupSlotUp = "dpadUp",
-			groupSlotDown = "dpadDown",
-			groupRecallOrAssign = "dpadLeft",
-			groupAssign = "dpadRight",
-			groupClear = "leftStickClick",
-		}
-	elseif presetName == "Build-First Commander" then
+	if presetName == "Build-First Commander" then
 		map = {
 			select = "A",
 			cancel = "B",
@@ -1552,24 +1499,7 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 		y = y - 20
 
 		local lines = {}
-		if action.actionLabel == "Balanced RTS" then
-			lines = {
-				"A = Select / Confirm",
-				"B = Cancel / Clear Selection",
-				"X = Move / Smart Move",
-				"Y = Build / Factory Radial",
-				"LT = Camera Speed Modifier only",
-				"LB = Camera Pitch Modifier",
-				"RT = Append Queue / Shift-style queue",
-				"Back/View = Command Layer Modifier",
-				"RB = Do Next / Insert Command Modifier",
-				"L3 (Left Stick Click) = Remove current/next queue",
-				"R3 (Right Stick Click) = Remove last queue",
-				"Back/View + A + A = Commander focus/select utility",
-				"Start/Menu + D-pad Left/Right = Recall / same-type future assign",
-				"Start/Menu + D-pad Up/Down or L3 = Group slot / clear",
-			}
-		elseif action.actionLabel == "Build-First Commander" then
+		if action.actionLabel == "Build-First Commander" then
 			lines = {
 				"A = Select / Confirm",
 				"B = Cancel / Clear Selection",
