@@ -80,6 +80,74 @@ ControllerCameraTestCommandDebug = ControllerCameraTestCommandDebug or {
 	queueRemovalLastTag = "none",
 	queueRemovalUnitDetails = "none",
 }
+-- TEMP BUILD RADIAL TUNING: remove after visual values are finalized.
+local BuildRadialTuning = {
+	enabled = true,
+}
+setmetatable(BuildRadialTuning, {
+	__index = function(t, key)
+		if not ControllerCameraTestSettings then
+			return nil
+		end
+		if key == "radialScale" then
+			return ControllerCameraTestSettings.buildRadialScale or 1.25
+		elseif key == "iconScale" then
+			return ControllerCameraTestSettings.buildIconScale or 2.0
+		elseif key == "textScale" then
+			return ControllerCameraTestSettings.buildTextScale or 2.0
+		elseif key == "pageLabelScale" then
+			return ControllerCameraTestSettings.buildPageLabelScale or 2.0
+		elseif key == "fillAlpha" then
+			return ControllerCameraTestSettings.buildFillAlpha or 0.45
+		elseif key == "selectedBorderScale" then
+			return ControllerCameraTestSettings.buildSelectedBorderScale or 1.3
+		elseif key == "itemSpacing" then
+			return ControllerCameraTestSettings.buildItemSpacing or 1.0
+		end
+		return nil
+	end,
+	__newindex = function(t, key, val)
+		if not ControllerCameraTestSettings then
+			return
+		end
+		if key == "radialScale" then
+			ControllerCameraTestSettings.buildRadialScale = val
+		elseif key == "iconScale" then
+			ControllerCameraTestSettings.buildIconScale = val
+		elseif key == "textScale" then
+			ControllerCameraTestSettings.buildTextScale = val
+		elseif key == "pageLabelScale" then
+			ControllerCameraTestSettings.buildPageLabelScale = val
+		elseif key == "fillAlpha" then
+			ControllerCameraTestSettings.buildFillAlpha = val
+		elseif key == "selectedBorderScale" then
+			ControllerCameraTestSettings.buildSelectedBorderScale = val
+		elseif key == "itemSpacing" then
+			ControllerCameraTestSettings.buildItemSpacing = val
+		end
+	end
+})
+
+-- TEMP BUILD RADIAL TUNING: page colors
+local BuildRadialPageColors = {
+	economy = {
+		fill = { 0.04, 0.32, 0.08, 0.45 },
+		accent = { 0.25, 1.0, 0.35, 1.0 },
+	},
+	combat = {
+		fill = { 0.45, 0.04, 0.04, 0.45 },
+		accent = { 1.0, 0.18, 0.12, 1.0 },
+	},
+	utility = {
+		fill = { 0.26, 0.12, 0.45, 0.45 },
+		accent = { 0.75, 0.35, 1.0, 1.0 },
+	},
+	build = {
+		fill = { 0.10, 0.18, 0.42, 0.45 },
+		accent = { 0.35, 0.65, 1.0, 1.0 },
+	},
+}
+
 ControllerCameraTestBuildMenu = ControllerCameraTestBuildMenu or {
 	open = false,
 	options = {},
@@ -542,6 +610,13 @@ function ControllerCameraTestGetDefaultSettings()
 		helpOverlayVisible = false,
 		compactBuildMenuEnabled = true,
 		compactBuildMenuScale = 0.85,
+		buildRadialScale = 1.25,
+		buildIconScale = 2.0,
+		buildTextScale = 2.0,
+		buildPageLabelScale = 2.0,
+		buildFillAlpha = 0.45,
+		buildSelectedBorderScale = 1.3,
+		buildItemSpacing = 1.0,
 	}
 end
 
@@ -626,6 +701,13 @@ function ControllerCameraTestClampSetting(name, value)
 		singlePathSpacing = { 16, 1024 },
 		singlePathInterval = { 0.02, 1.0 },
 		compactBuildMenuScale = { 0.50, 1.00 },
+		buildRadialScale = { 0.5, 3.0 },
+		buildIconScale = { 0.5, 5.0 },
+		buildTextScale = { 0.5, 5.0 },
+		buildPageLabelScale = { 0.5, 5.0 },
+		buildFillAlpha = { 0.0, 1.0 },
+		buildSelectedBorderScale = { 0.5, 5.0 },
+		buildItemSpacing = { 0.5, 5.0 },
 	}
 	local range = ranges[name]
 	if not range then
@@ -663,6 +745,13 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.singlePathSpacing = ControllerCameraTestClampSetting("singlePathSpacing", settings.singlePathSpacing or 96)
 	settings.singlePathInterval = ControllerCameraTestClampSetting("singlePathInterval", settings.singlePathInterval or 0.10)
 	settings.compactBuildMenuScale = ControllerCameraTestClampSetting("compactBuildMenuScale", settings.compactBuildMenuScale or 0.85)
+	settings.buildRadialScale = ControllerCameraTestClampSetting("buildRadialScale", settings.buildRadialScale or defaults.buildRadialScale)
+	settings.buildIconScale = ControllerCameraTestClampSetting("buildIconScale", settings.buildIconScale or defaults.buildIconScale)
+	settings.buildTextScale = ControllerCameraTestClampSetting("buildTextScale", settings.buildTextScale or defaults.buildTextScale)
+	settings.buildPageLabelScale = ControllerCameraTestClampSetting("buildPageLabelScale", settings.buildPageLabelScale or defaults.buildPageLabelScale)
+	settings.buildFillAlpha = ControllerCameraTestClampSetting("buildFillAlpha", settings.buildFillAlpha or defaults.buildFillAlpha)
+	settings.buildSelectedBorderScale = ControllerCameraTestClampSetting("buildSelectedBorderScale", settings.buildSelectedBorderScale or defaults.buildSelectedBorderScale)
+	settings.buildItemSpacing = ControllerCameraTestClampSetting("buildItemSpacing", settings.buildItemSpacing or defaults.buildItemSpacing)
 	settings.compactBuildMenuEnabled = settings.compactBuildMenuEnabled ~= false
 	settings.compactSelectedStatus = settings.compactSelectedStatus ~= false
 	settings.hideCompactStatusWhenRadialOpen = settings.hideCompactStatusWhenRadialOpen ~= false
@@ -2271,6 +2360,14 @@ function ControllerCameraTestGetSettingsUICategories()
 			{ key = "radialScale", label = "Radial scale", step = 0.05, decimals = 2 },
 			{ key = "compactSelectedStatus", label = "Compact status panel", type = "bool" },
 			{ key = "hideCompactStatusWhenRadialOpen", label = "Hide status with radial", type = "bool" },
+			-- TEMP BUILD RADIAL TUNING: remove after visual values are finalized.
+			{ key = "buildRadialScale", label = "Build radial scale", step = 0.05, decimals = 2 },
+			{ key = "buildIconScale", label = "Build icon scale", step = 0.1, decimals = 1 },
+			{ key = "buildTextScale", label = "Build text scale", step = 0.1, decimals = 1 },
+			{ key = "buildPageLabelScale", label = "Build page label scale", step = 0.1, decimals = 1 },
+			{ key = "buildFillAlpha", label = "Build fill alpha", step = 0.05, decimals = 2 },
+			{ key = "buildSelectedBorderScale", label = "Build selected border scale", step = 0.1, decimals = 1 },
+			{ key = "buildItemSpacing", label = "Build item spacing factor", step = 0.05, decimals = 2 },
 		} },
 		{ key = "Selection", items = {
 			{ key = "areaSelectRadius", label = "Area select radius", step = 40, decimals = 0 },
@@ -8632,7 +8729,7 @@ function ControllerCameraTestDequeueFactoryBuildOption(option)
 
 	local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(option.cmdID, {}, "Factory dequeue " .. tostring(option.name), "queue", optionsToIssue)
 	if ok then
-		menu.lastAction = queueActive and "factory dequeued 5 (B)" or "factory dequeued (B)"
+		menu.lastAction = queueActive and "factory dequeued 5 (X)" or "factory dequeued (X)"
 		menu.radialLastAction = menu.lastAction
 		ControllerCameraTestRefreshFactoryQueueCounts()
 		ControllerCameraTestRefreshFactoryQueueProgress()
@@ -8851,6 +8948,8 @@ function ControllerCameraTestHandleBuildMenuInput()
 	local categories = menu.radialCategories or { "Economy", "Combat", "Utility", "Build" }
 
 	if ControllerCameraTestActionPressed("radialCancel") then
+		ControllerCameraTestCloseBuildMenu("closed by B")
+	elseif ControllerCameraTestActionPressed("radialQuick") then
 		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 		if ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits) then
 			local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
@@ -8860,8 +8959,6 @@ function ControllerCameraTestHandleBuildMenuInput()
 				menu.lastAction = "factory dequeue failed: no option"
 				menu.radialLastAction = "factory dequeue failed: no option"
 			end
-		else
-			ControllerCameraTestCloseBuildMenu("closed by B")
 		end
 	elseif ControllerCameraTestActionPressed("radialClose") then
 		ControllerCameraTestCloseBuildMenu("closed by Y")
@@ -8901,8 +8998,6 @@ function ControllerCameraTestHandleBuildMenuInput()
 			ControllerCameraTestEnterPlacementFromHighlight()
 			ControllerCameraTestCloseBuildMenu("entered placement")
 		end
-	elseif ControllerCameraTestActionPressed("radialQuick") then
-		ControllerCameraTestPlaceHighlightedBuildOption(false, "quick placed from radial")
 	elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadRight") then
 		ControllerCameraTestSetRadialHighlight(currentLocalIndex + 1, "dpad next")
 	elseif WasButtonPressed("dpadUp") or WasButtonPressed("dpadLeft") then
@@ -11070,13 +11165,23 @@ function ControllerCameraTestDrawBuildRadial()
 
 	local minView = math.min(viewSizeX, viewSizeY)
 	local radialScale = ControllerCameraTestSettings.radialScale or 1
-	local radius = math.min(520, math.max(200, minView * 0.28 * radialScale))
+	local scaleFactor = BuildRadialTuning.radialScale
+	local radius = math.min(1000, math.max(200, minView * 0.28 * radialScale * scaleFactor))
 
 	local visibleOptions = menu.radialVisibleOptions or {}
 	local n = #visibleOptions
 
-	-- 1. Translucent backdrop (large dark circle around the reticle) - opacity halved from 0.72 to 0.36
-	gl.Color(0, 0, 0, 0.36)
+	-- Resolve page/category color
+	local catKey = string.lower(menu.radialCategoryName or "economy")
+	local pageColor = BuildRadialPageColors[catKey] or BuildRadialPageColors.economy
+
+	-- 1. Translucent backdrop (large colored circle around the reticle)
+	local fillR = pageColor.fill[1]
+	local fillG = pageColor.fill[2]
+	local fillB = pageColor.fill[3]
+	local fillA = BuildRadialTuning.fillAlpha
+	gl.Color(fillR, fillG, fillB, fillA)
+
 	local function drawCircle(x, y, r, segments)
 		segments = segments or 32
 		gl.BeginEnd(GL.TRIANGLE_FAN, function()
@@ -11090,9 +11195,9 @@ function ControllerCameraTestDrawBuildRadial()
 
 	drawCircle(cx, cy, radius * 1.3, 40)
 
-	-- Draw a thin ring - opacity halved from 0.45 to 0.22
+	-- Draw a thin ring
 	gl.LineWidth(2)
-	gl.Color(0.56, 0.84, 1, 0.22)
+	gl.Color(pageColor.accent[1], pageColor.accent[2], pageColor.accent[3], 0.3)
 	gl.BeginEnd(GL.LINE_LOOP, function()
 		for i = 0, 36 do
 			local theta = i * (2 * math.pi / 36)
@@ -11101,12 +11206,12 @@ function ControllerCameraTestDrawBuildRadial()
 	end)
 
 	-- 2. Draw each item
-	local iconSize = math.min(145, math.max(56, minView * 0.075 * radialScale))
+	local iconSize = math.min(500, math.max(56, minView * 0.075 * radialScale * BuildRadialTuning.iconScale))
 	for i = 1, n do
 		local option = visibleOptions[i]
 		local angle = ((i - 1) * (2 * math.pi / n)) - (math.pi / 2)
-		local x = cx + radius * math.cos(angle)
-		local y = cy - radius * math.sin(angle)
+		local x = cx + radius * BuildRadialTuning.itemSpacing * math.cos(angle)
+		local y = cy - radius * BuildRadialTuning.itemSpacing * math.sin(angle)
 
 		local isSelected = (option.menuIndex == menu.selectedIndex)
 
@@ -11114,8 +11219,9 @@ function ControllerCameraTestDrawBuildRadial()
 		local affordable, mAff, eAff = ControllerCameraTestCanAffordBuildOption(option)
 
 		if isSelected then
-			gl.Color(0.2, 0.6, 1, 0.85)
-			gl.Rect(x - iconSize/2 - 4, y - iconSize/2 - 4, x + iconSize/2 + 4, y + iconSize/2 + 4)
+			gl.Color(pageColor.accent[1], pageColor.accent[2], pageColor.accent[3], 0.85)
+			local borderW = iconSize/2 + 4 * BuildRadialTuning.selectedBorderScale
+			gl.Rect(x - borderW, y - borderW, x + borderW, y + borderW)
 			gl.Color(0.85, 0.95, 1, 1)
 		else
 			if affordable then
@@ -11131,7 +11237,7 @@ function ControllerCameraTestDrawBuildRadial()
 			end
 		end
 
-		gl.LineWidth(isSelected and 3 or 1.5)
+		gl.LineWidth(isSelected and (3 * BuildRadialTuning.selectedBorderScale) or 1.5)
 		gl.BeginEnd(GL.LINE_LOOP, function()
 			gl.Vertex(x - iconSize/2, y - iconSize/2)
 			gl.Vertex(x + iconSize/2, y - iconSize/2)
@@ -11176,33 +11282,33 @@ function ControllerCameraTestDrawBuildRadial()
 
 		if not hasIcon then
 			gl.Color(1, 1, 1, 1)
-			gl.Text(string.sub(option.name, 1, 4), x, y - 6, 12, "oc")
+			gl.Text(string.sub(option.name, 1, 4), x, y - 6 * BuildRadialTuning.textScale, 12 * BuildRadialTuning.textScale, "oc")
 		end
 
 		gl.Color(1, 0.84, 0, 1)
-		gl.Text(tostring(i), x - iconSize/2 + 6, y + iconSize/2 - 16, 12, "o")
+		gl.Text(tostring(i), x - iconSize/2 + 6, y + iconSize/2 - 16 * BuildRadialTuning.textScale, 12 * BuildRadialTuning.textScale, "o")
 
 		-- Draw Factory Queue badge if needed
 		if isFactoryContext and option.cmdID and menu.factoryQueueCounts then
 			local qCount = menu.factoryQueueCounts[option.cmdID] or 0
 			if qCount > 0 then
 				local badgeText = "x" .. tostring(qCount)
-				local badgeW = 28
+				local badgeW = 28 * BuildRadialTuning.textScale
 				if qCount >= 10 then
-					badgeW = 36
+					badgeW = 36 * BuildRadialTuning.textScale
 				end
 				if qCount >= 100 then
-					badgeW = 44
+					badgeW = 44 * BuildRadialTuning.textScale
 				end
 				local bx2 = x + iconSize/2 + 3
 				local bx1 = bx2 - badgeW
 				local by2 = y + iconSize/2 + 3
-				local by1 = by2 - 18
+				local by1 = by2 - 18 * BuildRadialTuning.textScale
 
 				-- Translucent dark glassmorphism badge
 				gl.Color(0.04, 0.08, 0.12, 0.88)
 				gl.Rect(bx1, by1, bx2, by2)
-				gl.Color(0.56, 0.84, 1, 0.7)
+				gl.Color(pageColor.accent[1], pageColor.accent[2], pageColor.accent[3], 0.7)
 				gl.LineWidth(1)
 				gl.BeginEnd(GL.LINE_LOOP, function()
 					gl.Vertex(bx1, by1)
@@ -11212,7 +11318,7 @@ function ControllerCameraTestDrawBuildRadial()
 				end)
 
 				gl.Color(1, 0.95, 0.8, 1)
-				gl.Text(badgeText, (bx1 + bx2)/2, by1 + 3, 11, "oc")
+				gl.Text(badgeText, (bx1 + bx2)/2, by1 + 3 * BuildRadialTuning.textScale, 11 * BuildRadialTuning.textScale, "oc")
 			end
 		end
 	end
@@ -11221,10 +11327,10 @@ function ControllerCameraTestDrawBuildRadial()
 	local currentOption = ControllerCameraTestGetRadialCurrentOption()
 	if currentOption then
 		gl.Color(0.2, 0.6, 1, 0.08) -- opacity halved from 0.15 to 0.08
-		drawCircle(cx, cy, radius * 0.45, 30)
+		drawCircle(cx, cy, radius * 0.45 * (BuildRadialTuning.textScale * 0.6), 30)
 
 		gl.Color(0.82, 0.94, 1, 1)
-		gl.Text(currentOption.name or "unknown", cx, cy + 42, 16, "oc")
+		gl.Text(currentOption.name or "unknown", cx, cy + 42 * (BuildRadialTuning.textScale * 0.7), 16 * BuildRadialTuning.textScale, "oc")
 
 		local mCost = currentOption.metalCost or 0
 		local eCost = currentOption.energyCost or 0
@@ -11236,28 +11342,28 @@ function ControllerCameraTestDrawBuildRadial()
 			else
 				gl.Color(1, 0.25, 0.2, 1)
 			end
-			gl.Text("M: " .. tostring(mCost), cx - 36, cy + 22, 12, "oc")
+			gl.Text("M: " .. tostring(mCost), cx - 36 * BuildRadialTuning.textScale, cy + 22 * (BuildRadialTuning.textScale * 0.75), 12 * BuildRadialTuning.textScale, "oc")
 
 			if eAff then
 				gl.Color(0.9, 0.8, 0.1, 1)
 			else
 				gl.Color(1, 0.25, 0.2, 1)
 			end
-			gl.Text("E: " .. tostring(eCost), cx + 36, cy + 22, 12, "oc")
+			gl.Text("E: " .. tostring(eCost), cx + 36 * BuildRadialTuning.textScale, cy + 22 * (BuildRadialTuning.textScale * 0.75), 12 * BuildRadialTuning.textScale, "oc")
 		elseif mCost > 0 then
 			if mAff then
 				gl.Color(0.9, 0.8, 0.1, 1)
 			else
 				gl.Color(1, 0.25, 0.2, 1)
 			end
-			gl.Text("M: " .. tostring(mCost), cx, cy + 22, 12, "oc")
+			gl.Text("M: " .. tostring(mCost), cx, cy + 22 * (BuildRadialTuning.textScale * 0.75), 12 * BuildRadialTuning.textScale, "oc")
 		elseif eCost > 0 then
 			if eAff then
 				gl.Color(0.9, 0.8, 0.1, 1)
 			else
 				gl.Color(1, 0.25, 0.2, 1)
 			end
-			gl.Text("E: " .. tostring(eCost), cx, cy + 22, 12, "oc")
+			gl.Text("E: " .. tostring(eCost), cx, cy + 22 * (BuildRadialTuning.textScale * 0.75), 12 * BuildRadialTuning.textScale, "oc")
 		end
 
 		if isFactoryContext then
@@ -11267,55 +11373,55 @@ function ControllerCameraTestDrawBuildRadial()
 			end
 			if qCount > 0 then
 				gl.Color(0.4, 0.85, 1, 1)
-				gl.Text("Queued: " .. tostring(qCount), cx, cy + 4, 12, "oc")
+				gl.Text("Queued: " .. tostring(qCount), cx, cy + 4 * (BuildRadialTuning.textScale * 0.8), 12 * BuildRadialTuning.textScale, "oc")
 			end
 		else
 			if currentOption.tooltip and currentOption.tooltip ~= "" then
 				gl.Color(0.7, 0.7, 0.7, 0.8)
 				local tip = string.sub(currentOption.tooltip, 1, 28)
 				if #currentOption.tooltip > 28 then tip = tip .. "..." end
-				gl.Text(tip, cx, cy + 4, 11, "oc")
+				gl.Text(tip, cx, cy + 4 * (BuildRadialTuning.textScale * 0.8), 11 * BuildRadialTuning.textScale, "oc")
 			end
 		end
 
 		-- Draw context-specific controller hints
 		if isFactoryContext then
 			gl.Color(0.4, 1.0, 0.4, 0.9)
-			gl.Text("[A] +1", cx - 8, cy - 12, 11, "or")
+			gl.Text("[A] +1", cx - 8 * BuildRadialTuning.textScale, cy - 12 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
 			gl.Color(0.2, 0.9, 0.7, 0.9)
-			gl.Text("[LT+A] +5", cx + 8, cy - 12, 11, "ol")
+			gl.Text("[LT+A] +5", cx + 8 * BuildRadialTuning.textScale, cy - 12 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
 
 			gl.Color(1.0, 0.4, 0.4, 0.9)
-			gl.Text("[B] -1", cx - 8, cy - 25, 11, "or")
+			gl.Text("[X] -1", cx - 8 * BuildRadialTuning.textScale, cy - 25 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
 			gl.Color(1.0, 0.6, 0.2, 0.9)
-			gl.Text("[LT+B] -5", cx + 8, cy - 25, 11, "ol")
+			gl.Text("[LT+X] -5", cx + 8 * BuildRadialTuning.textScale, cy - 25 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
 
 			gl.Color(1.0, 0.9, 0.4, 0.9)
-			gl.Text("[Y] Close", cx, cy - 38, 11, "oc")
+			gl.Text("[B/Y] Close", cx, cy - 38 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "oc")
 		else
 			gl.Color(0.4, 1.0, 0.4, 0.9)
-			gl.Text("[A] Place", cx - 8, cy - 16, 11, "or")
+			gl.Text("[A] Place", cx - 8 * BuildRadialTuning.textScale, cy - 16 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
 			gl.Color(0.4, 0.8, 1.0, 0.9)
-			gl.Text("[X] Stay", cx + 8, cy - 16, 11, "ol")
+			gl.Text("[X] Stay", cx + 8 * BuildRadialTuning.textScale, cy - 16 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
 			gl.Color(1.0, 0.4, 0.4, 0.9)
-			gl.Text("[B] Cancel", cx - 8, cy - 30, 11, "or")
+			gl.Text("[B] Cancel", cx - 8 * BuildRadialTuning.textScale, cy - 30 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
 			gl.Color(1.0, 0.9, 0.4, 0.9)
-			gl.Text("[Y] Close", cx + 8, cy - 30, 11, "ol")
+			gl.Text("[Y] Close", cx + 8 * BuildRadialTuning.textScale, cy - 30 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
 		end
 	end
 
 	-- 4. Category/Page Indicator
-	gl.Color(0.56, 0.84, 1, 0.95)
+	gl.Color(pageColor.accent[1], pageColor.accent[2], pageColor.accent[3], 0.95)
 	local categoryStr = string.upper(menu.radialCategoryName or "Build")
 	local pageStr = "PAGE " .. tostring(menu.radialPage) .. "/" .. tostring(menu.radialPageCount)
 
-	gl.Text(categoryStr, cx, cy + radius * 0.65, 18, "oc")
+	gl.Text(categoryStr, cx, cy + radius * 0.65, 18 * BuildRadialTuning.pageLabelScale, "oc")
 	gl.Color(0.8, 0.8, 0.8, 0.8)
-	gl.Text(pageStr, cx, cy - radius * 0.65, 15, "oc")
+	gl.Text(pageStr, cx, cy - radius * 0.65, 15 * BuildRadialTuning.pageLabelScale, "oc")
 
 	gl.Color(0.6, 0.6, 0.6, 0.7)
-	gl.Text("LB", cx - radius * 0.4, cy + radius * 0.65, 14, "oc")
-	gl.Text("RB", cx + radius * 0.4, cy + radius * 0.65, 14, "oc")
+	gl.Text("LB", cx - radius * 0.4, cy + radius * 0.65, 14 * BuildRadialTuning.pageLabelScale, "oc")
+	gl.Text("RB", cx + radius * 0.4, cy + radius * 0.65, 14 * BuildRadialTuning.pageLabelScale, "oc")
 
 	gl.Color(1, 1, 1, 1)
 	gl.Texture(false)
