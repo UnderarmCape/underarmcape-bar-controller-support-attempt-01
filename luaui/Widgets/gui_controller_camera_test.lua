@@ -132,19 +132,19 @@ setmetatable(BuildRadialTuning, {
 local BuildRadialPageColors = {
 	economy = {
 		fill = { 0.04, 0.32, 0.08, 0.45 },
-		accent = { 0.25, 1.0, 0.35, 1.0 },
+		accent = { 0.5, 0.9, 0.2, 1.0 },
 	},
 	combat = {
 		fill = { 0.45, 0.04, 0.04, 0.45 },
 		accent = { 1.0, 0.18, 0.12, 1.0 },
 	},
 	utility = {
-		fill = { 0.26, 0.12, 0.45, 0.45 },
-		accent = { 0.75, 0.35, 1.0, 1.0 },
+		fill = { 0.12, 0.08, 0.45, 0.45 },
+		accent = { 0.55, 0.45, 1.0, 1.0 },
 	},
 	build = {
-		fill = { 0.10, 0.18, 0.42, 0.45 },
-		accent = { 0.35, 0.65, 1.0, 1.0 },
+		fill = { 0.45, 0.28, 0.04, 0.45 },
+		accent = { 1.0, 0.75, 0.1, 1.0 },
 	},
 }
 
@@ -2233,6 +2233,13 @@ function ControllerCameraTestGetSettingsDefinitions()
 		helpOverlayVisible = { 0, 1, 1, "boolean", 0 },
 		compactBuildMenuEnabled = { 0, 1, 1, "boolean", 0 },
 		compactBuildMenuScale = { 0.50, 1.00, 0.01, "number", 2 },
+		buildRadialScale = { 0.5, 3.0, 0.05, "number", 2 },
+		buildIconScale = { 0.5, 5.0, 0.1, "number", 1 },
+		buildTextScale = { 0.5, 5.0, 0.1, "number", 1 },
+		buildPageLabelScale = { 0.5, 5.0, 0.1, "number", 1 },
+		buildFillAlpha = { 0.0, 1.0, 0.05, "number", 2 },
+		buildSelectedBorderScale = { 0.5, 5.0, 0.1, "number", 1 },
+		buildItemSpacing = { 0.5, 5.0, 0.05, "number", 2 },
 	}
 
 	local defs = {}
@@ -7717,6 +7724,32 @@ function ControllerCameraTestClassifyBuildOption(unitDef, name)
 		return "Build"
 	end
 
+	local group = unitDef.customParams and unitDef.customParams.unitgroup
+	if group then
+		local categoryGroupMapping = {
+			energy = "Economy",
+			metal = "Economy",
+			builder = "Build",
+			buildert2 = "Build",
+			buildert3 = "Build",
+			buildert4 = "Build",
+			util = "Utility",
+			weapon = "Combat",
+			explo = "Combat",
+			weaponaa = "Combat",
+			weaponsub = "Combat",
+			aa = "Combat",
+			emp = "Combat",
+			sub = "Combat",
+			nuke = "Combat",
+			antinuke = "Combat",
+		}
+		local mapped = categoryGroupMapping[group]
+		if mapped then
+			return mapped
+		end
+	end
+
 	local nameLower = string.lower(name or "")
 
 	-- Economy Heuristic
@@ -7794,7 +7827,7 @@ function ControllerCameraTestClassifyBuildOption(unitDef, name)
 		return "Build"
 	end
 
-	return "Build"
+	return "Utility"
 end
 
 function ControllerCameraTestGatherBuildOptions()
@@ -8998,10 +9031,66 @@ function ControllerCameraTestHandleBuildMenuInput()
 			ControllerCameraTestEnterPlacementFromHighlight()
 			ControllerCameraTestCloseBuildMenu("entered placement")
 		end
-	elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadRight") then
-		ControllerCameraTestSetRadialHighlight(currentLocalIndex + 1, "dpad next")
-	elseif WasButtonPressed("dpadUp") or WasButtonPressed("dpadLeft") then
-		ControllerCameraTestSetRadialHighlight(currentLocalIndex - 1, "dpad prev")
+	elseif WasButtonPressed("dpadUp") then
+		local foundIndex = nil
+		for idx, cat in ipairs(categories) do
+			if cat == "Combat" then foundIndex = idx; break end
+		end
+		if foundIndex then
+			menu.radialCategoryIndex = foundIndex
+			menu.radialCategoryName = "Combat"
+			menu.radialPage = 1
+			ControllerCameraTestRefreshRadialVisibleOptions()
+			if #menu.radialVisibleOptions > 0 then
+				menu.selectedIndex = menu.radialVisibleOptions[1].menuIndex
+			end
+			menu.lastAction = "category Combat"
+		end
+	elseif WasButtonPressed("dpadRight") then
+		local foundIndex = nil
+		for idx, cat in ipairs(categories) do
+			if cat == "Utility" then foundIndex = idx; break end
+		end
+		if foundIndex then
+			menu.radialCategoryIndex = foundIndex
+			menu.radialCategoryName = "Utility"
+			menu.radialPage = 1
+			ControllerCameraTestRefreshRadialVisibleOptions()
+			if #menu.radialVisibleOptions > 0 then
+				menu.selectedIndex = menu.radialVisibleOptions[1].menuIndex
+			end
+			menu.lastAction = "category Utility"
+		end
+	elseif WasButtonPressed("dpadDown") then
+		local foundIndex = nil
+		for idx, cat in ipairs(categories) do
+			if cat == "Economy" then foundIndex = idx; break end
+		end
+		if foundIndex then
+			menu.radialCategoryIndex = foundIndex
+			menu.radialCategoryName = "Economy"
+			menu.radialPage = 1
+			ControllerCameraTestRefreshRadialVisibleOptions()
+			if #menu.radialVisibleOptions > 0 then
+				menu.selectedIndex = menu.radialVisibleOptions[1].menuIndex
+			end
+			menu.lastAction = "category Economy"
+		end
+	elseif WasButtonPressed("dpadLeft") then
+		local foundIndex = nil
+		for idx, cat in ipairs(categories) do
+			if cat == "Build" then foundIndex = idx; break end
+		end
+		if foundIndex then
+			menu.radialCategoryIndex = foundIndex
+			menu.radialCategoryName = "Build"
+			menu.radialPage = 1
+			ControllerCameraTestRefreshRadialVisibleOptions()
+			if #menu.radialVisibleOptions > 0 then
+				menu.selectedIndex = menu.radialVisibleOptions[1].menuIndex
+			end
+			menu.lastAction = "category Build"
+		end
 	elseif ControllerCameraTestActionPressed("radialPrevPage") then
 		if menu.radialPage > 1 then
 			menu.radialPage = menu.radialPage - 1
@@ -9032,7 +9121,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 		menu.lastAction = "category/page next"
 	end
 
-	activeButtonLayoutSummary = "Build radial: LS/D-pad select | LB/RB page/category | A place | X quick-place | B/Y close"
+	activeButtonLayoutSummary = "Build radial: LS select | Dpad Up Combat, Right Utility, Down Economy, Left Build | LB/RB page | A place | X dequeue | B close"
 	ControllerCameraTestRefreshBuildMenuDebug()
 	return true
 end

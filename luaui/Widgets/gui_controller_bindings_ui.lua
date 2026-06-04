@@ -1861,6 +1861,20 @@ local function ControllerBindingsUIDrawSettingsDetails(x1, y1, x2, y2)
 			desc = "Renders the controller support developer debug panel."
 		elseif item.key == "helpOverlayVisible" then
 			desc = "Renders controller support gameplay guide overlays."
+		elseif item.key == "buildRadialScale" then
+			desc = "Overall size scale of the build radial menu."
+		elseif item.key == "buildIconScale" then
+			desc = "Scale factor for unit photos/icons inside the build radial."
+		elseif item.key == "buildTextScale" then
+			desc = "Scale factor for unit/cost text inside the build radial."
+		elseif item.key == "buildPageLabelScale" then
+			desc = "Scale factor for category/page labels inside the build radial."
+		elseif item.key == "buildFillAlpha" then
+			desc = "Opacity of the translucent build radial category fill."
+		elseif item.key == "buildSelectedBorderScale" then
+			desc = "Scale factor for the border/highlight of the selected item."
+		elseif item.key == "buildItemSpacing" then
+			desc = "Item spacing distance factor in the build radial."
 		end
 	end
 	ControllerBindingsUIDrawText(desc, x1 + 20, y, 13, { 0.82, 0.9, 0.94, 1 }, "o")
