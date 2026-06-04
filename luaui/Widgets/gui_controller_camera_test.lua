@@ -324,8 +324,8 @@ ControllerCameraTestTacticalMenu = ControllerCameraTestTacticalMenu or {
 	cachedCommands = nil,
 	allCachedCommands = nil,
 	categoryCommands = nil,
-	categoryKey = "buildArea",
-	categoryLabel = "Build / Economy / Area",
+	categoryKey = "tactical",
+	categoryLabel = "Tactical Actions",
 	categoryDirection = "down",
 	cacheValid = false,
 	cacheSelectionKey = "none",
@@ -6400,19 +6400,19 @@ local TacticalCategories = {
 	CmdRestore = (CMD and CMD.RESTORE) or 110,
 	CmdAreaMex = (GameCMD and GameCMD.AREA_MEX) or 30100,
 
-	Order = { "up", "right", "down", "left" },
+	Order = { "up", "down" },
 	ByDirection = {
-		up = { key = "utility", label = "Utility / States", shortLabel = "Utility", hint = "D-pad Up" },
-		right = { key = "combat", label = "Combat", shortLabel = "Combat", hint = "D-pad Right" },
-		down = { key = "buildArea", label = "Build / Economy / Area", shortLabel = "Build / Area", hint = "D-pad Down" },
-		left = { key = "special", label = "Special / Context", shortLabel = "Special", hint = "D-pad Left" },
+		up = { key = "utility", label = "Utility", shortLabel = "Utility", hint = "D-pad Up" },
+		down = { key = "tactical", label = "Tactical Actions", shortLabel = "Tactical", hint = "D-pad Down" },
 	},
 	ByKey = {},
 	Colors = {
-		utility = { 0.25, 0.75, 0.95 },
-		combat = { 0.95, 0.35, 0.22 },
-		buildArea = { 0.32, 0.85, 0.44 },
-		special = { 0.72, 0.35, 0.88 },
+		utility = { 0.15, 0.65, 0.95 },
+		tactical = { 0.25, 0.85, 0.45 },
+	},
+	FillColors = {
+		utility = { 0.03, 0.16, 0.28, 0.52 },
+		tactical = { 0.05, 0.24, 0.12, 0.52 },
 	},
 }
 
@@ -6425,7 +6425,7 @@ end
 function TacticalCategories.Info(keyOrDirection)
 	return TacticalCategories.ByKey[keyOrDirection]
 		or TacticalCategories.ByDirection[keyOrDirection]
-		or TacticalCategories.ByKey.buildArea
+		or TacticalCategories.ByKey.tactical
 end
 
 function TacticalCategories.CommandDescText(desc)
@@ -6457,51 +6457,79 @@ function TacticalCategories.IsHiddenTacticalOption(option)
 	local lowerName = string.lower(option.name or option.shortLabel or "")
 	local action = string.lower(tostring(option.action or ""))
 
-	-- Check explicit command IDs first
-	if cmdID == CMD.STOP or cmdID == CMD.MOVE or cmdID == CMD.PATROL then
+	-- Globally block by cmdID if they are unwanted commands
+	if cmdID == CMD.MOVE
+		or cmdID == CMD.STOP
+		or cmdID == (CMD.CLOAK or 90)
+		or cmdID == (CMD.LOAD_UNITS or 75)
+		or cmdID == (CMD.UNLOAD_UNITS or 80)
+		or cmdID == (CMD.FIRESTATE or 20)
+		or cmdID == CMD.ATTACK
+		or cmdID == CMD.MOVE_STATE
+	then
 		return true
 	end
 
-	-- Check name, action, or serialized text for forbidden keywords
-	if lowerName:find("move", 1, true)
-		or lowerName:find("patrol", 1, true)
+	-- Check explicit keyword search in name, action, or option text
+	-- This blocks cloak, load, unload, transport, target, manual fire, fire state,
+	-- move state, hold position, line/formation, move, stop, blueprint, build line, etc.
+	if lowerName:find("cloak", 1, true)
+		or lowerName:find("load", 1, true)
+		or lowerName:find("unload", 1, true)
+		or lowerName:find("transport", 1, true)
+		or lowerName:find("target", 1, true)
+		or lowerName:find("manual fire", 1, true)
+		or lowerName:find("fire state", 1, true)
+		or lowerName:find("firestate", 1, true)
+		or lowerName:find("move state", 1, true)
+		or lowerName:find("movestate", 1, true)
+		or lowerName:find("hold position", 1, true)
+		or lowerName:find("holdposition", 1, true)
+		or lowerName:find("move", 1, true)
 		or lowerName:find("stop", 1, true)
 		or lowerName:find("blueprint", 1, true)
 		or lowerName:find("formation", 1, true)
+		or lowerName:find("line", 1, true)
+		or lowerName:find("attack area", 1, true)
+		or lowerName:find("area attack", 1, true)
 	then
-		-- Keep "move state" / "movestate" as it is a utility state cycle command
-		if not lowerName:find("move state", 1, true) and not lowerName:find("movestate", 1, true) then
-			return true
-		end
+		return true
 	end
 
-	if action:find("move", 1, true)
-		or action:find("patrol", 1, true)
+	if action:find("cloak", 1, true)
+		or action:find("load", 1, true)
+		or action:find("unload", 1, true)
+		or action:find("transport", 1, true)
+		or action:find("target", 1, true)
+		or action:find("manualfire", 1, true)
+		or action:find("firestate", 1, true)
+		or action:find("movestate", 1, true)
+		or action:find("move", 1, true)
 		or action:find("stop", 1, true)
 		or action:find("blueprint", 1, true)
 		or action:find("formation", 1, true)
+		or action:find("line", 1, true)
+		or action:find("areaattack", 1, true)
 	then
-		if not action:find("move state", 1, true) and not action:find("movestate", 1, true) then
-			return true
-		end
+		return true
 	end
 
-	if text:find("place blueprint", 1, true)
+	if text:find("cloak", 1, true)
+		or text:find("load", 1, true)
+		or text:find("unload", 1, true)
+		or text:find("transport", 1, true)
+		or text:find("target", 1, true)
+		or text:find("manual fire", 1, true)
+		or text:find("fire state", 1, true)
+		or text:find("move state", 1, true)
+		or text:find("hold position", 1, true)
+		or text:find("move", 1, true)
+		or text:find("stop", 1, true)
 		or text:find("blueprint", 1, true)
-		or text:find("move line", 1, true)
-		or text:find("line move", 1, true)
-		or text:find("moveline", 1, true)
-		or text:find("formation move", 1, true)
-		or text:find("custom formation", 1, true)
-		or text:find("patrol line", 1, true)
-		or text:find("fight line", 1, true)
-		or text:find("fightline", 1, true)
-		or text:find("line fight", 1, true)
-		or text:find("linefight", 1, true)
-		or text:find("build line", 1, true)
-		or text:find("buildline", 1, true)
-		or text:find("line build", 1, true)
-		or text:find("linebuild", 1, true)
+		or text:find("formation", 1, true)
+		or text:find("line", 1, true)
+		or text:find("area attack", 1, true)
+		or text:find("attack area", 1, true)
 	then
 		return true
 	end
@@ -6514,90 +6542,70 @@ function TacticalCategories.CategoryForOption(option)
 		return nil
 	end
 	if option.tacticalCategory then
-		return option.tacticalCategory
+		if option.tacticalCategory == "utility" then
+			return "utility"
+		elseif option.tacticalCategory == "buildArea" or option.tacticalCategory == "combat" or option.tacticalCategory == "special" or option.tacticalCategory == "tactical" then
+			return "tactical"
+		end
 	end
 
 	local cmdID = tonumber(option.cmdID)
 	local kind = tostring(option.kind or "")
 	local mode = tostring(option.dragMode or "")
 	local text = TacticalCategories.OptionText(option)
+	local lowerName = string.lower(option.name or option.shortLabel or "")
 	local action = string.lower(tostring(option.action or ""))
 
-	if mode == "areaMex"
-		or mode == "restoreArea"
-		or mode == "repairArea"
-		or mode == "reclaimArea"
-		or cmdID == TacticalCategories.CmdAreaMex
-		or cmdID == CMD.REPAIR
-		or cmdID == CMD.RECLAIM
-		or cmdID == TacticalCategories.CmdRestore
-	then
-		return "buildArea"
-	end
+	-- 1. UTILITY WHITELIST
 	if cmdID == CMD.WAIT
 		or cmdID == CMD.REPEAT
-		or cmdID == TacticalCategories.CmdMoveState
 		or cmdID == TacticalCategories.CmdHighPriority
-		or cmdID == (CMD.FIRESTATE or 20)
-		or kind == "repeat_toggle"
-		or kind == "move_state_cycle"
-		or kind == "fire_state_cycle"
-		or text:find("hold position", 1, true)
-		or text:find("move state", 1, true)
-		or text:find("high priority", 1, true)
-		or text:find("priority", 1, true)
-		or text:find("fire state", 1, true)
-	then
-		return "utility"
-	end
-	if cmdID == CMD.FIGHT
-		or cmdID == CMD.ATTACK
-		or cmdID == CMD.GUARD
-		or mode == "fightLine"
-		or mode == "attackLine"
-		or mode == "attackArea"
-		or kind == "attack"
-		or kind == "alliedUnit"
-		or action == "settarget"
-		or text:find("set target", 1, true)
-		or text:find("fight", 1, true)
-		or text:find("attack", 1, true)
-		or text:find("guard", 1, true)
-	then
-		return "combat"
-	end
-
-	-- Strict whitelist for Special / Context
-	local lowerName = string.lower(option.name or option.shortLabel or "")
-	if mode == "resurrectArea"
-		or cmdID == CMD.CAPTURE
-		or cmdID == (CMD.LOAD_UNITS or 75)
-		or cmdID == (CMD.UNLOAD_UNITS or 80)
-		or cmdID == (CMD.CLOAK or 90)
 		or cmdID == (CMD.SELFD or 70)
-		or cmdID == (CMD.RESURRECT or 125)
-		or lowerName:find("capture", 1, true)
-		or lowerName:find("resurrect", 1, true)
-		or lowerName:find("load", 1, true)
-		or lowerName:find("unload", 1, true)
-		or lowerName:find("transport", 1, true)
-		or lowerName:find("cloak", 1, true)
+		or kind == "repeat_toggle"
+		or kind == "factory_repeat"
+		or lowerName:find("wait", 1, true)
+		or lowerName:find("repeat", 1, true)
+		or lowerName:find("priority", 1, true)
 		or lowerName:find("self destruct", 1, true)
 		or lowerName:find("self-destruct", 1, true)
 		or lowerName:find("selfd", 1, true)
-		or text:find("capture", 1, true)
-		or text:find("resurrect", 1, true)
-		or text:find("load", 1, true)
-		or text:find("unload", 1, true)
-		or text:find("transport", 1, true)
-		or text:find("cloak", 1, true)
+		or text:find("wait", 1, true)
+		or text:find("repeat", 1, true)
+		or text:find("priority", 1, true)
 		or text:find("self destruct", 1, true)
 		or text:find("self-destruct", 1, true)
 	then
-		return "special"
+		return "utility"
 	end
 
-	-- Unknown commands return nil to keep them hidden
+	-- 2. TACTICAL ACTIONS WHITELIST: Fight, Guard, Patrol, Area Mex, Repair Area, Reclaim Area, Restore Area
+	if cmdID == CMD.FIGHT
+		or cmdID == CMD.GUARD
+		or cmdID == CMD.PATROL
+		or cmdID == CMD.REPAIR
+		or cmdID == CMD.RECLAIM
+		or cmdID == TacticalCategories.CmdAreaMex
+		or cmdID == TacticalCategories.CmdRestore
+		or mode == "areaMex"
+		or mode == "repairArea"
+		or mode == "reclaimArea"
+		or mode == "restoreArea"
+		or lowerName:find("fight", 1, true)
+		or lowerName:find("guard", 1, true)
+		or lowerName:find("patrol", 1, true)
+		or lowerName:find("repair", 1, true)
+		or lowerName:find("reclaim", 1, true)
+		or lowerName:find("restore", 1, true)
+		or action:find("fight", 1, true)
+		or action:find("guard", 1, true)
+		or action:find("patrol", 1, true)
+		or action:find("repair", 1, true)
+		or action:find("reclaim", 1, true)
+		or action:find("restore", 1, true)
+	then
+		return "tactical"
+	end
+
 	return nil
 end
 
@@ -6999,7 +7007,7 @@ function ControllerCameraTestToggleTacticalMenu()
 	menu.open = not menu.open
 	if menu.open then
 		ControllerCameraTestMemoryDebug.tacticalOpenCount = (ControllerCameraTestMemoryDebug.tacticalOpenCount or 0) + 1
-		menu.categoryKey = menu.categoryKey or "buildArea"
+		menu.categoryKey = menu.categoryKey or "tactical"
 		menu.categoryDirection = menu.categoryDirection or "down"
 		ControllerCameraTestGetTacticalCommands(true, "menu opened")
 	else
@@ -7445,14 +7453,8 @@ function ControllerCameraTestHandleTacticalMenuInput()
 	elseif WasButtonPressed("dpadUp") then
 		ControllerCameraTestSelectTacticalCategory("up", "D-pad category")
 		changed = true
-	elseif WasButtonPressed("dpadRight") then
-		ControllerCameraTestSelectTacticalCategory("right", "D-pad category")
-		changed = true
 	elseif WasButtonPressed("dpadDown") then
 		ControllerCameraTestSelectTacticalCategory("down", "D-pad category")
-		changed = true
-	elseif WasButtonPressed("dpadLeft") then
-		ControllerCameraTestSelectTacticalCategory("left", "D-pad category")
 		changed = true
 	elseif ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("radialQuick") then
 		local commands = ControllerCameraTestGetTacticalCommands(false, "select")
@@ -10382,18 +10384,19 @@ function ControllerCameraTestDrawTacticalRadial()
 	menu.hitboxCount = 0
 	local commands = ControllerCameraTestGetTacticalCommands(false, "draw")
 	local n = #commands
-	local currentCategory = TacticalCategories.Info(menu.categoryKey or "buildArea")
+	local currentCategory = TacticalCategories.Info(menu.categoryKey or "tactical")
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 	local minView = math.min(viewSizeX, viewSizeY)
 	local radialScale = ControllerCameraTestSettings.radialScale or 1
-	local radius = math.min(480, math.max(180, minView * 0.25 * radialScale))
-	local itemW = math.min(220, math.max(100, minView * 0.13 * radialScale))
-	local itemH = 46 * radialScale
+	local radius = math.min(520, math.max(220, minView * 0.28 * radialScale))
+	local itemW = math.min(260, math.max(130, minView * 0.15 * radialScale))
+	local itemH = 54 * radialScale
 
 	local catColor = TacticalCategories.Colors[currentCategory.key] or { 1, 1, 1 }
+	local catFill = TacticalCategories.FillColors[currentCategory.key] or { 0, 0, 0, 0.46 }
 
-	gl.Color(0, 0, 0, 0.46)
+	gl.Color(catFill[1], catFill[2], catFill[3], catFill[4])
 	ControllerCameraTestDrawCircle2D(cx, cy, radius * 1.28, 42)
 
 	-- Center Circle Border
@@ -10402,7 +10405,7 @@ function ControllerCameraTestDrawTacticalRadial()
 	gl.BeginEnd(GL.LINE_LOOP, function()
 		for i = 0, 30 do
 			local theta = i * (2 * math.pi / 30)
-			gl.Vertex(cx + radius * 0.38 * math.cos(theta), cy + radius * 0.38 * math.sin(theta))
+			gl.Vertex(cx + radius * 0.42 * math.cos(theta), cy + radius * 0.42 * math.sin(theta))
 		end
 	end)
 
@@ -10426,13 +10429,9 @@ function ControllerCameraTestDrawTacticalRadial()
 			dy = radius * 0.52
 		elseif direction == "down" then
 			dy = -radius * 0.52
-		elseif direction == "left" then
-			dx = -radius * 0.52
-		elseif direction == "right" then
-			dx = radius * 0.52
 		end
-		local chipW = math.min(150, math.max(96, #category.shortLabel * 8.5 + 20))
-		local chipH = 26 * radialScale
+		local chipW = math.min(180, math.max(120, #category.shortLabel * 11.0 + 24))
+		local chipH = 34 * radialScale
 		local x = cx + dx
 		local y = cy + dy
 
@@ -10456,16 +10455,16 @@ function ControllerCameraTestDrawTacticalRadial()
 		end)
 
 		gl.Color(selected and { 1, 1, 1, 1.0 } or { 0.72, 0.72, 0.72, 0.68 })
-		DrawTacticalTextBold(category.shortLabel, x, y - 5, selected and 14 or 12, "oc")
+		DrawTacticalTextBold(category.shortLabel, x, y - 6, selected and 18 or 14, "oc")
 	end
 
 	if n <= 0 then
 		gl.Color(catColor[1], catColor[2], catColor[3], 1.0)
-		DrawTacticalTextBold(currentCategory.label, cx, cy + 24, 18, "oc")
+		DrawTacticalTextBold(currentCategory.label, cx, cy + 28, 22, "oc")
 		gl.Color(1, 1, 1, 0.80)
-		DrawTacticalTextBold("No available commands", cx, cy - 2, 14, "oc")
+		DrawTacticalTextBold("No available commands", cx, cy - 2, 16, "oc")
 		gl.Color(1, 1, 1, 0.65)
-		DrawTacticalTextBold("D-pad chooses category  |  B/Y cancel", cx, cy - 24, 11, "oc")
+		DrawTacticalTextBold("D-pad Up/Down chooses category  |  B/Y cancel", cx, cy - 28, 13, "oc")
 		gl.PopMatrix()
 		return
 	end
@@ -10484,7 +10483,7 @@ function ControllerCameraTestDrawTacticalRadial()
 			gl.Color(catColor[1], catColor[2], catColor[3], 1.0)
 			gl.LineWidth(2.5)
 		else
-			gl.Color(0.06, 0.08, 0.10, 0.78)
+			gl.Color(catFill[1] * 0.5, catFill[2] * 0.5, catFill[3] * 0.5, 0.85)
 			gl.Rect(x - itemW / 2, y - itemH / 2, x + itemW / 2, y + itemH / 2)
 			gl.Color(catColor[1] * 0.45, catColor[2] * 0.45, catColor[3] * 0.45, 0.64)
 			gl.LineWidth(1.2)
@@ -10497,13 +10496,13 @@ function ControllerCameraTestDrawTacticalRadial()
 			gl.Vertex(x - itemW / 2, y + itemH / 2)
 		end)
 
-		gl.Color(selected and { 1, 1, 1, 1.0 } or { 0.82, 0.82, 0.82, 0.86 })
-		DrawTacticalTextBold(label, x, y - 6, selected and 16 or 13, "oc")
+		gl.Color(selected and { 1, 1, 1, 1.0 } or { catColor[1], catColor[2], catColor[3], 0.9 })
+		DrawTacticalTextBold(label, x, y - 6, selected and 20 or 16, "oc")
 	end
 
 	local current = commands[menu.selectedIndex]
-	gl.Color(0.08, 0.10, 0.13, 0.76)
-	ControllerCameraTestDrawCircle2D(cx, cy, radius * 0.38, 30)
+	gl.Color(catFill[1] * 0.7, catFill[2] * 0.7, catFill[3] * 0.7, 0.88)
+	ControllerCameraTestDrawCircle2D(cx, cy, radius * 0.42, 30)
 
 	-- Center Circle Border
 	gl.Color(catColor[1] * 0.5, catColor[2] * 0.5, catColor[3] * 0.5, 0.64)
@@ -10511,21 +10510,21 @@ function ControllerCameraTestDrawTacticalRadial()
 	gl.BeginEnd(GL.LINE_LOOP, function()
 		for i = 0, 30 do
 			local theta = i * (2 * math.pi / 30)
-			gl.Vertex(cx + radius * 0.38 * math.cos(theta), cy + radius * 0.38 * math.sin(theta))
+			gl.Vertex(cx + radius * 0.42 * math.cos(theta), cy + radius * 0.42 * math.sin(theta))
 		end
 	end)
 
 	gl.Color(catColor[1], catColor[2], catColor[3], 1.0)
-	DrawTacticalTextBold(currentCategory.label, cx, cy + 32, 15, "oc")
+	DrawTacticalTextBold(currentCategory.label, cx, cy + 36, 18, "oc")
 	gl.Color(1, 1, 1, 1)
-	DrawTacticalTextBold(current and current.name or "Tactical", cx, cy + 8, 18, "oc")
+	DrawTacticalTextBold(current and current.name or "Tactical", cx, cy + 10, 22, "oc")
 	gl.Color(1, 1, 1, 0.85)
-	DrawTacticalTextBold("LS choose  A/X confirm  B/Y close", cx, cy - 16, 12, "oc")
+	DrawTacticalTextBold("LS choose  A/X confirm  B/Y close", cx, cy - 18, 14, "oc")
 	gl.Color(1, 1, 1, 0.70)
-	DrawTacticalTextBold("D-pad: U utility  R combat  D build/area  L special", cx, cy - 34, 11, "oc")
+	DrawTacticalTextBold("D-pad: Up Utility  |  Down Tactical Actions", cx, cy - 38, 13, "oc")
 	if ControllerCameraTestIsQueueModifierActive() then
 		gl.Color(0.35, 0.95, 0.65, 1)
-		DrawTacticalTextBold("APPEND", cx, cy - 52, 13, "oc")
+		DrawTacticalTextBold("APPEND", cx, cy - 58, 15, "oc")
 	end
 	gl.Color(1, 1, 1, 1)
 	gl.LineWidth(1)
