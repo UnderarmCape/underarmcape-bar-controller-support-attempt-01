@@ -9787,6 +9787,8 @@ function ControllerCameraTestResetLBHotkeys()
 			state.pending = false
 			state.pressCount = 0
 			state.lastPressTime = 0
+			state.holdFired = false
+			state.releasedRegistered = false
 		end
 	end
 end
@@ -9801,19 +9803,27 @@ function ControllerCameraTestUpdateLBFaceButtonDispatcher(dt)
 
 	local lbHeld = ControllerCameraTestActionDown("pitchModifier")
 	local buttons = { "A", "B", "X", "Y" }
+	local now = debugEventTime
 
 	for _, btn in ipairs(buttons) do
 		local state = ControllerCameraTestLBHotkeys[btn]
 		if not state then
-			ControllerCameraTestLBHotkeys[btn] = { pending = false, lastPressTime = 0, pressCount = 0 }
+			ControllerCameraTestLBHotkeys[btn] = { pending = false, lastPressTime = 0, pressCount = 0, holdFired = false, releasedRegistered = false }
 			state = ControllerCameraTestLBHotkeys[btn]
+		else
+			if state.holdFired == nil then state.holdFired = false end
+			if state.releasedRegistered == nil then state.releasedRegistered = false end
 		end
 
-		if lbHeld and WasButtonPressed(btn) then
-			-- Block release tap action
-			ControllerCameraTestCycleDebug.lbHadPitchMotion = true
+		local isDown = lbHeld and IsButtonDown(btn)
+		local pressed = lbHeld and WasButtonPressed(btn)
+		local released = WasButtonReleased(btn) or (not isDown and state.lastPressTime > 0 and not state.releasedRegistered)
 
-			local now = debugEventTime
+		if pressed then
+			ControllerCameraTestCycleDebug.lbHadPitchMotion = true
+			state.holdFired = false
+			state.releasedRegistered = false
+
 			if state.pending and (now - state.lastPressTime) <= 0.22 then
 				state.pending = false
 				state.pressCount = 0
@@ -9826,13 +9836,69 @@ function ControllerCameraTestUpdateLBFaceButtonDispatcher(dt)
 			end
 		end
 
-		if state.pending then
-			local now = debugEventTime
+		if isDown and state.lastPressTime > 0 and not state.holdFired then
+			local heldDuration = now - state.lastPressTime
+			if heldDuration >= 0.50 then
+				state.holdFired = true
+				state.pending = false
+				state.pressCount = 0
+				state.lastPressTime = 0
+				ControllerCameraTestExecuteLBFaceHoldAction(btn)
+			end
+		end
+
+		if released then
+			state.releasedRegistered = true
+			if state.pending and not state.holdFired then
+				if (now - state.lastPressTime) > 0.22 then
+					state.pending = false
+					state.pressCount = 0
+					state.lastPressTime = 0
+					ControllerCameraTestExecuteLBHotkey(btn, 1)
+				end
+			end
+		end
+
+		if state.pending and not isDown and not state.holdFired then
 			if (now - state.lastPressTime) > 0.22 then
 				state.pending = false
 				state.pressCount = 0
+				state.lastPressTime = 0
 				ControllerCameraTestExecuteLBHotkey(btn, 1)
 			end
+		end
+	end
+end
+
+function ControllerCameraTestExecuteLBFaceHoldAction(btn)
+	local profile = ControllerCameraTestGetSelectionProfile()
+	if not profile then
+		latchSelectionDebugMessage("Hold Hotkey: no units selected")
+		return
+	end
+
+	if btn == "B" then
+		local cmdID = CMD.WAIT or 5
+		ControllerCameraTestIssueOrderToSelectedUnits(cmdID, {}, "Wait", "units")
+	elseif btn == "X" then
+		if profile == "builder" then
+			local ok, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
+			if ok and targetType == "unit" and targetID then
+				local cmdID = CMD.RECLAIM or 90
+				ControllerCameraTestIssueOrderToSelectedUnits(cmdID, { targetID }, "Reclaim", "unit", { "shift" })
+			elseif ok and targetType == "feature" and targetID then
+				if ControllerCameraTestFeatureIsReclaimable(targetID) then
+					local cmdID = CMD.RECLAIM or 90
+					local featureCmdID = ControllerCameraTestFeatureCommandID(targetID)
+					ControllerCameraTestIssueOrderToSelectedUnits(cmdID, { featureCmdID }, "Reclaim", "feature", { "shift" })
+				else
+					latchSelectionDebugMessage("Reclaim target: feature not reclaimable")
+				end
+			else
+				latchSelectionDebugMessage("Reclaim target: no valid target under reticle")
+			end
+		else
+			latchSelectionDebugMessage("Hold Hotkey: Combat Hold X is unused")
 		end
 	end
 end
@@ -11983,8 +12049,8 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Control Groups: hold Start/Menu overlay | Start+Dpad U/D slot | Start+Dpad L recall | Start+Dpad R same-type/future assign",
 		"Control Groups: Start+L3 clear | Start/Menu uses D-pad/L3 only, not ABXY",
 		"Status: controller mode shows compact factory/constructor activity panel; Y opens its radial",
-		"LB + Face Hotkeys (Builder): A Repair | AA Repair Area | X Reclaim | XX Reclaim Area | Y Patrol | YY Area Mex | B Stop | BB Repeat",
-		"LB + Face Hotkeys (Combat): A Attack/Fight | X Fight | Y Patrol | B Stop | BB Repeat",
+		"LB + Face Hotkeys (Builder): A Repair | AA Repair Area | X Reclaim | Hold X Queued Reclaim | XX Reclaim Area | Y Patrol | YY Area Mex | B Stop | BB Repeat | Hold B Wait",
+		"LB + Face Hotkeys (Combat): A Attack/Fight | X Fight | Y Patrol | B Stop | BB Repeat | Hold B Wait",
 		"System UI: End Controller Settings | Page Up Debug | Page Down Help | Home Reset Settings Defaults",
 		"Fallback UI commands: /luaui cct_debug | cct_help | cct_settings | cct_reset_settings",
 		"Settings UI: D-pad/arrows adjust | LB/RB or Tab categories | A/Enter select | B/Escape close | X/Y reset",
