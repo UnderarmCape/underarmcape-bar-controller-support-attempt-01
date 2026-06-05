@@ -588,32 +588,32 @@ local debugEventTime = 0
 
 local ControllerCameraTestHotkeyFeedback = {
 	text = nil,
-	color = { 1, 1, 1, 0.45 },
-	startTime = 0,
-	duration = 0.90,
+	color = { 1, 1, 1, 0.80 },
+	startTime = nil,
+	duration = 1.15,
 }
 
 local function ControllerCameraTestShowHotkeyFeedback(label, colorType)
-	local color = { 1, 1, 1, 0.65 }
+	local color = { 1, 1, 1, 0.80 }
 	if colorType == "repair" then
-		color = { 0.2, 1.0, 0.6, 0.65 }
+		color = { 0.2, 1.0, 0.6, 0.80 }
 	elseif colorType == "reclaim" then
-		color = { 0.7, 1.0, 0.2, 0.65 }
+		color = { 0.7, 1.0, 0.2, 0.80 }
 	elseif colorType == "mex" then
-		color = { 0.2, 1.0, 0.2, 0.65 }
+		color = { 0.2, 1.0, 0.2, 0.80 }
 	elseif colorType == "patrol" then
-		color = { 0.2, 0.6, 1.0, 0.65 }
+		color = { 0.2, 0.6, 1.0, 0.80 }
 	elseif colorType == "attack" then
-		color = { 1.0, 0.3, 0.2, 0.65 }
+		color = { 1.0, 0.3, 0.2, 0.80 }
 	elseif colorType == "utility" then
-		color = { 0.2, 0.8, 1.0, 0.65 }
+		color = { 0.2, 0.8, 1.0, 0.80 }
 	elseif colorType == "commander" then
-		color = { 1.0, 0.8, 0.2, 0.65 }
+		color = { 1.0, 0.8, 0.2, 0.80 }
 	end
 
 	ControllerCameraTestHotkeyFeedback.text = label
 	ControllerCameraTestHotkeyFeedback.color = color
-	ControllerCameraTestHotkeyFeedback.startTime = debugEventTime or 0
+	ControllerCameraTestHotkeyFeedback.startTime = Spring.GetTimer()
 end
 local DEBUG_PANEL_DEFAULT_WIDTH = 650
 local DEBUG_PANEL_DEFAULT_HEIGHT = 150
@@ -10400,6 +10400,7 @@ function widget:Initialize()
 	ControllerCameraTestInstallWGAPI()
 	updateScreenCenter(spGetViewGeometry())
 	ensureDebugPanelInitialized()
+	ControllerCameraTestShowHotkeyFeedback("HOTKEY UI READY", "utility")
 end
 
 function widget:Shutdown()
@@ -12134,6 +12135,42 @@ function widget:DrawScreen()
 		ControllerCameraTestDrawHelpOverlay()
 	end
 	ControllerCameraTestDrawSettingsUI()
+
+	local feedback = ControllerCameraTestHotkeyFeedback
+	if feedback and feedback.text and feedback.startTime then
+		local age = Spring.DiffTimers(Spring.GetTimer(), feedback.startTime)
+		if age < feedback.duration then
+			local alpha = 1.0
+			local fadeDuration = 0.50
+			local fadeStart = feedback.duration - fadeDuration
+			if age > fadeStart then
+				alpha = (feedback.duration - age) / fadeDuration
+			end
+			alpha = math.max(0, math.min(1, alpha))
+
+			local col = feedback.color
+			local cx = viewSizeX / 2
+			local cy = viewSizeY * 0.35
+			local size = 38
+
+			-- Outline/Shadow
+			gl.Color(0, 0, 0, 0.40 * alpha)
+			gl.Text(feedback.text, cx - 1.5, cy - 1.5, size, "oc")
+			gl.Text(feedback.text, cx + 1.5, cy - 1.5, size, "oc")
+			gl.Text(feedback.text, cx - 1.5, cy + 1.5, size, "oc")
+			gl.Text(feedback.text, cx + 1.5, cy + 1.5, size, "oc")
+			gl.Text(feedback.text, cx, cy - 1.5, size, "oc")
+			gl.Text(feedback.text, cx, cy + 1.5, size, "oc")
+			gl.Text(feedback.text, cx - 1.5, cy, size, "oc")
+			gl.Text(feedback.text, cx + 1.5, cy, size, "oc")
+
+			-- Main Text
+			gl.Color(col[1], col[2], col[3], col[4] * alpha)
+			gl.Text(feedback.text, cx, cy, size, "oc")
+		end
+	end
+	gl.Color(1, 1, 1, 1)
+
 	if ControllerCameraTestSettingsUI.open then
 		return
 	end
@@ -12768,30 +12805,6 @@ function widget:DrawScreen()
 	gl.Rect(handleRight - 4, handleBottom, handleRight, handleBottom + 1)
 	gl.Rect(handleRight - 8, handleBottom + 4, handleRight, handleBottom + 5)
 	gl.Rect(handleRight - 12, handleBottom + 8, handleRight, handleBottom + 9)
-
-	local feedback = ControllerCameraTestHotkeyFeedback
-	if feedback and feedback.text and feedback.startTime then
-		local age = debugEventTime - feedback.startTime
-		if age < feedback.duration then
-			local alpha = 1.0
-			local fadeStart = feedback.duration - 0.35
-			if age > fadeStart then
-				alpha = (feedback.duration - age) / 0.35
-			end
-			alpha = math.max(0, math.min(1, alpha))
-
-			local col = feedback.color
-			gl.Color(col[1], col[2], col[3], col[4] * alpha)
-
-			local cx = viewSizeX / 2
-			local cy = viewSizeY * 0.22
-
-			local size = 26
-			gl.Text(feedback.text, cx, cy, size, "oc")
-			gl.Text(feedback.text, cx - 0.5, cy, size, "oc")
-			gl.Text(feedback.text, cx + 0.5, cy, size, "oc")
-		end
-	end
 
 	gl.Color(1, 1, 1, 1)
 end
