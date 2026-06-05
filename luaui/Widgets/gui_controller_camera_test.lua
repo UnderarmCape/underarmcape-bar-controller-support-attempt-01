@@ -594,7 +594,7 @@ function ControllerCameraTestGetDefaultSettings()
 		zoomBoostMultiplier = FAST_ZOOM_MULTIPLIER,
 		rotationSpeed = ROTATION_SPEED,
 		pitchSpeed = PITCH_SPEED,
-		stickDeadzone = 3000,
+		stickDeadzone = 5000,
 		triggerDeadzone = 3000,
 		areaSelectRadius = 320,
 		reticleSize = 16,
@@ -736,7 +736,7 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.zoomBoostMultiplier = ControllerCameraTestClampSetting("zoomBoostMultiplier", settings.zoomBoostMultiplier or FAST_ZOOM_MULTIPLIER)
 	settings.rotationSpeed = ControllerCameraTestClampSetting("rotationSpeed", settings.rotationSpeed or ROTATION_SPEED)
 	settings.pitchSpeed = ControllerCameraTestClampSetting("pitchSpeed", settings.pitchSpeed or PITCH_SPEED)
-	settings.stickDeadzone = ControllerCameraTestClampSetting("stickDeadzone", settings.stickDeadzone or 3000)
+	settings.stickDeadzone = ControllerCameraTestClampSetting("stickDeadzone", settings.stickDeadzone or 5000)
 	settings.triggerDeadzone = ControllerCameraTestClampSetting("triggerDeadzone", settings.triggerDeadzone or 3000)
 	settings.areaSelectRadius = ControllerCameraTestClampSetting("areaSelectRadius", settings.areaSelectRadius or 320)
 	settings.reticleSize = ControllerCameraTestClampSetting("reticleSize", settings.reticleSize or 16)
@@ -1195,7 +1195,7 @@ local function normalizeAxis(value)
 	value = tonumber(value) or 0
 
 	local magnitude = mathAbs(value)
-	local deadzone = tonumber(ControllerCameraTestSettings.stickDeadzone) or 3000
+	local deadzone = tonumber(ControllerCameraTestSettings.stickDeadzone) or 5000
 	if magnitude < deadzone then
 		return 0
 	end
@@ -5431,10 +5431,18 @@ function ControllerCameraTestUpdateSameTypeDebug(unitDefID, source, candidates, 
 	ControllerCameraTestAreaSelect.doubleTapAction = tostring(action or "none")
 end
 
-function ControllerCameraTestSelectSameTypeFromReticle(includeOffscreen)
-	local targetID, unitDefID, unitDef = ControllerCameraTestGetReticleAlliedUnitAndDef()
+function ControllerCameraTestSelectSameTypeFromReticle(includeOffscreen, overrideUnitID, overrideUnitDefID)
+	local targetID = overrideUnitID
+	local unitDefID = overrideUnitDefID
+	local unitDef
+	if targetID then
+		_, unitDef = ControllerCameraTestGetUnitDef(targetID)
+	else
+		targetID, unitDefID, unitDef = ControllerCameraTestGetReticleAlliedUnitAndDef()
+	end
+
 	if not targetID or not unitDefID then
-		ControllerCameraTestUpdateSameTypeDebug(nil, "none", 0, 0, "no reticle unit")
+		ControllerCameraTestUpdateSameTypeDebug(nil, "none", 0, 0, "no unit resolved")
 		return false
 	end
 	if unitDef and unitDef.isBuilding and not includeOffscreen then
@@ -5459,12 +5467,12 @@ function ControllerCameraTestSelectSameTypeFromReticle(includeOffscreen)
 	return false
 end
 
-function ControllerCameraTestSelectVisibleSameTypeUnderReticle()
-	return ControllerCameraTestSelectSameTypeFromReticle(false)
+function ControllerCameraTestSelectVisibleSameTypeUnderReticle(overrideUnitID, overrideUnitDefID)
+	return ControllerCameraTestSelectSameTypeFromReticle(false, overrideUnitID, overrideUnitDefID)
 end
 
-function ControllerCameraTestSelectAllOwnedSameTypeUnderReticle()
-	return ControllerCameraTestSelectSameTypeFromReticle(true)
+function ControllerCameraTestSelectAllOwnedSameTypeUnderReticle(overrideUnitID, overrideUnitDefID)
+	return ControllerCameraTestSelectSameTypeFromReticle(true, overrideUnitID, overrideUnitDefID)
 end
 
 function ControllerCameraTestFocusCameraAt(x, y, z, label)
@@ -9360,17 +9368,6 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 			ControllerCameraTestStageAreaCommandShortcut("attackArea", "Attack Area")
 			return true
 		end
-
-		drag.pressActive = true
-		drag.pressStartTime = debugEventTime
-		if ControllerCameraTestBindingDown("RT") then
-			drag.pressButton = "RT+X"
-		else
-			drag.pressButton = "fight"
-		end
-		drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
-		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
-		drag.active = false
 	end
 
 	if drag.pressActive and (drag.pressButton == "RT+X" or drag.pressButton == "fight") and ControllerCameraTestActionDown("smartAction") then
@@ -9595,35 +9592,53 @@ function ControllerCameraTestHandleNormalAInput(dt)
 			area.lastResult = "live brush selection completed"
 		elseif (debugEventTime - (area.lastTapTime or -10)) <= 0.35 then
 			local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
-			local targetID = ControllerCameraTestGetReticleAlliedUnitAndDef()
-			if targetID and ControllerCameraTestIsQueueModifierActive() then
-				ControllerCameraTestSelectAllOwnedSameTypeUnderReticle()
-			elseif targetID then
-				ControllerCameraTestSelectVisibleSameTypeUnderReticle()
-			elseif IsButtonDown("back") then
-				ControllerCameraTestTuning.backComboUsed = true
-				if ControllerCameraTestFocusCommander() then
-					ControllerCameraTestAreaSelect.doubleTapAction = "Back+double-tap commander focused"
+			local targetID = area.lastTapUnitID
+			local unitDefID = area.lastTapUnitDefID
+
+			-- If the reticle is still over a valid allied unit, use that in preference
+			local reticleUnitID, reticleUnitDefID = ControllerCameraTestGetReticleAlliedUnitAndDef()
+			if reticleUnitID then
+				targetID = reticleUnitID
+				unitDefID = reticleUnitDefID
+			end
+
+			-- Fallback to first selected unit if still nil
+			if not targetID and #selectedUnits > 0 then
+				targetID = selectedUnits[1]
+				local okDef, uDefID = pcall(Spring.GetUnitDefID, targetID)
+				if okDef and uDefID then
+					unitDefID = uDefID
+				end
+			end
+
+			if targetID and unitDefID then
+				if ControllerCameraTestIsQueueModifierActive() then
+					ControllerCameraTestSelectAllOwnedSameTypeUnderReticle(targetID, unitDefID)
 				else
-					ControllerCameraTestAreaSelect.doubleTapAction = "Back+double-tap commander failed"
+					ControllerCameraTestSelectVisibleSameTypeUnderReticle(targetID, unitDefID)
 				end
 			elseif ControllerCameraTestIsQueueModifierActive() then
 				ControllerCameraTestSelectAllIdleUnitsInCurrentTypeBucket()
-				ControllerCameraTestAreaSelect.doubleTapAction = ControllerCameraTestIdleCycle.lastResult
+				area.doubleTapAction = ControllerCameraTestIdleCycle.lastResult
 			elseif #selectedUnits == 0 then
-				ControllerCameraTestAreaSelect.lastResult = "double tap empty ignored"
-				ControllerCameraTestAreaSelect.doubleTapAction = "empty ignored"
+				area.lastResult = "double tap empty ignored"
+				area.doubleTapAction = "empty ignored"
 				ControllerCameraTestLayerDebug.normalUtilityAction = "Double-tap A empty: no action"
 				latchSelectionDebugMessage("Double-tap A empty: no action")
 			else
-				ControllerCameraTestAreaSelect.lastResult = "double tap ignored: units selected"
-				ControllerCameraTestAreaSelect.doubleTapAction = "ignored: units selected"
+				area.lastResult = "double tap ignored: units selected"
+				area.doubleTapAction = "ignored: units selected"
 				ControllerCameraTestLayerDebug.normalUtilityAction = "Double-tap A ignored"
 				latchSelectionDebugMessage("Double-tap A ignored: units already selected")
 			end
 			area.lastTapTime = -10
+			area.lastTapUnitID = nil
+			area.lastTapUnitDefID = nil
 		else
 			attemptReticleSelection()
+			local reticleUnitID, reticleUnitDefID = ControllerCameraTestGetReticleAlliedUnitAndDef()
+			area.lastTapUnitID = reticleUnitID
+			area.lastTapUnitDefID = reticleUnitDefID
 			area.lastTapTime = debugEventTime
 		end
 		area.pressActive = false
@@ -9654,36 +9669,7 @@ function ControllerCameraTestSetNormalUtilityAction(message)
 end
 
 function ControllerCameraTestHandleBackCommandLayerSelectTap()
-	if not ControllerCameraTestActionPressed("select") then
-		return false
-	end
-
-	local commandLayerBinding = ControllerCameraTestGetBinding("commandLayer")
-	if commandLayerBinding ~= "back" and commandLayerBinding ~= "view" and commandLayerBinding ~= "Back/View" then
-		return false
-	end
-	if not ControllerCameraTestActionDown("commandLayer") then
-		return false
-	end
-
-	local tuning = ControllerCameraTestTuning
-	local area = ControllerCameraTestAreaSelect
-	if (debugEventTime - (tuning.backCommandLayerATapTime or -10)) <= 0.35 then
-		tuning.backComboUsed = true
-		tuning.backCommandLayerATapTime = -10
-		if ControllerCameraTestFocusCommander() then
-			area.doubleTapAction = "Back+command-layer double-tap commander focused/selected"
-			ControllerCameraTestLayerDebug.commandLayerAction = "Back+A+A commander focus/select"
-		else
-			area.doubleTapAction = "Back+command-layer double-tap commander failed"
-			ControllerCameraTestLayerDebug.commandLayerAction = "Back+A+A commander focus failed"
-		end
-	else
-		tuning.backCommandLayerATapTime = debugEventTime
-		area.doubleTapAction = "Back+A first tap"
-		ControllerCameraTestLayerDebug.commandLayerAction = "Back+A first tap commander utility"
-	end
-	return true
+	return false
 end
 
 function ControllerCameraTestHandleCommandLayerInput(dt)
@@ -9704,11 +9690,6 @@ function ControllerCameraTestHandleCommandLayerInput(dt)
 		return
 	end
 
-	-- Back/View is a command-layer modifier in presets; check its A+A utility before layer drag can consume A.
-	if ControllerCameraTestHandleBackCommandLayerSelectTap() then
-		return
-	end
-
 	if ControllerCameraTestHandleCommandLayerDragInputs(dt) then
 		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		return
@@ -9720,12 +9701,12 @@ function ControllerCameraTestHandleCommandLayerInput(dt)
 		latchSelectionDebugMessage("Layer+A reserved: select-all disabled")
 	elseif ControllerCameraTestActionPressed("cancel") then
 		ControllerCameraTestTuning.backCommandLayerATapTime = -10
-		attemptStopCommand()
-		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+B stop"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+B disabled"
+		latchSelectionDebugMessage("Layer+B disabled")
 	elseif ControllerCameraTestActionPressed("smartAction") then
 		ControllerCameraTestTuning.backCommandLayerATapTime = -10
-		attemptAttackCommand()
-		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+X attack/attack-move"
+		ControllerCameraTestLayerDebug.commandLayerAction = "Layer+X disabled"
+		latchSelectionDebugMessage("Layer+X disabled")
 	elseif ControllerCameraTestActionPressed("buildRadial") then
 		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		ControllerCameraTestToggleTacticalMenu()
@@ -9760,6 +9741,21 @@ function ControllerCameraTestHandleCommandLayerInput(dt)
 end
 
 function ControllerCameraTestUpdateLBTapState()
+	local area = ControllerCameraTestAreaSelect
+	if area and (commandLayerActive
+		or ControllerCameraTestBuildMenu.open
+		or ControllerCameraTestBuildPlacement.active
+		or ControllerCameraTestTacticalMenu.open
+		or ControllerCameraTestSettingsUI.open
+		or ControllerCameraTestIsGameplayInputBlocked()
+		or ControllerCameraTestActionDown("pitchModifier")
+		or (ControllerCameraTestDragCommand and ControllerCameraTestDragCommand.active))
+	then
+		area.lastTapTime = -10
+		area.lastTapUnitID = nil
+		area.lastTapUnitDefID = nil
+	end
+
 	if commandLayerActive
 		or ControllerCameraTestBuildMenu.open
 		or ControllerCameraTestBuildPlacement.active
@@ -9880,23 +9876,6 @@ function ControllerCameraTestExecuteLBFaceHoldAction(btn)
 	if btn == "B" then
 		local cmdID = CMD.WAIT or 5
 		ControllerCameraTestIssueOrderToSelectedUnits(cmdID, {}, "Wait", "units")
-	elseif btn == "X" then
-		if profile == "builder" then
-			local reclaimAreaOption = {
-				name = "Reclaim Area",
-				shortLabel = "Reclaim Area",
-				cmdID = CMD.RECLAIM or 90,
-				kind = "drag_area",
-				dragMode = "reclaimArea",
-				descriptorSource = "template",
-				colorProfile = "reclaim",
-				iconLabel = "RECLAIM",
-				iconSource = "fallback text"
-			}
-			ControllerCameraTestStageTacticalCommand(reclaimAreaOption)
-		else
-			latchSelectionDebugMessage("Hold Hotkey: Combat Hold X is unused")
-		end
 	end
 end
 
@@ -9943,19 +9922,6 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 			end
 		elseif btn == "X" then
 			if tapCount == 1 then
-				local ok, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
-				if ok and targetType == "unit" and targetID then
-					ControllerCameraTestIssueOrderToSelectedUnits(CMD.RECLAIM or 90, { targetID }, "Reclaim", "unit")
-				elseif ok and targetType == "feature" and targetID then
-					if ControllerCameraTestFeatureIsReclaimable(targetID) then
-						ControllerCameraTestIssueOrderToSelectedUnits(CMD.RECLAIM or 90, { ControllerCameraTestFeatureCommandID(targetID) }, "Reclaim", "feature")
-					else
-						latchSelectionDebugMessage("Reclaim target: feature not reclaimable")
-					end
-				else
-					latchSelectionDebugMessage("Reclaim target: no valid target under reticle")
-				end
-			elseif tapCount == 2 then
 				local reclaimAreaOption = {
 					name = "Reclaim Area",
 					shortLabel = "Reclaim Area",
@@ -10027,10 +9993,21 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 			end
 		elseif btn == "X" then
 			if tapCount == 1 then
-				if reticleHasWorldTarget and reticleWorldX then
-					ControllerCameraTestIssueOrderToSelectedUnits(CMD.FIGHT or 16, { reticleWorldX, reticleWorldY, reticleWorldZ }, "Fight", "point")
+				local ok, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
+				local isEnemyUnit = false
+				if ok and targetType == "unit" and targetID then
+					local myAllyTeam = type(spGetMyAllyTeamID) == "function" and spGetMyAllyTeamID() or -1
+					local unitAllyTeam = type(Spring.GetUnitAllyTeam) == "function" and Spring.GetUnitAllyTeam(targetID) or -2
+					if myAllyTeam ~= unitAllyTeam then
+						isEnemyUnit = true
+					end
+				end
+				if isEnemyUnit then
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.ATTACK or 20, { targetID }, "Attack", "enemy unit")
+				elseif reticleHasWorldTarget and reticleWorldX then
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.ATTACK or 20, { reticleWorldX, reticleWorldY, reticleWorldZ }, "Attack", "ground")
 				else
-					latchSelectionDebugMessage("Fight: no world target under reticle")
+					latchSelectionDebugMessage("Attack: no target/ground under reticle")
 				end
 			end
 		elseif btn == "Y" then
@@ -10104,7 +10081,7 @@ function ControllerCameraTestHandleNormalUtilityInput()
 	elseif WasButtonPressed("dpadUp") then
 		ControllerCameraTestHandleBookmarkButton("up")
 	elseif WasButtonPressed("dpadDown") then
-		ControllerCameraTestHandleBookmarkButton("down")
+		ControllerCameraTestFocusCommander()
 	elseif ControllerCameraTestActionPressed("idlePrev") then
 		ControllerCameraTestCycleIdleUnit(-1)
 	elseif ControllerCameraTestActionPressed("idleNext") then
@@ -10162,7 +10139,8 @@ local function applySpringZoom(cameraState, zoomInput, dt)
 		return false
 	end
 
-	local scale = 1 - (zoomInput * ZOOM_SCALE_SPEED * (dt or 0))
+	local speedFactor = (ControllerCameraTestSettings.zoomSpeed or ZOOM_SPEED) / ZOOM_SPEED
+	local scale = 1 - (zoomInput * ZOOM_SCALE_SPEED * speedFactor * 3 * (dt or 0))
 	cameraState.dist = clamp(cameraState.dist * scale, MIN_SPRING_DISTANCE, maxCameraDistance)
 	zoomMethod = "spring dist"
 	return true
@@ -10173,7 +10151,8 @@ local function applyOverheadZoom(cameraState, zoomInput, dt)
 		return false
 	end
 
-	local scale = 1 - (zoomInput * ZOOM_SCALE_SPEED * (dt or 0))
+	local speedFactor = (ControllerCameraTestSettings.zoomSpeed or ZOOM_SPEED) / ZOOM_SPEED
+	local scale = 1 - (zoomInput * ZOOM_SCALE_SPEED * speedFactor * 3 * (dt or 0))
 	cameraState.height = clamp(cameraState.height * scale, MIN_OVERHEAD_HEIGHT, maxCameraDistance)
 	zoomMethod = "overhead height"
 	return true
@@ -10185,7 +10164,7 @@ local function applyFallbackHeightZoom(cameraState, zoomInput, dt)
 		return false
 	end
 
-	cameraState.py = cameraState.py - (zoomInput * ControllerCameraTestSettings.zoomSpeed * (dt or 0))
+	cameraState.py = cameraState.py - (zoomInput * (ControllerCameraTestSettings.zoomSpeed * 3) * (dt or 0))
 
 	if spGetGroundHeight and type(cameraState.px) == "number" and type(cameraState.pz) == "number" then
 		local groundHeight = spGetGroundHeight(cameraState.px, cameraState.pz)
@@ -12046,8 +12025,8 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Control Groups: hold Start/Menu overlay | Start+Dpad U/D slot | Start+Dpad L recall | Start+Dpad R same-type/future assign",
 		"Control Groups: Start+L3 clear | Start/Menu uses D-pad/L3 only, not ABXY",
 		"Status: controller mode shows compact factory/constructor activity panel; Y opens its radial",
-		"LB + Face Hotkeys (Builder): A Repair | AA Repair Area | X Reclaim | Hold X Reclaim Area | XX Reclaim Area | Y Patrol | YY Area Mex | B Stop | BB Repeat | Hold B Wait",
-		"LB + Face Hotkeys (Combat): A Attack/Fight | X Fight | Y Patrol | B Stop | BB Repeat | Hold B Wait",
+		"LB + Face Hotkeys (Builder): A Repair | AA Repair Area | X Reclaim Area | Y Patrol | YY Area Mex | B Stop | BB Repeat | Hold B Wait",
+		"LB + Face Hotkeys (Combat): A Attack/Fight | X Attack | Y Patrol | B Stop | BB Repeat | Hold B Wait",
 		"System UI: End Controller Settings | Page Up Debug | Page Down Help | Home Reset Settings Defaults",
 		"Fallback UI commands: /luaui cct_debug | cct_help | cct_settings | cct_reset_settings",
 		"Settings UI: D-pad/arrows adjust | LB/RB or Tab categories | A/Enter select | B/Escape close | X/Y reset",
@@ -12795,7 +12774,11 @@ function widget:SetConfigData(data)
 	if type(data.settings) == "table" then
 		for key, value in pairs(data.settings) do
 			if ControllerCameraTestSettings[key] ~= nil then
-				ControllerCameraTestSettings[key] = value
+				local val = value
+				if key == "stickDeadzone" and val == 3000 then
+					val = 5000
+				end
+				ControllerCameraTestSettings[key] = val
 			end
 		end
 	end

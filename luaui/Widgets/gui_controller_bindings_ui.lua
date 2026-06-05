@@ -1512,7 +1512,7 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 				"RB = Build / Factory Radial",
 				"L3 (Left Stick Click) = Remove current/next queue",
 				"R3 (Right Stick Click) = Remove last queue",
-				"Back/View + A + A = Commander focus/select utility",
+				"D-pad Down alone = Commander select/jump",
 				"Start/Menu + D-pad Left/Right = Recall / same-type future assign",
 				"Start/Menu + D-pad Up/Down or L3 = Group slot / clear",
 			}
