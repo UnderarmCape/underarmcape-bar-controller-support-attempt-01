@@ -173,6 +173,9 @@ ControllerCameraTestBuildMenu = ControllerCameraTestBuildMenu or {
 	factoryProgressCmdID = "none",
 	factoryProgressValue = "none",
 	factoryProgressSource = "none",
+	-- Affordability cache: rebuilt on open/page-change, then refreshed every 10s
+	affordabilityCache = {},
+	affordabilityCacheTime = -100,
 }
 ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	active = false,
@@ -197,6 +200,7 @@ ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	patternPressStartTime = 0,
 	patternHoldTriggered = false,
 	patternHoldSeconds = 0.25,
+	slowPanActive = false, -- toggled by Back during placement
 }
 ControllerCameraTestDragCommand = ControllerCameraTestDragCommand or {
 	active = false,
@@ -8116,6 +8120,7 @@ function ControllerCameraTestRefreshRadialVisibleOptions()
 	end
 
 	ControllerCameraTestRefreshBuildMenuDebug()
+	ControllerCameraTestInvalidateAffordabilityCache()  -- refresh on page/category change
 end
 
 --------------------------------------------------------------------------------
@@ -8233,6 +8238,40 @@ function ControllerCameraTestCanAffordBuildOption(option)
 	return affordable, metalAffordable, energyAffordable, reason
 end
 
+function ControllerCameraTestInvalidateAffordabilityCache()
+	-- Forces the affordability cache to be rebuilt on next draw
+	ControllerCameraTestBuildMenu.affordabilityCacheTime = -100
+	ControllerCameraTestBuildMenu.affordabilityCache = {}
+end
+
+local AFFORDABILITY_CACHE_TTL = 10  -- seconds between full re-checks during idle browsing
+
+function ControllerCameraTestGetCachedAffordability(option)
+	-- Returns (affordable, metalAffordable, energyAffordable) from cache,
+	-- rebuilding the cache when stale (>10s) or freshly invalidated.
+	local menu = ControllerCameraTestBuildMenu
+	local now = debugEventTime
+	if (now - (menu.affordabilityCacheTime or -100)) >= AFFORDABILITY_CACHE_TTL then
+		-- Rebuild cache for all currently visible options
+		local newCache = {}
+		for _, opt in ipairs(menu.radialVisibleOptions or {}) do
+			if opt and opt.cmdID then
+				local aff, mAff, eAff = ControllerCameraTestCanAffordBuildOption(opt)
+				newCache[opt.cmdID] = { aff, mAff, eAff }
+			end
+		end
+		menu.affordabilityCache = newCache
+		menu.affordabilityCacheTime = now
+	end
+	local key = option and option.cmdID
+	local cached = key and menu.affordabilityCache[key]
+	if cached then
+		return cached[1], cached[2], cached[3]
+	end
+	-- Fallback for items not in cache (e.g. factory units without cmdID key collision)
+	return ControllerCameraTestCanAffordBuildOption(option)
+end
+
 function ControllerCameraTestGetRadialCurrentOption()
 	local menu = ControllerCameraTestBuildMenu
 	if type(menu.radialVisibleOptions) == "table" and #menu.radialVisibleOptions > 0 then
@@ -8332,6 +8371,7 @@ function ControllerCameraTestOpenBuildMenu()
 	ControllerCameraTestRefreshRadialVisibleOptions()
 	ControllerCameraTestRefreshFactoryQueueCounts()
 	ControllerCameraTestRefreshFactoryQueueProgress()
+	ControllerCameraTestInvalidateAffordabilityCache()  -- immediate refresh on open
 
 	menu.lastAction = "opened"
 	menu.placementResult = "none"
@@ -8504,6 +8544,7 @@ function ControllerCameraTestCancelPlacement(reason)
 	placement.patternPressActive = false
 	placement.patternPressStartTime = 0
 	placement.patternHoldTriggered = false
+	placement.slowPanActive = false  -- reset pan speed on exit
 	latchSelectionDebugMessage("Placement cancelled")
 	ControllerCameraTestClearDragPreviewCache()
 end
@@ -9001,6 +9042,14 @@ function ControllerCameraTestHandlePlacementInput(dt)
 		else
 			ControllerCameraTestCancelPlacement("cancelled by B")
 		end
+	-- Back button: toggle slow pan speed during placement
+	elseif WasButtonPressed("back") then
+		placement.slowPanActive = not placement.slowPanActive
+		if placement.slowPanActive then
+			ControllerCameraTestShowHotkeyFeedback("SLOW PAN", "utility")
+		else
+			ControllerCameraTestShowHotkeyFeedback("FULL PAN", "utility")
+		end
 	elseif ControllerCameraTestActionPressed("place") or ControllerCameraTestActionPressed("placeStay") then
 		local button = ControllerCameraTestActionPressed("place") and "place" or "placeStay"
 		local isExit = ControllerCameraTestPlacementShouldExit(button)
@@ -9085,9 +9134,9 @@ function ControllerCameraTestHandlePlacementInput(dt)
 	end
 
 	if drag.active then
-		activeButtonLayoutSummary = "Drag Build: A/X confirm, B cancel, RS X camera, D-pad L/R facing, U/D spacing, LB tap pattern/hold grid"
+		activeButtonLayoutSummary = "Drag Build: A/X confirm, B cancel, Back slow/full pan, RS X camera, D-pad L/R facing, U/D spacing, LB tap pattern/hold grid"
 	else
-		activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, RS X camera, D-pad L/R facing, U/D spacing, LB tap pattern/hold grid"
+		activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, Back slow/full pan, RS X camera, D-pad L/R facing, U/D spacing, LB tap pattern/hold grid"
 	end
 	return true
 end
@@ -9891,39 +9940,36 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 
 	if profile == "builder" then
 		if btn == "A" then
+			-- LB + A: Repair Area auto-anchored (single tap; AA is unused)
 			if tapCount == 1 then
-				local ok, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
-				local isRepairable = false
-				if ok and targetType == "unit" and targetID then
-					local hp, maxHP, _, _, buildProgress = Spring.GetUnitHealth(targetID)
-					if hp and maxHP and (hp < maxHP or (buildProgress and buildProgress < 1.0)) then
-						local myAllyTeam = type(spGetMyAllyTeamID) == "function" and spGetMyAllyTeamID() or -1
-						local unitAllyTeam = type(Spring.GetUnitAllyTeam) == "function" and Spring.GetUnitAllyTeam(targetID) or -2
-						if myAllyTeam == unitAllyTeam then
-							isRepairable = true
-						end
-					end
-				end
-				if isRepairable then
-					ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPAIR or 40, { targetID }, "Repair", "unit")
-					ControllerCameraTestShowHotkeyFeedback("REPAIR", "repair")
+				if reticleHasWorldTarget and reticleWorldX then
+					local repairAreaOption = {
+						name = "Repair Area",
+						shortLabel = "Repair Area",
+						cmdID = CMD.REPAIR or 40,
+						kind = "drag_area",
+						dragMode = "repairArea",
+						descriptorSource = "template",
+						colorProfile = "repair",
+						iconLabel = "REPAIR",
+						iconSource = "fallback text"
+					}
+					ControllerCameraTestStageTacticalCommand(repairAreaOption)
+					local menu = ControllerCameraTestTacticalMenu
+					local drag = ControllerCameraTestDragCommand
+					drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
+					drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+					drag.active = true
+					drag.mode = repairAreaOption.dragMode
+					drag.cmdID = repairAreaOption.cmdID
+					drag.option = repairAreaOption
+					menu.stagedState = "dragging radius"
+					ControllerCameraTestUpdateAreaCommandDebug("dragging radius", repairAreaOption, 120, 120 * ControllerCameraTestAreaRadiusSensitivity, "center auto-anchored")
+					latchSelectionDebugMessage(repairAreaOption.name .. " center auto-anchored")
+					ControllerCameraTestShowHotkeyFeedback("REPAIR AREA", "repair")
 				else
-					latchSelectionDebugMessage("Repair target: no valid damaged ally under reticle")
+					latchSelectionDebugMessage("Repair Area: no valid world target under reticle")
 				end
-			elseif tapCount == 2 then
-				local repairAreaOption = {
-					name = "Repair Area",
-					shortLabel = "Repair Area",
-					cmdID = CMD.REPAIR or 40,
-					kind = "drag_area",
-					dragMode = "repairArea",
-					descriptorSource = "template",
-					colorProfile = "repair",
-					iconLabel = "REPAIR",
-					iconSource = "fallback text"
-				}
-				ControllerCameraTestStageTacticalCommand(repairAreaOption)
-				ControllerCameraTestShowHotkeyFeedback("REPAIR AREA", "repair")
 			end
 		elseif btn == "X" then
 			if tapCount == 1 then
@@ -10709,6 +10755,10 @@ function ControllerCameraTestUpdateCameraControls(dt)
 
 	local boostInput = smooth.leftTrigger or 0
 	local panMultiplier = 1 + (((ControllerCameraTestSettings.fastPanMultiplier or 1) - 1) * boostInput)
+	-- Slow pan override: toggled by Back during build placement
+	if ControllerCameraTestBuildPlacement.active and ControllerCameraTestBuildPlacement.slowPanActive then
+		panMultiplier = panMultiplier * 0.3
+	end
 	zoomSpeedMultiplier = 1 + (((ControllerCameraTestSettings.zoomBoostMultiplier or 1) - 1) * boostInput)
 	if panActive or zoomActive or rotationActive or pitchActive then
 		applyCameraInput(menuOpen and 0 or smooth.panX, menuOpen and 0 or smooth.panY, zoomInput, rotationInput, pitchInput, panMultiplier, zoomSpeedMultiplier, dt)
@@ -11706,8 +11756,8 @@ function ControllerCameraTestDrawBuildRadial()
 
 		local isSelected = (option.menuIndex == menu.selectedIndex)
 
-		-- Check affordability
-		local affordable, mAff, eAff = ControllerCameraTestCanAffordBuildOption(option)
+		-- Check affordability (cached; refreshes every 10s or immediately on page change)
+		local affordable, mAff, eAff = ControllerCameraTestGetCachedAffordability(option)
 
 		if isSelected then
 			gl.Color(pageColor.accent[1], pageColor.accent[2], pageColor.accent[3], 0.85)
@@ -11763,7 +11813,7 @@ function ControllerCameraTestDrawBuildRadial()
 				elseif affordable then
 					gl.Color(0.85, 0.85, 0.85, 0.9)
 				else
-					gl.Color(0.35, 0.3, 0.3, 0.42) -- dim texture for unaffordable
+					gl.Color(0.75, 0.72, 0.72, 0.85) -- softly dimmed for unaffordable (75% brightness)
 				end
 				gl.TexRect(x - iconSize/2, y - iconSize/2, x + iconSize/2, y + iconSize/2)
 			end
@@ -11825,7 +11875,7 @@ function ControllerCameraTestDrawBuildRadial()
 
 		local mCost = currentOption.metalCost or 0
 		local eCost = currentOption.energyCost or 0
-		local aff, mAff, eAff = ControllerCameraTestCanAffordBuildOption(currentOption)
+		local aff, mAff, eAff = ControllerCameraTestGetCachedAffordability(currentOption)
 
 		if mCost > 0 and eCost > 0 then
 			if mAff then
@@ -11892,12 +11942,10 @@ function ControllerCameraTestDrawBuildRadial()
 		else
 			gl.Color(0.4, 1.0, 0.4, 0.9)
 			gl.Text("[A] Place", cx - 8 * BuildRadialTuning.textScale, cy - 16 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
-			gl.Color(0.4, 0.8, 1.0, 0.9)
-			gl.Text("[X] Stay", cx + 8 * BuildRadialTuning.textScale, cy - 16 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
 			gl.Color(1.0, 0.4, 0.4, 0.9)
-			gl.Text("[B] Cancel", cx - 8 * BuildRadialTuning.textScale, cy - 30 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
+			gl.Text("[B] Cancel", cx + 8 * BuildRadialTuning.textScale, cy - 16 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
 			gl.Color(1.0, 0.9, 0.4, 0.9)
-			gl.Text("[Y] Close", cx + 8 * BuildRadialTuning.textScale, cy - 30 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
+			gl.Text("[Y] Close", cx, cy - 30 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "oc")
 		end
 	end
 
@@ -12060,7 +12108,7 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Control Groups: hold Start/Menu overlay | Start+Dpad U/D slot | Start+Dpad L recall | Start+Dpad R same-type/future assign",
 		"Control Groups: Start+L3 clear | Start/Menu uses D-pad/L3 only, not ABXY",
 		"Status: controller mode shows compact factory/constructor activity panel; Y opens its radial",
-		"LB + Face Hotkeys (Builder): A Repair | AA Repair Area | X Reclaim Area | Y Patrol | YY Area Mex | B Stop | BB Repeat | Hold B Wait",
+		"LB + Face Hotkeys (Builder): A Repair Area | X Reclaim Area | Y Patrol | YY Area Mex | B Stop | BB Repeat | Hold B Wait",
 		"LB + Face Hotkeys (Combat): A Attack/Fight | X Attack | Y Patrol | B Stop | BB Repeat | Hold B Wait",
 		"System UI: End Controller Settings | Page Up Debug | Page Down Help | Home Reset Settings Defaults",
 		"Fallback UI commands: /luaui cct_debug | cct_help | cct_settings | cct_reset_settings",
