@@ -583,6 +583,38 @@ local DEBUG_PANEL_HEADER_HEIGHT = 22
 local DEBUG_PANEL_RESIZE_HANDLE = 14
 local DEBUG_PANEL_MIN_WIDTH = 280
 local DEBUG_PANEL_MIN_HEIGHT = 118
+
+local debugEventTime = 0
+
+local ControllerCameraTestHotkeyFeedback = {
+	text = nil,
+	color = { 1, 1, 1, 0.45 },
+	startTime = 0,
+	duration = 0.90,
+}
+
+local function ControllerCameraTestShowHotkeyFeedback(label, colorType)
+	local color = { 1, 1, 1, 0.65 }
+	if colorType == "repair" then
+		color = { 0.2, 1.0, 0.6, 0.65 }
+	elseif colorType == "reclaim" then
+		color = { 0.7, 1.0, 0.2, 0.65 }
+	elseif colorType == "mex" then
+		color = { 0.2, 1.0, 0.2, 0.65 }
+	elseif colorType == "patrol" then
+		color = { 0.2, 0.6, 1.0, 0.65 }
+	elseif colorType == "attack" then
+		color = { 1.0, 0.3, 0.2, 0.65 }
+	elseif colorType == "utility" then
+		color = { 0.2, 0.8, 1.0, 0.65 }
+	elseif colorType == "commander" then
+		color = { 1.0, 0.8, 0.2, 0.65 }
+	end
+
+	ControllerCameraTestHotkeyFeedback.text = label
+	ControllerCameraTestHotkeyFeedback.color = color
+	ControllerCameraTestHotkeyFeedback.startTime = debugEventTime or 0
+end
 local DEBUG_PANEL_DEFAULT_WIDTH = 650
 local DEBUG_PANEL_DEFAULT_HEIGHT = 150
 
@@ -1043,7 +1075,7 @@ local previousButtonStates = {}
 local currentButtonStates = {}
 local pressedButtonStates = {}
 local releasedButtonStates = {}
-local debugEventTime = 0
+debugEventTime = 0
 local pressedRecentlyExpirations = {}
 local releasedRecentlyExpirations = {}
 local commandLayerPressedRecentlyExpirations = {}
@@ -9401,37 +9433,7 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 		drag.pressActive = false
 	end
 
-	if ControllerCameraTestActionPressed("select") then
-		drag.pressActive = true
-		drag.pressStartTime = debugEventTime
-		drag.pressButton = "RT+A"
-		drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
-		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
-		drag.active = false
-	end
 
-	if drag.pressActive and drag.pressButton == "RT+A" and ControllerCameraTestActionDown("select") then
-		if not drag.active and (debugEventTime - drag.pressStartTime) >= A_HOLD_SECONDS then
-			drag.active = true
-			drag.mode = "attackLine"
-			drag.lastResult = "active"
-			latchSelectionDebugMessage("Attack Line Drag started")
-		end
-		if drag.active then
-			ControllerCameraTestUpdateDragPreview()
-		end
-	end
-
-	if ControllerCameraTestActionReleased("select") and drag.pressActive and drag.pressButton == "RT+A" then
-		if drag.active then
-			ControllerCameraTestConfirmDragCommand(false)
-		else
-			ControllerCameraTestLayerDebug.commandLayerAction = "Layer+A select-all disabled"
-			ControllerCameraTestCycleDebug.lastResult = "Layer+A select-all disabled"
-			latchSelectionDebugMessage("Layer+A reserved: select-all disabled")
-		end
-		drag.pressActive = false
-	end
 
 	return drag.pressActive or drag.active
 end
@@ -9876,6 +9878,7 @@ function ControllerCameraTestExecuteLBFaceHoldAction(btn)
 	if btn == "B" then
 		local cmdID = CMD.WAIT or 5
 		ControllerCameraTestIssueOrderToSelectedUnits(cmdID, {}, "Wait", "units")
+		ControllerCameraTestShowHotkeyFeedback("WAIT", "utility")
 	end
 end
 
@@ -9903,6 +9906,7 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 				end
 				if isRepairable then
 					ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPAIR or 40, { targetID }, "Repair", "unit")
+					ControllerCameraTestShowHotkeyFeedback("REPAIR", "repair")
 				else
 					latchSelectionDebugMessage("Repair target: no valid damaged ally under reticle")
 				end
@@ -9919,26 +9923,44 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 					iconSource = "fallback text"
 				}
 				ControllerCameraTestStageTacticalCommand(repairAreaOption)
+				ControllerCameraTestShowHotkeyFeedback("REPAIR AREA", "repair")
 			end
 		elseif btn == "X" then
 			if tapCount == 1 then
-				local reclaimAreaOption = {
-					name = "Reclaim Area",
-					shortLabel = "Reclaim Area",
-					cmdID = CMD.RECLAIM or 90,
-					kind = "drag_area",
-					dragMode = "reclaimArea",
-					descriptorSource = "template",
-					colorProfile = "reclaim",
-					iconLabel = "RECLAIM",
-					iconSource = "fallback text"
-				}
-				ControllerCameraTestStageTacticalCommand(reclaimAreaOption)
+				if reticleHasWorldTarget and reticleWorldX then
+					local reclaimAreaOption = {
+						name = "Reclaim Area",
+						shortLabel = "Reclaim Area",
+						cmdID = CMD.RECLAIM or 90,
+						kind = "drag_area",
+						dragMode = "reclaimArea",
+						descriptorSource = "template",
+						colorProfile = "reclaim",
+						iconLabel = "RECLAIM",
+						iconSource = "fallback text"
+					}
+					ControllerCameraTestStageTacticalCommand(reclaimAreaOption)
+					local menu = ControllerCameraTestTacticalMenu
+					local drag = ControllerCameraTestDragCommand
+					drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
+					drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+					drag.active = true
+					drag.mode = reclaimAreaOption.dragMode
+					drag.cmdID = reclaimAreaOption.cmdID
+					drag.option = reclaimAreaOption
+					menu.stagedState = "dragging radius"
+					ControllerCameraTestUpdateAreaCommandDebug("dragging radius", reclaimAreaOption, 120, 120 * ControllerCameraTestAreaRadiusSensitivity, "center auto-anchored")
+					latchSelectionDebugMessage(reclaimAreaOption.name .. " center auto-anchored")
+					ControllerCameraTestShowHotkeyFeedback("RECLAIM AREA", "reclaim")
+				else
+					latchSelectionDebugMessage("Reclaim Area: no valid world target under reticle")
+				end
 			end
 		elseif btn == "Y" then
 			if tapCount == 1 then
 				if reticleHasWorldTarget and reticleWorldX then
 					ControllerCameraTestIssueOrderToSelectedUnits(CMD.PATROL or 15, { reticleWorldX, reticleWorldY, reticleWorldZ }, "Patrol", "point")
+					ControllerCameraTestShowHotkeyFeedback("PATROL", "patrol")
 				else
 					latchSelectionDebugMessage("Patrol: no world target under reticle")
 				end
@@ -9955,10 +9977,12 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 					iconSource = "fallback text"
 				}
 				ControllerCameraTestStageTacticalCommand(areaMexOption)
+				ControllerCameraTestShowHotkeyFeedback("AREA MEX", "mex")
 			end
 		elseif btn == "B" then
 			if tapCount == 1 then
 				ControllerCameraTestIssueOrderToSelectedUnits(CMD.STOP or 0, {}, "Stop", "units")
+				ControllerCameraTestShowHotkeyFeedback("STOP", "utility")
 			elseif tapCount == 2 then
 				local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 				if #selectedUnits > 0 then
@@ -9967,6 +9991,7 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 					local currentRepeat = states and states["repeat"]
 					local nextVal = currentRepeat and 0 or 1
 					ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPEAT or 115, { nextVal }, "Repeat", nextVal == 1 and "ON" or "OFF", {})
+					ControllerCameraTestShowHotkeyFeedback("REPEAT", "utility")
 				end
 			end
 		end
@@ -9985,8 +10010,10 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 				end
 				if isEnemyUnit then
 					ControllerCameraTestIssueOrderToSelectedUnits(CMD.ATTACK or 20, { targetID }, "Attack", "enemy unit")
+					ControllerCameraTestShowHotkeyFeedback("ATTACK", "attack")
 				elseif reticleHasWorldTarget and reticleWorldX then
 					ControllerCameraTestIssueOrderToSelectedUnits(CMD.FIGHT or 16, { reticleWorldX, reticleWorldY, reticleWorldZ }, "Fight", "point")
+					ControllerCameraTestShowHotkeyFeedback("FIGHT", "attack")
 				else
 					latchSelectionDebugMessage("Attack/Fight: no target under reticle")
 				end
@@ -10004,8 +10031,10 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 				end
 				if isEnemyUnit then
 					ControllerCameraTestIssueOrderToSelectedUnits(CMD.ATTACK or 20, { targetID }, "Attack", "enemy unit")
+					ControllerCameraTestShowHotkeyFeedback("ATTACK", "attack")
 				elseif reticleHasWorldTarget and reticleWorldX then
 					ControllerCameraTestIssueOrderToSelectedUnits(CMD.ATTACK or 20, { reticleWorldX, reticleWorldY, reticleWorldZ }, "Attack", "ground")
+					ControllerCameraTestShowHotkeyFeedback("ATTACK GROUND", "attack")
 				else
 					latchSelectionDebugMessage("Attack: no target/ground under reticle")
 				end
@@ -10014,6 +10043,7 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 			if tapCount == 1 then
 				if reticleHasWorldTarget and reticleWorldX then
 					ControllerCameraTestIssueOrderToSelectedUnits(CMD.PATROL or 15, { reticleWorldX, reticleWorldY, reticleWorldZ }, "Patrol", "point")
+					ControllerCameraTestShowHotkeyFeedback("PATROL", "patrol")
 				else
 					latchSelectionDebugMessage("Patrol: no world target under reticle")
 				end
@@ -10021,6 +10051,7 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 		elseif btn == "B" then
 			if tapCount == 1 then
 				ControllerCameraTestIssueOrderToSelectedUnits(CMD.STOP or 0, {}, "Stop", "units")
+				ControllerCameraTestShowHotkeyFeedback("STOP", "utility")
 			elseif tapCount == 2 then
 				local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 				if #selectedUnits > 0 then
@@ -10029,6 +10060,7 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 					local currentRepeat = states and states["repeat"]
 					local nextVal = currentRepeat and 0 or 1
 					ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPEAT or 115, { nextVal }, "Repeat", nextVal == 1 and "ON" or "OFF", {})
+					ControllerCameraTestShowHotkeyFeedback("REPEAT", "utility")
 				end
 			end
 		end
@@ -10081,7 +10113,9 @@ function ControllerCameraTestHandleNormalUtilityInput()
 	elseif WasButtonPressed("dpadUp") then
 		ControllerCameraTestHandleBookmarkButton("up")
 	elseif WasButtonPressed("dpadDown") then
-		ControllerCameraTestFocusCommander()
+		if ControllerCameraTestFocusCommander() then
+			ControllerCameraTestShowHotkeyFeedback("COMMANDER", "commander")
+		end
 	elseif ControllerCameraTestActionPressed("idlePrev") then
 		ControllerCameraTestCycleIdleUnit(-1)
 	elseif ControllerCameraTestActionPressed("idleNext") then
@@ -12734,6 +12768,31 @@ function widget:DrawScreen()
 	gl.Rect(handleRight - 4, handleBottom, handleRight, handleBottom + 1)
 	gl.Rect(handleRight - 8, handleBottom + 4, handleRight, handleBottom + 5)
 	gl.Rect(handleRight - 12, handleBottom + 8, handleRight, handleBottom + 9)
+
+	local feedback = ControllerCameraTestHotkeyFeedback
+	if feedback and feedback.text and feedback.startTime then
+		local age = debugEventTime - feedback.startTime
+		if age < feedback.duration then
+			local alpha = 1.0
+			local fadeStart = feedback.duration - 0.35
+			if age > fadeStart then
+				alpha = (feedback.duration - age) / 0.35
+			end
+			alpha = math.max(0, math.min(1, alpha))
+
+			local col = feedback.color
+			gl.Color(col[1], col[2], col[3], col[4] * alpha)
+
+			local cx = viewSizeX / 2
+			local cy = viewSizeY * 0.22
+
+			local size = 26
+			gl.Text(feedback.text, cx, cy, size, "oc")
+			gl.Text(feedback.text, cx - 0.5, cy, size, "oc")
+			gl.Text(feedback.text, cx + 0.5, cy, size, "oc")
+		end
+	end
+
 	gl.Color(1, 1, 1, 1)
 end
 
