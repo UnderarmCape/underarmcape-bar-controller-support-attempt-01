@@ -9882,21 +9882,18 @@ function ControllerCameraTestExecuteLBFaceHoldAction(btn)
 		ControllerCameraTestIssueOrderToSelectedUnits(cmdID, {}, "Wait", "units")
 	elseif btn == "X" then
 		if profile == "builder" then
-			local ok, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
-			if ok and targetType == "unit" and targetID then
-				local cmdID = CMD.RECLAIM or 90
-				ControllerCameraTestIssueOrderToSelectedUnits(cmdID, { targetID }, "Reclaim", "unit", { "shift" })
-			elseif ok and targetType == "feature" and targetID then
-				if ControllerCameraTestFeatureIsReclaimable(targetID) then
-					local cmdID = CMD.RECLAIM or 90
-					local featureCmdID = ControllerCameraTestFeatureCommandID(targetID)
-					ControllerCameraTestIssueOrderToSelectedUnits(cmdID, { featureCmdID }, "Reclaim", "feature", { "shift" })
-				else
-					latchSelectionDebugMessage("Reclaim target: feature not reclaimable")
-				end
-			else
-				latchSelectionDebugMessage("Reclaim target: no valid target under reticle")
-			end
+			local reclaimAreaOption = {
+				name = "Reclaim Area",
+				shortLabel = "Reclaim Area",
+				cmdID = CMD.RECLAIM or 90,
+				kind = "drag_area",
+				dragMode = "reclaimArea",
+				descriptorSource = "template",
+				colorProfile = "reclaim",
+				iconLabel = "RECLAIM",
+				iconSource = "fallback text"
+			}
+			ControllerCameraTestStageTacticalCommand(reclaimAreaOption)
 		else
 			latchSelectionDebugMessage("Hold Hotkey: Combat Hold X is unused")
 		end
@@ -12049,7 +12046,7 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Control Groups: hold Start/Menu overlay | Start+Dpad U/D slot | Start+Dpad L recall | Start+Dpad R same-type/future assign",
 		"Control Groups: Start+L3 clear | Start/Menu uses D-pad/L3 only, not ABXY",
 		"Status: controller mode shows compact factory/constructor activity panel; Y opens its radial",
-		"LB + Face Hotkeys (Builder): A Repair | AA Repair Area | X Reclaim | Hold X Queued Reclaim | XX Reclaim Area | Y Patrol | YY Area Mex | B Stop | BB Repeat | Hold B Wait",
+		"LB + Face Hotkeys (Builder): A Repair | AA Repair Area | X Reclaim | Hold X Reclaim Area | XX Reclaim Area | Y Patrol | YY Area Mex | B Stop | BB Repeat | Hold B Wait",
 		"LB + Face Hotkeys (Combat): A Attack/Fight | X Fight | Y Patrol | B Stop | BB Repeat | Hold B Wait",
 		"System UI: End Controller Settings | Page Up Debug | Page Down Help | Home Reset Settings Defaults",
 		"Fallback UI commands: /luaui cct_debug | cct_help | cct_settings | cct_reset_settings",
