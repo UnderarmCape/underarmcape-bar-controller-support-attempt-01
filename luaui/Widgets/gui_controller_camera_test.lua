@@ -433,6 +433,12 @@ ControllerCameraTestCycleDebug = ControllerCameraTestCycleDebug or {
 	lbPressActive = false,
 	lbHadPitchMotion = false,
 }
+ControllerCameraTestLBHotkeys = ControllerCameraTestLBHotkeys or {
+	A = { pending = false, lastPressTime = 0, pressCount = 0 },
+	B = { pending = false, lastPressTime = 0, pressCount = 0 },
+	X = { pending = false, lastPressTime = 0, pressCount = 0 },
+	Y = { pending = false, lastPressTime = 0, pressCount = 0 },
+}
 ControllerCameraTestBookmarkDebug = ControllerCameraTestBookmarkDebug or {
 	slots = {},
 	lastResult = "none",
@@ -2201,6 +2207,40 @@ function ControllerCameraTestIsGameplayInputBlocked()
 	return ControllerCameraTestExternalBindingUI.open == true
 end
 
+function ControllerCameraTestCanUseLBHotkeys()
+	if ControllerCameraTestBuildMenu.open then return false end
+	if ControllerCameraTestBuildPlacement.active then return false end
+	if ControllerCameraTestTacticalMenu.open then return false end
+	if ControllerCameraTestSettingsUI.open then return false end
+	if ControllerCameraTestIsBindingUIOpen() then return false end
+	if ControllerCameraTestDgunMode.active then return false end
+	if ControllerCameraTestAreaSelect.active or ControllerCameraTestAreaSelect.pressActive then return false end
+	if ControllerCameraTestDragCommand.active or ControllerCameraTestDragCommand.pressActive then return false end
+	if ControllerCameraTestTacticalMenu.stagedOption ~= nil then return false end
+	if Spring.IsChatOpened and Spring.IsChatOpened() then return false end
+	return true
+end
+
+function ControllerCameraTestGetSelectionProfile()
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits()
+	if not selectedUnits or #selectedUnits == 0 then
+		return nil
+	end
+	for _, unitID in ipairs(selectedUnits) do
+		if ControllerCameraTestIsCommanderUnit(unitID) then
+			return "builder"
+		end
+		local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
+		if unitDef then
+			local isBuilder = unitDef.isBuilder or unitDef.canBuild or (type(unitDef.buildOptions) == "table" and #unitDef.buildOptions > 0) or unitDef.canAssist or unitDef.canRepair or unitDef.canReclaim
+			if isBuilder then
+				return "builder"
+			end
+		end
+	end
+	return "combat"
+end
+
 function ControllerCameraTestGetSettingsDefinitions()
 	local categories = ControllerCameraTestGetSettingsUICategories()
 	local defaults = ControllerCameraTestGetDefaultSettings()
@@ -2896,6 +2936,10 @@ function ControllerCameraTestIsRepairAreaOption(option)
 	return type(option) == "table" and option.dragMode == "repairArea"
 end
 
+function ControllerCameraTestIsReclaimAreaOption(option)
+	return type(option) == "table" and option.dragMode == "reclaimArea"
+end
+
 function ControllerCameraTestIsAreaTacticalOption(option)
 	if type(option) ~= "table" then
 		return false
@@ -3043,6 +3087,48 @@ function ControllerCameraTestIssueRepairAreaRouteA(option, x, y, z, radius, queu
 	ControllerCameraTestCommandDebug.lastOptions = queueHeld and "shift" or "none"
 	ControllerCameraTestCommandDebug.lastResult = "Repair Route A issued"
 	ControllerCameraTestSetCommandMarker(x, y, z, name, "repair")
+	latchSelectionDebugMessage(name .. " confirmed!")
+	return true, "Route A issued"
+end
+
+function ControllerCameraTestIssueReclaimAreaRouteA(option, x, y, z, radius, queueHeld)
+	if type(spGiveOrderToUnitArray) ~= "function" then
+		return false, "GiveOrderToUnitArray unavailable"
+	end
+
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if type(selectedUnits) ~= "table" or #selectedUnits <= 0 then
+		return false, "no selected units"
+	end
+
+	if not (ControllerCameraTestIsFiniteNumber(x)
+		and ControllerCameraTestIsFiniteNumber(y)
+		and ControllerCameraTestIsFiniteNumber(z))
+	then
+		return false, "invalid ground target"
+	end
+
+	if not ControllerCameraTestIsFiniteNumber(radius) or radius <= 0 then
+		return false, "invalid radius"
+	end
+
+	local cmdID = (CMD and CMD.RECLAIM) or 90
+	local opts = queueHeld and { "shift" } or {}
+	local params = { x, y, z, radius }
+	local ok, result = pcall(spGiveOrderToUnitArray, selectedUnits, cmdID, params, opts)
+	if not ok then
+		return false, tostring(result)
+	end
+	if result == false then
+		return false, "order rejected"
+	end
+
+	local name = tostring((option and option.name) or "Reclaim Area")
+	ControllerCameraTestCommandDebug.issuedCmdID = tostring(cmdID)
+	ControllerCameraTestCommandDebug.issuedParamsCount = #params
+	ControllerCameraTestCommandDebug.lastOptions = queueHeld and "shift" or "none"
+	ControllerCameraTestCommandDebug.lastResult = "Reclaim Route A issued"
+	ControllerCameraTestSetCommandMarker(x, y, z, name, "reclaim")
 	latchSelectionDebugMessage(name .. " confirmed!")
 	return true, "Route A issued"
 end
@@ -4038,6 +4124,16 @@ function ControllerCameraTestConfirmDragCommand(exitMode)
 		elseif ControllerCameraTestIsRepairAreaOption(option) then
 			local issued, reason = ControllerCameraTestIssueRepairAreaRouteA(option, startX, startY, startZ, effectiveRadius, ControllerCameraTestIsQueueModifierActive())
 			drag.lastResult = issued and "Repair Route A issued" or ("Repair failed: " .. tostring(reason))
+			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
+			if not issued then
+				ControllerCameraTestUpdateAreaCommandDebug("failed", option, rawRadius, effectiveRadius, drag.lastResult)
+				latchSelectionDebugMessage(cmdName .. " failed: " .. tostring(reason))
+			else
+				ControllerCameraTestUpdateAreaCommandDebug("confirmed", option, rawRadius, effectiveRadius, "Route A issued")
+			end
+		elseif ControllerCameraTestIsReclaimAreaOption(option) then
+			local issued, reason = ControllerCameraTestIssueReclaimAreaRouteA(option, startX, startY, startZ, effectiveRadius, ControllerCameraTestIsQueueModifierActive())
+			drag.lastResult = issued and "Reclaim Route A issued" or ("Reclaim failed: " .. tostring(reason))
 			ControllerCameraTestCommandDebug.lastResult = drag.lastResult
 			if not issued then
 				ControllerCameraTestUpdateAreaCommandDebug("failed", option, rawRadius, effectiveRadius, drag.lastResult)
@@ -9194,6 +9290,10 @@ function ControllerCameraTestSelectAreaUnits()
 end
 
 function ControllerCameraTestHandleNormalXInput(dt)
+	if ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestCanUseLBHotkeys() then
+		return false
+	end
+
 	local drag = ControllerCameraTestDragCommand
 	local HOLD_SECONDS = ControllerCameraTestSettings.xHoldSeconds or 0.14
 
@@ -9340,6 +9440,10 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 end
 
 function ControllerCameraTestHandleNormalAInput(dt)
+	if ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestCanUseLBHotkeys() then
+		return false
+	end
+
 	local area = ControllerCameraTestAreaSelect
 	local HOLD_SECONDS = ControllerCameraTestSettings.aHoldSeconds or 0.38
 
@@ -9672,6 +9776,222 @@ function ControllerCameraTestUpdateLBTapState()
 	end
 	if ControllerCameraTestActionDown("pitchModifier") and math.abs(normalizedRightY) > 0.2 then
 		ControllerCameraTestCycleDebug.lbHadPitchMotion = true
+	end
+end
+
+function ControllerCameraTestResetLBHotkeys()
+	if not ControllerCameraTestLBHotkeys then return end
+	for _, btn in ipairs({ "A", "B", "X", "Y" }) do
+		local state = ControllerCameraTestLBHotkeys[btn]
+		if state then
+			state.pending = false
+			state.pressCount = 0
+			state.lastPressTime = 0
+		end
+	end
+end
+
+function ControllerCameraTestUpdateLBFaceButtonDispatcher(dt)
+	if not ControllerCameraTestLBHotkeys then return end
+
+	if not ControllerCameraTestCanUseLBHotkeys() then
+		ControllerCameraTestResetLBHotkeys()
+		return
+	end
+
+	local lbHeld = ControllerCameraTestActionDown("pitchModifier")
+	local buttons = { "A", "B", "X", "Y" }
+
+	for _, btn in ipairs(buttons) do
+		local state = ControllerCameraTestLBHotkeys[btn]
+		if not state then
+			ControllerCameraTestLBHotkeys[btn] = { pending = false, lastPressTime = 0, pressCount = 0 }
+			state = ControllerCameraTestLBHotkeys[btn]
+		end
+
+		if lbHeld and WasButtonPressed(btn) then
+			-- Block release tap action
+			ControllerCameraTestCycleDebug.lbHadPitchMotion = true
+
+			local now = debugEventTime
+			if state.pending and (now - state.lastPressTime) <= 0.22 then
+				state.pending = false
+				state.pressCount = 0
+				state.lastPressTime = 0
+				ControllerCameraTestExecuteLBHotkey(btn, 2)
+			else
+				state.pending = true
+				state.pressCount = 1
+				state.lastPressTime = now
+			end
+		end
+
+		if state.pending then
+			local now = debugEventTime
+			if (now - state.lastPressTime) > 0.22 then
+				state.pending = false
+				state.pressCount = 0
+				ControllerCameraTestExecuteLBHotkey(btn, 1)
+			end
+		end
+	end
+end
+
+function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
+	local profile = ControllerCameraTestGetSelectionProfile()
+	if not profile then
+		latchSelectionDebugMessage("Hotkey: no units selected")
+		return
+	end
+
+	if profile == "builder" then
+		if btn == "A" then
+			if tapCount == 1 then
+				local ok, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
+				local isRepairable = false
+				if ok and targetType == "unit" and targetID then
+					local hp, maxHP, _, _, buildProgress = Spring.GetUnitHealth(targetID)
+					if hp and maxHP and (hp < maxHP or (buildProgress and buildProgress < 1.0)) then
+						local myAllyTeam = type(spGetMyAllyTeamID) == "function" and spGetMyAllyTeamID() or -1
+						local unitAllyTeam = type(Spring.GetUnitAllyTeam) == "function" and Spring.GetUnitAllyTeam(targetID) or -2
+						if myAllyTeam == unitAllyTeam then
+							isRepairable = true
+						end
+					end
+				end
+				if isRepairable then
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPAIR or 40, { targetID }, "Repair", "unit")
+				else
+					latchSelectionDebugMessage("Repair target: no valid damaged ally under reticle")
+				end
+			elseif tapCount == 2 then
+				local repairAreaOption = {
+					name = "Repair Area",
+					shortLabel = "Repair Area",
+					cmdID = CMD.REPAIR or 40,
+					kind = "drag_area",
+					dragMode = "repairArea",
+					descriptorSource = "template",
+					colorProfile = "repair",
+					iconLabel = "REPAIR",
+					iconSource = "fallback text"
+				}
+				ControllerCameraTestStageTacticalCommand(repairAreaOption)
+			end
+		elseif btn == "X" then
+			if tapCount == 1 then
+				local ok, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
+				if ok and targetType == "unit" and targetID then
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.RECLAIM or 90, { targetID }, "Reclaim", "unit")
+				elseif ok and targetType == "feature" and targetID then
+					if ControllerCameraTestFeatureIsReclaimable(targetID) then
+						ControllerCameraTestIssueOrderToSelectedUnits(CMD.RECLAIM or 90, { ControllerCameraTestFeatureCommandID(targetID) }, "Reclaim", "feature")
+					else
+						latchSelectionDebugMessage("Reclaim target: feature not reclaimable")
+					end
+				else
+					latchSelectionDebugMessage("Reclaim target: no valid target under reticle")
+				end
+			elseif tapCount == 2 then
+				local reclaimAreaOption = {
+					name = "Reclaim Area",
+					shortLabel = "Reclaim Area",
+					cmdID = CMD.RECLAIM or 90,
+					kind = "drag_area",
+					dragMode = "reclaimArea",
+					descriptorSource = "template",
+					colorProfile = "reclaim",
+					iconLabel = "RECLAIM",
+					iconSource = "fallback text"
+				}
+				ControllerCameraTestStageTacticalCommand(reclaimAreaOption)
+			end
+		elseif btn == "Y" then
+			if tapCount == 1 then
+				if reticleHasWorldTarget and reticleWorldX then
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.PATROL or 15, { reticleWorldX, reticleWorldY, reticleWorldZ }, "Patrol", "point")
+				else
+					latchSelectionDebugMessage("Patrol: no world target under reticle")
+				end
+			elseif tapCount == 2 then
+				local areaMexOption = {
+					name = "Area Mex",
+					shortLabel = "Area Mex",
+					cmdID = 30100,
+					kind = "drag_area",
+					dragMode = "areaMex",
+					descriptorSource = "template",
+					colorProfile = "areaMex",
+					iconLabel = "MEX",
+					iconSource = "fallback text"
+				}
+				ControllerCameraTestStageTacticalCommand(areaMexOption)
+			end
+		elseif btn == "B" then
+			if tapCount == 1 then
+				ControllerCameraTestIssueOrderToSelectedUnits(CMD.STOP or 0, {}, "Stop", "units")
+			elseif tapCount == 2 then
+				local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+				if #selectedUnits > 0 then
+					local firstUnit = selectedUnits[1]
+					local states = type(Spring.GetUnitStates) == "function" and Spring.GetUnitStates(firstUnit)
+					local currentRepeat = states and states["repeat"]
+					local nextVal = currentRepeat and 0 or 1
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPEAT or 115, { nextVal }, "Repeat", nextVal == 1 and "ON" or "OFF", {})
+				end
+			end
+		end
+
+	elseif profile == "combat" then
+		if btn == "A" then
+			if tapCount == 1 then
+				local ok, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
+				local isEnemyUnit = false
+				if ok and targetType == "unit" and targetID then
+					local myAllyTeam = type(spGetMyAllyTeamID) == "function" and spGetMyAllyTeamID() or -1
+					local unitAllyTeam = type(Spring.GetUnitAllyTeam) == "function" and Spring.GetUnitAllyTeam(targetID) or -2
+					if myAllyTeam ~= unitAllyTeam then
+						isEnemyUnit = true
+					end
+				end
+				if isEnemyUnit then
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.ATTACK or 20, { targetID }, "Attack", "enemy unit")
+				elseif reticleHasWorldTarget and reticleWorldX then
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.FIGHT or 16, { reticleWorldX, reticleWorldY, reticleWorldZ }, "Fight", "point")
+				else
+					latchSelectionDebugMessage("Attack/Fight: no target under reticle")
+				end
+			end
+		elseif btn == "X" then
+			if tapCount == 1 then
+				if reticleHasWorldTarget and reticleWorldX then
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.FIGHT or 16, { reticleWorldX, reticleWorldY, reticleWorldZ }, "Fight", "point")
+				else
+					latchSelectionDebugMessage("Fight: no world target under reticle")
+				end
+			end
+		elseif btn == "Y" then
+			if tapCount == 1 then
+				if reticleHasWorldTarget and reticleWorldX then
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.PATROL or 15, { reticleWorldX, reticleWorldY, reticleWorldZ }, "Patrol", "point")
+				else
+					latchSelectionDebugMessage("Patrol: no world target under reticle")
+				end
+			end
+		elseif btn == "B" then
+			if tapCount == 1 then
+				ControllerCameraTestIssueOrderToSelectedUnits(CMD.STOP or 0, {}, "Stop", "units")
+			elseif tapCount == 2 then
+				local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+				if #selectedUnits > 0 then
+					local firstUnit = selectedUnits[1]
+					local states = type(Spring.GetUnitStates) == "function" and Spring.GetUnitStates(firstUnit)
+					local currentRepeat = states and states["repeat"]
+					local nextVal = currentRepeat and 0 or 1
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPEAT or 115, { nextVal }, "Repeat", nextVal == 1 and "ON" or "OFF", {})
+				end
+			end
+		end
 	end
 end
 
@@ -10145,6 +10465,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	end
 
 	ControllerCameraTestUpdateLBTapState()
+	ControllerCameraTestUpdateLBFaceButtonDispatcher(dt)
 	updateSelectionTestActive()
 
 	if ControllerCameraTestHandleStagedTacticalCommandInput() then
@@ -10190,11 +10511,15 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 			elseif xBusy and ControllerCameraTestActionPressed("cancel") then
 				-- Handled inside X handler
 			elseif not areaBusy and not xBusy and ControllerCameraTestActionPressed("cancel") then
-				attemptClearSelection()
+				if not (ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestCanUseLBHotkeys()) then
+					attemptClearSelection()
+				end
 			end
 
 			if not areaBusy and not xBusy and ControllerCameraTestActionPressed("buildRadial") then
-				attemptBuildMenu()
+				if not (ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestCanUseLBHotkeys()) then
+					attemptBuildMenu()
+				end
 			end
 			if not areaBusy and not xBusy then
 				ControllerCameraTestHandleNormalUtilityInput()
@@ -11658,6 +11983,8 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Control Groups: hold Start/Menu overlay | Start+Dpad U/D slot | Start+Dpad L recall | Start+Dpad R same-type/future assign",
 		"Control Groups: Start+L3 clear | Start/Menu uses D-pad/L3 only, not ABXY",
 		"Status: controller mode shows compact factory/constructor activity panel; Y opens its radial",
+		"LB + Face Hotkeys (Builder): A Repair | AA Repair Area | X Reclaim | XX Reclaim Area | Y Patrol | YY Area Mex | B Stop | BB Repeat",
+		"LB + Face Hotkeys (Combat): A Attack/Fight | X Fight | Y Patrol | B Stop | BB Repeat",
 		"System UI: End Controller Settings | Page Up Debug | Page Down Help | Home Reset Settings Defaults",
 		"Fallback UI commands: /luaui cct_debug | cct_help | cct_settings | cct_reset_settings",
 		"Settings UI: D-pad/arrows adjust | LB/RB or Tab categories | A/Enter select | B/Escape close | X/Y reset",
