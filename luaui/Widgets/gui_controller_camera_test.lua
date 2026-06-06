@@ -2258,6 +2258,10 @@ function ControllerCameraTestCanUseLBHotkeys()
 end
 
 function ControllerCameraTestGetSelectionProfile()
+	if ControllerCameraTestSelectionIsAirTransport() then
+		return "air_transport"
+	end
+
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits()
 	if not selectedUnits or #selectedUnits == 0 then
 		return nil
@@ -2945,6 +2949,18 @@ ControllerCameraTestAreaCommandProfiles = ControllerCameraTestAreaCommandProfile
 		color = { 1.0, 0.28, 0.12, 0.72 },
 		centerColor = { 1.0, 0.42, 0.22, 0.96 },
 	},
+	loadArea = {
+		key = "load",
+		label = "LOAD",
+		color = { 0.2, 0.75, 1.0, 0.72 },
+		centerColor = { 0.4, 0.85, 1.0, 0.96 },
+	},
+	unloadArea = {
+		key = "unload",
+		label = "UNLOAD",
+		color = { 0.2, 0.75, 1.0, 0.72 },
+		centerColor = { 0.4, 0.85, 1.0, 0.96 },
+	},
 	genericArea = {
 		key = "generic",
 		label = "AREA",
@@ -3220,6 +3236,10 @@ function ControllerCameraTestGetAreaOptionCommandID(option, mode)
 		return (CMD and CMD.RESTORE) or 110
 	elseif mode == "resurrectArea" then
 		return CMD.RESURRECT
+	elseif mode == "loadArea" then
+		return (CMD and CMD.LOAD_UNITS) or 75
+	elseif mode == "unloadArea" then
+		return (CMD and CMD.UNLOAD_UNITS) or 80
 	end
 	return nil
 end
@@ -4794,35 +4814,43 @@ function ControllerCameraTestTrySmartAssistedCommand(exactTargetType, exactTarge
 	return true
 end
 
-local function IsUnitTransport(unitID)
+local function IsUnitAirTransport(unitID)
 	local uDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(unitID) or nil
 	if not uDefID then return false end
 	local ud = UnitDefs[uDefID]
 	if ud then
-		if (ud.transportCapacity and ud.transportCapacity > 0) or ud.isAirTransporter or ud.isTransporter then
+		if ud.transportCapacity and ud.transportCapacity > 0 and ud.canFly then
+			return true
+		end
+		if (ud.isAirTransporter or (ud.tooltip and ud.tooltip:lower():find("transport aircraft"))) and ud.canFly then
 			return true
 		end
 	end
 	local cmdDescs = type(Spring.GetUnitCmdDescs) == "function" and Spring.GetUnitCmdDescs(unitID) or nil
+	local hasTransportCmds = false
 	if cmdDescs then
 		for i = 1, #cmdDescs do
 			local desc = cmdDescs[i]
 			local cmdID = desc and tonumber(desc.id or desc.cmdID)
 			if cmdID == 75 or cmdID == 80 then
-				return true
+				hasTransportCmds = true
+				break
 			end
 		end
+	end
+	if hasTransportCmds and ud and ud.canFly then
+		return true
 	end
 	return false
 end
 
-local function AreSelectedUnitsTransports()
+function ControllerCameraTestSelectionIsAirTransport()
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
-	if #selectedUnits == 0 then
+	if not selectedUnits or #selectedUnits == 0 then
 		return false
 	end
-	for _, uID in ipairs(selectedUnits) do
-		if not IsUnitTransport(uID) then
+	for _, unitID in ipairs(selectedUnits) do
+		if not IsUnitAirTransport(unitID) then
 			return false
 		end
 	end
@@ -4899,60 +4927,61 @@ local function attemptContextCommand()
 	ControllerCameraTestCommandDebug.smartExactTargetType = ok and tostring(targetType or "none") or "trace failed"
 	ControllerCameraTestCommandDebug.smartExactTargetID = ok and tostring(targetID or "none") or "none"
 
-	-- Transport Smart X Override
-	if AreSelectedUnitsTransports() then
+	-- Dedicated Air Transport Smart X Override
+	if ControllerCameraTestSelectionIsAirTransport() then
 		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
-		if ok and targetType == "unit" and tonumber(targetID) then
-			local targetUnitID = tonumber(targetID)
-			if ControllerCameraTestIsAlliedUnit(targetUnitID) and not IsUnitInSelection(targetUnitID) then
-				local loadCmdID = (CMD and CMD.LOAD_UNITS) or 75
-				local loadParams = { targetUnitID }
-				local orderOptions = ControllerCameraTestGetCommandOptions()
-				local issueOk = false
-				if type(spGiveOrderToUnitArray) == "function" then
-					local pOk, result = pcall(spGiveOrderToUnitArray, selectedUnits, loadCmdID, loadParams, orderOptions)
-					issueOk = pOk and result ~= false
-				else
-					for _, transportID in ipairs(selectedUnits) do
-						pcall(spGiveOrderToUnit, transportID, loadCmdID, loadParams, orderOptions)
+		if #selectedUnits > 0 then
+			if ok and targetType == "unit" and tonumber(targetID) then
+				local targetUnitID = tonumber(targetID)
+				if ControllerCameraTestIsAlliedUnit(targetUnitID) and not IsUnitInSelection(targetUnitID) then
+					local loadCmdID = (CMD and CMD.LOAD_UNITS) or 75
+					local loadParams = { targetUnitID }
+					local orderOptions = ControllerCameraTestGetCommandOptions()
+					local issueOk = false
+					if type(spGiveOrderToUnitArray) == "function" then
+						local pOk, result = pcall(spGiveOrderToUnitArray, selectedUnits, loadCmdID, loadParams, orderOptions)
+						issueOk = pOk and result ~= false
 					end
-					issueOk = true
-				end
-				if issueOk then
-					ControllerCameraTestShowHotkeyFeedback("LOAD UNIT", "utility")
-					ControllerCameraTestCommandDebug.lastResult = "issued Load Unit to transports"
-					ControllerCameraTestCommandDebug.smartChosenAction = "load"
-					return
+					if not issueOk then
+						for _, transportID in ipairs(selectedUnits) do
+							pcall(spGiveOrderToUnit, transportID, loadCmdID, loadParams, orderOptions)
+						end
+						issueOk = true
+					end
+					if issueOk then
+						ControllerCameraTestShowHotkeyFeedback("LOAD UNIT", "utility")
+						ControllerCameraTestCommandDebug.lastResult = "issued Load Unit to air transports"
+						ControllerCameraTestCommandDebug.smartChosenAction = "load"
+						return
+					end
 				end
 			end
-		elseif reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
-			if TransportsHaveCargo(selectedUnits) then
-				local unloadCmdID = GetTransportUnloadCommand(selectedUnits) or (CMD and CMD.UNLOAD_UNITS) or 80
-				local unloadParams
-				if unloadCmdID == 81 then -- CMD.UNLOAD_UNIT
-					unloadParams = { reticleWorldX, reticleWorldY, reticleWorldZ }
-				else -- CMD.UNLOAD_UNITS
-					unloadParams = { reticleWorldX, reticleWorldY, reticleWorldZ, 0 }
-				end
+
+			-- X tap over ground / no unit -> Issue normal Move to reticle ground point.
+			if reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
+				local moveCmdID = (CMD and CMD.MOVE) or 10
+				local moveParams = { reticleWorldX, reticleWorldY, reticleWorldZ }
 				local orderOptions = ControllerCameraTestGetCommandOptions()
 				local issueOk = false
 				if type(spGiveOrderToUnitArray) == "function" then
-					local pOk, result = pcall(spGiveOrderToUnitArray, selectedUnits, unloadCmdID, unloadParams, orderOptions)
+					local pOk, result = pcall(spGiveOrderToUnitArray, selectedUnits, moveCmdID, moveParams, orderOptions)
 					issueOk = pOk and result ~= false
-				else
+				end
+				if not issueOk then
 					for _, transportID in ipairs(selectedUnits) do
-						pcall(spGiveOrderToUnit, transportID, unloadCmdID, unloadParams, orderOptions)
+						pcall(spGiveOrderToUnit, transportID, moveCmdID, moveParams, orderOptions)
 					end
 					issueOk = true
 				end
 				if issueOk then
-					ControllerCameraTestShowHotkeyFeedback("UNLOAD", "utility")
-					ControllerCameraTestCommandDebug.lastResult = "issued Unload to transports"
-					ControllerCameraTestCommandDebug.smartChosenAction = "unload"
+					ControllerCameraTestShowHotkeyFeedback("MOVE", "utility")
+					ControllerCameraTestCommandDebug.lastResult = "issued Move to air transports"
+					ControllerCameraTestCommandDebug.smartChosenAction = "move"
 					return
 				end
 			end
 		end
+		return -- Always return early to bypass normal Smart X behavior and prevent Guard fallback
 	end
 
 	local params = {}
@@ -10048,10 +10077,83 @@ function ControllerCameraTestExecuteLBFaceHoldAction(btn)
 		return
 	end
 
-	if btn == "B" then
-		local cmdID = CMD.WAIT or 5
-		ControllerCameraTestIssueOrderToSelectedUnits(cmdID, {}, "Wait", "units")
-		ControllerCameraTestShowHotkeyFeedback("WAIT", "utility")
+	if profile == "air_transport" then
+		if btn == "X" then
+			-- LB + Hold X = Load Units area radial.
+			if reticleHasWorldTarget and reticleWorldX then
+				local loadAreaOption = {
+					name = "Load Area",
+					shortLabel = "Load Area",
+					cmdID = (CMD and CMD.LOAD_UNITS) or 75,
+					kind = "drag_area",
+					dragMode = "loadArea",
+					descriptorSource = "template",
+					colorProfile = "load",
+					iconLabel = "LOAD",
+					iconSource = "fallback text"
+				}
+				ControllerCameraTestStageTacticalCommand(loadAreaOption)
+				local menu = ControllerCameraTestTacticalMenu
+				local drag = ControllerCameraTestDragCommand
+				drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
+				drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+				drag.active = true
+				drag.mode = loadAreaOption.dragMode
+				drag.cmdID = loadAreaOption.cmdID
+				drag.option = loadAreaOption
+				menu.stagedState = "dragging radius"
+				ControllerCameraTestUpdateAreaCommandDebug("dragging radius", loadAreaOption, 120, 120 * ControllerCameraTestAreaRadiusSensitivity, "center auto-anchored")
+				latchSelectionDebugMessage(loadAreaOption.name .. " center auto-anchored")
+				ControllerCameraTestShowHotkeyFeedback("LOAD AREA", "utility")
+			else
+				latchSelectionDebugMessage("Load Area: no valid world target under reticle")
+			end
+		elseif btn == "A" then
+			-- LB + Hold A = Unload Units area radial.
+			local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+			if TransportsHaveCargo(selectedUnits) then
+				if reticleHasWorldTarget and reticleWorldX then
+					local unloadAreaOption = {
+						name = "Unload Area",
+						shortLabel = "Unload Area",
+						cmdID = (CMD and CMD.UNLOAD_UNITS) or 80,
+						kind = "drag_area",
+						dragMode = "unloadArea",
+						descriptorSource = "template",
+						colorProfile = "unload",
+						iconLabel = "UNLOAD",
+						iconSource = "fallback text"
+					}
+					ControllerCameraTestStageTacticalCommand(unloadAreaOption)
+					local menu = ControllerCameraTestTacticalMenu
+					local drag = ControllerCameraTestDragCommand
+					drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
+					drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+					drag.active = true
+					drag.mode = unloadAreaOption.dragMode
+					drag.cmdID = unloadAreaOption.cmdID
+					drag.option = unloadAreaOption
+					menu.stagedState = "dragging radius"
+					ControllerCameraTestUpdateAreaCommandDebug("dragging radius", unloadAreaOption, 120, 120 * ControllerCameraTestAreaRadiusSensitivity, "center auto-anchored")
+					latchSelectionDebugMessage(unloadAreaOption.name .. " center auto-anchored")
+					ControllerCameraTestShowHotkeyFeedback("UNLOAD AREA", "utility")
+				else
+					latchSelectionDebugMessage("Unload Area: no valid world target under reticle")
+				end
+			else
+				ControllerCameraTestShowHotkeyFeedback("NO CARGO", "utility")
+			end
+		elseif btn == "B" then
+			local cmdID = CMD.WAIT or 5
+			ControllerCameraTestIssueOrderToSelectedUnits(cmdID, {}, "Wait", "units")
+			ControllerCameraTestShowHotkeyFeedback("WAIT", "utility")
+		end
+	else
+		if btn == "B" then
+			local cmdID = CMD.WAIT or 5
+			ControllerCameraTestIssueOrderToSelectedUnits(cmdID, {}, "Wait", "units")
+			ControllerCameraTestShowHotkeyFeedback("WAIT", "utility")
+		end
 	end
 end
 
@@ -10148,6 +10250,64 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 				}
 				ControllerCameraTestStageTacticalCommand(areaMexOption)
 				ControllerCameraTestShowHotkeyFeedback("AREA MEX", "mex")
+			end
+		elseif btn == "B" then
+			if tapCount == 1 then
+				ControllerCameraTestIssueOrderToSelectedUnits(CMD.STOP or 0, {}, "Stop", "units")
+				ControllerCameraTestShowHotkeyFeedback("STOP", "utility")
+			elseif tapCount == 2 then
+				local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+				if #selectedUnits > 0 then
+					local firstUnit = selectedUnits[1]
+					local states = type(Spring.GetUnitStates) == "function" and Spring.GetUnitStates(firstUnit)
+					local currentRepeat = states and states["repeat"]
+					local nextVal = currentRepeat and 0 or 1
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPEAT or 115, { nextVal }, "Repeat", nextVal == 1 and "ON" or "OFF", {})
+					ControllerCameraTestShowHotkeyFeedback("REPEAT", "utility")
+				end
+			end
+		end
+
+	elseif profile == "air_transport" then
+		if btn == "X" then
+			if tapCount == 1 then
+				-- LB + X: Deliberate Load Unit command only.
+				local ok, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
+				if ok and targetType == "unit" and targetID then
+					local targetUnitID = tonumber(targetID)
+					if ControllerCameraTestIsAlliedUnit(targetUnitID) and not IsUnitInSelection(targetUnitID) then
+						local loadCmdID = (CMD and CMD.LOAD_UNITS) or 75
+						local loadParams = { targetUnitID }
+						ControllerCameraTestIssueOrderToSelectedUnits(loadCmdID, loadParams, "Load Unit", "unit")
+						ControllerCameraTestShowHotkeyFeedback("LOAD UNIT", "utility")
+					else
+						ControllerCameraTestShowHotkeyFeedback("NO LOAD TARGET", "utility")
+					end
+				else
+					ControllerCameraTestShowHotkeyFeedback("NO LOAD TARGET", "utility")
+				end
+			end
+		elseif btn == "A" then
+			if tapCount == 1 then
+				-- LB + A: Unload carried unit at reticle ground point.
+				local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+				if TransportsHaveCargo(selectedUnits) then
+					if reticleHasWorldTarget and reticleWorldX then
+						local unloadCmdID = GetTransportUnloadCommand(selectedUnits) or (CMD and CMD.UNLOAD_UNITS) or 80
+						local unloadParams
+						if unloadCmdID == 81 then -- CMD.UNLOAD_UNIT
+							unloadParams = { reticleWorldX, reticleWorldY, reticleWorldZ }
+						else -- CMD.UNLOAD_UNITS
+							unloadParams = { reticleWorldX, reticleWorldY, reticleWorldZ, 0 }
+						end
+						ControllerCameraTestIssueOrderToSelectedUnits(unloadCmdID, unloadParams, "Unload Point", "point")
+						ControllerCameraTestShowHotkeyFeedback("UNLOAD", "utility")
+					else
+						ControllerCameraTestShowHotkeyFeedback("NO UNLOAD", "utility")
+					end
+				else
+					ControllerCameraTestShowHotkeyFeedback("NO CARGO", "utility")
+				end
 			end
 		elseif btn == "B" then
 			if tapCount == 1 then
