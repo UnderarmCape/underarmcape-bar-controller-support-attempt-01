@@ -3684,178 +3684,6 @@ function ControllerCameraTestIssueSingleUnitPathPoint(isFirst)
 	return true
 end
 
-local function SamplePointAlongPath(points, dists, totalLength, targetDist)
-	if #points == 1 then
-		return points[1]
-	end
-	if targetDist <= 0 then
-		return points[1]
-	end
-	if targetDist >= totalLength then
-		return points[#points]
-	end
-	for i = 2, #points do
-		if dists[i] >= targetDist then
-			local dPrev = dists[i-1]
-			local dNext = dists[i]
-			local segLen = dNext - dPrev
-			local t = 0
-			if segLen > 0.0001 then
-				t = (targetDist - dPrev) / segLen
-			end
-			local pPrev = points[i-1]
-			local pNext = points[i]
-			local rx = pPrev[1] + t * (pNext[1] - pPrev[1])
-			local rz = pPrev[3] + t * (pNext[3] - pPrev[3])
-			local ry = Spring.GetGroundHeight(rx, rz)
-			return { rx, ry, rz }
-		end
-	end
-	return points[#points]
-end
-
-function ControllerCameraTestCanStartDrawnPath()
-	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
-	if #selectedUnits <= 1 then
-		return false
-	end
-	if ControllerCameraTestBuildMenu.open then
-		return false
-	end
-	if ControllerCameraTestTacticalMenu.open then
-		return false
-	end
-	if ControllerCameraTestSettingsUI.open then
-		return false
-	end
-	if ControllerCameraTestExternalBindingUI.open then
-		return false
-	end
-	if ControllerCameraTestBuildPlacement.active then
-		return false
-	end
-	if Spring.IsChatOpened and Spring.IsChatOpened() then
-		return false
-	end
-	if ControllerCameraTestDragCommand.active then
-		return false
-	end
-	if ControllerCameraTestTacticalMenu.stagedOption ~= nil then
-		return false
-	end
-	return true
-end
-
-function ControllerCameraTestFinishMultiUnitPath(cmdID)
-	local drag = ControllerCameraTestDragCommand
-	cmdID = cmdID or CMD.MOVE
-
-	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
-	local mobileUnits = {}
-	for _, unitID in ipairs(selectedUnits) do
-		local unitDefID = Spring.GetUnitDefID(unitID)
-		local unitDef = unitDefID and UnitDefs[unitDefID]
-		if unitDef and not unitDef.isBuilding and not unitDef.isFactory then
-			table.insert(mobileUnits, unitID)
-		end
-	end
-
-	local N = #mobileUnits
-	if N == 0 then
-		ControllerCameraTestCancelDrag("no mobile units")
-		return
-	end
-
-	local pts = {}
-	if drag.multiPathPoints then
-		for i = 1, #drag.multiPathPoints do
-			pts[i] = drag.multiPathPoints[i]
-		end
-	end
-
-	if #pts == 0 then
-		ControllerCameraTestCancelDrag("no points captured")
-		return
-	end
-
-	local dists = { 0 }
-	local totalLength = 0
-	for i = 2, #pts do
-		local dx = pts[i][1] - pts[i-1][1]
-		local dz = pts[i][3] - pts[i-1][3]
-		local dist = math.sqrt(dx*dx + dz*dz)
-		totalLength = totalLength + dist
-		dists[i] = totalLength
-	end
-
-	local isClosed = false
-	if totalLength > 100 then
-		local first = pts[1]
-		local last = pts[#pts]
-		local dx = last[1] - first[1]
-		local dz = last[3] - first[3]
-		local firstLastDist = math.sqrt(dx*dx + dz*dz)
-		if firstLastDist < totalLength * 0.25 then
-			isClosed = true
-		end
-	end
-
-	if isClosed then
-		local first = pts[1]
-		local last = pts[#pts]
-		local dx = first[1] - last[1]
-		local dz = first[3] - last[3]
-		local dist = math.sqrt(dx*dx + dz*dz)
-		totalLength = totalLength + dist
-		table.insert(pts, { first[1], first[2], first[3] })
-		dists[#pts] = totalLength
-	end
-
-	local sampledPoints = {}
-	if #pts == 1 or totalLength < 20 then
-		local fp = pts[1]
-		for i = 1, N do
-			table.insert(sampledPoints, { fp[1], fp[2], fp[3] })
-		end
-	else
-		for i = 1, N do
-			local targetDist
-			if isClosed then
-				targetDist = (i - 1) * (totalLength / N)
-			else
-				targetDist = (i - 1) * (totalLength / (N - 1))
-			end
-			local pt = SamplePointAlongPath(pts, dists, totalLength, targetDist)
-			table.insert(sampledPoints, pt)
-		end
-	end
-
-	local isQueueFront = ControllerCameraTestIsQueueFrontModifierActive()
-	local orderOptions = ControllerCameraTestGetCommandOptions()
-
-	if isQueueFront then
-		for i = #sampledPoints, 1, -1 do
-			local pt = sampledPoints[i]
-			local unitID = mobileUnits[i]
-			local insertPos = ControllerCameraTestNextQueueFrontDragInsertPos() or 0
-			pcall(spGiveOrderToUnit, unitID, CMD.INSERT, { insertPos, cmdID, 0, pt[1], pt[2], pt[3] }, { "alt" })
-		end
-	else
-		for i, pt in ipairs(sampledPoints) do
-			local unitID = mobileUnits[i]
-			pcall(spGiveOrderToUnit, unitID, cmdID, { pt[1], pt[2], pt[3] }, orderOptions)
-		end
-	end
-
-	drag.active = false
-	drag.pressActive = false
-	drag.multiPathPoints = {}
-	drag.lastMode = "multiMovePath"
-	drag.lastResult = "issued multi path to " .. tostring(N) .. " units"
-	ControllerCameraTestShowHotkeyFeedback("MOVE PATH SET", "patrol")
-	latchSelectionDebugMessage(drag.lastResult)
-end
-
 function ControllerCameraTestStartSingleUnitPath(unitID)
 	local drag = ControllerCameraTestDragCommand
 	drag.active = true
@@ -4492,16 +4320,12 @@ function ControllerCameraTestCancelDrag(reason)
 	if drag.singleUnitPathActive then
 		drag.singleUnitPathResult = reason or "single path cancelled"
 	end
-	if drag.mode == "multiMovePath" then
-		ControllerCameraTestShowHotkeyFeedback("MOVE PATH CANCEL", "utility")
-	end
 	drag.active = false
 	drag.pressActive = false
 	drag.singleUnitPathActive = false
 	drag.singleUnitPathUnitID = nil
 	drag.lastResult = reason or "cancelled"
 	drag.previewPoints = {}
-	drag.multiPathPoints = {}
 	drag.option = nil
 	drag.cmdID = nil
 	if wasArea then
@@ -9576,29 +9400,14 @@ function ControllerCameraTestHandleNormalXInput(dt)
 		drag.active = false
 		drag.singleUnitPathActive = false
 		drag.singleUnitPathUnitID = nil
-		drag.multiPathPoints = {}
-		if reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
-			table.insert(drag.multiPathPoints, { reticleWorldX, reticleWorldY, reticleWorldZ })
-		end
 	end
 
 	if drag.pressActive and drag.pressButton == "smartAction" and ControllerCameraTestActionDown("smartAction") then
-		local currentHoldThreshold = HOLD_SECONDS
-		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
-		if #selectedUnits > 1 then
-			currentHoldThreshold = 0.20
-		end
-
-		if not drag.active and (debugEventTime - drag.pressStartTime) >= currentHoldThreshold then
+		if not drag.active and (debugEventTime - drag.pressStartTime) >= HOLD_SECONDS then
 			local mobileUnits = ControllerCameraTestGetSelectedMobileUnits()
+			local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 			if #selectedUnits == 1 and #mobileUnits == 1 and reticleHasWorldTarget then
 				ControllerCameraTestStartSingleUnitPath(mobileUnits[1])
-			elseif #selectedUnits > 1 and ControllerCameraTestCanStartDrawnPath() then
-				drag.active = true
-				drag.mode = "multiMovePath"
-				drag.lastResult = "active"
-				ControllerCameraTestShowHotkeyFeedback("MOVE PATH", "patrol")
-				latchSelectionDebugMessage("Multi-unit Move Path Drag started")
 			else
 				drag.active = true
 				drag.mode = "moveLine"
@@ -9606,33 +9415,14 @@ function ControllerCameraTestHandleNormalXInput(dt)
 				latchSelectionDebugMessage("Move Line Drag started")
 			end
 		end
-
-		if drag.active then
-			if drag.mode == "multiMovePath" then
-				if reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
-					local lastPt = drag.multiPathPoints[#drag.multiPathPoints]
-					if lastPt then
-						local dx = reticleWorldX - lastPt[1]
-						local dz = reticleWorldZ - lastPt[3]
-						local spacing = 32
-						if ((dx * dx) + (dz * dz)) >= (spacing * spacing) and #drag.multiPathPoints < 200 then
-							table.insert(drag.multiPathPoints, { reticleWorldX, reticleWorldY, reticleWorldZ })
-						end
-					else
-						table.insert(drag.multiPathPoints, { reticleWorldX, reticleWorldY, reticleWorldZ })
-					end
-				end
-			elseif drag.mode ~= "singleMovePath" then
-				ControllerCameraTestUpdateDragPreview()
-			end
+		if drag.active and drag.mode ~= "singleMovePath" then
+			ControllerCameraTestUpdateDragPreview()
 		end
 	end
 
 	if ControllerCameraTestActionReleased("smartAction") and drag.pressActive and drag.pressButton == "smartAction" then
 		if drag.singleUnitPathActive then
 			ControllerCameraTestFinishSingleUnitPath()
-		elseif drag.active and drag.mode == "multiMovePath" then
-			ControllerCameraTestFinishMultiUnitPath(CMD.MOVE)
 		elseif drag.active then
 			ControllerCameraTestConfirmDragCommand(false)
 		else
@@ -13315,80 +13105,6 @@ function widget:DrawWorld()
 						gl.DrawGroundCircle(pt[1], py, pt[3], 24, 16)
 					end
 				end
-			end
-		end
-	-- Multi-unit Controller-native drawn path preview
-	if drag and drag.active and drag.mode == "multiMovePath" and drag.multiPathPoints then
-		gl.LineWidth(2.5)
-		gl.Color(0.2, 0.75, 1.0, 0.6) -- Cyan/Blue move path color (low/medium opacity)
-
-		-- Draw the path line/curve
-		gl.BeginEnd(GL.LINE_STRIP, function()
-			for _, pt in ipairs(drag.multiPathPoints) do
-				gl.Vertex(pt[1], pt[2] or Spring.GetGroundHeight(pt[1], pt[3]), pt[3])
-			end
-		end)
-
-		-- Draw sampled unit destination points (dots)
-		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
-		local mobileUnits = {}
-		for _, unitID in ipairs(selectedUnits) do
-			local unitDefID = Spring.GetUnitDefID(unitID)
-			local unitDef = unitDefID and UnitDefs[unitDefID]
-			if unitDef and not unitDef.isBuilding and not unitDef.isFactory then
-				table.insert(mobileUnits, unitID)
-			end
-		end
-		local N = #mobileUnits
-
-		if N > 1 and #drag.multiPathPoints >= 2 then
-			local dists = { 0 }
-			local totalLength = 0
-			local pts = {}
-			for i = 1, #drag.multiPathPoints do
-				pts[i] = drag.multiPathPoints[i]
-			end
-			for i = 2, #pts do
-				local dx = pts[i][1] - pts[i-1][1]
-				local dz = pts[i][3] - pts[i-1][3]
-				local dist = math.sqrt(dx*dx + dz*dz)
-				totalLength = totalLength + dist
-				dists[i] = totalLength
-			end
-
-			local isClosed = false
-			if totalLength > 100 then
-				local first = pts[1]
-				local last = pts[#pts]
-				local dx = last[1] - first[1]
-				local dz = last[3] - first[3]
-				local firstLastDist = math.sqrt(dx*dx + dz*dz)
-				if firstLastDist < totalLength * 0.25 then
-					isClosed = true
-				end
-			end
-
-			if isClosed then
-				local first = pts[1]
-				local last = pts[#pts]
-				local dx = first[1] - last[1]
-				local dz = first[3] - last[3]
-				local dist = math.sqrt(dx*dx + dz*dz)
-				totalLength = totalLength + dist
-				table.insert(pts, { first[1], first[2], first[3] })
-				dists[#pts] = totalLength
-			end
-
-			gl.Color(0.2, 0.75, 1.0, 0.8)
-			for i = 1, N do
-				local targetDist
-				if isClosed then
-					targetDist = (i - 1) * (totalLength / N)
-				else
-					targetDist = (i - 1) * (totalLength / (N - 1))
-				end
-				local opt = SamplePointAlongPath(pts, dists, totalLength, targetDist)
-				gl.DrawGroundCircle(opt[1], opt[2], opt[3], 16, 16)
 			end
 		end
 	end
