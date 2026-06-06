@@ -4794,6 +4794,73 @@ function ControllerCameraTestTrySmartAssistedCommand(exactTargetType, exactTarge
 	return true
 end
 
+local function IsUnitTransport(unitID)
+	local uDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(unitID) or nil
+	if not uDefID then return false end
+	local ud = UnitDefs[uDefID]
+	if ud then
+		if (ud.transportCapacity and ud.transportCapacity > 0) or ud.isAirTransporter or ud.isTransporter then
+			return true
+		end
+	end
+	local cmdDescs = type(Spring.GetUnitCmdDescs) == "function" and Spring.GetUnitCmdDescs(unitID) or nil
+	if cmdDescs then
+		for i = 1, #cmdDescs do
+			local desc = cmdDescs[i]
+			local cmdID = desc and tonumber(desc.id or desc.cmdID)
+			if cmdID == 75 or cmdID == 80 then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function AreSelectedUnitsTransports()
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if #selectedUnits == 0 then
+		return false
+	end
+	for _, uID in ipairs(selectedUnits) do
+		if not IsUnitTransport(uID) then
+			return false
+		end
+	end
+	return true
+end
+
+local function TransportsHaveCargo(transports)
+	for _, uID in ipairs(transports) do
+		if type(Spring.GetUnitIsTransporting) == "function" then
+			local cargo = Spring.GetUnitIsTransporting(uID)
+			if type(cargo) == "table" and #cargo > 0 then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function GetTransportUnloadCommand(transports)
+	local descs = type(Spring.GetActiveCmdDescs) == "function" and Spring.GetActiveCmdDescs() or {}
+	local hasUnloadUnits = false
+	local hasUnloadUnit = false
+	for _, desc in ipairs(descs) do
+		local cmdID = desc and tonumber(desc.id or desc.cmdID)
+		if cmdID == 80 then
+			hasUnloadUnits = true
+		elseif cmdID == 81 then
+			hasUnloadUnit = true
+		end
+	end
+	if hasUnloadUnit then
+		return 81
+	elseif hasUnloadUnits then
+		return 80
+	end
+	return nil
+end
+
 local function attemptContextCommand()
 	local cmdID = 10 -- Fallback to Move (CMD.MOVE)
 	local cmdName = "Move"
@@ -4831,6 +4898,63 @@ local function attemptContextCommand()
 
 	ControllerCameraTestCommandDebug.smartExactTargetType = ok and tostring(targetType or "none") or "trace failed"
 	ControllerCameraTestCommandDebug.smartExactTargetID = ok and tostring(targetID or "none") or "none"
+
+	-- Transport Smart X Override
+	if AreSelectedUnitsTransports() then
+		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+		if ok and targetType == "unit" and tonumber(targetID) then
+			local targetUnitID = tonumber(targetID)
+			if ControllerCameraTestIsAlliedUnit(targetUnitID) and not IsUnitInSelection(targetUnitID) then
+				local loadCmdID = (CMD and CMD.LOAD_UNITS) or 75
+				local loadParams = { targetUnitID }
+				local orderOptions = ControllerCameraTestGetCommandOptions()
+				local issueOk = false
+				if type(spGiveOrderToUnitArray) == "function" then
+					local pOk, result = pcall(spGiveOrderToUnitArray, selectedUnits, loadCmdID, loadParams, orderOptions)
+					issueOk = pOk and result ~= false
+				else
+					for _, transportID in ipairs(selectedUnits) do
+						pcall(spGiveOrderToUnit, transportID, loadCmdID, loadParams, orderOptions)
+					end
+					issueOk = true
+				end
+				if issueOk then
+					ControllerCameraTestShowHotkeyFeedback("LOAD UNIT", "utility")
+					ControllerCameraTestCommandDebug.lastResult = "issued Load Unit to transports"
+					ControllerCameraTestCommandDebug.smartChosenAction = "load"
+					return
+				end
+			end
+		elseif reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
+			if TransportsHaveCargo(selectedUnits) then
+				local unloadCmdID = GetTransportUnloadCommand(selectedUnits) or (CMD and CMD.UNLOAD_UNITS) or 80
+				local unloadParams
+				if unloadCmdID == 81 then -- CMD.UNLOAD_UNIT
+					unloadParams = { reticleWorldX, reticleWorldY, reticleWorldZ }
+				else -- CMD.UNLOAD_UNITS
+					unloadParams = { reticleWorldX, reticleWorldY, reticleWorldZ, 0 }
+				end
+				local orderOptions = ControllerCameraTestGetCommandOptions()
+				local issueOk = false
+				if type(spGiveOrderToUnitArray) == "function" then
+					local pOk, result = pcall(spGiveOrderToUnitArray, selectedUnits, unloadCmdID, unloadParams, orderOptions)
+					issueOk = pOk and result ~= false
+				else
+					for _, transportID in ipairs(selectedUnits) do
+						pcall(spGiveOrderToUnit, transportID, unloadCmdID, unloadParams, orderOptions)
+					end
+					issueOk = true
+				end
+				if issueOk then
+					ControllerCameraTestShowHotkeyFeedback("UNLOAD", "utility")
+					ControllerCameraTestCommandDebug.lastResult = "issued Unload to transports"
+					ControllerCameraTestCommandDebug.smartChosenAction = "unload"
+					return
+				end
+			end
+		end
+	end
+
 	local params = {}
 	local targetString = "unknown"
 
