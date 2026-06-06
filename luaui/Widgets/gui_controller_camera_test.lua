@@ -39,6 +39,7 @@ local function serializeTable(t)
 end
 
 local lastIssuedCommand = "none"
+local ControllerCameraTestDrawSelectedUnitGreenCircle = false
 --------------------------------------------------------------------------------
 -- SECTION: State tables and settings defaults
 --------------------------------------------------------------------------------
@@ -13277,7 +13278,7 @@ function widget:DrawWorld()
 		end
 	end
 
-	if type(spGetSelectedUnits) == "function" and type(spGetUnitPosition) == "function" then
+	if ControllerCameraTestDrawSelectedUnitGreenCircle and type(spGetSelectedUnits) == "function" and type(spGetUnitPosition) == "function" then
 		local selectedUnits = spGetSelectedUnits()
 		if selectedUnits and #selectedUnits > 0 then
 			gl.LineWidth(2.5)
