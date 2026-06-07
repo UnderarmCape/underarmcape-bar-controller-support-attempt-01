@@ -11325,7 +11325,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	if Spring.GetGameFrame() <= 0 or controllerMouseModeActive then
 		if Spring.GetGameFrame() <= 0 then
 			ControllerCameraTestLayerDebug.modeSummary = "pregame"
-			activeButtonLayoutSummary = "Pregame: Right Stick cursor, A/X Click/Place"
+			activeButtonLayoutSummary = "Pregame: RS cursor | LB+RS rotate/tilt | LB+LT+RS Y zoom | A/X Click/Place"
 		else
 			ControllerCameraTestLayerDebug.modeSummary = "controller mouse mode"
 			activeButtonLayoutSummary = "Mouse Mode: Right Stick cursor, A/X Click"
@@ -11592,6 +11592,49 @@ function ControllerCameraTestUpdateCameraControls(dt)
 	end
 end
 
+function ControllerCameraTestUpdatePregameCameraControls(dt)
+	if Spring.GetGameFrame() > 0
+		or ControllerCameraTestSettingsUI.open
+		or ControllerCameraTestIsGameplayInputBlocked()
+	then
+		return false
+	end
+
+	local lbHeld = ControllerCameraTestActionDown("pitchModifier")
+	lbCameraModifierActive = lbHeld
+	if not lbHeld then
+		return false
+	end
+
+	local curve = ControllerCameraTestSettings.stickCurve or 1.175
+	local rotationInput = ControllerCameraTestApplyInputCurve(pregameRawRightX or 0, curve)
+	local verticalInput = ControllerCameraTestApplyInputCurve(-(pregameRawRightY or 0), curve)
+	local zoomModifierActive = (normalizedLeftTrigger or 0) > 0.35
+	local zoomInput = zoomModifierActive and verticalInput or 0
+	local pitchInput = zoomModifierActive and 0 or verticalInput
+	if zoomModifierActive then
+		rotationInput = 0
+	end
+
+	panActive = false
+	zoomActive = zoomInput ~= 0
+	rotationActive = rotationInput ~= 0
+	pitchActive = pitchInput ~= 0
+	rightStickYMode = zoomModifierActive and "pregame zoom" or "pregame tilt"
+
+	if rotationActive or pitchActive or zoomActive then
+		ControllerCameraTestCycleDebug.lbHadPitchMotion = true
+		applyCameraInput(0, 0, zoomInput, rotationInput, pitchInput, 1, 1, dt)
+	elseif spGetCameraState then
+		zoomMethod = "none"
+		rotationMethod = "none"
+		pitchMethod = "none"
+		updateCameraDebug(spGetCameraState())
+	end
+
+	return true
+end
+
 function ControllerCameraTestCycleMouseModeSpeed()
 	ControllerCameraTestMouseModeSpeedPresetIndex = (ControllerCameraTestMouseModeSpeedPresetIndex % #ControllerCameraTestMouseModeSpeedPresets) + 1
 	local preset = ControllerCameraTestMouseModeSpeedPresets[ControllerCameraTestMouseModeSpeedPresetIndex]
@@ -11655,8 +11698,9 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 
 	ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	ControllerCameraTestUpdateMouseModeControls(dt)
+	local pregameCameraModifierActive = ControllerCameraTestUpdatePregameCameraControls(dt)
 
-	if (Spring.GetGameFrame() <= 0 or controllerMouseModeActive) and controllerMode then
+	if (Spring.GetGameFrame() <= 0 or controllerMouseModeActive) and controllerMode and not pregameCameraModifierActive then
 		local rxStick = pregameRawRightX or 0
 		local ryStick = pregameRawRightY or 0
 		if math.abs(rxStick) > 0.1 or math.abs(ryStick) > 0.1 then
@@ -11689,7 +11733,9 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestTacticalMenu.open then
 		ControllerCameraTestUpdateTacticalStickSelection()
 	end
-	ControllerCameraTestUpdateCameraControls(dt)
+	if not pregameCameraModifierActive then
+		ControllerCameraTestUpdateCameraControls(dt)
+	end
 	updateReticleWorldTarget()
 	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestDragCommand.active then
 		pcall(ControllerCameraTestUpdateDragPreview)
