@@ -11665,9 +11665,13 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 				and ControllerCameraTestMouseModeSpeedPresets[ControllerCameraTestMouseModeSpeedPresetIndex].multiplier
 				or 1
 			local cursorSpeed = CONTROLLER_MOUSE_CURSOR_SPEED * speedMultiplier
-			local newX = clamp(mouseX + rxStick * cursorSpeed, 0, viewSizeX)
-			local newY = clamp(mouseY - ryStick * cursorSpeed, 0, viewSizeY)
-			if type(spWarpMouse) == "function" then
+			local maxMouseX = controllerMouseModeActive and math.max(0, viewSizeX - 1) or viewSizeX
+			local maxMouseY = controllerMouseModeActive and math.max(0, viewSizeY - 1) or viewSizeY
+			local newX = clamp(mouseX + rxStick * cursorSpeed, 0, maxMouseX)
+			local newY = clamp(mouseY - ryStick * cursorSpeed, 0, maxMouseY)
+			if type(spWarpMouse) == "function"
+				and (not controllerMouseModeActive or newX ~= mouseX or newY ~= mouseY)
+			then
 				spWarpMouse(newX, newY)
 			end
 		end
