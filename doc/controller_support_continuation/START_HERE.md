@@ -1,10 +1,13 @@
 # BAR Xbox Controller Support - Start Here
 
-Read this first.
+Read `ACTIVE_CONTINUATION_BIBLE.md` first. It is the current source of truth.
 
-The active source of truth is `ACTIVE_CONTINUATION_BIBLE.md`.
-Do not read old archived context unless investigating regressions or historical decisions.
-This pack is for v0.4.5 stable continuation.
+v0.4.6 is the current stable release line and supersedes the v0.4.5 AIO.
+Do not read archived context unless investigating a regression or historical
+decision.
 
-## Current GitHub Release URL
-- https://github.com/UnderarmCape/underarmcape-bar-controller-support-attempt-01/releases/tag/controller-support-v0.4.5-incremental-transport-polish
+Repository:
+https://github.com/UnderarmCape/underarmcape-bar-controller-support-attempt-01
+
+Release tag:
+`controller-support-v0.4.6-aio-skirmish-readiness`

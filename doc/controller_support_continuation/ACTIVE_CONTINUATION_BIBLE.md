@@ -1,105 +1,101 @@
-# Active AI Continuation Bible - BAR Xbox Controller Support
+# Active Continuation Bible - BAR Xbox Controller Support
 
-This document is the active source of truth and handoff document for the development of Xbox Controller Support for Beyond All Reason (BAR).
+This is the active source of truth for continuing BAR Xbox Controller Support.
 
----
+## Current Stable Version
 
-## 1. Current Stable Version
-- **Version**: v0.4.5 Incremental Update (Lua-only)
-- **Engine Dependency**: Requires v0.4.3 AIO clean installer or a controller-enabled custom Recoil engine.
+- Version: v0.4.6 Skirmish Readiness
+- Branch: `controller/v0.4.6-skirmish-readiness`
+- AIO tag: `controller-support-v0.4.6-aio-skirmish-readiness`
+- Engine dependency: controller-enabled Recoil 2025.06.24 from the prior AIO
+- v0.4.5 AIO status: superseded by the v0.4.6 AIO
 
----
+No engine code was changed or compiled for v0.4.6.
 
-## 2. Current GitHub Release Links
-- **GitHub Repository**: https://github.com/UnderarmCape/underarmcape-bar-controller-support-attempt-01
-- **Release Page**: https://github.com/UnderarmCape/underarmcape-bar-controller-support-attempt-01/releases/tag/controller-support-v0.4.5-incremental-transport-polish
+## Required Active Lua Files
 
----
+All five files are required in `luaui/Widgets`:
 
-## 3. Required Files and Why They Exist
-The continuation pack contains the following core files in `luaui/Widgets/`:
-- **`gui_controller_camera_test.lua`**: The main controller support widget. It handles input bindings, joystick translation, radial menus, and context-sensitive action dispatching.
-- **`cmd_area_mex.lua`**: Modified vanilla BAR widget. It acts as an API bridge for controller-driven Area Metal Extractors, exposing `WG.controllerAreaMex.issueArea(x, y, z, radius, opts)`.
-- **`gui_controller_bindings_ui.lua`**: Renders the in-game Controller Bindings configuration overlay/UI.
-- **`gui_controller_smartx_mouse_audit.lua`**: A diagnostic auditing widget used to trace vanilla context commands and assist with controller input debugging.
+- `gui_controller_camera_test.lua`: main controller logic, camera controls,
+  radials, bindings, selection, command routing, Mouse Mode, and feedback.
+- `gui_pregameui.lua`: exposes the small `WG.pregameui` owner API used for
+  controller-safe Ready/Lock activation. Do not remove it until that API is
+  upstreamed or replaced.
+- `cmd_area_mex.lua`: exposes
+  `WG.controllerAreaMex.issueArea(x, y, z, radius, opts)`. Do not remove it
+  until the Area Mex API is upstreamed.
+- `gui_controller_bindings_ui.lua`: controller bindings overlay.
+- `gui_controller_smartx_mouse_audit.lua`: Smart X targeting diagnostic.
 
----
+## v0.4.6 Feature Set
 
-## 4. Current Controller Feature Set
-The v0.4.5 release supports a robust controller-native gameplay profile:
-- **Dedicated Air Transport Controls**: Bypasses normal Smart X logic when air transports are exclusively selected:
-  - **X Tap over allied unit**: Issues `LOAD UNIT` (CMD 75) + `LOAD UNIT` toast.
-  - **X Tap over ground**: Issues `MOVE` (CMD 10) + `MOVE` toast.
-  - **LB + X**: Issues deliberate `LOAD UNIT` if pointing at a pickup-capable allied unit, or fails safely (triggers `NO LOAD TARGET` toast; no move/guard fallback).
-  - **LB + Hold X**: Starts `Load Area` auto-anchored radial command + `LOAD AREA` toast.
-  - **LB + A**: Issues Unload point command if cargo is present + `UNLOAD` toast; empty transport fails safely (triggers `NO CARGO` / `NO UNLOAD` toast).
-  - **LB + Hold A**: Starts `Unload Area` auto-anchored radial command + `UNLOAD AREA` toast.
-- **Builder Area Commands**:
-  - **Builder LB + A**: Repair Area auto-anchor radial.
-  - **Builder LB + X**: Reclaim Area auto-anchor radial.
-- **Build Placement Polish**:
-  - Slow/Full panning toggle for build placement.
-  - Removed `[X] Stay` option from build placement UI.
-- **Command Toast Feedback**: Visual feedback toasts appear once per action without frame-level spamming.
-- **Affordability Adjustments**: Unaffordable build items are kept readable, and flickering is reduced via caching.
-- **Removed Unit Highlight**: Gated the redundant extra green selected-unit highlight circle drawn by the controller widget, leaving only the native white/colored BAR selection shapes.
-- **Other Controls**:
-  - **LB + Hold B**: Wait.
-  - **Combat LB + X**: Attack target/ground.
-  - **D-pad Down**: Select commander.
-  - **A Double-Tap**: Select same unit type on screen.
-  - **Build/Factory B/X**: Correct queue removal.
-  - **Balanced RTS**: Preset has been completely removed.
+- Pregame right stick cursor.
+- A/X commander placement and Ready activation.
+- Controller Mouse Mode with LuaUI click routing.
+- Back + Start Mouse Mode toggle.
+- Back tap cycles SLOW, DEFAULT, MEDIUM, and FAST cursor presets.
+- Mouse Mode cursor clamps at screen edges without recenter or camera edge-pan.
+- Pregame LB + right stick camera rotation and tilt.
+- Pregame LB + LT + right stick Y camera zoom.
+- Build and factory radial center information with translated role text and
+  UnitDef/WeaponDef stats.
+- Factory insert-to-front using the native build command with Alt behavior.
+- T2 metal extractor and geothermal Smart X upgrades.
+- Build spacing memory and slow-pan placement default.
+- Dedicated air transport load/unload controls from v0.4.5.
+- Builder Repair/Reclaim area auto-anchor controls.
+- Command Toast feedback.
+- Area Mex controller radial.
+- D-pad Down commander selection and A double-tap same-type selection.
 
----
+## Stable Binding Summary
 
-## 5. Current Binding Map
-- **Left Stick**: Pan camera
-- **Right Stick**: Rotate and pitch camera / resize command radius
-- **D-pad Down**: Select Commander
-- **A**: Confirm / Select / Double-tap for same unit selection
-- **B**: Cancel / Stop / Wait (Hold)
-- **X (smartAction)**: Context-sensitive actions (Smart X)
-- **LB**: Hotkey modifier
-- **RT**: Queue/append modifier (Shift equivalent)
-- **LT**: Queue-front modifier (Ctrl/Insert equivalent)
+- Left Stick: camera pan
+- Right Stick: gameplay camera or contextual radius control
+- Pregame Right Stick: cursor
+- Pregame LB + Right Stick: rotate/tilt
+- Pregame LB + LT + Right Stick Y: zoom
+- A: select/confirm/place
+- B: cancel/stop/wait context
+- X: Smart X context action
+- LB: camera/hotkey modifier
+- RT: queue/append modifier
+- LT: queue-front/insert modifier
+- Back + Start: Mouse Mode toggle
+- Back tap in Mouse Mode: cursor speed cycle
 
----
+## Hard Safety Rules
 
-## 6. Current Install/Test Procedure
-Install folder:
-`C:\Users\kaili\AppData\Local\Programs\Beyond-All-Reason\data\games\BAR.sdd\luaui\Widgets`
+- Do not reimplement Area Mex internals in the controller widget. Route through
+  `WG.controllerAreaMex.issueArea(...)`.
+- Do not remove `cmd_area_mex.lua` until the upstream API is accepted.
+- Do not remove `gui_pregameui.lua` until its owner API is upstreamed or
+  replaced.
+- Do not reintroduce multi-unit X freehand/drawn-path movement on stable.
+- Do not alter factory insert without a dedicated regression task.
+- Do not alter T2 mex/geo Smart X without a dedicated regression task.
+- Do not edit or rebuild the engine for Lua-only releases.
+- Do not push to official BAR or Recoil remotes.
+- Do not overwrite old release assets.
 
-1. Run the v0.4.3 AIO installer first to set up the custom engine.
-2. Extract the widgets from the `BAR_Controller_Support_v0.4.5_INCREMENTAL_LUA_WIDGETS.zip` package.
-3. Copy the files into the install folder, overwriting matching files.
-4. Launch BAR and test in **Singleplayer -> Beyond All Reason Dev**.
+## Known Limitations
 
----
+- The custom controller-enabled engine remains required.
+- Multiplayer remains limited until engine support is upstreamed and adopted.
+- In-game LuaUI click dispatch cannot control Chobby/LuaMenu overlays or native
+  engine UI.
+- Multi-unit X freehand movement remains disabled.
 
-## 7. Known Deferred Work
-- **Multi-Unit X Drawn-Path Movement**: Reverted because the experimental implementation caused loading failures. It must only be re-attempted on separate experimental branches.
-- **Upstream Integration**: Merging the `cmd_area_mex.lua` API bridge directly into vanilla BAR to remove the need for shipping a modified version.
+## Upstream Status
 
----
+BAR Area Mex API PR:
+https://github.com/beyond-all-reason/Beyond-All-Reason/pull/7874
 
-## 8. Hard Safety Rules for Future AI
-- **Do not reimplement Area Mex internals** inside `gui_controller_camera_test.lua`. Always route via `WG.controllerAreaMex.issueArea(...)`.
-- **Do not reintroduce multi-unit X drawn-path movement** into the stable branch.
-- **Do not edit engine files** for Lua-only releases.
-- **Do not modify installer BAT files** unless explicitly tasked.
-- **Do not push to official upstream BAR** or RecoilEngine remotes.
-- **Do not overwrite v0.4.3/v0.4.4/v0.4.5 release assets**.
+Recoil controller input support remains separate.
 
----
+## Recommended Next Work
 
-## 9. Upstream PR Roadmap Summary
-1. **Recoil Engine PR**: Upstream native controller input APIs to standard Recoil engine.
-2. **BAR Lua PR**: Merge the `WG.controllerAreaMex.issueArea(...)` hook into vanilla `cmd_area_mex.lua`.
-3. **Future BAR UI PRs**: Introduce formal controller command metadata and command libraries.
-
----
-
-## 10. Next Recommended Work
-- Create a clean PR for the `cmd_area_mex.lua` bridge into the main BAR repository.
-- Investigate clean custom-formation hooks inside vanilla to see if multi-unit path movement can be implemented cleanly on a separate experimental branch.
+1. Complete AIO `--payload-check` and clean-install smoke tests.
+2. Run the v0.4.6 manual regression checklist.
+3. Continue upstream API work without removing local compatibility files until
+   upstream adoption is confirmed.
