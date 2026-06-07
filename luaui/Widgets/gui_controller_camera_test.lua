@@ -2275,6 +2275,14 @@ function ControllerCameraTestGetSelectionProfile()
 	if not selectedUnits or #selectedUnits == 0 then
 		return nil
 	end
+
+	for _, unitID in ipairs(selectedUnits) do
+		local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
+		if type(unitDef) == "table" and unitDef.isFactory then
+			return "factory"
+		end
+	end
+
 	for _, unitID in ipairs(selectedUnits) do
 		if ControllerCameraTestIsCommanderUnit(unitID) then
 			return "builder"
@@ -6952,9 +6960,11 @@ ControllerCameraTestTacticalCommandTemplates = ControllerCameraTestTacticalComma
 	{ name = "Fire State", shortLabel = "Fire State", cmdID = CMD.FIRESTATE or 20, kind = "fire_state_cycle" },
 }
 ControllerCameraTestFactoryTacticalCommandTemplates = ControllerCameraTestFactoryTacticalCommandTemplates or {
-	{ name = "Clear Queue", shortLabel = "Clear Queue", kind = "factory_clear" },
-	{ name = "Repeat Toggle", shortLabel = "Repeat", kind = "factory_repeat" },
+	{ name = "Fight", shortLabel = "Fight", cmdID = CMD.FIGHT, kind = "ground" },
+	{ name = "Patrol", shortLabel = "Patrol", cmdID = CMD.PATROL, kind = "ground" },
 	{ name = "Stop", shortLabel = "Stop", cmdID = CMD.STOP, kind = "none" },
+	{ name = "Wait", shortLabel = "Wait", cmdID = CMD.WAIT, kind = "none" },
+	{ name = "Repeat Toggle", shortLabel = "Repeat", kind = "factory_repeat" },
 }
 
 local TacticalCategories = {
@@ -7471,8 +7481,9 @@ function ControllerCameraTestRebuildTacticalCommandCache(reason)
 	local commands = {}
 
 	if isFactory then
+		local activeCommandLookup, activeCommandDescs = ControllerCameraTestBuildActiveCommandLookup()
 		for _, option in ipairs(ControllerCameraTestFactoryTacticalCommandTemplates) do
-			ControllerCameraTestAppendTacticalCommand(commands, option, nil)
+			ControllerCameraTestAppendTacticalCommand(commands, option, activeCommandLookup)
 		end
 	else
 		local activeCommandLookup, activeCommandDescs = ControllerCameraTestBuildActiveCommandLookup()
@@ -10268,6 +10279,12 @@ function ControllerCameraTestExecuteLBFaceHoldAction(btn)
 			ControllerCameraTestIssueOrderToSelectedUnits(cmdID, {}, "Wait", "units")
 			ControllerCameraTestShowHotkeyFeedback("WAIT", "utility")
 		end
+	elseif profile == "factory" then
+		if btn == "B" then
+			local cmdID = CMD.WAIT or 5
+			ControllerCameraTestIssueOrderToSelectedUnits(cmdID, {}, "Wait", "units")
+			ControllerCameraTestShowHotkeyFeedback("WAIT", "utility")
+		end
 	else
 		if btn == "B" then
 			local cmdID = CMD.WAIT or 5
@@ -10427,6 +10444,42 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 					end
 				else
 					ControllerCameraTestShowHotkeyFeedback("NO CARGO", "utility")
+				end
+			end
+		elseif btn == "B" then
+			if tapCount == 1 then
+				ControllerCameraTestIssueOrderToSelectedUnits(CMD.STOP or 0, {}, "Stop", "units")
+				ControllerCameraTestShowHotkeyFeedback("STOP", "utility")
+			elseif tapCount == 2 then
+				local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+				if #selectedUnits > 0 then
+					local firstUnit = selectedUnits[1]
+					local states = type(Spring.GetUnitStates) == "function" and Spring.GetUnitStates(firstUnit)
+					local currentRepeat = states and states["repeat"]
+					local nextVal = currentRepeat and 0 or 1
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.REPEAT or 115, { nextVal }, "Repeat", nextVal == 1 and "ON" or "OFF", {})
+					ControllerCameraTestShowHotkeyFeedback("REPEAT", "utility")
+				end
+			end
+		end
+
+	elseif profile == "factory" then
+		if btn == "A" or btn == "X" then
+			if tapCount == 1 then
+				if reticleHasWorldTarget and reticleWorldX then
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.FIGHT or 16, { reticleWorldX, reticleWorldY, reticleWorldZ }, "Fight", "point")
+					ControllerCameraTestShowHotkeyFeedback("FIGHT", "attack")
+				else
+					latchSelectionDebugMessage("Fight: no world target under reticle")
+				end
+			end
+		elseif btn == "Y" then
+			if tapCount == 1 then
+				if reticleHasWorldTarget and reticleWorldX then
+					ControllerCameraTestIssueOrderToSelectedUnits(CMD.PATROL or 15, { reticleWorldX, reticleWorldY, reticleWorldZ }, "Patrol", "point")
+					ControllerCameraTestShowHotkeyFeedback("PATROL", "patrol")
+				else
+					latchSelectionDebugMessage("Patrol: no world target under reticle")
 				end
 			end
 		elseif btn == "B" then
