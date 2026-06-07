@@ -12624,6 +12624,186 @@ function ControllerCameraTestDrawControlGroupOverlay()
 	gl.Color(1, 1, 1, 1)
 end
 
+function ControllerCameraTestCleanRadialDescription(text)
+	text = tostring(text or "")
+	text = string.gsub(text, "\255...", "")
+	text = string.gsub(text, "[\r\n]+", " ")
+	text = string.gsub(text, "%s+", " ")
+	return string.gsub(text, "^%s*(.-)%s*$", "%1")
+end
+
+function ControllerCameraTestMeasureRadialText(text, fontSize)
+	if gl.GetTextWidth then
+		local ok, width = pcall(gl.GetTextWidth, tostring(text or ""))
+		if ok and type(width) == "number" then
+			return width * fontSize
+		end
+	end
+	return #tostring(text or "") * fontSize * 0.55
+end
+
+function ControllerCameraTestWrapRadialText(text, maxWidth, fontSize, maxLines)
+	local lines = {}
+	local currentLine = ""
+	text = ControllerCameraTestCleanRadialDescription(text)
+	for word in string.gmatch(text, "%S+") do
+		local candidate = currentLine == "" and word or (currentLine .. " " .. word)
+		if currentLine ~= "" and ControllerCameraTestMeasureRadialText(candidate, fontSize) > maxWidth then
+			lines[#lines + 1] = currentLine
+			currentLine = word
+			if #lines >= maxLines then
+				break
+			end
+		else
+			currentLine = candidate
+		end
+	end
+	if #lines < maxLines and currentLine ~= "" then
+		lines[#lines + 1] = currentLine
+	end
+	if #lines == maxLines and text ~= table.concat(lines, " ") then
+		local lastLine = lines[#lines]
+		while lastLine ~= "" and ControllerCameraTestMeasureRadialText(lastLine .. "...", fontSize) > maxWidth do
+			lastLine = string.gsub(lastLine, "%s+%S+$", "")
+			if not string.find(lastLine, "%s") then
+				break
+			end
+		end
+		lines[#lines] = lastLine .. "..."
+	end
+	return lines
+end
+
+function ControllerCameraTestFormatRadialStatNumber(value)
+	value = tonumber(value)
+	if not value then
+		return nil
+	end
+	if math.abs(value) >= 100 or math.abs(value - math.floor(value + 0.5)) < 0.05 then
+		return string.format("%.0f", value)
+	end
+	return string.format("%.1f", value)
+end
+
+function ControllerCameraTestGetRadialWeaponStats(unitDef)
+	local primaryDPS = nil
+	local primaryReload = nil
+	local maxRange = nil
+	if not unitDef or type(unitDef.weapons) ~= "table" or not WeaponDefs then
+		return primaryDPS, maxRange, primaryReload
+	end
+
+	local armorTypes = Game and Game.armorTypes or {}
+	local defaultArmorIndex = armorTypes and (armorTypes["default"] or 0) or 0
+	local airArmorIndex = armorTypes and armorTypes["vtol"] or nil
+	for _, weapon in ipairs(unitDef.weapons) do
+		local weaponDef = weapon and weapon.weaponDef and WeaponDefs[weapon.weaponDef]
+		local customParams = weaponDef and weaponDef.customParams or {}
+		if weaponDef and customParams.bogus ~= "1" then
+			local range = tonumber(weaponDef.range)
+			if range and range > 0 and (not maxRange or range > maxRange) then
+				maxRange = range
+			end
+			if not primaryDPS and not weaponDef.paralyzer and weaponDef.damages then
+				local defaultDamage = tonumber(weaponDef.damages[defaultArmorIndex]) or 0
+				local airDamage = airArmorIndex and tonumber(weaponDef.damages[airArmorIndex]) or 0
+				local damage = math.max(defaultDamage, airDamage)
+				local reload = weaponDef.stockpile and tonumber(weaponDef.stockpileTime) and (weaponDef.stockpileTime / 30)
+					or tonumber(weaponDef.reload)
+				if damage > 0 and reload and reload > 0 then
+					local salvoSize = tonumber(weaponDef.salvoSize) or 1
+					local projectiles = tonumber(weaponDef.projectiles) or 1
+					primaryDPS = damage * salvoSize * projectiles / reload
+					primaryReload = reload
+				end
+			end
+		end
+	end
+	return primaryDPS, maxRange, primaryReload
+end
+
+function ControllerCameraTestBuildRadialUnitInfo(option)
+	if not option then
+		return nil
+	end
+	local unitDef = option.unitDefID and UnitDefs and UnitDefs[option.unitDefID]
+	local info = {
+		title = option.name or "Unknown unit",
+		description = ControllerCameraTestCleanRadialDescription(option.tooltip),
+		stats = {},
+	}
+	if unitDef then
+		info.title = unitDef.translatedHumanName or unitDef.humanName or unitDef.name or info.title
+		info.description = ControllerCameraTestCleanRadialDescription(
+			unitDef.translatedTooltip or unitDef.tooltip or unitDef.description or option.tooltip
+		)
+	end
+
+	local metalCost = unitDef and unitDef.metalCost or option.metalCost
+	local energyCost = unitDef and unitDef.energyCost or option.energyCost
+	local costText = "Cost"
+	if type(metalCost) == "number" then
+		costText = costText .. "  " .. ControllerCameraTestFormatRadialStatNumber(metalCost) .. " M"
+	end
+	if type(energyCost) == "number" then
+		costText = costText .. " / " .. ControllerCameraTestFormatRadialStatNumber(energyCost) .. " E"
+	end
+	if costText ~= "Cost" then
+		info.stats[#info.stats + 1] = costText
+	end
+
+	if unitDef then
+		if type(unitDef.health) == "number" then
+			info.stats[#info.stats + 1] = "HP  " .. ControllerCameraTestFormatRadialStatNumber(unitDef.health)
+		end
+		local dps, range, reload = ControllerCameraTestGetRadialWeaponStats(unitDef)
+		if dps then
+			info.stats[#info.stats + 1] = "DPS  " .. ControllerCameraTestFormatRadialStatNumber(dps)
+		end
+		if range then
+			info.stats[#info.stats + 1] = "Range  " .. ControllerCameraTestFormatRadialStatNumber(range)
+		end
+		local sight = type(unitDef.sightDistance) == "number" and unitDef.sightDistance or nil
+		local airSight = type(unitDef.airSightDistance) == "number" and unitDef.airSightDistance or nil
+		if sight or airSight then
+			info.stats[#info.stats + 1] = "LOS/Air  "
+				.. (sight and ControllerCameraTestFormatRadialStatNumber(sight) or "-")
+				.. " / "
+				.. (airSight and ControllerCameraTestFormatRadialStatNumber(airSight) or "-")
+		end
+		if reload then
+			info.stats[#info.stats + 1] = "Reload  " .. ControllerCameraTestFormatRadialStatNumber(reload) .. "s"
+		end
+		if type(unitDef.speed) == "number" then
+			info.stats[#info.stats + 1] = "Speed  " .. ControllerCameraTestFormatRadialStatNumber(unitDef.speed)
+		end
+	end
+	return info
+end
+
+function ControllerCameraTestDrawBuildRadialPrompts(cx, cy, radius, iconSize, isFactoryContext, fontSize)
+	local rightX = cx + radius + iconSize * 0.62
+	local leftX = cx - radius - iconSize * 0.62
+	local useRight = rightX + 145 <= viewSizeX or leftX - 145 < 0
+	local promptX = useRight and rightX or leftX
+	local textOptions = useRight and "o" or "ro"
+	local prompts = isFactoryContext
+		and { "[A] +1", "[RT+A] +5", "[X] -1", "[RT+X] -5", "[LT+A] Insert", "[B/Y] Close" }
+		or { "[A] Place", "[X] Quick-place", "[B] Back", "[Y] Close" }
+	local lineHeight = math.max(13, fontSize * 1.25)
+	local promptY = cy + ((#prompts - 1) * lineHeight * 0.5)
+	for index, prompt in ipairs(prompts) do
+		if index == 1 then
+			gl.Color(0.45, 1.0, 0.5, 0.95)
+		elseif string.find(prompt, "Close", 1, true) or string.find(prompt, "Back", 1, true) then
+			gl.Color(1.0, 0.82, 0.35, 0.95)
+		else
+			gl.Color(0.72, 0.9, 1.0, 0.95)
+		end
+		gl.Text(prompt, promptX, promptY - ((index - 1) * lineHeight), fontSize, textOptions)
+	end
+end
+
 function ControllerCameraTestDrawBuildRadial()
 	local menu = ControllerCameraTestBuildMenu
 	if not menu.open then
@@ -12812,89 +12992,110 @@ function ControllerCameraTestDrawBuildRadial()
 	-- 3. Center display details
 	local currentOption = ControllerCameraTestGetRadialCurrentOption()
 	if currentOption then
-		gl.Color(0.2, 0.6, 1, 0.08) -- opacity halved from 0.15 to 0.08
-		drawCircle(cx, cy, radius * 0.45 * (BuildRadialTuning.textScale * 0.6), 30)
+		local info = ControllerCameraTestBuildRadialUnitInfo(currentOption)
+		local panelRadius = math.max(105, math.min(radius * 0.56, radius - iconSize * 0.6))
+		local panelTextScale = math.max(0.75, math.min(1.5, BuildRadialTuning.textScale * radius / 640))
+		local titleSize = math.max(16, 18 * panelTextScale)
+		local descriptionSize = math.max(10, 10 * panelTextScale)
+		local statsSize = math.max(9, 10 * panelTextScale)
+		local labelSize = math.max(8, 8 * panelTextScale)
+		local panelTextWidth = panelRadius * 1.55
 
+		gl.Color(0.015, 0.04, 0.065, 0.88)
+		drawCircle(cx, cy, panelRadius, 40)
+		gl.Color(pageColor.accent[1], pageColor.accent[2], pageColor.accent[3], 0.78)
+		gl.LineWidth(1.5)
+		gl.BeginEnd(GL.LINE_LOOP, function()
+			for i = 0, 40 do
+				local theta = i * (2 * math.pi / 40)
+				gl.Vertex(cx + panelRadius * math.cos(theta), cy + panelRadius * math.sin(theta))
+			end
+		end)
+
+		while titleSize > 14 and ControllerCameraTestMeasureRadialText(info.title, titleSize) > panelTextWidth * 0.9 do
+			titleSize = titleSize - 1
+		end
+		local titleY = cy + panelRadius * 0.66
 		gl.Color(0.82, 0.94, 1, 1)
-		gl.Text(currentOption.name or "unknown", cx, cy + 42 * (BuildRadialTuning.textScale * 0.7), 16 * BuildRadialTuning.textScale, "oc")
+		gl.Text(info.title, cx + 0.8, titleY, titleSize, "oc")
+		gl.Text(info.title, cx, titleY, titleSize, "oc")
 
-		local mCost = currentOption.metalCost or 0
-		local eCost = currentOption.energyCost or 0
-		local aff, mAff, eAff = ControllerCameraTestGetCachedAffordability(currentOption)
+		local titleDividerY = cy + panelRadius * 0.48
+		gl.Color(pageColor.accent[1], pageColor.accent[2], pageColor.accent[3], 0.58)
+		gl.BeginEnd(GL.LINES, function()
+			gl.Vertex(cx - panelRadius * 0.7, titleDividerY)
+			gl.Vertex(cx + panelRadius * 0.7, titleDividerY)
+		end)
 
-		if mCost > 0 and eCost > 0 then
-			if mAff then
-				gl.Color(0.9, 0.8, 0.1, 1)
-			else
-				gl.Color(1, 0.25, 0.2, 1)
-			end
-			gl.Text("M: " .. tostring(mCost), cx - 36 * BuildRadialTuning.textScale, cy + 22 * (BuildRadialTuning.textScale * 0.75), 12 * BuildRadialTuning.textScale, "oc")
-
-			if eAff then
-				gl.Color(0.9, 0.8, 0.1, 1)
-			else
-				gl.Color(1, 0.25, 0.2, 1)
-			end
-			gl.Text("E: " .. tostring(eCost), cx + 36 * BuildRadialTuning.textScale, cy + 22 * (BuildRadialTuning.textScale * 0.75), 12 * BuildRadialTuning.textScale, "oc")
-		elseif mCost > 0 then
-			if mAff then
-				gl.Color(0.9, 0.8, 0.1, 1)
-			else
-				gl.Color(1, 0.25, 0.2, 1)
-			end
-			gl.Text("M: " .. tostring(mCost), cx, cy + 22 * (BuildRadialTuning.textScale * 0.75), 12 * BuildRadialTuning.textScale, "oc")
-		elseif eCost > 0 then
-			if eAff then
-				gl.Color(0.9, 0.8, 0.1, 1)
-			else
-				gl.Color(1, 0.25, 0.2, 1)
-			end
-			gl.Text("E: " .. tostring(eCost), cx, cy + 22 * (BuildRadialTuning.textScale * 0.75), 12 * BuildRadialTuning.textScale, "oc")
+		local descriptionMaxLines = panelRadius < 145 and 2 or 3
+		local descriptionLines = info.description ~= ""
+			and ControllerCameraTestWrapRadialText(info.description, panelTextWidth, descriptionSize, descriptionMaxLines)
+			or {}
+		local roleLabelY = titleDividerY - labelSize * 1.35
+		gl.Color(0.52, 0.78, 0.96, 0.9)
+		gl.Text("ROLE", cx, roleLabelY, labelSize, "oc")
+		local descriptionY = roleLabelY - descriptionSize * 1.35
+		gl.Color(0.78, 0.84, 0.88, 0.96)
+		for index, line in ipairs(descriptionLines) do
+			gl.Text(line, cx, descriptionY - ((index - 1) * descriptionSize * 1.18), descriptionSize, "oc")
 		end
 
-		if isFactoryContext then
-			local qCount = 0
-			if menu.factoryQueueCounts and currentOption.cmdID then
-				qCount = menu.factoryQueueCounts[currentOption.cmdID] or 0
-			end
-			if qCount > 0 then
-				gl.Color(0.4, 0.85, 1, 1)
-				gl.Text("Queued: " .. tostring(qCount), cx, cy + 4 * (BuildRadialTuning.textScale * 0.8), 12 * BuildRadialTuning.textScale, "oc")
+		local descriptionBottom = descriptionY - (math.max(1, #descriptionLines) - 1) * descriptionSize * 1.18
+		local statsDividerY = descriptionBottom - descriptionSize * 0.9
+		gl.Color(pageColor.accent[1], pageColor.accent[2], pageColor.accent[3], 0.42)
+		gl.BeginEnd(GL.LINES, function()
+			gl.Vertex(cx - panelRadius * 0.7, statsDividerY)
+			gl.Vertex(cx + panelRadius * 0.7, statsDividerY)
+		end)
+
+		local statsLabelY = statsDividerY - labelSize * 1.35
+		gl.Color(0.52, 0.78, 0.96, 0.9)
+		gl.Text("STATS", cx, statsLabelY, labelSize, "oc")
+		local statRows = {}
+		if info.stats[1] then
+			statRows[#statRows + 1] = info.stats[1]
+		end
+		if panelRadius >= 145 then
+			for index = 2, #info.stats, 2 do
+				local row = info.stats[index]
+				if info.stats[index + 1] then
+					local pairedRow = row .. "     " .. info.stats[index + 1]
+					if ControllerCameraTestMeasureRadialText(pairedRow, statsSize) <= panelTextWidth then
+						row = pairedRow
+					else
+						statRows[#statRows + 1] = row
+						row = info.stats[index + 1]
+					end
+				end
+				statRows[#statRows + 1] = row
 			end
 		else
-			if currentOption.tooltip and currentOption.tooltip ~= "" then
-				gl.Color(0.7, 0.7, 0.7, 0.8)
-				local tip = string.sub(currentOption.tooltip, 1, 28)
-				if #currentOption.tooltip > 28 then tip = tip .. "..." end
-				gl.Text(tip, cx, cy + 4 * (BuildRadialTuning.textScale * 0.8), 11 * BuildRadialTuning.textScale, "oc")
+			for index = 2, #info.stats do
+				statRows[#statRows + 1] = info.stats[index]
 			end
 		end
 
-		-- Draw context-specific controller hints
-		if isFactoryContext then
-			gl.Color(0.4, 1.0, 0.4, 0.9)
-			gl.Text("[A] +1", cx - 8 * BuildRadialTuning.textScale, cy - 8 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
-			gl.Color(0.2, 0.9, 0.7, 0.9)
-			gl.Text("[RT+A] +5", cx + 8 * BuildRadialTuning.textScale, cy - 8 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
-
-			gl.Color(1.0, 0.4, 0.4, 0.9)
-			gl.Text("[X] -1", cx - 8 * BuildRadialTuning.textScale, cy - 20 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
-			gl.Color(1.0, 0.6, 0.2, 0.9)
-			gl.Text("[RT+X] -5", cx + 8 * BuildRadialTuning.textScale, cy - 20 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
-
-			gl.Color(0.5, 0.8, 1.0, 0.9)
-			gl.Text("[LT+A] Insert", cx, cy - 32 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "oc")
-
-			gl.Color(1.0, 0.9, 0.4, 0.9)
-			gl.Text("[B/Y] Close", cx, cy - 44 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "oc")
-		else
-			gl.Color(0.4, 1.0, 0.4, 0.9)
-			gl.Text("[A] Place", cx - 8 * BuildRadialTuning.textScale, cy - 16 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
-			gl.Color(1.0, 0.4, 0.4, 0.9)
-			gl.Text("[B] Cancel", cx + 8 * BuildRadialTuning.textScale, cy - 16 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
-			gl.Color(1.0, 0.9, 0.4, 0.9)
-			gl.Text("[Y] Close", cx, cy - 30 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "oc")
+		local affordable = ControllerCameraTestGetCachedAffordability(currentOption)
+		local statsY = statsLabelY - statsSize * 1.35
+		for index, row in ipairs(statRows) do
+			if index == 1 and not affordable then
+				gl.Color(1.0, 0.4, 0.32, 1)
+			elseif index == 1 then
+				gl.Color(1.0, 0.84, 0.26, 1)
+			else
+				gl.Color(0.9, 0.94, 0.98, 0.98)
+			end
+			gl.Text(row, cx, statsY - ((index - 1) * statsSize * 1.18), statsSize, "oc")
 		end
+
+		ControllerCameraTestDrawBuildRadialPrompts(
+			cx,
+			cy,
+			radius,
+			iconSize,
+			isFactoryContext,
+			math.max(11, 10 * panelTextScale)
+		)
 	end
 
 	-- 4. Category/Page Indicator
