@@ -5622,8 +5622,20 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	params = type(params) == "table" and params or {}
 
-	local useInsert = (options == nil or #options == 0) and ControllerCameraTestIsQueueFrontModifierActive()
+	local isBuild = type(cmdID) == "number" and cmdID < 0
+	local useInsert = not isBuild and (options == nil or #options == 0) and ControllerCameraTestIsQueueFrontModifierActive()
 	local finalOpts = type(options) == "table" and options or ControllerCameraTestGetCommandOptions()
+
+	-- If it's a build command and queue front is active, ensure we pass "alt" natively instead of CMD.INSERT
+	if isBuild and ControllerCameraTestIsQueueFrontModifierActive() then
+		local hasAlt = false
+		for _, opt in ipairs(finalOpts) do
+			if opt == "alt" then hasAlt = true end
+		end
+		if not hasAlt then
+			finalOpts = { "alt" }
+		end
+	end
 
 	-- INSERT outer options: vanilla cmd_commandinsert uses {"alt"} only.
 	-- Do NOT use {"alt","shift"} - "shift" would append the INSERT cmd itself
@@ -9203,8 +9215,6 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 		local optionsToIssue = orderOptions
 
 		if queueFrontActive then
-			cmdToIssue = CMD.INSERT
-			paramsToIssue = { 0, option.cmdID, 0 }
 			optionsToIssue = { "alt" }
 		end
 
@@ -9654,8 +9664,6 @@ function ControllerCameraTestHandleBuildMenuInput()
 				local optionsToIssue = orderOptions
 
 				if queueFrontActive then
-					cmdToIssue = CMD.INSERT
-					paramsToIssue = { 0, option.cmdID, 0 }
 					optionsToIssue = { "alt" }
 				end
 
