@@ -227,59 +227,65 @@ function widget:GameSetup(state, ready, playerStates)
 
 end
 
-function widget:MousePress(sx, sy)
-	if buttonDrawn then
+local function activatePrimaryAction()
+	if not buttonDrawn then
+		return false
+	end
 
-		-- pressing button element
-		if sx > uiElementRect[1] and sx < uiElementRect[3] and sy > uiElementRect[2] and sy < uiElementRect[4] then
-			-- pressing actual button
-			if sx > buttonRect[1] and sx < buttonRect[3] and sy > buttonRect[2] and sy < buttonRect[4] then
-
-				-- if not pressed on ready
-				if not readied then
-					if not mySpec then
-						if not readied then
-							if isReadyBlocked then
-								return true
-							elseif startPointChosen then
-								pressedReady = true
-								readied = true
-								Spring.SendLuaRulesMsg("ready_to_start_game")
-								-- also default lock player in place
-								locked = true
-								Spring.SendLuaRulesMsg("locking_in_place")
-							else
-								spEcho(Spring.I18N('ui.initialSpawn.choosePoint'))
-							end
-
-						end
-
-					-- substitute
-					elseif eligibleAsSub then
-						offeredAsSub = not offeredAsSub
-						if offeredAsSub then
-							spEcho(Spring.I18N('ui.substitutePlayers.substitutionMessage'))
-						else
-							spEcho(Spring.I18N('ui.substitutePlayers.offerWithdrawn'))
-						end
-						Spring.SendLuaRulesMsg(offeredAsSub and '\144' or '\145')
-					end
-				-- lock position text showing
-				else
-					if locked then
-						locked = false
-						Spring.SendLuaRulesMsg("unlocking_in_place")
-					else
-						locked = true
-						Spring.SendLuaRulesMsg("locking_in_place")
-					end
-				end
-
-				widget:ViewResize(vsx, vsy)
+	local actionName
+	if not readied then
+		if not mySpec then
+			if isReadyBlocked then
+				return true, "BLOCKED"
+			elseif startPointChosen then
+				pressedReady = true
+				readied = true
+				Spring.SendLuaRulesMsg("ready_to_start_game")
+				-- also default lock player in place
+				locked = true
+				Spring.SendLuaRulesMsg("locking_in_place")
+				actionName = "READY"
+			else
+				spEcho(Spring.I18N('ui.initialSpawn.choosePoint'))
+				actionName = "NEED START"
 			end
-			return true
+		-- substitute
+		elseif eligibleAsSub then
+			offeredAsSub = not offeredAsSub
+			if offeredAsSub then
+				spEcho(Spring.I18N('ui.substitutePlayers.substitutionMessage'))
+			else
+				spEcho(Spring.I18N('ui.substitutePlayers.offerWithdrawn'))
+			end
+			Spring.SendLuaRulesMsg(offeredAsSub and '\144' or '\145')
+			actionName = "SUBSTITUTE"
 		end
+	-- lock position text showing
+	else
+		if locked then
+			locked = false
+			Spring.SendLuaRulesMsg("unlocking_in_place")
+			actionName = "UNLOCK"
+		else
+			locked = true
+			Spring.SendLuaRulesMsg("locking_in_place")
+			actionName = "LOCK"
+		end
+	end
 
+	widget:ViewResize(vsx, vsy)
+	return true, actionName
+end
+
+function widget:MousePress(sx, sy)
+	if buttonDrawn
+		and sx > uiElementRect[1] and sx < uiElementRect[3]
+		and sy > uiElementRect[2] and sy < uiElementRect[4]
+	then
+		if sx > buttonRect[1] and sx < buttonRect[3] and sy > buttonRect[2] and sy < buttonRect[4] then
+			activatePrimaryAction()
+		end
+		return true
 	end
 end
 
@@ -332,7 +338,17 @@ function widget:Initialize()
 	widget:ViewResize(vsx, vsy)
 	checkStartPointChosen()
 	
-	WG['pregameui'] = {}
+	WG['pregameui'] = WG['pregameui'] or {}
+	WG['pregameui'].activatePrimaryAction = activatePrimaryAction
+	WG['pregameui'].getPrimaryActionRect = function()
+		if not buttonDrawn then
+			return nil
+		end
+		return {
+			button = { buttonRect[1], buttonRect[2], buttonRect[3], buttonRect[4] },
+			element = { uiElementRect[1], uiElementRect[2], uiElementRect[3], uiElementRect[4] },
+		}
+	end
 	WG['pregameui'].addReadyCondition = function(conditionKey, description)
 		if conditionKey and description then
 			readyBlockedConditions[conditionKey] = description
@@ -515,5 +531,14 @@ function widget:Shutdown()
 			removeUnitShape(id)
 		end
 	end
-	WG['pregameui'] = nil
+	if WG['pregameui'] then
+		WG['pregameui'].activatePrimaryAction = nil
+		WG['pregameui'].getPrimaryActionRect = nil
+		WG['pregameui'].addReadyCondition = nil
+		WG['pregameui'].removeReadyCondition = nil
+		WG['pregameui'].clearAllReadyConditions = nil
+		if not next(WG['pregameui']) then
+			WG['pregameui'] = nil
+		end
+	end
 end
