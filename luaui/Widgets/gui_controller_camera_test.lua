@@ -1892,13 +1892,13 @@ end
 -- SECTION: Reticle/world target helpers
 --------------------------------------------------------------------------------
 local function updateReticleWorldTarget()
-	if not reticleVisible or type(spTraceScreenRay) ~= "function" then
+	if not controllerMode or type(spTraceScreenRay) ~= "function" then
 		resetReticleWorldTarget()
 		return
 	end
 
 	local tx, ty = screenCenterX, screenCenterY
-	if Spring.GetGameFrame() <= 0 then
+	if Spring.GetGameFrame() <= 0 or controllerMouseModeActive then
 		tx, ty = Spring.GetMouseState()
 	end
 
@@ -11053,7 +11053,7 @@ local function drawReticleLines(cx, cy)
 end
 
 local function drawControllerReticle()
-	if not reticleVisible then
+	if not reticleVisible or controllerMouseModeActive then
 		return
 	end
 
@@ -11199,22 +11199,52 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 
 		if ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction") then
 			local mx, my = Spring.GetMouseState()
-			local handled = false
+			local luaHandled = false
+			local rmlHandled = false
+
+			-- 1. Dispatch to LuaUI widgets
 			if type(widgetHandler) == "table" and type(widgetHandler.MousePress) == "function" then
 				local okPress, resultPress = pcall(widgetHandler.MousePress, widgetHandler, mx, my, 1)
 				if okPress and resultPress then
-					handled = true
+					luaHandled = true
 					if type(widgetHandler.MouseRelease) == "function" then
 						pcall(widgetHandler.MouseRelease, widgetHandler, mx, my, 1)
 					end
 				end
 			end
 
-			if handled then
-				local isReadyClick = false
-				if mx and viewSizeX and mx > (viewSizeX * 0.70) and my and viewSizeY and my > (viewSizeY * 0.70) then
-					isReadyClick = true
+			-- 2. Dispatch to RmlUi contexts
+			if RmlUi and type(RmlUi.contexts) == "function" then
+				local contexts = pcall(RmlUi.contexts) and RmlUi.contexts() or {}
+				for _, ctx in ipairs(contexts) do
+					if type(ctx.ProcessMouseMove) == "function" then
+						pcall(ctx.ProcessMouseMove, ctx, mx, my, 0)
+					end
+					if type(ctx.ProcessMouseButtonDown) == "function" then
+						local okDown, resDown = pcall(ctx.ProcessMouseButtonDown, ctx, 0, 0)
+						if okDown and resDown then
+							rmlHandled = true
+						end
+					end
+					if type(ctx.ProcessMouseButtonUp) == "function" then
+						pcall(ctx.ProcessMouseButtonUp, ctx, 0, 0)
+					end
 				end
+			end
+
+			-- 3. Determine overall handled state (including fallback for pregame Ready button region)
+			local handled = luaHandled or rmlHandled
+			local isReadyClick = false
+			if mx and viewSizeX and my and viewSizeY then
+				if mx > (viewSizeX * 0.70) and my > (viewSizeY * 0.70) then
+					isReadyClick = true
+					if Spring.GetGameFrame() <= 0 then
+						handled = true
+					end
+				end
+			end
+
+			if handled then
 				ControllerCameraTestShowHotkeyFeedback(isReadyClick and "READY" or "CLICK", "utility")
 			else
 				if Spring.GetGameFrame() <= 0 then
@@ -11523,7 +11553,7 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 	ControllerCameraTestUpdateQueueFrontDragInsertState()
 	if ControllerCameraTestIsGameplayInputBlocked() then
 		updateReticleWorldTarget()
-		if controllerMode and reticleVisible and type(spWarpMouse) == "function" and Spring.GetGameFrame() > 0 then spWarpMouse(screenCenterX, screenCenterY) end
+		if controllerMode and reticleVisible and type(spWarpMouse) == "function" and Spring.GetGameFrame() > 0 and not controllerMouseModeActive then spWarpMouse(screenCenterX, screenCenterY) end
 		return
 	end
 	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestBuildMenu.open then
@@ -11537,7 +11567,7 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestDragCommand.active then
 		pcall(ControllerCameraTestUpdateDragPreview)
 	end
-	if controllerMode and reticleVisible and type(spWarpMouse) == "function" and Spring.GetGameFrame() > 0 then spWarpMouse(screenCenterX, screenCenterY) end
+	if controllerMode and reticleVisible and type(spWarpMouse) == "function" and Spring.GetGameFrame() > 0 and not controllerMouseModeActive then spWarpMouse(screenCenterX, screenCenterY) end
 end
 
 function ControllerCameraTestUpdateBuildMenuCompact()
