@@ -29,7 +29,7 @@ local spGetSelectedUnits = Spring.GetSelectedUnits
 local spGiveOrderToUnit = Spring.GiveOrderToUnit
 local spGiveOrderToUnitArray = Spring.GiveOrderToUnitArray
 
-local function serializeTable(t)
+function serializeTable(t)
 	if type(t) ~= "table" then return tostring(t) end
 	local s = {}
 	for i = 1, #t do
@@ -243,7 +243,7 @@ ControllerCameraTestDragCommand = ControllerCameraTestDragCommand or {
 local cellTablePool = {}
 local cellTablePoolSize = 0
 
-local function GetCellTable(x, y, z, facing)
+function GetCellTable(x, y, z, facing)
 	if cellTablePoolSize > 0 then
 		local t = cellTablePool[cellTablePoolSize]
 		cellTablePool[cellTablePoolSize] = nil
@@ -258,7 +258,7 @@ local function GetCellTable(x, y, z, facing)
 	end
 end
 
-local function ReleaseCellTable(t)
+function ReleaseCellTable(t)
 	cellTablePoolSize = cellTablePoolSize + 1
 	cellTablePool[cellTablePoolSize] = t
 end
@@ -282,7 +282,7 @@ local lastDragPreviewCache = {
 local lastSelectedUnits = {}
 local lastPreviewWasNative = false
 
-local function CheckSelectedUnitsChanged(current)
+function CheckSelectedUnitsChanged(current)
 	if #current ~= #lastSelectedUnits then
 		return true
 	end
@@ -294,7 +294,7 @@ local function CheckSelectedUnitsChanged(current)
 	return false
 end
 
-local function UpdateSelectedUnitsCache(current)
+function UpdateSelectedUnitsCache(current)
 	for k in pairs(lastSelectedUnits) do
 		lastSelectedUnits[k] = nil
 	end
@@ -303,7 +303,7 @@ local function UpdateSelectedUnitsCache(current)
 	end
 end
 
-local function ClearCachedPreviewPoints()
+function ClearCachedPreviewPoints()
 	local drag = ControllerCameraTestDragCommand
 	if type(drag.previewPoints) == "table" then
 		if not lastPreviewWasNative then
@@ -323,7 +323,7 @@ local function ClearCachedPreviewPoints()
 	lastPreviewWasNative = false
 end
 
-local function ControllerCameraTestClearDragPreviewCache()
+function ControllerCameraTestClearDragPreviewCache()
 	for k in pairs(lastDragPreviewCache) do
 		lastDragPreviewCache[k] = nil
 	end
@@ -1041,6 +1041,9 @@ lastClearSelectionResult = "none"
 selectionDebugMessage = "none"
 selectionDebugExpiration = 0
 controllerMode = false
+controllerMouseModeActive = false
+local backStartHoldTime = 0
+local backStartHoldTriggered = false
 reticleVisible = false
 local lastCompactScaleEnabled = nil
 local lastCompactScaleValue = nil
@@ -1858,8 +1861,10 @@ local function updateMouseInputMode()
 	rightButton = rightButton == true
 
 	if controllerMode then
-		if math.abs(mouseX - screenCenterX) > 5 or math.abs(mouseY - screenCenterY) > 5 then
-			noteMouseInput()
+		if not controllerMouseModeActive and Spring.GetGameFrame() > 0 then
+			if math.abs(mouseX - screenCenterX) > 5 or math.abs(mouseY - screenCenterY) > 5 then
+				noteMouseInput()
+			end
 		end
 	else
 		if mouseStateInitialized then
@@ -5003,6 +5008,105 @@ local function GetTransportUnloadCommand(transports)
 	return nil
 end
 
+function IsT2Builder(builderDef)
+	if type(builderDef) ~= "table" then return false end
+	if builderDef.customParams and builderDef.customParams.techlevel == "2" then
+		return true
+	end
+	if type(builderDef.buildOptions) == "table" then
+		for _, optDefID in ipairs(builderDef.buildOptions) do
+			local optDef = UnitDefs[optDefID]
+			if optDef and (optDef.extractsMetal or 0) > 0 and (optDef.metalCost or 0) > 400 then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+function ControllerCameraTestAttemptT2UpgradeSmartAction(targetUnitID)
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if #selectedUnits == 0 then
+		return false
+	end
+
+	local targetDefID, targetDef = ControllerCameraTestGetUnitDef(targetUnitID)
+	if not targetDef then
+		return false
+	end
+
+	local isMex = (targetDef.extractsMetal or 0) > 0
+	local isGeo = targetDef.needGeo == true
+
+	if not isMex and not isGeo then
+		return false
+	end
+
+	local isT1Mex = isMex and (targetDef.metalCost or 0) < 200
+	local isT1Geo = isGeo and (targetDef.metalCost or 0) < 500
+	if not isT1Mex and not isT1Geo then
+		return false
+	end
+
+	local tx, ty, tz = Spring.GetUnitPosition(targetUnitID)
+	if not tx then
+		return false
+	end
+
+	for _, builderID in ipairs(selectedUnits) do
+		local builderDefID, builderDef = ControllerCameraTestGetUnitDef(builderID)
+		if builderDef and type(builderDef.buildOptions) == "table" then
+			local bestUpgradeOptionID = nil
+			local bestUpgradeMetalCost = targetDef.metalCost or 0
+
+			for _, optDefID in ipairs(builderDef.buildOptions) do
+				local optDef = UnitDefs[optDefID]
+				if optDef then
+					if isMex and (optDef.extractsMetal or 0) > 0 then
+						if optDef.metalCost > bestUpgradeMetalCost then
+							bestUpgradeOptionID = optDefID
+							bestUpgradeMetalCost = optDef.metalCost
+						end
+					elseif isGeo and optDef.needGeo == true then
+						if optDef.metalCost > bestUpgradeMetalCost then
+							bestUpgradeOptionID = optDefID
+							bestUpgradeMetalCost = optDef.metalCost
+						end
+					end
+				end
+			end
+
+			if bestUpgradeOptionID then
+				local buildCmdID = -bestUpgradeOptionID
+				local buildParams = { tx, ty, tz, Spring.GetUnitFacing(targetUnitID) or 0 }
+				local orderOptions = ControllerCameraTestGetCommandOptions()
+
+				local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(buildCmdID, buildParams, isMex and "Upgrade Mex" or "Upgrade Geo", "point", orderOptions)
+				if ok then
+					ControllerCameraTestShowHotkeyFeedback(isMex and "UPGRADE MEX" or "UPGRADE GEO", "utility")
+					return true
+				end
+			end
+		end
+	end
+
+	local hasT2Builder = false
+	for _, builderID in ipairs(selectedUnits) do
+		local _, builderDef = ControllerCameraTestGetUnitDef(builderID)
+		if builderDef and IsT2Builder(builderDef) then
+			hasT2Builder = true
+			break
+		end
+	end
+
+	if hasT2Builder then
+		latchSelectionDebugMessage("Upgrade: no T2 builder selected for this unit")
+		return true
+	end
+
+	return false
+end
+
 local function attemptContextCommand()
 	local cmdID = 10 -- Fallback to Move (CMD.MOVE)
 	local cmdName = "Move"
@@ -5037,6 +5141,13 @@ local function attemptContextCommand()
 	local exactTargetType = ok and targetType or nil
 	local exactTargetID = ok and targetID or nil
 	local hasExactTarget = (exactTargetType == "unit" or exactTargetType == "feature") and tonumber(exactTargetID)
+
+	if exactTargetType == "unit" and exactTargetID then
+		if ControllerCameraTestAttemptT2UpgradeSmartAction(exactTargetID) then
+			ControllerCameraTestCommandDebug.smartChosenAction = "upgrade"
+			return
+		end
+	end
 
 	ControllerCameraTestCommandDebug.smartExactTargetType = ok and tostring(targetType or "none") or "trace failed"
 	ControllerCameraTestCommandDebug.smartExactTargetID = ok and tostring(targetID or "none") or "none"
@@ -6039,8 +6150,32 @@ function ControllerCameraTestUpdateDgunAim(dt)
 	local mag = math.sqrt(rx * rx + ry * ry)
 
 	if mag > deadzone then
-		dgun.aimX = rx / mag
-		dgun.aimZ = ry / mag
+		local cdx, _, cdz = 0, 0, -1
+		if type(Spring.GetCameraDirection) == "function" then
+			local camX, camY, camZ = Spring.GetCameraDirection()
+			if camX and camZ then
+				cdx, cdz = camX, camZ
+			end
+		end
+		local len = math.sqrt(cdx * cdx + cdz * cdz)
+		local fx, fz = 0, -1
+		if len > 0.001 then
+			fx = cdx / len
+			fz = cdz / len
+		end
+		local rightX = -fz
+		local rightZ = fx
+
+		local aimX = rx * rightX + (-ry) * fx
+		local aimZ = rx * rightZ + (-ry) * fz
+		local aimMag = math.sqrt(aimX * aimX + aimZ * aimZ)
+		if aimMag > 0.001 then
+			dgun.aimX = aimX / aimMag
+			dgun.aimZ = aimZ / aimMag
+		else
+			dgun.aimX = 0
+			dgun.aimZ = -1
+		end
 		dgun.aimActive = true
 	else
 		dgun.aimActive = false
@@ -6090,8 +6225,34 @@ function ControllerCameraTestUpdateDgunMovement(dt)
 	end
 	cy = cy or 0
 
-	local dx = lx / mag
-	local dz = ly / mag
+	local cdx, _, cdz = 0, 0, -1
+	if type(Spring.GetCameraDirection) == "function" then
+		local camX, camY, camZ = Spring.GetCameraDirection()
+		if camX and camZ then
+			cdx, cdz = camX, camZ
+		end
+	end
+	local len = math.sqrt(cdx * cdx + cdz * cdz)
+	local fx, fz = 0, -1
+	if len > 0.001 then
+		fx = cdx / len
+		fz = cdz / len
+	end
+	local rightX = -fz
+	local rightZ = fx
+
+	local moveX = lx * rightX + (-ly) * fx
+	local moveZ = lx * rightZ + (-ly) * fz
+	local moveMag = math.sqrt(moveX * moveX + moveZ * moveZ)
+
+	local dx, dz
+	if moveMag > 0.001 then
+		dx = moveX / moveMag
+		dz = moveZ / moveMag
+	else
+		dx = 0
+		dz = -1
+	end
 
 	local step = 150
 	local tx = cx + dx * step
@@ -7804,7 +7965,7 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 	local isAreaCmd = ControllerCameraTestIsAreaTacticalOption(option)
 
 	if ControllerCameraTestActionPressed("tacticalCancel") or ControllerCameraTestActionPressed("cancel") then
-		if drag.active and isAreaCmd then
+		if drag.active and (isAreaCmd or isLineCmd) then
 			drag.active = false
 			drag.startX, drag.startY, drag.startZ = nil, nil, nil
 			drag.endX, drag.endY, drag.endZ = nil, nil, nil
@@ -7816,12 +7977,13 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 		return true
 	end
 
-	if isAreaCmd and drag.active then
+	local isLineCmd = option.kind == "drag_line"
+	if (isAreaCmd or isLineCmd) and drag.active then
 		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
 	end
 
 	if ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction") then
-		if isAreaCmd then
+		if isAreaCmd or isLineCmd then
 			if not drag.active then
 				if reticleHasWorldTarget and reticleWorldX then
 					drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
@@ -7831,8 +7993,12 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 					drag.cmdID = option.cmdID
 					drag.option = option
 					menu.stagedState = "dragging radius"
-					ControllerCameraTestUpdateAreaCommandDebug("dragging radius", option, 120, 120 * ControllerCameraTestAreaRadiusSensitivity, "center anchored")
-					latchSelectionDebugMessage(option.name .. " center anchored")
+					if isLineCmd then
+						ControllerCameraTestShowHotkeyFeedback("FIGHT LINE", "attack")
+					else
+						ControllerCameraTestUpdateAreaCommandDebug("dragging radius", option, 120, 120 * ControllerCameraTestAreaRadiusSensitivity, "center anchored")
+					end
+					latchSelectionDebugMessage(option.name .. " anchored")
 				end
 			else
 				ControllerCameraTestConfirmStagedTacticalCommand()
@@ -8853,6 +9019,7 @@ function ControllerCameraTestTryConstructionShortcut(actionName, direction)
 					if placement.option and placement.option.cmdID then
 						spacingByBuildCmdID[placement.option.cmdID] = newSpacing
 					end
+					ControllerCameraTestShowHotkeyFeedback("SPACING " .. newSpacing, "utility")
 				end
 				placement.lastConstructionShortcut = "spacing inc"
 				placement.gridShortcutResult = "success"
@@ -8868,6 +9035,7 @@ function ControllerCameraTestTryConstructionShortcut(actionName, direction)
 					if placement.option and placement.option.cmdID then
 						spacingByBuildCmdID[placement.option.cmdID] = newSpacing
 					end
+					ControllerCameraTestShowHotkeyFeedback("SPACING " .. newSpacing, "utility")
 				end
 				placement.lastConstructionShortcut = "spacing dec"
 				placement.gridShortcutResult = "success"
@@ -9274,14 +9442,18 @@ function ControllerCameraTestEnterPlacementFromHighlight()
 			placement.nativePreviewActive = true
 			placement.lastResult = "native placement active"
 			placement.placementMode = "native"
-			placement.placementSpacing = (type(Spring.GetBuildSpacing) == "function" and Spring.GetBuildSpacing()) or 0
+			local savedSpacing = option.cmdID and spacingByBuildCmdID[option.cmdID] or 0
+			pcall(Spring.SendCommands, "buildspacing " .. savedSpacing)
+			placement.placementSpacing = savedSpacing
 			placement.placementPattern = "single"
 			placement.queueFrontActive = false
 			placement.lastConstructionShortcut = "none"
 			placement.gridShortcutResult = "none"
+			placement.slowPanActive = true
 			menu.lastAction = "entered native placement"
 			latchSelectionDebugMessage("Placement: " .. tostring(option.name) .. " (native)")
 			ControllerCameraTestRefreshBuildMenuDebug()
+			ControllerCameraTestShowHotkeyFeedback("SPACING " .. savedSpacing, "utility")
 			return
 		end
 	end
@@ -9290,12 +9462,16 @@ function ControllerCameraTestEnterPlacementFromHighlight()
 	if ControllerCameraTestSetPlacementOption(option) then
 		placement.nativePreviewActive = false
 		placement.placementMode = "custom"
-		placement.placementSpacing = (type(Spring.GetBuildSpacing) == "function" and Spring.GetBuildSpacing()) or 0
+		local savedSpacing = option.cmdID and spacingByBuildCmdID[option.cmdID] or 0
+		pcall(Spring.SendCommands, "buildspacing " .. savedSpacing)
+		placement.placementSpacing = savedSpacing
 		placement.placementPattern = "single"
 		placement.queueFrontActive = false
 		placement.lastConstructionShortcut = "none"
 		placement.gridShortcutResult = "none"
+		placement.slowPanActive = true
 		menu.lastAction = "entered custom placement"
+		ControllerCameraTestShowHotkeyFeedback("SPACING " .. savedSpacing, "utility")
 	else
 		menu.lastAction = "placement failed"
 	end
@@ -9470,7 +9646,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 			local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
 			if option then
 				local queueActive = ControllerCameraTestIsQueueModifierActive()
-				local queueFrontActive = ControllerCameraTestIsQueueFrontModifierActive()
+				local queueFrontActive = ControllerCameraTestIsQueueFrontModifierActive() or (normalizedLeftTrigger > 0.5)
 				local orderOptions = ControllerCameraTestGetCommandOptions()
 
 				local cmdToIssue = option.cmdID
@@ -9487,6 +9663,9 @@ function ControllerCameraTestHandleBuildMenuInput()
 				ControllerCameraTestBuildPlacement.queueFrontActive = queueFrontActive
 				local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(cmdToIssue, paramsToIssue, "Factory queue " .. tostring(option.name), "queue", optionsToIssue)
 				if ok then
+					if queueFrontActive then
+						ControllerCameraTestShowHotkeyFeedback("INSERT", "utility")
+					end
 					menu.lastAction = queueFrontActive and "factory prepended (A)" or "factory queued (A)"
 					menu.radialLastAction = menu.lastAction
 					ControllerCameraTestRefreshFactoryQueueCounts()
@@ -9694,9 +9873,15 @@ function ControllerCameraTestHandleNormalXInput(dt)
 				ControllerCameraTestStartSingleUnitPath(mobileUnits[1])
 			else
 				drag.active = true
-				drag.mode = "moveLine"
+				local profile = ControllerCameraTestGetSelectionProfile()
+				if profile == "combat" then
+					drag.mode = "fightLine"
+					ControllerCameraTestShowHotkeyFeedback("FIGHT LINE", "attack")
+				else
+					drag.mode = "moveLine"
+				end
 				drag.lastResult = "active"
-				latchSelectionDebugMessage("Move Line Drag started")
+				latchSelectionDebugMessage(drag.mode .. " Drag started")
 			end
 		end
 		if drag.active and drag.mode ~= "singleMovePath" then
@@ -10962,7 +11147,7 @@ function ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	normalizedLeftY = normalizeAxis(GetNamedAxis(state, "leftStickY"))
 	pregameRawRightX = normalizeAxis(GetNamedAxis(state, "rightStickX"))
 	pregameRawRightY = normalizeAxis(GetNamedAxis(state, "rightStickY"))
-	if Spring.GetGameFrame() <= 0 then
+	if Spring.GetGameFrame() <= 0 or controllerMouseModeActive then
 		normalizedRightX = 0
 		normalizedRightY = 0
 	else
@@ -11003,9 +11188,14 @@ function ControllerCameraTestUpdateControllerAxesAndButtons(state)
 end
 
 function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
-	if Spring.GetGameFrame() <= 0 then
-		ControllerCameraTestLayerDebug.modeSummary = "pregame"
-		activeButtonLayoutSummary = "Pregame: Right Stick cursor, A/X Click/Place"
+	if Spring.GetGameFrame() <= 0 or controllerMouseModeActive then
+		if Spring.GetGameFrame() <= 0 then
+			ControllerCameraTestLayerDebug.modeSummary = "pregame"
+			activeButtonLayoutSummary = "Pregame: Right Stick cursor, A/X Click/Place"
+		else
+			ControllerCameraTestLayerDebug.modeSummary = "controller mouse mode"
+			activeButtonLayoutSummary = "Mouse Mode: Right Stick cursor, A/X Click"
+		end
 
 		if ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction") then
 			local mx, my = Spring.GetMouseState()
@@ -11027,10 +11217,25 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 				end
 				ControllerCameraTestShowHotkeyFeedback(isReadyClick and "READY" or "CLICK", "utility")
 			else
-				if reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
-					if type(Spring.RequestStartPosition) == "function" then
-						pcall(Spring.RequestStartPosition, reticleWorldX, reticleWorldY, reticleWorldZ, false)
-						ControllerCameraTestShowHotkeyFeedback("PLACE", "utility")
+				if Spring.GetGameFrame() <= 0 then
+					if reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
+						if type(Spring.RequestStartPosition) == "function" then
+							pcall(Spring.RequestStartPosition, reticleWorldX, reticleWorldY, reticleWorldZ, false)
+							ControllerCameraTestShowHotkeyFeedback("PLACE", "utility")
+						end
+					end
+				else
+					local okTarget, targetType, targetID = pcall(Spring.TraceScreenRay, mx, my)
+					if okTarget and targetType == "unit" and targetID then
+						if type(Spring.SelectUnitArray) == "function" then
+							pcall(Spring.SelectUnitArray, { targetID })
+							ControllerCameraTestShowHotkeyFeedback("SELECT", "utility")
+						end
+					else
+						if type(Spring.SelectUnitArray) == "function" then
+							pcall(Spring.SelectUnitArray, {})
+							ControllerCameraTestShowHotkeyFeedback("DESELECT", "utility")
+						end
 					end
 				end
 			end
@@ -11284,7 +11489,25 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 	end
 
 	ControllerCameraTestUpdateControllerAxesAndButtons(state)
-	if Spring.GetGameFrame() <= 0 and controllerMode then
+
+	-- Handle Controller Mouse Mode toggle: Back + Start hold for 0.25 seconds
+	if IsButtonDown("back") and IsButtonDown("start") then
+		backStartHoldTime = (backStartHoldTime or 0) + dt
+		if backStartHoldTime >= 0.25 and not backStartHoldTriggered then
+			controllerMouseModeActive = not controllerMouseModeActive
+			backStartHoldTriggered = true
+			if controllerMouseModeActive then
+				ControllerCameraTestShowHotkeyFeedback("MOUSE ON", "utility")
+			else
+				ControllerCameraTestShowHotkeyFeedback("MOUSE OFF", "utility")
+			end
+		end
+	else
+		backStartHoldTime = 0
+		backStartHoldTriggered = false
+	end
+
+	if (Spring.GetGameFrame() <= 0 or controllerMouseModeActive) and controllerMode then
 		local rxStick = pregameRawRightX or 0
 		local ryStick = pregameRawRightY or 0
 		if math.abs(rxStick) > 0.1 or math.abs(ryStick) > 0.1 then
@@ -12447,17 +12670,20 @@ function ControllerCameraTestDrawBuildRadial()
 		-- Draw context-specific controller hints
 		if isFactoryContext then
 			gl.Color(0.4, 1.0, 0.4, 0.9)
-			gl.Text("[A] +1", cx - 8 * BuildRadialTuning.textScale, cy - 12 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
+			gl.Text("[A] +1", cx - 8 * BuildRadialTuning.textScale, cy - 8 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
 			gl.Color(0.2, 0.9, 0.7, 0.9)
-			gl.Text("[LT+A] +5", cx + 8 * BuildRadialTuning.textScale, cy - 12 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
+			gl.Text("[RT+A] +5", cx + 8 * BuildRadialTuning.textScale, cy - 8 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
 
 			gl.Color(1.0, 0.4, 0.4, 0.9)
-			gl.Text("[X] -1", cx - 8 * BuildRadialTuning.textScale, cy - 25 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
+			gl.Text("[X] -1", cx - 8 * BuildRadialTuning.textScale, cy - 20 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
 			gl.Color(1.0, 0.6, 0.2, 0.9)
-			gl.Text("[LT+X] -5", cx + 8 * BuildRadialTuning.textScale, cy - 25 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
+			gl.Text("[RT+X] -5", cx + 8 * BuildRadialTuning.textScale, cy - 20 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "ol")
+
+			gl.Color(0.5, 0.8, 1.0, 0.9)
+			gl.Text("[LT+A] Insert", cx, cy - 32 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "oc")
 
 			gl.Color(1.0, 0.9, 0.4, 0.9)
-			gl.Text("[B/Y] Close", cx, cy - 38 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "oc")
+			gl.Text("[B/Y] Close", cx, cy - 44 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "oc")
 		else
 			gl.Color(0.4, 1.0, 0.4, 0.9)
 			gl.Text("[A] Place", cx - 8 * BuildRadialTuning.textScale, cy - 16 * (BuildRadialTuning.textScale * 0.95), 11 * BuildRadialTuning.textScale, "or")
