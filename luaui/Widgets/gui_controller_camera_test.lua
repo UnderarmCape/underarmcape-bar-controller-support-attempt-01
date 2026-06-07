@@ -1043,6 +1043,19 @@ selectionDebugMessage = "none"
 selectionDebugExpiration = 0
 controllerMode = false
 controllerMouseModeActive = false
+-- Keep this state global because the widget main chunk is at Lua's local-variable limit.
+CONTROLLER_MOUSE_CURSOR_SPEED = 15
+MOUSE_MODE_BACK_TAP_MAX_TIME = 0.25
+ControllerCameraTestMouseModeSpeedPresets = {
+	{ multiplier = 0.125, label = "SLOW" },
+	{ multiplier = 0.25, label = "DEFAULT" },
+	{ multiplier = 0.50, label = "MEDIUM" },
+	{ multiplier = 1.00, label = "FAST" },
+}
+ControllerCameraTestMouseModeSpeedPresetIndex = 2
+ControllerCameraTestMouseModeBackTapActive = false
+ControllerCameraTestMouseModeBackTapTime = 0
+ControllerCameraTestMouseModeBackTapUsedWithStart = false
 local backStartHoldTime = 0
 local backStartHoldTriggered = false
 reticleVisible = false
@@ -11579,16 +11592,32 @@ function ControllerCameraTestUpdateCameraControls(dt)
 	end
 end
 
-function ControllerCameraTestUpdateControllerFrame(dt)
-	local state = ControllerCameraTestBeginControllerUpdate(dt)
-	if not state then
-		return
+function ControllerCameraTestCycleMouseModeSpeed()
+	ControllerCameraTestMouseModeSpeedPresetIndex = (ControllerCameraTestMouseModeSpeedPresetIndex % #ControllerCameraTestMouseModeSpeedPresets) + 1
+	local preset = ControllerCameraTestMouseModeSpeedPresets[ControllerCameraTestMouseModeSpeedPresetIndex]
+	ControllerCameraTestShowHotkeyFeedback("MOUSE SPEED " .. preset.label, "utility")
+end
+
+function ControllerCameraTestUpdateMouseModeControls(dt)
+	local backDown = IsButtonDown("back")
+	local startDown = IsButtonDown("start")
+
+	if WasButtonPressed("back") then
+		ControllerCameraTestMouseModeBackTapActive = controllerMouseModeActive and not startDown
+		ControllerCameraTestMouseModeBackTapTime = 0
+		ControllerCameraTestMouseModeBackTapUsedWithStart = startDown
 	end
 
-	ControllerCameraTestUpdateControllerAxesAndButtons(state)
+	if backDown and ControllerCameraTestMouseModeBackTapActive then
+		ControllerCameraTestMouseModeBackTapTime = ControllerCameraTestMouseModeBackTapTime + dt
+		if ControllerCameraTestMouseModeBackTapTime > MOUSE_MODE_BACK_TAP_MAX_TIME then
+			ControllerCameraTestMouseModeBackTapActive = false
+		end
+	end
 
-	-- Handle Controller Mouse Mode toggle: Back + Start hold for 0.25 seconds
-	if IsButtonDown("back") and IsButtonDown("start") then
+	if backDown and startDown then
+		ControllerCameraTestMouseModeBackTapActive = false
+		ControllerCameraTestMouseModeBackTapUsedWithStart = true
 		backStartHoldTime = (backStartHoldTime or 0) + dt
 		if backStartHoldTime >= 0.25 and not backStartHoldTriggered then
 			controllerMouseModeActive = not controllerMouseModeActive
@@ -11604,13 +11633,40 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 		backStartHoldTriggered = false
 	end
 
+	if WasButtonReleased("back") then
+		if ControllerCameraTestMouseModeBackTapActive
+			and controllerMouseModeActive
+			and not ControllerCameraTestMouseModeBackTapUsedWithStart
+			and ControllerCameraTestMouseModeBackTapTime <= MOUSE_MODE_BACK_TAP_MAX_TIME
+		then
+			ControllerCameraTestCycleMouseModeSpeed()
+		end
+		ControllerCameraTestMouseModeBackTapActive = false
+		ControllerCameraTestMouseModeBackTapTime = 0
+		ControllerCameraTestMouseModeBackTapUsedWithStart = false
+	end
+end
+
+function ControllerCameraTestUpdateControllerFrame(dt)
+	local state = ControllerCameraTestBeginControllerUpdate(dt)
+	if not state then
+		return
+	end
+
+	ControllerCameraTestUpdateControllerAxesAndButtons(state)
+	ControllerCameraTestUpdateMouseModeControls(dt)
+
 	if (Spring.GetGameFrame() <= 0 or controllerMouseModeActive) and controllerMode then
 		local rxStick = pregameRawRightX or 0
 		local ryStick = pregameRawRightY or 0
 		if math.abs(rxStick) > 0.1 or math.abs(ryStick) > 0.1 then
 			local mouseX, mouseY = Spring.GetMouseState()
-			local newX = clamp(mouseX + rxStick * 15, 0, viewSizeX)
-			local newY = clamp(mouseY - ryStick * 15, 0, viewSizeY)
+			local speedMultiplier = controllerMouseModeActive
+				and ControllerCameraTestMouseModeSpeedPresets[ControllerCameraTestMouseModeSpeedPresetIndex].multiplier
+				or 1
+			local cursorSpeed = CONTROLLER_MOUSE_CURSOR_SPEED * speedMultiplier
+			local newX = clamp(mouseX + rxStick * cursorSpeed, 0, viewSizeX)
+			local newY = clamp(mouseY - ryStick * cursorSpeed, 0, viewSizeY)
 			if type(spWarpMouse) == "function" then
 				spWarpMouse(newX, newY)
 			end
