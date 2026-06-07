@@ -3539,6 +3539,103 @@ function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift, for
 	return false
 end
 
+function ControllerCameraTestAttemptGeoBuildSmartAction(x, y, z)
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	if #selectedUnits == 0 then
+		return false
+	end
+
+	local geoBuildOptionID = nil
+	local buildersWithGeo = {}
+	for _, unitID in ipairs(selectedUnits) do
+		local uDefID = Spring.GetUnitDefID(unitID)
+		local ud = UnitDefs[uDefID]
+		if ud and ud.buildOptions then
+			for _, optDefID in ipairs(ud.buildOptions) do
+				local optDef = UnitDefs[optDefID]
+				if optDef and optDef.needGeo then
+					geoBuildOptionID = optDefID
+					buildersWithGeo[#buildersWithGeo + 1] = unitID
+					break
+				end
+			end
+		end
+	end
+
+	if not geoBuildOptionID or #buildersWithGeo == 0 then
+		return false
+	end
+
+	local bestSpot = nil
+	local bestDist = 160 -- Snapping radius (e.g. 160 elmos)
+	if type(Spring.GetAllFeatures) == "function" and type(Spring.GetFeatureDefID) == "function" and type(Spring.GetFeaturePosition) == "function" then
+		local features = Spring.GetAllFeatures()
+		for i = 1, #features do
+			local featID = features[i]
+			local fDefID = Spring.GetFeatureDefID(featID)
+			local fDef = FeatureDefs[fDefID]
+			if fDef and fDef.geoThermal then
+				local fx, fy, fz = Spring.GetFeaturePosition(featID)
+				if fx and fz then
+					local dx = x - fx
+					local dz = z - fz
+					local dist = math.sqrt(dx*dx + dz*dz)
+					if dist < bestDist then
+						bestDist = dist
+						bestSpot = {x = fx, y = fy, z = fz}
+					end
+				end
+			end
+		end
+	end
+
+	if not bestSpot then
+		return false
+	end
+
+	local cmdID = -geoBuildOptionID
+	local facing = 0
+	if type(Spring.GetBuildFacing) == "function" then
+		local facingOk, buildFacing = pcall(Spring.GetBuildFacing)
+		if facingOk and type(buildFacing) == "number" then
+			facing = buildFacing
+		end
+	end
+	local params = { bestSpot.x, bestSpot.y, bestSpot.z, facing }
+
+	local orderOptions = ControllerCameraTestGetCommandOptions()
+	local useInsert = ControllerCameraTestIsQueueFrontModifierActive()
+	local finalOpts = useInsert and {"alt"} or orderOptions
+	local issuedCount = 0
+
+	local cmdInsert = CMD.INSERT
+	for _, unitID in ipairs(buildersWithGeo) do
+		local ok, result
+		if useInsert then
+			local insertParams = { 0, cmdID, 0 }
+			for i = 1, #params do
+				insertParams[#insertParams + 1] = params[i]
+			end
+			ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, insertParams, { "alt" })
+		else
+			ok, result = pcall(spGiveOrderToUnit, unitID, cmdID, params, finalOpts)
+		end
+		if ok and result ~= false then
+			issuedCount = issuedCount + 1
+		end
+	end
+
+	if issuedCount > 0 then
+		ControllerCameraTestShowHotkeyFeedback("GEOTHERMAL", "utility")
+		ControllerCameraTestCommandDebug.smartChosenAction = "geothermal"
+		ControllerCameraTestCommandDebug.smartActionSource = "geothermal snap"
+		ControllerCameraTestCommandDebug.smartLastResult = "built geo plant"
+		return true
+	end
+
+	return false
+end
+
 local function ControllerCameraTestIssueBuildOrders(builders, unitDefID, buildPositions, useQueue, useQueueFront)
 	local cmdInsert = CMD.INSERT
 	local firstOpts = useQueue and { "shift" } or {}
@@ -5012,6 +5109,10 @@ local function attemptContextCommand()
 		params = { reticleWorldX, reticleWorldY, reticleWorldZ, facing }
 		targetString = "build pos"
 	elseif hasExactTarget and ControllerCameraTestTrySmartAssistedCommand(exactTargetType, exactTargetID, true) then
+		return
+	elseif cmdID == 10 and reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ
+		and ControllerCameraTestAttemptGeoBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ)
+	then
 		return
 	elseif cmdID == 10 and reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ
 		and ControllerCameraTestAttemptMexBuildSmartAction(reticleWorldX, reticleWorldY, reticleWorldZ, ControllerCameraTestIsQueueModifierActive(), ControllerCameraTestIsQueueFrontModifierActive())
