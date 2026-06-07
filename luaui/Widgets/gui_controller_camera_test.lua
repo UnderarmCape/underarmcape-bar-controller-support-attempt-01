@@ -12,6 +12,7 @@ function widget:GetInfo()
 		license = "GNU GPL, v2 or later",
 		layer = 0,
 		enabled = true,
+		handler = true,
 	}
 end
 
@@ -11195,86 +11196,90 @@ function ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	-- Possibly LB + A/B/X/Y, final mapping TBD.
 end
 
-local function ControllerCameraTestGetPregameReadyButtonRect()
-	local vsx, vsy = Spring.GetViewGeometry()
-	if not vsx or not vsy or vsx <= 0 or vsy <= 0 then
-		vsx = viewSizeX > 0 and viewSizeX or 1280
-		vsy = viewSizeY > 0 and viewSizeY or 720
-	end
-
-	local uiScale = 0.75 + (vsx * vsy / 6000000)
-	local buttonPosX = 0.8
-	local buttonPosY = 0.76
-	local buttonX = math.floor(vsx * buttonPosX)
-	local buttonY = math.floor(vsy * buttonPosY)
-
-	local orgbuttonH = 40
-	local orgbuttonW = 115
-
-	local buttonText = "Ready"
-	if type(Spring.I18N) == "function" then
-		buttonText = Spring.I18N('ui.initialSpawn.ready') or buttonText
-	end
-
-	local font = WG and WG['fonts'] and WG['fonts'].getFont and WG['fonts'].getFont(2)
-	if font and type(font.GetTextWidth) == "function" then
-		local okWidth, measuredW = pcall(font.GetTextWidth, font, '       ' .. buttonText)
-		if okWidth and measuredW then
-			orgbuttonW = measuredW * 24
-		end
-	end
-
-	local buttonW = math.floor(orgbuttonW * uiScale / 2) * 2
-	local buttonH = math.floor(orgbuttonH * uiScale / 2) * 2
-
-	local xMin = buttonX - (buttonW / 2)
-	local yMin = buttonY - (buttonH / 2)
-	local xMax = buttonX + (buttonW / 2)
-	local yMax = buttonY + (buttonH / 2)
-
-	return { xMin, yMin, xMax, yMax }
+local function ControllerCameraTestPointInRect(x, y, rect)
+	return type(rect) == "table"
+		and type(rect[1]) == "number" and type(rect[2]) == "number"
+		and type(rect[3]) == "number" and type(rect[4]) == "number"
+		and x > rect[1] and x < rect[3]
+		and y > rect[2] and y < rect[4]
 end
 
-local function ControllerCameraTestExecutePregameReadyClick()
-	local myPlayerID = Spring.GetMyPlayerID()
-	if not myPlayerID then
+local function ControllerCameraTestTryPregamePrimaryAction(mx, my)
+	if Spring.GetGameFrame() > 0 then
 		return false
 	end
 
-	local _, _, mySpec = Spring.GetPlayerInfo(myPlayerID, false)
-	local myTeamID = Spring.GetMyTeamID()
-	local startX, _, startZ = Spring.GetTeamStartPosition(myTeamID)
-	local startPointChosen = (startX ~= nil and startX > 0 and startZ ~= nil and startZ > 0)
+	local pregameUI = WG and WG['pregameui']
+	if type(pregameUI) ~= "table"
+		or type(pregameUI.getPrimaryActionRect) ~= "function"
+		or type(pregameUI.activatePrimaryAction) ~= "function"
+	then
+		return false
+	end
 
-	local readyState = Spring.GetGameRulesParam("player_" .. myPlayerID .. "_readyState")
-	local readied = (readyState == 1 or readyState == 2)
+	local okRect, rects = pcall(pregameUI.getPrimaryActionRect)
+	if not okRect or type(rects) ~= "table" or not ControllerCameraTestPointInRect(mx, my, rects.button) then
+		return false
+	end
 
-	if not readied then
-		if not mySpec then
-			if startPointChosen then
-				Spring.SendLuaRulesMsg("ready_to_start_game")
-				Spring.SendLuaRulesMsg("locking_in_place")
-				return true
-			else
-				if type(Spring.I18N) == "function" then
-					Spring.Echo(Spring.I18N('ui.initialSpawn.choosePoint'))
-				else
-					Spring.Echo("Please choose a start position first!")
-				end
-				return true
-			end
-		else
+	local okAction, actionHandled, actionName = pcall(pregameUI.activatePrimaryAction)
+	if not okAction or not actionHandled then
+		return false
+	end
+
+	ControllerCameraTestShowHotkeyFeedback(actionName or "CLICK", "utility")
+	return true
+end
+
+local function ControllerCameraTestTryLuaUIClick(mx, my)
+	if type(widgetHandler) ~= "table"
+		or type(widgetHandler.MousePress) ~= "function"
+		or type(widgetHandler.MouseRelease) ~= "function"
+	then
+		return false
+	end
+
+	local okPress, pressHandled = pcall(widgetHandler.MousePress, widgetHandler, mx, my, 1)
+	if not okPress or not pressHandled then
+		return false
+	end
+
+	pcall(widgetHandler.MouseRelease, widgetHandler, mx, my, 1)
+	return true
+end
+
+local function ControllerCameraTestTryRmlClick(mx, my)
+	if not RmlUi or type(RmlUi.contexts) ~= "function" then
+		return false
+	end
+
+	local okContexts, contexts = pcall(RmlUi.contexts)
+	if not okContexts or type(contexts) ~= "table" then
+		return false
+	end
+
+	local _, vsy = spGetViewGeometry()
+	local rmlY = type(vsy) == "number" and (vsy - my - 1) or my
+	for _, ctx in ipairs(contexts) do
+		if type(ctx.ProcessMouseMove) == "function" then
+			pcall(ctx.ProcessMouseMove, ctx, mx, rmlY, 0)
+		end
+
+		local handled = false
+		if type(ctx.ProcessMouseButtonDown) == "function" then
+			local okDown, rawDown = pcall(ctx.ProcessMouseButtonDown, ctx, 0, 0)
+			handled = okDown and rawDown == false
+		end
+		if type(ctx.ProcessMouseButtonUp) == "function" then
+			local okUp, rawUp = pcall(ctx.ProcessMouseButtonUp, ctx, 0, 0)
+			handled = handled or (okUp and rawUp == false)
+		end
+		if handled then
 			return true
 		end
-	else
-		local isLocked = (Spring.GetGameRulesParam("player_" .. myPlayerID .. "_lockState") == 1)
-		if isLocked then
-			Spring.SendLuaRulesMsg("unlocking_in_place")
-		else
-			Spring.SendLuaRulesMsg("locking_in_place")
-		end
-		return true
 	end
+
+	return false
 end
 
 local function ControllerCameraTestTryPregamePlacement(mx, my)
@@ -11286,15 +11291,17 @@ local function ControllerCameraTestTryPregamePlacement(mx, my)
 		return false
 	end
 
-	local okGround, _, worldPosition = pcall(Spring.TraceScreenRay, mx, my, true, true)
-	if okGround and type(worldPosition) == "table" then
+	local okTrace, traceType, worldPosition = pcall(Spring.TraceScreenRay, mx, my, true, true)
+	if okTrace and traceType == "ground" and type(worldPosition) == "table" then
 		local wx = tonumber(worldPosition[1])
 		local wy = tonumber(worldPosition[2])
 		local wz = tonumber(worldPosition[3])
 		if wx and wy and wz then
-			pcall(Spring.RequestStartPosition, wx, wy, wz, false)
-			ControllerCameraTestShowHotkeyFeedback("PLACE", "utility")
-			return true
+			local okPlacement = pcall(Spring.RequestStartPosition, wx, wy, wz, false)
+			if okPlacement then
+				ControllerCameraTestShowHotkeyFeedback("PLACE", "utility")
+				return true
+			end
 		end
 	end
 
@@ -11313,102 +11320,21 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 
 		if ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction") then
 			local mx, my = Spring.GetMouseState()
-			local handled = false
-			local isReadyClick = false
-			local isInsideReadyUIRegion = false
-
-			-- Calculate Ready button rect and UI element rect
-			if Spring.GetGameFrame() <= 0 then
-				local rect = ControllerCameraTestGetPregameReadyButtonRect()
-				if rect then
-					local rxMin, ryMin, rxMax, ryMax = rect[1], rect[2], rect[3], rect[4]
-					local uxMin, uyMin, uxMax, uyMax = rxMin - 30, ryMin - 30, rxMax + 30, ryMax + 30
-
-					if mx >= rxMin and mx <= rxMax and my >= ryMin and my <= ryMax then
-						isReadyClick = true
-						isInsideReadyUIRegion = true
-					elseif mx >= uxMin and mx <= uxMax and my >= uyMin and my <= uyMax then
-						isInsideReadyUIRegion = true
-					end
-				end
-			end
-
-			if isReadyClick then
-				-- Direct Ready button action
-				local success = ControllerCameraTestExecutePregameReadyClick()
-				if success then
-					handled = true
-					ControllerCameraTestShowHotkeyFeedback("READY", "utility")
-				end
-			elseif isInsideReadyUIRegion then
-				-- Absorb click, do not place commander
-				handled = true
-			else
-				-- Outside Ready UI region: attempt generic UI click first
-				local luaHandled = false
-				local rmlHandled = false
-
-				-- 1. Dispatch to LuaUI widgets
-				if type(widgetHandler) == "table" and type(widgetHandler.MousePress) == "function" then
-					local okPress, resultPress = pcall(widgetHandler.MousePress, widgetHandler, mx, my, 1)
-					if okPress and resultPress then
-						luaHandled = true
-						if type(widgetHandler.MouseRelease) == "function" then
-							pcall(widgetHandler.MouseRelease, widgetHandler, mx, my, 1)
-						end
-					end
-				end
-
-				-- 2. Dispatch to RmlUi contexts (best-effort)
-				if RmlUi and type(RmlUi.contexts) == "function" then
-					local contexts = pcall(RmlUi.contexts) and RmlUi.contexts() or {}
-					for _, ctx in ipairs(contexts) do
-						if type(ctx.ProcessMouseMove) == "function" then
-							pcall(ctx.ProcessMouseMove, ctx, mx, my, 0)
-						end
-						if type(ctx.ProcessMouseButtonDown) == "function" then
-							local okDown, resDown = pcall(ctx.ProcessMouseButtonDown, ctx, 0, 0)
-							if okDown and resDown then
-								rmlHandled = true
-							end
-						end
-						if type(ctx.ProcessMouseButtonUp) == "function" then
-							pcall(ctx.ProcessMouseButtonUp, ctx, 0, 0)
-						end
-					end
-				end
-
-				handled = luaHandled or rmlHandled
+			local handled = ControllerCameraTestTryPregamePrimaryAction(mx, my)
+			if not handled then
+				handled = ControllerCameraTestTryLuaUIClick(mx, my)
 				if handled then
 					ControllerCameraTestShowHotkeyFeedback("CLICK", "utility")
 				end
 			end
-
-			-- If still not handled, try direct commander placement (if in pregame) or unit selection (if in game)
 			if not handled then
-				if Spring.GetGameFrame() <= 0 then
-					-- Direct commander placement
-					local placementSuccess = ControllerCameraTestTryPregamePlacement(mx, my)
-					if placementSuccess then
-						handled = true
-					end
-				else
-					-- In-game mouse click handling (selection/deselect)
-					local okTarget, targetType, targetID = pcall(Spring.TraceScreenRay, mx, my)
-					if okTarget and targetType == "unit" and targetID then
-						if type(Spring.SelectUnitArray) == "function" then
-							pcall(Spring.SelectUnitArray, { targetID })
-							ControllerCameraTestShowHotkeyFeedback("SELECT", "utility")
-							handled = true
-						end
-					else
-						if type(Spring.SelectUnitArray) == "function" then
-							pcall(Spring.SelectUnitArray, {})
-							ControllerCameraTestShowHotkeyFeedback("DESELECT", "utility")
-							handled = true
-						end
-					end
+				handled = ControllerCameraTestTryRmlClick(mx, my)
+				if handled then
+					ControllerCameraTestShowHotkeyFeedback("CLICK", "utility")
 				end
+			end
+			if not handled and Spring.GetGameFrame() <= 0 then
+				ControllerCameraTestTryPregamePlacement(mx, my)
 			end
 		end
 
