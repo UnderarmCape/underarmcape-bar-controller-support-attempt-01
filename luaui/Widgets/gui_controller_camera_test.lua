@@ -1001,6 +1001,8 @@ normalizedLeftX = 0
 normalizedLeftY = 0
 normalizedRightX = 0
 normalizedRightY = 0
+pregameRawRightX = 0
+pregameRawRightY = 0
 normalizedLeftTrigger = 0
 normalizedRightTrigger = 0
 zoomSpeedMultiplier = 1
@@ -1889,8 +1891,13 @@ local function updateReticleWorldTarget()
 		return
 	end
 
+	local tx, ty = screenCenterX, screenCenterY
+	if Spring.GetGameFrame() <= 0 then
+		tx, ty = Spring.GetMouseState()
+	end
+
 	-- 1. Standard trace to see what we are aiming at
-	local okTarget, targetType, targetID = pcall(spTraceScreenRay, screenCenterX, screenCenterY)
+	local okTarget, targetType, targetID = pcall(spTraceScreenRay, tx, ty)
 	if okTarget then
 		reticleTargetType = tostring(targetType or "unavailable")
 
@@ -1914,7 +1921,7 @@ local function updateReticleWorldTarget()
 	end
 
 	-- 2. Ground-only trace for movement coordinates
-	local okGround, _, worldPosition = pcall(spTraceScreenRay, screenCenterX, screenCenterY, true)
+	local okGround, _, worldPosition = pcall(spTraceScreenRay, tx, ty, true)
 
 	if okGround and type(worldPosition) == "table" then
 		local worldX = tonumber(worldPosition[1])
@@ -10701,11 +10708,15 @@ local function drawControllerReticle()
 	end
 
 	local RETICLE_RADIUS = ControllerCameraTestSettings.reticleSize
+	local rx, ry = screenCenterX, screenCenterY
+	if Spring.GetGameFrame() <= 0 then
+		rx, ry = Spring.GetMouseState()
+	end
 
 	gl.LineWidth(4)
 	gl.Color(0, 0, 0, 0.42)
-	drawReticleCircle(screenCenterX, screenCenterY, RETICLE_RADIUS)
-	drawReticleLines(screenCenterX, screenCenterY)
+	drawReticleCircle(rx, ry, RETICLE_RADIUS)
+	drawReticleLines(rx, ry)
 
 	gl.LineWidth(2)
 
@@ -10718,8 +10729,8 @@ local function drawControllerReticle()
 		gl.Color(0.65, 0.92, 1.0, 0.78) -- Default Blue/White for Ground
 	end
 
-	drawReticleCircle(screenCenterX, screenCenterY, RETICLE_RADIUS)
-	drawReticleLines(screenCenterX, screenCenterY)
+	drawReticleCircle(rx, ry, RETICLE_RADIUS)
+	drawReticleLines(rx, ry)
 
 	gl.LineWidth(1)
 	gl.Color(1, 1, 1, 1)
@@ -10784,8 +10795,15 @@ end
 function ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	normalizedLeftX = normalizeAxis(GetNamedAxis(state, "leftStickX"))
 	normalizedLeftY = normalizeAxis(GetNamedAxis(state, "leftStickY"))
-	normalizedRightX = normalizeAxis(GetNamedAxis(state, "rightStickX"))
-	normalizedRightY = normalizeAxis(GetNamedAxis(state, "rightStickY"))
+	pregameRawRightX = normalizeAxis(GetNamedAxis(state, "rightStickX"))
+	pregameRawRightY = normalizeAxis(GetNamedAxis(state, "rightStickY"))
+	if Spring.GetGameFrame() <= 0 then
+		normalizedRightX = 0
+		normalizedRightY = 0
+	else
+		normalizedRightX = pregameRawRightX
+		normalizedRightY = pregameRawRightY
+	end
 	normalizedLeftTrigger = normalizeTrigger(GetNamedAxis(state, "leftTrigger"))
 	normalizedRightTrigger = normalizeTrigger(GetNamedAxis(state, "rightTrigger"))
 	updateButtonStates(state)
@@ -10820,6 +10838,45 @@ function ControllerCameraTestUpdateControllerAxesAndButtons(state)
 end
 
 function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
+	if Spring.GetGameFrame() <= 0 then
+		ControllerCameraTestLayerDebug.modeSummary = "pregame"
+		activeButtonLayoutSummary = "Pregame: Right Stick cursor, A/X Click/Place"
+
+		if ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction") then
+			local mx, my = Spring.GetMouseState()
+			local handled = false
+			if type(widgetHandler) == "table" and type(widgetHandler.MousePress) == "function" then
+				local okPress, resultPress = pcall(widgetHandler.MousePress, widgetHandler, mx, my, 1)
+				if okPress and resultPress then
+					handled = true
+					if type(widgetHandler.MouseRelease) == "function" then
+						pcall(widgetHandler.MouseRelease, widgetHandler, mx, my, 1)
+					end
+				end
+			end
+
+			if handled then
+				local isReadyClick = false
+				if mx and viewSizeX and mx > (viewSizeX * 0.70) and my and viewSizeY and my > (viewSizeY * 0.70) then
+					isReadyClick = true
+				end
+				ControllerCameraTestShowHotkeyFeedback(isReadyClick and "READY" or "CLICK", "utility")
+			else
+				if reticleHasWorldTarget and reticleWorldX and reticleWorldY and reticleWorldZ then
+					if type(Spring.RequestStartPosition) == "function" then
+						pcall(Spring.RequestStartPosition, reticleWorldX, reticleWorldY, reticleWorldZ, false)
+						ControllerCameraTestShowHotkeyFeedback("PLACE", "utility")
+					end
+				end
+			end
+		end
+
+		ControllerCameraTestUpdateLBTapState()
+		ControllerCameraTestUpdateLBFaceButtonDispatcher(dt)
+		updateSelectionTestActive()
+		return
+	end
+
 	if ControllerCameraTestDgunMode.active then
 		if ControllerCameraTestHandleDgunModeInput(dt) then
 			ControllerCameraTestLayerDebug.modeSummary = "DGUN mode"
@@ -11062,11 +11119,23 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 	end
 
 	ControllerCameraTestUpdateControllerAxesAndButtons(state)
+	if Spring.GetGameFrame() <= 0 and controllerMode then
+		local rxStick = pregameRawRightX or 0
+		local ryStick = pregameRawRightY or 0
+		if math.abs(rxStick) > 0.1 or math.abs(ryStick) > 0.1 then
+			local mouseX, mouseY = Spring.GetMouseState()
+			local newX = clamp(mouseX + rxStick * 15, 0, viewSizeX)
+			local newY = clamp(mouseY - ryStick * 15, 0, viewSizeY)
+			if type(spWarpMouse) == "function" then
+				spWarpMouse(newX, newY)
+			end
+		end
+	end
 	ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	ControllerCameraTestUpdateQueueFrontDragInsertState()
 	if ControllerCameraTestIsGameplayInputBlocked() then
 		updateReticleWorldTarget()
-		if controllerMode and reticleVisible and type(spWarpMouse) == "function" then spWarpMouse(screenCenterX, screenCenterY) end
+		if controllerMode and reticleVisible and type(spWarpMouse) == "function" and Spring.GetGameFrame() > 0 then spWarpMouse(screenCenterX, screenCenterY) end
 		return
 	end
 	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestBuildMenu.open then
@@ -11080,7 +11149,7 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestDragCommand.active then
 		pcall(ControllerCameraTestUpdateDragPreview)
 	end
-	if controllerMode and reticleVisible and type(spWarpMouse) == "function" then spWarpMouse(screenCenterX, screenCenterY) end
+	if controllerMode and reticleVisible and type(spWarpMouse) == "function" and Spring.GetGameFrame() > 0 then spWarpMouse(screenCenterX, screenCenterY) end
 end
 
 function ControllerCameraTestUpdateBuildMenuCompact()
