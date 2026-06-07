@@ -1003,6 +1003,7 @@ normalizedRightX = 0
 normalizedRightY = 0
 pregameRawRightX = 0
 pregameRawRightY = 0
+spacingByBuildCmdID = {}
 normalizedLeftTrigger = 0
 normalizedRightTrigger = 0
 zoomSpeedMultiplier = 1
@@ -8775,7 +8776,9 @@ function ControllerCameraTestSetPlacementOption(option)
 		pcall(Spring.SetBuildFacing, placement.facing)
 	end
 	placement.analogRotateArmed = true
-	placement.placementSpacing = (type(Spring.GetBuildSpacing) == "function" and Spring.GetBuildSpacing()) or 0
+	local savedSpacing = option.cmdID and spacingByBuildCmdID[option.cmdID] or 0
+	pcall(Spring.SendCommands, "buildspacing " .. savedSpacing)
+	placement.placementSpacing = savedSpacing
 	placement.placementPattern = "single"
 	placement.queueFrontActive = false
 	placement.lastConstructionShortcut = "none"
@@ -8834,7 +8837,11 @@ function ControllerCameraTestTryConstructionShortcut(actionName, direction)
 			local ok = pcall(Spring.SendCommands, "buildspacing inc")
 			if ok then
 				if type(Spring.GetBuildSpacing) == "function" then
-					placement.placementSpacing = Spring.GetBuildSpacing() or 0
+					local newSpacing = Spring.GetBuildSpacing() or 0
+					placement.placementSpacing = newSpacing
+					if placement.option and placement.option.cmdID then
+						spacingByBuildCmdID[placement.option.cmdID] = newSpacing
+					end
 				end
 				placement.lastConstructionShortcut = "spacing inc"
 				placement.gridShortcutResult = "success"
@@ -8845,7 +8852,11 @@ function ControllerCameraTestTryConstructionShortcut(actionName, direction)
 			local ok = pcall(Spring.SendCommands, "buildspacing dec")
 			if ok then
 				if type(Spring.GetBuildSpacing) == "function" then
-					placement.placementSpacing = Spring.GetBuildSpacing() or 0
+					local newSpacing = Spring.GetBuildSpacing() or 0
+					placement.placementSpacing = newSpacing
+					if placement.option and placement.option.cmdID then
+						spacingByBuildCmdID[placement.option.cmdID] = newSpacing
+					end
 				end
 				placement.lastConstructionShortcut = "spacing dec"
 				placement.gridShortcutResult = "success"
