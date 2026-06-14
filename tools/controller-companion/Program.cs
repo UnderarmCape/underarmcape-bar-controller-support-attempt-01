@@ -32,6 +32,7 @@ internal static class Program
 
         using var singleInstanceMutex = new Mutex(
             true,
+            // Kept stable so v0.5.0 and v0.5.1 cannot run side by side.
             @"Local\BARControllerBridge-v0.5.0",
             out bool ownsMutex);
         if (!ownsMutex)
@@ -48,7 +49,7 @@ internal static class Program
 
         CameraSettingResult cameraSetting =
             CameraSettings.EnsureCardinalDirectionLockDisabled(settingsPath);
-        Console.WriteLine("BAR Controller Bridge v0.5.0");
+        Console.WriteLine("BAR Controller Bridge v0.5.1");
         Console.WriteLine("Camera setting: " + GetCameraStatus(cameraSetting.Status));
         if (verbose)
         {

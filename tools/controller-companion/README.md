@@ -1,4 +1,4 @@
-# BAR Controller Companion v0.5.0
+# BAR Controller Companion v0.5.1
 
 BAR Controller Companion adds Xbox/XInput controller input to vanilla BAR
 without replacing Recoil or injecting into the game. The bridge sends physical
@@ -13,7 +13,7 @@ backend remains preferred whenever the engine provides it.
 Extract the release package and run:
 
 ```text
-BAR_Controller_Companion_Installer_v0.5.0.exe
+BAR_Controller_Companion_Installer_v0.5.1.exe
 ```
 
 The local bundled package is always the default and does not require internet.
@@ -21,7 +21,7 @@ To optionally check the official repository for a newer compatible
 `BAR_Controller_Support_v*_Widget_Companion.zip` release:
 
 ```powershell
-.\BAR_Controller_Companion_Installer_v0.5.0.exe --check-updates
+.\BAR_Controller_Companion_Installer_v0.5.1.exe --check-updates
 ```
 
 The prompt defaults to No. A downloaded package is used only after the user
@@ -130,14 +130,14 @@ Spring controller API is active.
 
 ## Restore
 
-Run `BAR_Controller_Companion_Restore_v0.5.0.exe` to restore recorded Desktop
+Run `BAR_Controller_Companion_Restore_v0.5.1.exe` to restore recorded Desktop
 and Start Menu shortcuts, overwritten Lua widgets, and the widget config.
 
 The camera setting remains at `0` by default. To intentionally restore the
 recorded pre-install `springsettings.cfg` backup:
 
 ```powershell
-& "$env:LOCALAPPDATA\Programs\BARControllerCompanion\BAR_Controller_Companion_Restore_v0.5.0.exe" --restore-camera
+& "$env:LOCALAPPDATA\Programs\BARControllerCompanion\BAR_Controller_Companion_Restore_v0.5.1.exe" --restore-camera
 ```
 
 Restore does not blindly delete companion files or user-created widgets.
@@ -146,7 +146,8 @@ troubleshooting only.
 
 ## Manual BAR results
 
-The v0.5.0 UDP bridge was manually verified on vanilla BAR:
+The UDP bridge baseline was manually verified on vanilla BAR for v0.5.0 and
+preserved for v0.5.1:
 
 - controller detection and companion backend selection;
 - left-stick camera pan;
@@ -156,16 +157,16 @@ The v0.5.0 UDP bridge was manually verified on vanilla BAR:
 - Ctrl+C neutralization/release in BAR;
 - bridge restart and reconnect without restarting BAR.
 
-## Known gameplay issues not fixed in Pass 1
+## v0.5.1 gameplay fixes
 
-- Area Mex is missing from the tactical radial for
+- Area Mex appears in the Tactical radial for eligible mex-capable
   builders/constructors/commanders.
-- Hold X plus drag with multiple selected units sends Fight instead of Move.
-- Smart X with a T2 construction bot on a completed T1 mex can crash
+- Hold X plus drag with multiple selected units issues Move instead of Fight.
+- Smart X with a T2 construction bot on a completed T1 mex no longer crashes
   `gui_controller_camera_test.lua`.
 
-Pass 1 intentionally changes only companion, launcher, installer, shortcut,
-camera-setting, package, and missing-companion feedback behavior.
+These fixes passed live manual testing while the v0.5.0 companion, launcher,
+installer, shortcut, and camera-setting workflow remained unchanged.
 
 ## Current limitations
 

@@ -1,0 +1,29 @@
+{
+  "packageName": "BAR Controller Companion",
+  "version": "0.5.1",
+  "repository": "UnderarmCape/underarmcape-bar-controller-support-attempt-01",
+  "releaseTitle": "BAR Controller Support v0.5.1 — Widget + Companion Gameplay Fixes",
+  "releaseTag": "controller-support-v0.5.1-gameplay-fixes",
+  "releaseAssetName": "BAR_Controller_Support_v0.5.1_Widget_Companion.zip",
+  "releaseChecksumName": "BAR_Controller_Support_v0.5.1_Widget_Companion.zip.sha256",
+  "compatibleReleaseAssetPatterns": [
+    "BAR_Controller_Support_v*_Widget_Companion.zip",
+    "BAR_Controller_Companion_v*.zip"
+  ],
+  "requiredPublicFiles": [
+    "BAR_Controller_Companion_Installer_v0.5.1.exe",
+    "BAR_Controller_Companion_Restore_v0.5.1.exe"
+  ],
+  "requiredLuaFiles": [
+    "luaui/Widgets/controller_socket_bridge.lua",
+    "luaui/Widgets/gui_controller_camera_test.lua",
+    "luaui/Widgets/gui_pregameui.lua",
+    "luaui/Widgets/cmd_area_mex.lua",
+    "luaui/Widgets/gui_controller_bindings_ui.lua",
+    "luaui/Widgets/gui_controller_smartx_mouse_audit.lua"
+  ],
+  "requiredCompanionFiles": [
+    "companion/BARControllerBridge.exe",
+    "companion/BARControllerLauncher.exe"
+  ]
+}
