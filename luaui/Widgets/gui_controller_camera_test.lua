@@ -993,6 +993,15 @@ local XboxController = {
 }
 
 apiAvailable = false
+ControllerCameraTestSocketBridge = nil
+ControllerCameraTestInputBackend = "unavailable"
+ControllerCameraTestBridgeStatus = "not initialized"
+ControllerCameraTestCompanionFeedback = ControllerCameraTestCompanionFeedback or {
+	wasFresh = nil,
+	missingSince = nil,
+	missingVisible = false,
+	connectedUntil = 0,
+}
 controllerName = "none"
 controllerInstanceId = nil
 rawControllerStateStatus = "none"
@@ -11109,7 +11118,41 @@ local function drawControllerReticle()
 end
 
 function widget:Initialize()
-	apiAvailable = type(spGetAvailableControllers) == "function" and type(spGetControllerState) == "function"
+	local nativeApiAvailable = type(spGetAvailableControllers) == "function"
+		and type(spGetControllerState) == "function"
+	if nativeApiAvailable then
+		apiAvailable = true
+		ControllerCameraTestInputBackend = "native Spring controller API"
+		ControllerCameraTestBridgeStatus = "native backend preferred"
+	else
+		local includeOk, bridgeModule = pcall(
+			VFS.Include,
+			LUAUI_DIRNAME .. "Widgets/controller_socket_bridge.lua"
+		)
+		if includeOk and type(bridgeModule) == "table" and type(bridgeModule.New) == "function" then
+			ControllerCameraTestSocketBridge = bridgeModule.New()
+			local bridgeOk, bridgeError = ControllerCameraTestSocketBridge:Initialize()
+			if bridgeOk then
+				spGetAvailableControllers = function()
+					return ControllerCameraTestSocketBridge:GetAvailableControllers()
+				end
+				spGetControllerState = function(instanceID)
+					return ControllerCameraTestSocketBridge:GetControllerState(instanceID)
+				end
+				apiAvailable = true
+				ControllerCameraTestInputBackend = "companion UDP bridge"
+				ControllerCameraTestBridgeStatus = ControllerCameraTestSocketBridge:GetStatus()
+			else
+				apiAvailable = false
+				ControllerCameraTestInputBackend = "companion UDP bridge unavailable"
+				ControllerCameraTestBridgeStatus = tostring(bridgeError or ControllerCameraTestSocketBridge:GetStatus())
+			end
+		else
+			apiAvailable = false
+			ControllerCameraTestInputBackend = "companion UDP bridge unavailable"
+			ControllerCameraTestBridgeStatus = includeOk and "invalid bridge module" or tostring(bridgeModule)
+		end
+	end
 	ControllerCameraTestEnsureBindings()
 	ControllerCameraTestInstallWGAPI()
 	updateScreenCenter(spGetViewGeometry())
@@ -11118,6 +11161,9 @@ function widget:Initialize()
 end
 
 function widget:Shutdown()
+	if ControllerCameraTestSocketBridge then
+		ControllerCameraTestSocketBridge:Shutdown()
+	end
 	ControllerCameraTestRemoveWGAPI()
 	ControllerCameraTestClearDragPreviewCache()
 	if ControllerCameraTestExitDgunMode then
@@ -11128,6 +11174,48 @@ function widget:Shutdown()
 	end
 end
 
+function ControllerCameraTestUpdateCompanionFeedback()
+	local feedback = ControllerCameraTestCompanionFeedback
+	if ControllerCameraTestInputBackend ~= "companion UDP bridge"
+		and ControllerCameraTestInputBackend ~= "companion UDP bridge unavailable"
+	then
+		feedback.wasFresh = nil
+		feedback.missingSince = nil
+		feedback.missingVisible = false
+		feedback.connectedUntil = 0
+		return
+	end
+
+	local fresh = false
+	if ControllerCameraTestSocketBridge
+		and type(ControllerCameraTestSocketBridge.IsFresh) == "function"
+	then
+		local ok, result = pcall(
+			ControllerCameraTestSocketBridge.IsFresh,
+			ControllerCameraTestSocketBridge
+		)
+		fresh = ok and result == true
+	end
+
+	if fresh then
+		if feedback.wasFresh == false then
+			feedback.connectedUntil = debugEventTime + 2.5
+		end
+		feedback.wasFresh = true
+		feedback.missingSince = nil
+		feedback.missingVisible = false
+		return
+	end
+
+	if feedback.wasFresh ~= false or feedback.missingSince == nil then
+		feedback.missingSince = debugEventTime
+	end
+	feedback.wasFresh = false
+	if (debugEventTime - feedback.missingSince) >= 0.75 then
+		feedback.missingVisible = true
+	end
+end
+
 function widget:ViewResize(vsx, vsy)
 	updateScreenCenter(vsx, vsy)
 	ensureDebugPanelInitialized()
@@ -11135,6 +11223,11 @@ end
 
 function ControllerCameraTestBeginControllerUpdate(dt)
 	debugEventTime = debugEventTime + (dt or 0)
+	if ControllerCameraTestSocketBridge then
+		ControllerCameraTestSocketBridge:Update(dt)
+		ControllerCameraTestBridgeStatus = ControllerCameraTestSocketBridge:GetStatus()
+	end
+	ControllerCameraTestUpdateCompanionFeedback()
 	updateMouseInputMode()
 	panActive = false
 	zoomActive = false
@@ -13308,6 +13401,33 @@ function ControllerCameraTestDrawHelpOverlay()
 	gl.Color(1, 1, 1, 1)
 end
 
+function ControllerCameraTestDrawCompanionFeedback()
+	local feedback = ControllerCameraTestCompanionFeedback
+	local missing = feedback.missingVisible == true
+	local connected = not missing and (feedback.connectedUntil or 0) > debugEventTime
+	if not missing and not connected then
+		return
+	end
+
+	local cx = viewSizeX * 0.5
+	local cy = viewSizeY * 0.73
+	local halfWidth = math.min(430, viewSizeX * 0.42)
+	local halfHeight = missing and 72 or 44
+
+	gl.Color(0.02, 0.04, 0.06, 0.92)
+	gl.Rect(cx - halfWidth, cy - halfHeight, cx + halfWidth, cy + halfHeight)
+	if missing then
+		gl.Color(1.0, 0.35, 0.24, 0.98)
+		gl.Text("Controller Companion Not Running", cx, cy + 15, 31, "oc")
+		gl.Color(0.94, 0.96, 1.0, 0.96)
+		gl.Text("Start BARControllerBridge.exe, then return to BAR.", cx, cy - 29, 20, "oc")
+	else
+		gl.Color(0.35, 1.0, 0.55, 0.98)
+		gl.Text("Controller Companion Connected", cx, cy - 11, 29, "oc")
+	end
+	gl.Color(1, 1, 1, 1)
+end
+
 function widget:DrawScreen()
 	local mathMax, mathPi = math.max, math.pi
 	updateDebugLatchSummaries()
@@ -13332,6 +13452,7 @@ function widget:DrawScreen()
 		ControllerCameraTestDrawHelpOverlay()
 	end
 	ControllerCameraTestDrawSettingsUI()
+	ControllerCameraTestDrawCompanionFeedback()
 
 	local feedback = ControllerCameraTestHotkeyFeedback
 	if feedback and feedback.text and feedback.startTime then
@@ -13591,6 +13712,8 @@ function widget:DrawScreen()
 			lines = {
 				"Widget: Controller Camera Test",
 				"API: " .. yesNo(apiAvailable),
+				"Backend: " .. tostring(ControllerCameraTestInputBackend),
+				"Bridge: " .. tostring(ControllerCameraTestBridgeStatus),
 				"Name: " .. tostring(controllerName),
 				"instanceID: " .. tostring(controllerInstanceId),
 				"Input: " .. (controllerMode and "controller" or "mouse"),
