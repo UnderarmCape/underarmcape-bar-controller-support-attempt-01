@@ -3015,6 +3015,7 @@ ControllerCameraTestAreaCommandProfiles = ControllerCameraTestAreaCommandProfile
 }
 
 local ControllerCameraTestAreaMexWarningLogged = false
+ControllerCameraTestAreaMexHelperEnableAttempted = ControllerCameraTestAreaMexHelperEnableAttempted or false
 
 function ControllerCameraTestGetAreaCommandProfile(optionOrMode)
 	local mode = type(optionOrMode) == "table" and optionOrMode.dragMode or optionOrMode
@@ -5047,6 +5048,17 @@ function IsT2Builder(builderDef)
 	return false
 end
 
+function ControllerCameraTestGetExistingUnitBuildFacing(unitID)
+	if type(Spring.GetUnitBuildFacing) ~= "function" then
+		return 0
+	end
+	local facingOk, facing = pcall(Spring.GetUnitBuildFacing, unitID)
+	if facingOk and type(facing) == "number" then
+		return facing % 4
+	end
+	return 0
+end
+
 function ControllerCameraTestAttemptT2UpgradeSmartAction(targetUnitID)
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	if #selectedUnits == 0 then
@@ -5080,20 +5092,21 @@ function ControllerCameraTestAttemptT2UpgradeSmartAction(targetUnitID)
 		local builderDefID, builderDef = ControllerCameraTestGetUnitDef(builderID)
 		if builderDef and type(builderDef.buildOptions) == "table" then
 			local bestUpgradeOptionID = nil
-			local bestUpgradeMetalCost = targetDef.metalCost or 0
+			local bestUpgradeMetalCost = tonumber(targetDef.metalCost) or 0
 
 			for _, optDefID in ipairs(builderDef.buildOptions) do
-				local optDef = UnitDefs[optDefID]
+				local optDef = UnitDefs and UnitDefs[optDefID]
 				if optDef then
+					local optionMetalCost = tonumber(optDef.metalCost) or 0
 					if isMex and (optDef.extractsMetal or 0) > 0 then
-						if optDef.metalCost > bestUpgradeMetalCost then
+						if optionMetalCost > bestUpgradeMetalCost then
 							bestUpgradeOptionID = optDefID
-							bestUpgradeMetalCost = optDef.metalCost
+							bestUpgradeMetalCost = optionMetalCost
 						end
 					elseif isGeo and optDef.needGeo == true then
-						if optDef.metalCost > bestUpgradeMetalCost then
+						if optionMetalCost > bestUpgradeMetalCost then
 							bestUpgradeOptionID = optDefID
-							bestUpgradeMetalCost = optDef.metalCost
+							bestUpgradeMetalCost = optionMetalCost
 						end
 					end
 				end
@@ -5101,7 +5114,7 @@ function ControllerCameraTestAttemptT2UpgradeSmartAction(targetUnitID)
 
 			if bestUpgradeOptionID then
 				local buildCmdID = -bestUpgradeOptionID
-				local buildParams = { tx, ty, tz, Spring.GetUnitFacing(targetUnitID) or 0 }
+				local buildParams = { tx, ty, tz, ControllerCameraTestGetExistingUnitBuildFacing(targetUnitID) }
 				local orderOptions = ControllerCameraTestGetCommandOptions()
 
 				local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(buildCmdID, buildParams, isMex and "Upgrade Mex" or "Upgrade Geo", "point", orderOptions)
@@ -5123,7 +5136,7 @@ function ControllerCameraTestAttemptT2UpgradeSmartAction(targetUnitID)
 	end
 
 	if hasT2Builder then
-		latchSelectionDebugMessage("Upgrade: no T2 builder selected for this unit")
+		latchSelectionDebugMessage("Upgrade: selected builder has no compatible upgrade option")
 		return true
 	end
 
@@ -7191,6 +7204,90 @@ for _, direction in ipairs(TacticalCategories.Order) do
 	TacticalCategories.ByKey[category.key] = category
 end
 
+function TacticalCategories.AreaMexFallbackOption()
+	return {
+		name = "Area Mex",
+		shortLabel = "Area Mex",
+		cmdID = TacticalCategories.CmdAreaMex,
+		kind = "drag_area",
+		dragMode = "areaMex",
+		action = "areamex",
+		descriptorSource = "selection eligibility",
+		colorProfile = "areaMex",
+		iconLabel = "MEX",
+		iconSource = "fallback text",
+	}
+end
+
+function ControllerCameraTestUnitDefCanBuildMex(unitDef)
+	if type(unitDef) ~= "table" or type(unitDef.buildOptions) ~= "table" then
+		return false
+	end
+	for _, buildDefID in ipairs(unitDef.buildOptions) do
+		local buildDef = UnitDefs and UnitDefs[buildDefID]
+		if type(buildDef) == "table" and (tonumber(buildDef.extractsMetal) or 0) > 0 then
+			return true
+		end
+	end
+	return false
+end
+
+function ControllerCameraTestSelectionCanUseAreaMex(selectedUnits)
+	if type(selectedUnits) ~= "table" or #selectedUnits <= 0 then
+		return false
+	end
+
+	local resourceBuilder = WG and WG.resource_spot_builder
+	local resourceFinder = WG and WG["resource_spot_finder"]
+	if type(resourceFinder) == "table" and resourceFinder.isMetalMap then
+		return false
+	end
+
+	local mexConstructors = nil
+	if type(resourceBuilder) == "table" and type(resourceBuilder.GetMexConstructors) == "function" then
+		local constructorsOk, constructors = pcall(resourceBuilder.GetMexConstructors)
+		if constructorsOk and type(constructors) == "table" then
+			mexConstructors = constructors
+		end
+	end
+
+	for _, unitID in ipairs(selectedUnits) do
+		if (mexConstructors and mexConstructors[unitID])
+			or ControllerCameraTestUnitDefCanBuildMex(select(2, ControllerCameraTestGetUnitDef(unitID)))
+		then
+			return true
+		end
+	end
+	return false
+end
+
+function ControllerCameraTestEnsureAreaMexHelper()
+	local areaMexApi = WG and WG.controllerAreaMex
+	if type(areaMexApi) == "table" and type(areaMexApi.issueArea) == "function" then
+		return true
+	end
+	if ControllerCameraTestAreaMexHelperEnableAttempted then
+		return false
+	end
+	ControllerCameraTestAreaMexHelperEnableAttempted = true
+
+	if type(widgetHandler) ~= "table" or type(widgetHandler.EnableWidget) ~= "function" then
+		return false
+	end
+	if type(widgetHandler.IsWidgetKnown) == "function" then
+		local knownOk, known = pcall(widgetHandler.IsWidgetKnown, widgetHandler, "Area Mex")
+		if not knownOk or not known then
+			return false
+		end
+	end
+
+	local enableOk = pcall(widgetHandler.EnableWidget, widgetHandler, "Area Mex")
+	if enableOk and type(Spring.Echo) == "function" then
+		Spring.Echo("[ControllerAreaMex] Enabling existing Area Mex helper for tactical radial")
+	end
+	return false
+end
+
 function TacticalCategories.Info(keyOrDirection)
 	return TacticalCategories.ByKey[keyOrDirection]
 		or TacticalCategories.ByDirection[keyOrDirection]
@@ -7628,6 +7725,31 @@ function ControllerCameraTestAppendDynamicTacticalCommands(commands, descs)
 	end
 end
 
+function ControllerCameraTestSyncAreaMexCommand(commands, selectedUnits)
+	local canUseAreaMex = ControllerCameraTestSelectionCanUseAreaMex(selectedUnits)
+	if canUseAreaMex then
+		ControllerCameraTestEnsureAreaMexHelper()
+	end
+	for index = #commands, 1, -1 do
+		local option = commands[index]
+		if type(option) == "table"
+			and (option.dragMode == "areaMex" or tonumber(option.cmdID) == TacticalCategories.CmdAreaMex)
+		then
+			if canUseAreaMex then
+				return
+			end
+			table.remove(commands, index)
+		end
+	end
+	if not canUseAreaMex then
+		return
+	end
+
+	-- The custom command descriptor may arrive after the radial cache is built.
+	-- Constructor runtime data and UnitDef build options determine eligibility.
+	ControllerCameraTestAppendTacticalCommand(commands, TacticalCategories.AreaMexFallbackOption(), nil)
+end
+
 --------------------------------------------------------------------------------
 -- SECTION: Tactical radial
 --------------------------------------------------------------------------------
@@ -7635,7 +7757,12 @@ function ControllerCameraTestBuildTacticalSelectionKey(selectedUnits, isFactory)
 	local count = type(selectedUnits) == "table" and #selectedUnits or 0
 	local first = count > 0 and selectedUnits[1] or "none"
 	local last = count > 0 and selectedUnits[count] or "none"
-	return tostring(isFactory and "factory" or "unit") .. ":" .. tostring(count) .. ":" .. tostring(first) .. ":" .. tostring(last)
+	local canAreaMex = not isFactory and ControllerCameraTestSelectionCanUseAreaMex(selectedUnits)
+	return tostring(isFactory and "factory" or "unit")
+		.. ":" .. tostring(count)
+		.. ":" .. tostring(first)
+		.. ":" .. tostring(last)
+		.. ":areaMex=" .. tostring(canAreaMex)
 end
 
 function ControllerCameraTestBuildTacticalCategoryCommands(commands)
@@ -7697,6 +7824,7 @@ function ControllerCameraTestRebuildTacticalCommandCache(reason)
 			}, activeCommandLookup)
 		end
 		ControllerCameraTestAppendDynamicTacticalCommands(commands, activeCommandDescs)
+		ControllerCameraTestSyncAreaMexCommand(commands, selectedUnits)
 	end
 	menu.allCachedCommands = commands
 	menu.categoryCommands = ControllerCameraTestBuildTacticalCategoryCommands(commands)
@@ -9904,13 +10032,10 @@ function ControllerCameraTestHandleNormalXInput(dt)
 				ControllerCameraTestStartSingleUnitPath(mobileUnits[1])
 			else
 				drag.active = true
-				local profile = ControllerCameraTestGetSelectionProfile()
-				if profile == "combat" then
-					drag.mode = "fightLine"
-					ControllerCameraTestShowHotkeyFeedback("FIGHT LINE", "attack")
-				else
-					drag.mode = "moveLine"
-				end
+				-- Normal Smart X hold is always movement. Fight and Attack line
+				-- commands remain available through their explicit command-layer inputs.
+				drag.mode = "moveLine"
+				ControllerCameraTestShowHotkeyFeedback("MOVE LINE", "utility")
 				drag.lastResult = "active"
 				latchSelectionDebugMessage(drag.mode .. " Drag started")
 			end
