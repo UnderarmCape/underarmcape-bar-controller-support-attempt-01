@@ -52,6 +52,38 @@ for k, v in pairs(ControllerBindingsUILayoutDefaults) do
 	ControllerBindingsUILayoutSettings[k] = v
 end
 
+local ControllerBindingsUILauncherBounds = nil
+local ControllerBindingsUILayoutGetSetting
+local ControllerBindingsUILegacyMigrationAttempted = false
+
+local function ControllerBindingsUIGetLauncherBounds(vsx, vsy)
+	local shared = WG and WG.ControllerUISettings
+	if shared and type(shared.GetComponent) == "function" and type(shared.GetComponentBounds) == "function" then
+		local component = shared.GetComponent("bindingsButton")
+		local global = type(shared.GetGlobal) == "function" and shared.GetGlobal() or nil
+		if component and component.enabled ~= false and (not global or global.enabled ~= false) then
+			return shared.GetComponentBounds("bindingsButton", TOGGLE_BUTTON_WIDTH, TOGGLE_BUTTON_HEIGHT), component, shared
+		end
+		return nil, component, shared
+	end
+	if not ControllerBindingsUILayoutGetSetting("toggleButtonVisible") then return nil end
+	local x1 = vsx - ControllerBindingsUILayoutGetSetting("toggleButtonRightOffset")
+	local y2 = vsy - ControllerBindingsUILayoutGetSetting("toggleButtonTopOffset")
+	return { x1 = x1, y1 = y2 - TOGGLE_BUTTON_HEIGHT, x2 = x1 + TOGGLE_BUTTON_WIDTH, y2 = y2, scale = 1 }, nil, nil
+end
+
+local function ControllerBindingsUITryMigrateLauncher()
+	if ControllerBindingsUILegacyMigrationAttempted then return end
+	local shared = WG and WG.ControllerUISettings
+	if shared and type(shared.MigrateLegacyBindingsButton) == "function" then
+		shared.MigrateLegacyBindingsButton(
+			ControllerBindingsUILayoutGetSetting("toggleButtonRightOffset"),
+			ControllerBindingsUILayoutGetSetting("toggleButtonTopOffset")
+		)
+		ControllerBindingsUILegacyMigrationAttempted = true
+	end
+end
+
 local function ControllerBindingsUILayoutClampSetting(key, value)
 	if key == "useSafeArea" or key == "toggleButtonVisible" then
 		if type(value) == "boolean" then
@@ -92,7 +124,7 @@ local function ControllerBindingsUILayoutResetSetting(key)
 	end
 end
 
-local function ControllerBindingsUILayoutGetSetting(key)
+ControllerBindingsUILayoutGetSetting = function(key)
 	local val = ControllerBindingsUILayoutSettings[key]
 	if val == nil then
 		return ControllerBindingsUILayoutDefaults[key]
@@ -781,56 +813,13 @@ local function ControllerBindingsUIConfirmApplyPreset()
 		return
 	end
 
-	local map = {}
-	if presetName == "Build-First Commander" then
-		map = {
-			select = "A",
-			cancel = "B",
-			smartAction = "X",
-			buildRadial = "RB",
-			commandLayer = "back",
-			insertNextCommandModifier = "Y",
-			appendQueueModifier = "RT",
-			controlGroupModifier = "start",
-			pitchModifier = "LB",
-			removeQueuedCommand = "leftStickClick",
-			removeLastQueuedCommand = "rightStickClick",
-			radialSelect = "A",
-			radialCancel = "B",
-			radialQuick = "X",
-			radialClose = "Y",
-			radialPrevPage = "LB",
-			radialNextPage = "RB",
-			place = "A",
-			placeStay = "X",
-			cancelPlacement = "B",
-			rotateBuildingLeft = "dpadLeft",
-			rotateBuildingRight = "dpadRight",
-			spacingUp = "dpadUp",
-			spacingDown = "dpadDown",
-			patternPrev = "LB",
-			patternNext = "none",
-			tacticalSelect = "A",
-			tacticalCancel = "B",
-			tacticalClose = "Y",
-			commandUp = "dpadUp",
-			commandDown = "dpadDown",
-			commandLeft = "dpadLeft",
-			commandRight = "dpadRight",
-			idlePrev = "dpadLeft",
-			idleNext = "dpadRight",
-			groupSlotUp = "dpadUp",
-			groupSlotDown = "dpadDown",
-			groupRecallOrAssign = "dpadLeft",
-			groupAssign = "dpadRight",
-			groupClear = "leftStickClick",
-		}
+	local ok, applied = ControllerBindingsUISafeCall("ApplyBindingPreset", presetName)
+	if not ok or applied ~= true then
+		ControllerBindingsUI.modal = nil
+		ControllerBindingsUI.pendingPresetName = nil
+		ControllerBindingsUISetToast("Preset unavailable")
+		return
 	end
-
-	for actionName, buttonName in pairs(map) do
-		ControllerBindingsUISafeCall("SetBinding", actionName, buttonName)
-	end
-
 	ControllerBindingsUI.currentPreset = presetName
 	ControllerBindingsUI.modal = nil
 	ControllerBindingsUI.pendingPresetName = nil
@@ -1499,26 +1488,19 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 		y = y - 20
 
 		local lines = {}
-		if action.actionLabel == "Build-First Commander" then
-			lines = {
-				"A = Select / Confirm",
-				"B = Cancel / Clear Selection",
-				"X = Move / Smart Move",
-				"Y = Do Next / Insert Command Modifier",
-				"LT = Camera Speed Modifier only",
-				"LB = Camera Pitch Modifier",
-				"RT = Append Queue / Shift-style queue",
-				"Back/View = Command Layer Modifier",
-				"RB = Build / Factory Radial",
-				"L3 (Left Stick Click) = Remove current/next queue",
-				"R3 (Right Stick Click) = Remove last queue",
-				"D-pad Down alone = Commander select/jump",
-				"Start/Menu + D-pad Left/Right = Recall / same-type future assign",
-				"Start/Menu + D-pad Up/Down or L3 = Group slot / clear",
-			}
+		local presetOk, presetMap = ControllerBindingsUISafeCall("GetBindingPreset", action.actionLabel)
+		local defsOk, bindingDefs = ControllerBindingsUISafeCall("GetBindingDefinitions")
+		if presetOk and defsOk and type(presetMap) == "table" and type(bindingDefs) == "table" then
+			for _, def in ipairs(bindingDefs) do
+				local assigned = presetMap[def.action]
+				if assigned and assigned ~= "none" then
+					lines[#lines + 1] = ControllerBindingsUIDisplayBinding(assigned) .. " = " .. tostring(def.label)
+				end
+			end
 		end
 
 		for _, line in ipairs(lines) do
+			if y < y1 + 54 then break end
 			ControllerBindingsUIDrawText("  - " .. line, x1 + 20, y, 12, { 0.78, 0.9, 0.96, 1 }, "o")
 			y = y - 16
 		end
@@ -1881,25 +1863,21 @@ local function ControllerBindingsUIDrawSettingsDetails(x1, y1, x2, y2)
 end
 
 local function ControllerBindingsUIDrawToggleButton(vsx, vsy)
-	if not ControllerBindingsUILayoutGetSetting("toggleButtonVisible") then
-		return
-	end
-	local TOGGLE_BUTTON_RIGHT_OFFSET = ControllerBindingsUILayoutGetSetting("toggleButtonRightOffset")
-	local TOGGLE_BUTTON_TOP_OFFSET = ControllerBindingsUILayoutGetSetting("toggleButtonTopOffset")
-
-	local x1 = vsx - TOGGLE_BUTTON_RIGHT_OFFSET
-	local x2 = x1 + TOGGLE_BUTTON_WIDTH
-	local y2 = vsy - TOGGLE_BUTTON_TOP_OFFSET
-	local y1 = y2 - TOGGLE_BUTTON_HEIGHT
+	local bounds, component, shared = ControllerBindingsUIGetLauncherBounds(vsx, vsy)
+	ControllerBindingsUILauncherBounds = bounds
+	if not bounds then return end
+	local x1, y1, x2, y2 = bounds.x1, bounds.y1, bounds.x2, bounds.y2
+	local opacity = shared and shared.GetEffectiveOpacity("bindingsButton") or 1
+	local fontScale = shared and shared.GetEffectiveFontScale("bindingsButton") or 1
 
 	local open = ControllerBindingsUI.open
-	local fill = open and { 0.15, 0.45, 0.48, 0.9 } or { 0.045, 0.06, 0.075, 0.85 }
-	local outline = open and { 0.55, 0.96, 0.92, 1 } or { 0.26, 0.37, 0.45, 0.8 }
-	local textCol = open and { 0.55, 0.96, 0.92, 1 } or { 0.84, 0.93, 0.98, 1 }
+	local fill = open and { 0.15, 0.45, 0.48, 0.9 * opacity } or { 0.045, 0.06, 0.075, 0.85 * opacity }
+	local outline = open and { 0.55, 0.96, 0.92, opacity } or { 0.26, 0.37, 0.45, 0.8 * opacity }
+	local textCol = open and { 0.55, 0.96, 0.92, opacity } or { 0.84, 0.93, 0.98, opacity }
 
 	ControllerBindingsUIDrawRect(x1, y1, x2, y2, fill)
 	ControllerBindingsUIDrawOutline(x1, y1, x2, y2, outline)
-	ControllerBindingsUIDrawText("Bindings", (x1 + x2) * 0.5, (y1 + y2) * 0.5 - 5, 12, textCol, "oc")
+	ControllerBindingsUIDrawText("Bindings", (x1 + x2) * 0.5, (y1 + y2) * 0.5 - (5 * (bounds.scale or 1)), 12 * fontScale, textCol, "oc")
 end
 
 local function ControllerBindingsUIDrawMain()
@@ -2005,6 +1983,12 @@ function widget:Initialize()
 	WG.BARControllerBindingsUI.Open = ControllerBindingsUIOpen
 	WG.BARControllerBindingsUI.Close = ControllerBindingsUIClose
 	WG.BARControllerBindingsUI.IsOpen = function() return ControllerBindingsUI.open == true end
+	WG.BARControllerBindingsUI.GetLauncherBounds = function() return ControllerBindingsUILauncherBounds end
+	ControllerBindingsUITryMigrateLauncher()
+	local presetOk, presetName = ControllerBindingsUISafeCall("GetActiveBindingPreset")
+	if presetOk and type(presetName) == "string" then
+		ControllerBindingsUI.currentPreset = presetName
+	end
 	ControllerBindingsUIRefreshMissingAPI()
 	ControllerBindingsUIRebuildCategories()
 end
@@ -2019,6 +2003,7 @@ function widget:Shutdown()
 		WG.BARControllerBindingsUI.Open = nil
 		WG.BARControllerBindingsUI.Close = nil
 		WG.BARControllerBindingsUI.IsOpen = nil
+		WG.BARControllerBindingsUI.GetLauncherBounds = nil
 		WG.BARControllerBindingsUI = nil
 	end
 end
@@ -2155,15 +2140,12 @@ end
 
 function widget:MousePress(x, y, button)
 	local vsx, vsy = spGetViewGeometry()
-	local TOGGLE_BUTTON_RIGHT_OFFSET = ControllerBindingsUILayoutGetSetting("toggleButtonRightOffset")
-	local TOGGLE_BUTTON_TOP_OFFSET = ControllerBindingsUILayoutGetSetting("toggleButtonTopOffset")
-	local bx1 = vsx - TOGGLE_BUTTON_RIGHT_OFFSET
-	local bx2 = bx1 + TOGGLE_BUTTON_WIDTH
-	local by2 = vsy - TOGGLE_BUTTON_TOP_OFFSET
-	local by1 = by2 - TOGGLE_BUTTON_HEIGHT
-
-	local toggleVisible = ControllerBindingsUILayoutGetSetting("toggleButtonVisible")
-	if toggleVisible and button == 1 and x >= bx1 and x <= bx2 and y >= by1 and y <= by2 then
+	local shared = WG and WG.ControllerUISettings
+	if shared and type(shared.IsEditorOpen) == "function" and shared.IsEditorOpen() then
+		return false
+	end
+	local launcher = ControllerBindingsUIGetLauncherBounds(vsx, vsy)
+	if launcher and button == 1 and ControllerBindingsUIPointInside(launcher, x, y) then
 		ControllerBindingsUIToggle()
 		return true
 	end
@@ -2255,6 +2237,7 @@ function widget:MousePress(x, y, button)
 end
 
 function widget:DrawScreen()
+	ControllerBindingsUITryMigrateLauncher()
 	local vsx, vsy = spGetViewGeometry()
 	ControllerBindingsUIDrawToggleButton(vsx, vsy)
 	if not ControllerBindingsUI.open then

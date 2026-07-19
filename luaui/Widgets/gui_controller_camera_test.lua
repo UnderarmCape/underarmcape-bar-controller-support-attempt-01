@@ -94,11 +94,11 @@ setmetatable(BuildRadialTuning, {
 		if key == "radialScale" then
 			return ControllerCameraTestSettings.buildRadialScale or 1.25
 		elseif key == "iconScale" then
-			return ControllerCameraTestSettings.buildIconScale or 2.0
+			return (ControllerCameraTestSettings.buildIconScale or 2.0) * ControllerCameraTestGetControllerUIIconScale("buildRadial")
 		elseif key == "textScale" then
-			return ControllerCameraTestSettings.buildTextScale or 2.0
+			return (ControllerCameraTestSettings.buildTextScale or 2.0) * ControllerCameraTestGetControllerUIFontScale("buildRadial")
 		elseif key == "pageLabelScale" then
-			return ControllerCameraTestSettings.buildPageLabelScale or 2.0
+			return (ControllerCameraTestSettings.buildPageLabelScale or 2.0) * ControllerCameraTestGetControllerUIFontScale("buildRadial")
 		elseif key == "fillAlpha" then
 			return ControllerCameraTestSettings.buildFillAlpha or 0.45
 		elseif key == "selectedBorderScale" then
@@ -682,6 +682,7 @@ ControllerCameraTestSettingsUI = ControllerCameraTestSettingsUI or {
 }
 ControllerCameraTestExternalBindingUI = ControllerCameraTestExternalBindingUI or {
 	open = false,
+	layoutEditorOpen = false,
 	lastAction = "none",
 }
 ControllerCameraTestKeyDebug = ControllerCameraTestKeyDebug or {
@@ -692,12 +693,36 @@ ControllerCameraTestKeyDebug = ControllerCameraTestKeyDebug or {
 }
 ControllerCameraTestBindings = ControllerCameraTestBindings or {
 	actions = {},
+	revision = 0,
+	activePreset = "Build-First Commander",
 	captureAction = nil,
 	conflictAction = nil,
 	lastAction = "defaults active",
 	triggerDown = { LT = false, RT = false },
 	triggerPressed = { LT = false, RT = false },
 	triggerReleased = { LT = false, RT = false },
+}
+
+-- Binding persistence schema 2 makes the gameplay widget the owner of the
+-- Build-First Commander preset. UI widgets call ApplyBindingPreset instead of
+-- carrying a second mapping table.
+CONTROLLER_BINDINGS_CONFIG_SCHEMA = 2
+CONTROLLER_BUILD_FIRST_PRESET_NAME = "Build-First Commander"
+ControllerCameraTestBuildFirstPreset = ControllerCameraTestBuildFirstPreset or {
+	select = "A", cancel = "B", smartAction = "X", buildRadial = "RB",
+	commandLayer = "back", insertNextCommandModifier = "Y", appendQueueModifier = "RT",
+	controlGroupModifier = "start", pitchModifier = "LB",
+	removeQueuedCommand = "leftStickClick", removeLastQueuedCommand = "rightStickClick",
+	radialSelect = "A", radialCancel = "B", radialQuick = "X", radialClose = "Y",
+	radialPrevPage = "LB", radialNextPage = "RB",
+	place = "A", placeStay = "X", cancelPlacement = "B",
+	rotateBuildingLeft = "dpadLeft", rotateBuildingRight = "dpadRight",
+	spacingUp = "dpadUp", spacingDown = "dpadDown", patternPrev = "LB", patternNext = "none",
+	tacticalSelect = "A", tacticalCancel = "B", tacticalClose = "Y",
+	commandUp = "dpadUp", commandDown = "dpadDown", commandLeft = "dpadLeft", commandRight = "dpadRight",
+	idlePrev = "dpadLeft", idleNext = "dpadRight",
+	groupSlotUp = "dpadUp", groupSlotDown = "dpadDown",
+	groupRecallOrAssign = "dpadLeft", groupAssign = "dpadRight", groupClear = "leftStickClick",
 }
 ControllerCameraTestQuickGroups = ControllerCameraTestQuickGroups or {
 	slots = {},
@@ -1065,8 +1090,11 @@ ControllerCameraTestMouseModeSpeedPresetIndex = 2
 ControllerCameraTestMouseModeBackTapActive = false
 ControllerCameraTestMouseModeBackTapTime = 0
 ControllerCameraTestMouseModeBackTapUsedWithStart = false
-local backStartHoldTime = 0
-local backStartHoldTriggered = false
+BACK_START_EDITOR_HOLD_SECONDS = 1.5
+backStartHoldTime = 0
+backStartHoldTriggered = false
+backStartChordActive = false
+backStartChordLocked = false
 reticleVisible = false
 local lastCompactScaleEnabled = nil
 local lastCompactScaleValue = nil
@@ -2094,7 +2122,7 @@ end
 --------------------------------------------------------------------------------
 function ControllerCameraTestBindingDefinitions()
 	local bindings = ControllerCameraTestBindings
-	local version = "v0.4.1-memory-cache-1"
+	local version = "v0.6.0-build-first-schema-2"
 	if type(bindings.definitionCache) == "table" and bindings.definitionCacheVersion == version then
 		return bindings.definitionCache
 	end
@@ -2103,7 +2131,7 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "cancel", label = "Cancel / Clear", default = "B", group = "Core" },
 		{ action = "smartAction", label = "Smart Action", default = "X", group = "Core" },
 		{ action = "buildRadial", label = "Build / Factory Radial", default = "RB", group = "Core" },
-		{ action = "commandLayer", label = "Command Layer", default = "RT", group = "Modifiers" },
+		{ action = "commandLayer", label = "Command Layer", default = ControllerCameraTestBuildFirstPreset.commandLayer, group = "Modifiers" },
 		{ action = "insertNextCommandModifier", label = "Do Next / Insert Command Modifier", default = "Y", group = "Queue" },
 		{ action = "appendQueueModifier", label = "Append Queue / Shift Modifier", default = "RT", group = "Queue" },
 		{ action = "controlGroupModifier", label = "Group Layer Modifier", default = "start", group = "Modifiers" },
@@ -2140,6 +2168,9 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "groupAssign", label = "Assign Same-Type/Future Group", default = "dpadRight", group = "Idle / Groups" },
 		{ action = "groupClear", label = "Clear Group", default = "leftStickClick", group = "Idle / Groups" },
 	}
+	for _, def in ipairs(defs) do
+		def.default = ControllerCameraTestBuildFirstPreset[def.action] or def.default
+	end
 	bindings.definitionCache = defs
 	bindings.definitionCacheVersion = version
 	return defs
@@ -2149,7 +2180,7 @@ function ControllerCameraTestEnsureBindings()
 	local bindings = ControllerCameraTestBindings
 	bindings.defaults = bindings.defaults or {}
 	bindings.actions = bindings.actions or {}
-	local version = "v0.4.1-memory-cache-1"
+	local version = "v0.6.0-build-first-schema-2"
 	if bindings.defaultsInitializedVersion == version then
 		return
 	end
@@ -2196,6 +2227,8 @@ function ControllerCameraTestSetBinding(actionName, buttonName)
 		end
 	end
 	ControllerCameraTestBindings.actions[actionName] = buttonName
+	ControllerCameraTestBindings.revision = (ControllerCameraTestBindings.revision or 0) + 1
+	ControllerCameraTestBindings.activePreset = "Custom"
 	ControllerCameraTestBindings.conflictAction = conflict
 	ControllerCameraTestBindings.lastAction = "bound " .. tostring(actionName) .. " to "
 		.. ControllerCameraTestBindingLabel(buttonName)
@@ -2206,18 +2239,15 @@ end
 function ControllerCameraTestResetBinding(actionName)
 	ControllerCameraTestEnsureBindings()
 	ControllerCameraTestBindings.actions[actionName] = ControllerCameraTestBindings.defaults[actionName]
+	ControllerCameraTestBindings.revision = (ControllerCameraTestBindings.revision or 0) + 1
+	ControllerCameraTestRefreshActivePreset()
 	ControllerCameraTestBindings.lastAction = "reset " .. tostring(actionName) .. " to "
 		.. ControllerCameraTestBindingLabel(ControllerCameraTestBindings.actions[actionName])
 	latchSelectionDebugMessage(ControllerCameraTestBindings.lastAction)
 end
 
 function ControllerCameraTestResetAllBindings()
-	ControllerCameraTestEnsureBindings()
-	for actionName, buttonName in pairs(ControllerCameraTestBindings.defaults) do
-		ControllerCameraTestBindings.actions[actionName] = buttonName
-	end
-	ControllerCameraTestBindings.captureAction = nil
-	ControllerCameraTestBindings.conflictAction = nil
+	ControllerCameraTestApplyBindingPreset(CONTROLLER_BUILD_FIRST_PRESET_NAME)
 	ControllerCameraTestBindings.lastAction = "all bindings reset to defaults"
 	latchSelectionDebugMessage(ControllerCameraTestBindings.lastAction)
 end
@@ -2256,15 +2286,21 @@ function ControllerCameraTestBindingReleased(buttonName)
 end
 
 function ControllerCameraTestActionDown(actionName)
-	return ControllerCameraTestBindingDown(ControllerCameraTestGetBinding(actionName))
+	local buttonName = ControllerCameraTestGetBinding(actionName)
+	if (buttonName == "back" or buttonName == "start") and (backStartChordActive or backStartChordLocked) then return false end
+	return ControllerCameraTestBindingDown(buttonName)
 end
 
 function ControllerCameraTestActionPressed(actionName)
-	return ControllerCameraTestBindingPressed(ControllerCameraTestGetBinding(actionName))
+	local buttonName = ControllerCameraTestGetBinding(actionName)
+	if (buttonName == "back" or buttonName == "start") and (backStartChordActive or backStartChordLocked) then return false end
+	return ControllerCameraTestBindingPressed(buttonName)
 end
 
 function ControllerCameraTestActionReleased(actionName)
-	return ControllerCameraTestBindingReleased(ControllerCameraTestGetBinding(actionName))
+	local buttonName = ControllerCameraTestGetBinding(actionName)
+	if (buttonName == "back" or buttonName == "start") and (backStartChordActive or backStartChordLocked) then return false end
+	return ControllerCameraTestBindingReleased(buttonName)
 end
 
 function ControllerCameraTestSetBindingUIOpen(open)
@@ -2278,6 +2314,13 @@ end
 
 function ControllerCameraTestIsGameplayInputBlocked()
 	return ControllerCameraTestExternalBindingUI.open == true
+		or ControllerCameraTestExternalBindingUI.layoutEditorOpen == true
+		or backStartChordActive == true
+		or backStartChordLocked == true
+end
+
+function ControllerCameraTestSetLayoutEditorOpen(open)
+	ControllerCameraTestExternalBindingUI.layoutEditorOpen = not not open
 end
 
 function ControllerCameraTestCanUseLBHotkeys()
@@ -2423,6 +2466,48 @@ function ControllerCameraTestResetSetting(key)
 	return ControllerCameraTestSettings[key]
 end
 
+function ControllerCameraTestGetContextSnapshot()
+	local selected = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	local hasBuilder, hasFactory, hasTransport = false, false, false
+	for _, unitID in ipairs(selected) do
+		local unitDefID = Spring.GetUnitDefID(unitID)
+		local unitDef = unitDefID and UnitDefs and UnitDefs[unitDefID]
+		if unitDef then
+			hasFactory = hasFactory or unitDef.isFactory == true
+			hasBuilder = hasBuilder or unitDef.isBuilder == true or (type(unitDef.buildOptions) == "table" and #unitDef.buildOptions > 0)
+			hasTransport = hasTransport or (tonumber(unitDef.transportCapacity) or 0) > 0
+		end
+	end
+	return {
+		controllerActive = controllerMode == true,
+		pregame = Spring.GetGameFrame() <= 0,
+		mouseMode = controllerMouseModeActive == true,
+		bindingsOpen = ControllerCameraTestExternalBindingUI.open == true,
+		layoutEditorOpen = ControllerCameraTestExternalBindingUI.layoutEditorOpen == true,
+		buildMenuOpen = ControllerCameraTestBuildMenu.open == true,
+		buildPlacement = ControllerCameraTestBuildPlacement.active == true,
+		factoryRadialOpen = ControllerCameraTestBuildMenu.open == true and hasFactory,
+		tacticalRadialOpen = ControllerCameraTestTacticalMenu.open == true,
+		selectionRadialOpen = ControllerCameraTestAreaSelect.filterRadialOpen == true,
+		areaSelection = ControllerCameraTestAreaSelect.active == true or ControllerCameraTestAreaSelect.pressActive == true,
+		stagedTactical = type(ControllerCameraTestTacticalMenu.stagedOption) == "table",
+		dgunMode = ControllerCameraTestDgunMode.active == true,
+		selectedCount = #selected,
+		hasSelection = #selected > 0,
+		multipleSelection = #selected > 1,
+		hasBuilder = hasBuilder,
+		hasFactory = hasFactory,
+		hasTransport = hasTransport,
+		hasWorldTarget = reticleHasWorldTarget == true,
+		hoverTargetType = reticleTargetType,
+		smartTargetType = ControllerCameraTestCommandDebug.smartExactTargetType,
+		commandLayer = commandLayerActive == true,
+		controlGroupLayer = ControllerCameraTestActionDown("controlGroupModifier"),
+		pitchLayer = lbCameraModifierActive == true,
+		backStartHoldProgress = backStartChordActive and math.min(1, backStartHoldTime / BACK_START_EDITOR_HOLD_SECONDS) or 0,
+	}
+end
+
 function ControllerCameraTestInstallWGAPI()
 	WG.BARControllerSupport = WG.BARControllerSupport or {}
 	WG.BARControllerSupport.GetBindingDefinitions = ControllerCameraTestBindingDefinitions
@@ -2430,6 +2515,13 @@ function ControllerCameraTestInstallWGAPI()
 	WG.BARControllerSupport.SetBinding = ControllerCameraTestSetBinding
 	WG.BARControllerSupport.ResetBinding = ControllerCameraTestResetBinding
 	WG.BARControllerSupport.ResetAllBindings = ControllerCameraTestResetAllBindings
+	WG.BARControllerSupport.ApplyBindingPreset = ControllerCameraTestApplyBindingPreset
+	WG.BARControllerSupport.GetActiveBindingPreset = ControllerCameraTestRefreshActivePreset
+	WG.BARControllerSupport.GetBindingRevision = function() return ControllerCameraTestBindings.revision or 0 end
+	WG.BARControllerSupport.GetBindingPreset = function(presetName)
+		if presetName == CONTROLLER_BUILD_FIRST_PRESET_NAME then return ControllerCameraTestBuildFirstPreset end
+		return nil
+	end
 	WG.BARControllerSupport.GetPressedBindingInput = ControllerCameraTestGetPressedBindingInput
 	WG.BARControllerSupport.IsInputPressed = ControllerCameraTestBindingPressed
 	WG.BARControllerSupport.IsInputDown = ControllerCameraTestBindingDown
@@ -2440,6 +2532,15 @@ function ControllerCameraTestInstallWGAPI()
 	WG.BARControllerSupport.SetSetting = ControllerCameraTestSetSetting
 	WG.BARControllerSupport.ResetSetting = ControllerCameraTestResetSetting
 	WG.BARControllerSupport.ResetAllSettings = ControllerCameraTestResetSettingsToDefaults
+	WG.BARControllerSupport.GetContextSnapshot = ControllerCameraTestGetContextSnapshot
+	WG.BARControllerSupport.SetLayoutEditorOpen = ControllerCameraTestSetLayoutEditorOpen
+	WG.BARControllerSupport.GetShortcutBinding = function(shortcut)
+		if shortcut == "mouseMode" or shortcut == "uiSettings" then return { "back", "start" } end
+		return nil
+	end
+	WG.BARControllerSupport.GetBackStartHoldProgress = function()
+		return backStartChordActive and math.min(1, backStartHoldTime / BACK_START_EDITOR_HOLD_SECONDS) or 0
+	end
 end
 
 function ControllerCameraTestRemoveWGAPI()
@@ -2451,6 +2552,10 @@ function ControllerCameraTestRemoveWGAPI()
 	WG.BARControllerSupport.SetBinding = nil
 	WG.BARControllerSupport.ResetBinding = nil
 	WG.BARControllerSupport.ResetAllBindings = nil
+	WG.BARControllerSupport.ApplyBindingPreset = nil
+	WG.BARControllerSupport.GetActiveBindingPreset = nil
+	WG.BARControllerSupport.GetBindingRevision = nil
+	WG.BARControllerSupport.GetBindingPreset = nil
 	WG.BARControllerSupport.GetPressedBindingInput = nil
 	WG.BARControllerSupport.IsInputPressed = nil
 	WG.BARControllerSupport.IsInputDown = nil
@@ -2461,6 +2566,10 @@ function ControllerCameraTestRemoveWGAPI()
 	WG.BARControllerSupport.SetSetting = nil
 	WG.BARControllerSupport.ResetSetting = nil
 	WG.BARControllerSupport.ResetAllSettings = nil
+	WG.BARControllerSupport.GetContextSnapshot = nil
+	WG.BARControllerSupport.SetLayoutEditorOpen = nil
+	WG.BARControllerSupport.GetShortcutBinding = nil
+	WG.BARControllerSupport.GetBackStartHoldProgress = nil
 end
 
 --------------------------------------------------------------------------------
@@ -4042,11 +4151,7 @@ function ControllerCameraTestUpdateDragPreview()
 						if type(api.setActiveBuilders) == "function" then
 							pcall(api.setActiveBuilders, selectedUnits)
 						end
-						local previewOk = pcall(api.setActiveBlueprint, staticBlueprintTable)
-						local posOk = pcall(api.setBlueprintPositions, buildPositions)
-						if previewOk and posOk then
-							drag.nativePreviewResult = "native preview active"
-						end
+						pcall(api.setActiveBlueprint, staticBlueprintTable)
 					end
 				end
 			end
@@ -4108,6 +4213,24 @@ function ControllerCameraTestUpdateDragPreview()
 				end
 			end
 
+			-- Preview, validation, and final issue all share these resolved points.
+			for i = #buildPositions, 1, -1 do
+				local point = buildPositions[i]
+				local bx, by, bz, valid = ControllerCameraTestResolveBuildPosition(option.cmdID, point[1], point[3], facing, true)
+				if valid then
+					point[1], point[2], point[3], point[4] = bx, by, bz, facing
+				else
+					table.remove(buildPositions, i)
+				end
+			end
+			if drag.nativeRouteUsed then
+				local blueprintAPI = type(WG) == "table" and WG["api_blueprint"] or nil
+				if type(blueprintAPI) == "table" and type(blueprintAPI.setBlueprintPositions) == "function"
+					and pcall(blueprintAPI.setBlueprintPositions, buildPositions)
+				then
+					drag.nativePreviewResult = "native preview active"
+				end
+			end
 			drag.previewPoints = buildPositions
 			lastPreviewWasNative = drag.nativeRouteUsed
 		end
@@ -5046,6 +5169,49 @@ function IsT2Builder(builderDef)
 		end
 	end
 	return false
+end
+
+function ControllerCameraTestBindingsMatchPreset(preset)
+	if type(preset) ~= "table" then return false end
+	for _, def in ipairs(ControllerCameraTestBindingDefinitions()) do
+		if ControllerCameraTestBindings.actions[def.action] ~= preset[def.action] then
+			return false
+		end
+	end
+	return true
+end
+
+function ControllerCameraTestRefreshActivePreset()
+	ControllerCameraTestBindings.activePreset = ControllerCameraTestBindingsMatchPreset(ControllerCameraTestBuildFirstPreset)
+		and CONTROLLER_BUILD_FIRST_PRESET_NAME or "Custom"
+	return ControllerCameraTestBindings.activePreset
+end
+
+function ControllerCameraTestApplyBindingPreset(presetName)
+	if presetName ~= CONTROLLER_BUILD_FIRST_PRESET_NAME then return false, "unknown preset" end
+	ControllerCameraTestEnsureBindings()
+	for actionName, buttonName in pairs(ControllerCameraTestBuildFirstPreset) do
+		ControllerCameraTestBindings.actions[actionName] = buttonName
+	end
+	ControllerCameraTestBindings.captureAction = nil
+	ControllerCameraTestBindings.conflictAction = nil
+	ControllerCameraTestBindings.revision = (ControllerCameraTestBindings.revision or 0) + 1
+	ControllerCameraTestBindings.activePreset = CONTROLLER_BUILD_FIRST_PRESET_NAME
+	ControllerCameraTestBindings.lastAction = "applied preset " .. CONTROLLER_BUILD_FIRST_PRESET_NAME
+	return true, CONTROLLER_BUILD_FIRST_PRESET_NAME
+end
+
+function ControllerCameraTestIsValidBindingName(value)
+	return type(value) == "string"
+		and (value == "none" or value == "LT" or value == "RT" or XboxController.buttons[value] ~= nil)
+end
+
+function ControllerCameraTestValidateSavedBindings(saved)
+	if type(saved) ~= "table" then return false end
+	for _, def in ipairs(ControllerCameraTestBindingDefinitions()) do
+		if not ControllerCameraTestIsValidBindingName(saved[def.action]) then return false end
+	end
+	return true
 end
 
 function ControllerCameraTestGetExistingUnitBuildFacing(unitID)
@@ -9029,17 +9195,46 @@ function ControllerCameraTestGetBuildFacing()
 	return 0
 end
 
-function ControllerCameraTestGetSnappedBuildPosition(cmdID, x, y, z, facing)
-	if type(Spring.Pos2BuildPos) ~= "function" or type(cmdID) ~= "number" then
-		return x, y, z
+function ControllerCameraTestResolveBuildPosition(cmdID, x, z, facing, validate)
+	if type(cmdID) ~= "number" or cmdID >= 0 or type(x) ~= "number" or type(z) ~= "number"
+		or type(spGetGroundHeight) ~= "function"
+	then
+		return nil, nil, nil, false, "invalid build position"
+	end
+
+	local groundOk, groundY = pcall(spGetGroundHeight, x, z)
+	if not groundOk or type(groundY) ~= "number" then
+		return nil, nil, nil, false, "terrain height unavailable"
 	end
 
 	local unitDefID = -cmdID
-	local snapOk, sx, sy, sz = pcall(Spring.Pos2BuildPos, unitDefID, x, y, z, facing)
-	if snapOk and type(sx) == "number" and type(sy) == "number" and type(sz) == "number" then
-		return sx, sy, sz
+	local sx, sz = x, z
+	if type(Spring.Pos2BuildPos) == "function" then
+		local snapOk, snappedX, _, snappedZ = pcall(Spring.Pos2BuildPos, unitDefID, x, groundY, z, facing or 0)
+		if not snapOk or type(snappedX) ~= "number" or type(snappedZ) ~= "number" then
+			return nil, nil, nil, false, "build-grid snap failed"
+		end
+		sx, sz = snappedX, snappedZ
 	end
-	return x, y, z
+
+	-- Re-resolve after grid snapping. Negative underwater terrain is retained;
+	-- the engine receives the actual terrain Y for land and water definitions.
+	local finalGroundOk, sy = pcall(spGetGroundHeight, sx, sz)
+	if not finalGroundOk or type(sy) ~= "number" then
+		return nil, nil, nil, false, "snapped terrain height unavailable"
+	end
+
+	if validate ~= false and type(Spring.TestBuildOrder) == "function" then
+		local testOk, testResult = pcall(Spring.TestBuildOrder, unitDefID, sx, sy, sz, facing or 0)
+		if not testOk or type(testResult) ~= "number" or testResult <= 0 then
+			return sx, sy, sz, false, "invalid build order"
+		end
+	end
+	return sx, sy, sz, true, "valid"
+end
+
+function ControllerCameraTestGetSnappedBuildPosition(cmdID, x, y, z, facing)
+	return ControllerCameraTestResolveBuildPosition(cmdID, x, z, facing, true)
 end
 
 function ControllerCameraTestIsMexBuildCommand(cmdID)
@@ -9440,7 +9635,16 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	end
 
 	local facing = ControllerCameraTestBuildPlacement.active and ControllerCameraTestBuildPlacement.facing or ControllerCameraTestGetBuildFacing()
-	local x, y, z = ControllerCameraTestGetSnappedBuildPosition(option.cmdID, reticleWorldX, reticleWorldY, reticleWorldZ, facing)
+	local x, y, z, validPosition, positionReason = ControllerCameraTestGetSnappedBuildPosition(option.cmdID, reticleWorldX, reticleWorldY, reticleWorldZ, facing)
+	if not validPosition then
+		menu.placementResult = tostring(positionReason or "invalid placement")
+		menu.placementParamsCount = 0
+		ControllerCameraTestBuildPlacement.lastResult = menu.placementResult
+		menu.lastAction = "place failed"
+		latchSelectionDebugMessage("Build place failed: " .. menu.placementResult)
+		ControllerCameraTestRefreshBuildMenuDebug()
+		return false
+	end
 	local params = { x, y, z, facing }
 	local issuedCount = 0
 
@@ -11212,8 +11416,11 @@ local function drawControllerReticle()
 	if not reticleVisible or controllerMouseModeActive then
 		return
 	end
+	local shared = WG and WG.ControllerUISettings
+	local reticleComponent = shared and type(shared.GetComponent) == "function" and shared.GetComponent("reticle") or nil
+	if not ControllerCameraTestControllerUIVisible("reticle", false) or (reticleComponent and reticleComponent.enabled == false) then return end
 
-	local RETICLE_RADIUS = ControllerCameraTestSettings.reticleSize
+	local RETICLE_RADIUS = ControllerCameraTestSettings.reticleSize * ControllerCameraTestGetControllerUIScale("reticle", false)
 	local rx, ry = screenCenterX, screenCenterY
 	if Spring.GetGameFrame() <= 0 then
 		rx, ry = Spring.GetMouseState()
@@ -11876,22 +12083,33 @@ function ControllerCameraTestUpdateMouseModeControls(dt)
 		end
 	end
 
-	if backDown and startDown then
+	if backDown and startDown and not backStartChordLocked then
 		ControllerCameraTestMouseModeBackTapActive = false
 		ControllerCameraTestMouseModeBackTapUsedWithStart = true
+		backStartChordActive = true
 		backStartHoldTime = (backStartHoldTime or 0) + dt
-		if backStartHoldTime >= 0.25 and not backStartHoldTriggered then
-			controllerMouseModeActive = not controllerMouseModeActive
+		if backStartHoldTime >= BACK_START_EDITOR_HOLD_SECONDS and not backStartHoldTriggered then
 			backStartHoldTriggered = true
-			if controllerMouseModeActive then
-				ControllerCameraTestShowHotkeyFeedback("MOUSE ON", "utility")
-			else
-				ControllerCameraTestShowHotkeyFeedback("MOUSE OFF", "utility")
+			backStartChordLocked = true
+			local ui = WG and WG.ControllerUISettings
+			if ui and type(ui.ToggleEditor) == "function" then
+				ui.ToggleEditor()
+				ControllerCameraTestShowHotkeyFeedback("CONTROLLER UI", "utility")
 			end
 		end
-	else
+	elseif backStartChordActive and (not backDown or not startDown) then
+		-- A release before the named threshold resolves exactly one short chord.
+		if not backStartHoldTriggered then
+			controllerMouseModeActive = not controllerMouseModeActive
+			ControllerCameraTestShowHotkeyFeedback(controllerMouseModeActive and "MOUSE ON" or "MOUSE OFF", "utility")
+		end
+		backStartChordActive = false
+		backStartChordLocked = true
+	elseif not backDown and not startDown then
 		backStartHoldTime = 0
 		backStartHoldTriggered = false
+		backStartChordActive = false
+		backStartChordLocked = false
 	end
 
 	if WasButtonReleased("back") then
@@ -12247,13 +12465,14 @@ end
 
 function ControllerCameraTestDrawTacticalRadial()
 	local menu = ControllerCameraTestTacticalMenu
-	if not menu.open then
+	if not menu.open or not ControllerCameraTestControllerUIVisible("tacticalRadial", true) then
 		return
 	end
 
 	gl.PushMatrix()
 
 	local function DrawTacticalTextBold(text, x, y, size, options)
+		size = size * ControllerCameraTestGetControllerUIFontScale("tacticalRadial")
 		gl.Text(text, x, y, size, options)
 		gl.Text(text, x - 0.5, y, size, options)
 		gl.Text(text, x + 0.5, y, size, options)
@@ -12267,7 +12486,7 @@ function ControllerCameraTestDrawTacticalRadial()
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 	local minView = math.min(viewSizeX, viewSizeY)
-	local radialScale = ControllerCameraTestSettings.radialScale or 1
+	local radialScale = (ControllerCameraTestSettings.radialScale or 1) * ControllerCameraTestGetControllerUIScale("tacticalRadial", true)
 	local radius = math.min(520, math.max(220, minView * 0.28 * radialScale))
 	local itemW = math.min(260, math.max(130, minView * 0.15 * radialScale))
 	local itemH = 54 * radialScale
@@ -12471,7 +12690,7 @@ end
 
 function ControllerCameraTestDrawFilterRadial()
 	local area = ControllerCameraTestAreaSelect
-	if not area.active then
+	if not area.active or not ControllerCameraTestControllerUIVisible("selectionRadial", true) then
 		return
 	end
 
@@ -12479,7 +12698,7 @@ function ControllerCameraTestDrawFilterRadial()
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 
 	if area.filterRadialOpen then
-		local radius = 130
+		local radius = 130 * ControllerCameraTestGetControllerUIScale("selectionRadial", true)
 		gl.Color(0, 0, 0, 0.6)
 		ControllerCameraTestDrawCircle2D(cx, cy, radius * 1.5, 32)
 
@@ -13039,6 +13258,8 @@ function ControllerCameraTestDrawBuildRadial()
 
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	local isFactoryContext = ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits)
+	local componentName = isFactoryContext and "factoryRadial" or "buildRadial"
+	if not ControllerCameraTestControllerUIVisible(componentName, true) then return end
 
 	if isFactoryContext then
 		ControllerCameraTestRefreshFactoryQueueProgress()
@@ -13048,7 +13269,7 @@ function ControllerCameraTestDrawBuildRadial()
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 
 	local minView = math.min(viewSizeX, viewSizeY)
-	local radialScale = ControllerCameraTestSettings.radialScale or 1
+	local radialScale = (ControllerCameraTestSettings.radialScale or 1) * ControllerCameraTestGetControllerUIScale(componentName, true)
 	local scaleFactor = BuildRadialTuning.radialScale
 	local radius = math.min(1000, math.max(200, minView * 0.28 * radialScale * scaleFactor))
 
@@ -13524,6 +13745,45 @@ function ControllerCameraTestDrawHelpOverlay()
 		end
 	end
 	gl.Color(1, 1, 1, 1)
+end
+
+function ControllerCameraTestGetControllerUIScale(componentName, includeSharedRadialScale)
+	local shared = WG and WG.ControllerUISettings
+	if not shared or type(shared.GetEffectiveScale) ~= "function" then return 1 end
+	local scale = tonumber(shared.GetEffectiveScale(componentName)) or 1
+	if includeSharedRadialScale and type(shared.GetComponent) == "function" then
+		local radial = shared.GetComponent("radials")
+		scale = scale * (radial and tonumber(radial.scale) or 1)
+	end
+	return scale
+end
+
+function ControllerCameraTestControllerUIVisible(componentName, includeSharedRadials)
+	local shared = WG and WG.ControllerUISettings
+	if not shared or type(shared.GetComponent) ~= "function" then return true end
+	local global = type(shared.GetGlobal) == "function" and shared.GetGlobal() or nil
+	local component = shared.GetComponent(componentName)
+	local radials = includeSharedRadials and shared.GetComponent("radials") or nil
+	return (not global or global.enabled ~= false) and (not component or component.enabled ~= false)
+		and (not radials or radials.enabled ~= false)
+end
+
+function ControllerCameraTestGetControllerUIFontScale(componentName)
+	local shared = WG and WG.ControllerUISettings
+	if not shared or type(shared.GetEffectiveFontScale) ~= "function" then return 1 end
+	local scale = tonumber(shared.GetEffectiveFontScale(componentName)) or 1
+	if type(shared.GetComponent) == "function" then
+		local radial = shared.GetComponent("radials")
+		scale = scale * (radial and tonumber(radial.fontScale) or 1)
+	end
+	return scale
+end
+
+function ControllerCameraTestGetControllerUIIconScale(componentName)
+	local shared = WG and WG.ControllerUISettings
+	if not shared or type(shared.GetComponent) ~= "function" then return 1 end
+	local component, radial = shared.GetComponent(componentName), shared.GetComponent("radials")
+	return (component and tonumber(component.iconScale) or 1) * (radial and tonumber(radial.iconScale) or 1)
 end
 
 function ControllerCameraTestDrawCompanionFeedback()
@@ -14272,6 +14532,8 @@ function widget:GetConfigData()
 	end
 
 	return {
+		configSchema = CONTROLLER_BINDINGS_CONFIG_SCHEMA,
+		bindingPreset = ControllerCameraTestRefreshActivePreset(),
 		panelX = debugPanelX,
 		panelY = debugPanelY,
 		panelWidth = debugPanelWidth,
@@ -14301,15 +14563,20 @@ function widget:SetConfigData(data)
 	end
 	ControllerCameraTestApplySettingsDefaults()
 	ControllerCameraTestEnsureBindings()
-	if type(data.bindings) == "table" then
+	local explicitSchema = tonumber(data.configSchema)
+	local schemaSupported = explicitSchema == nil or explicitSchema == 1 or explicitSchema == CONTROLLER_BINDINGS_CONFIG_SCHEMA
+	if schemaSupported and ControllerCameraTestValidateSavedBindings(data.bindings) then
 		for _, def in ipairs(ControllerCameraTestBindingDefinitions()) do
 			local saved = data.bindings[def.action]
-			if type(saved) == "string"
-				and (saved == "LT" or saved == "RT" or XboxController.buttons[saved] ~= nil)
-			then
-				ControllerCameraTestBindings.actions[def.action] = saved
-			end
+			ControllerCameraTestBindings.actions[def.action] = saved
 		end
+		ControllerCameraTestBindings.revision = (ControllerCameraTestBindings.revision or 0) + 1
+		ControllerCameraTestRefreshActivePreset()
+	else
+		-- The only automatic application: fresh, partial, malformed, or an
+		-- explicitly unsupported schema. Complete legacy/custom tables migrate
+		-- above and are never overwritten on normal launches.
+		ControllerCameraTestApplyBindingPreset(CONTROLLER_BUILD_FIRST_PRESET_NAME)
 	end
 
 	if type(data.debugSections) == "table" then
