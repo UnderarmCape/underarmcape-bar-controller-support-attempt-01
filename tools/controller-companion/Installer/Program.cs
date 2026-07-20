@@ -64,8 +64,19 @@ internal static class Program
                 options.InstallRoot,
                 manifest.Version);
 
-            ReleaseOperations.InstallCompanionFiles(packageRoot, manifest, options.InstallRoot);
+            ReleaseOperations.InstallCompanionFiles(
+                packageRoot,
+                manifest,
+                options.InstallRoot,
+                backupRoot,
+                state);
             ReleaseOperations.InstallLuaWidgets(
+                packageRoot,
+                manifest,
+                options.BarDataPath,
+                backupRoot,
+                state);
+            ReleaseOperations.InstallBarDataFiles(
                 packageRoot,
                 manifest,
                 options.BarDataPath,

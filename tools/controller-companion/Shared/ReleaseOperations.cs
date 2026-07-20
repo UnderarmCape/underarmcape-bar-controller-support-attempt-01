@@ -49,6 +49,7 @@ internal static class ReleaseOperations
         }
 
         foreach (string relativePath in manifest.RequiredLuaFiles
+            .Concat(manifest.RequiredBarDataFiles)
             .Concat(manifest.RequiredCompanionFiles)
             .Concat(manifest.RequiredPublicFiles))
         {
@@ -76,6 +77,10 @@ internal static class ReleaseOperations
                     JsonOptions);
                 if (existing != null)
                 {
+                    existing.Shortcuts ??= new List<ShortcutBackup>();
+                    existing.LuaWidgets ??= new List<FileBackup>();
+                    existing.BarDataFiles ??= new List<FileBackup>();
+                    existing.CompanionFiles ??= new List<FileBackup>();
                     existing.Version = version;
                     return existing;
                 }
@@ -101,13 +106,22 @@ internal static class ReleaseOperations
     public static void InstallCompanionFiles(
         string packageRoot,
         PackageManifest manifest,
-        string installRoot)
+        string installRoot,
+        string backupRoot,
+        InstallState state)
     {
         Directory.CreateDirectory(installRoot);
         foreach (string relativePath in manifest.RequiredCompanionFiles)
         {
             string source = ResolveInside(packageRoot, relativePath);
             string destination = Path.Combine(installRoot, Path.GetFileName(relativePath));
+            FileBackup? existing = state.CompanionFiles.FirstOrDefault(
+                item => PathsEqual(item.Destination, destination));
+            if (existing == null)
+            {
+                existing = CaptureFileBackup(destination, Path.Combine(backupRoot, "Companion"));
+                state.CompanionFiles.Add(existing);
+            }
             File.Copy(source, destination, true);
             Status("Installed companion file: " + destination);
         }
@@ -141,9 +155,44 @@ internal static class ReleaseOperations
                 existing = CaptureFileBackup(destination, Path.Combine(backupRoot, "LuaUI", "Widgets"));
                 state.LuaWidgets.Add(existing);
             }
-
             File.Copy(source, destination, true);
             Status("Installed Lua widget: " + destination);
+        }
+    }
+
+    public static void InstallBarDataFiles(
+        string packageRoot,
+        PackageManifest manifest,
+        string barDataPath,
+        string backupRoot,
+        InstallState state)
+    {
+        string destinationRoot = Path.GetFullPath(barDataPath).TrimEnd(Path.DirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        foreach (string relativePath in manifest.RequiredBarDataFiles)
+        {
+            string source = ResolveInside(packageRoot, relativePath);
+            string normalized = relativePath.Replace('/', Path.DirectorySeparatorChar);
+            string destination = Path.GetFullPath(Path.Combine(barDataPath, normalized));
+            if (!destination.StartsWith(destinationRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(
+                    "BAR data payload escapes its destination: " + relativePath);
+            }
+            FileBackup? existing = state.BarDataFiles.FirstOrDefault(
+                item => PathsEqual(item.Destination, destination));
+            if (existing == null)
+            {
+                string backupDirectory = Path.Combine(
+                    backupRoot,
+                    "BARData",
+                    Path.GetDirectoryName(normalized) ?? string.Empty);
+                existing = CaptureFileBackup(destination, backupDirectory);
+                state.BarDataFiles.Add(existing);
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination, true);
+            Status("Installed BAR data file: " + destination);
         }
     }
 
@@ -239,6 +288,9 @@ internal static class ReleaseOperations
         string launcherPath = Path.Combine(installRoot, "BARControllerLauncher.exe");
         string bridgePath = Path.Combine(installRoot, "BARControllerBridge.exe");
         string configPath = Path.Combine(installRoot, "launcher-config.json");
+        state.LauncherConfig ??= CaptureFileBackup(
+            configPath,
+            Path.Combine(backupRoot, "Companion"));
         ShortcutMetadata? launchMetadata = ReadExistingLauncherMetadata(configPath);
         Type shellType = Type.GetTypeFromProgID("WScript.Shell")
             ?? throw new PlatformNotSupportedException("WScript.Shell is unavailable.");
@@ -342,6 +394,10 @@ internal static class ReleaseOperations
         InstallState state = JsonSerializer.Deserialize<InstallState>(
             File.ReadAllText(statePath),
             JsonOptions) ?? throw new InvalidDataException("Install state is invalid.");
+        state.Shortcuts ??= new List<ShortcutBackup>();
+        state.LuaWidgets ??= new List<FileBackup>();
+        state.BarDataFiles ??= new List<FileBackup>();
+        state.CompanionFiles ??= new List<FileBackup>();
 
         foreach (ShortcutBackup shortcut in state.Shortcuts)
         {
@@ -360,6 +416,18 @@ internal static class ReleaseOperations
         foreach (FileBackup widget in state.LuaWidgets)
         {
             RestoreFileBackup(widget, "Lua widget");
+        }
+        foreach (FileBackup payload in state.BarDataFiles)
+        {
+            RestoreFileBackup(payload, "BAR data file");
+        }
+        foreach (FileBackup companion in state.CompanionFiles)
+        {
+            RestoreFileBackup(companion, "companion file");
+        }
+        if (state.LauncherConfig != null)
+        {
+            RestoreFileBackup(state.LauncherConfig, "launcher config");
         }
         if (state.WidgetConfig != null)
         {
@@ -387,7 +455,7 @@ internal static class ReleaseOperations
             Status("Camera setting left at CamSpringLockCardinalDirections = 0.", true);
         }
 
-        Status("Restore complete. Companion files and newly installed widgets were left in place.", true);
+        Status("Restore complete. Recorded shortcuts, UI payload, companion files, and widgets were restored.", true);
     }
 
     public static string ExpandPath(string path)

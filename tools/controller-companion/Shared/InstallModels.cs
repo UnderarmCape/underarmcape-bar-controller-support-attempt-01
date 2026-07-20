@@ -7,6 +7,7 @@ internal sealed class PackageManifest
     public string Version { get; set; } = string.Empty;
     public string Repository { get; set; } = string.Empty;
     public List<string> RequiredLuaFiles { get; set; } = new List<string>();
+    public List<string> RequiredBarDataFiles { get; set; } = new List<string>();
     public List<string> RequiredCompanionFiles { get; set; } = new List<string>();
     public List<string> RequiredPublicFiles { get; set; } = new List<string>();
 }
@@ -17,7 +18,10 @@ internal sealed class InstallState
     public DateTimeOffset LastInstalled { get; set; }
     public List<ShortcutBackup> Shortcuts { get; set; } = new List<ShortcutBackup>();
     public List<FileBackup> LuaWidgets { get; set; } = new List<FileBackup>();
+    public List<FileBackup> BarDataFiles { get; set; } = new List<FileBackup>();
+    public List<FileBackup> CompanionFiles { get; set; } = new List<FileBackup>();
     public FileBackup? WidgetConfig { get; set; }
+    public FileBackup? LauncherConfig { get; set; }
     public FileBackup? CameraSettings { get; set; }
 }
 
