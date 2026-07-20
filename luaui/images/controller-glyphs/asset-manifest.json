@@ -1,0 +1,17 @@
+{
+  "kind": "bar-controller-original-glyph-atlas",
+  "version": 1,
+  "generatedAt": "2026-07-20T00:00:00Z",
+  "generator": "tools/dev-scripts/Generate_Controller_Glyph_Atlas.ps1",
+  "atlas": "controller_glyph_atlas.png",
+  "dimensions": { "width": 512, "height": 320, "cell": 64, "columns": 8, "rows": 5 },
+  "source": "Original geometric artwork created for BAR Controller Companion; no third-party controller artwork used.",
+  "licenses": ["GPL-2.0-or-later", "CC0-1.0"],
+  "glyphs": [
+    "A", "B", "X", "Y", "LB", "RB", "LT", "RT",
+    "leftStick", "rightStick", "L3", "R3", "dpad", "dpadUp", "dpadDown", "dpadLeft", "dpadRight",
+    "back", "start", "guide", "stickDirection", "stickRotate", "tap", "hold", "doubleTap", "chord", "plus", "sequence",
+    "mouseLeft", "mouseRight", "mouseWheel", "keyboardKey", "mouseMiddle", "dpadHorizontal", "dpadVertical",
+    "leftStickX", "leftStickY", "rightStickX", "rightStickY", "fallback"
+  ]
+}

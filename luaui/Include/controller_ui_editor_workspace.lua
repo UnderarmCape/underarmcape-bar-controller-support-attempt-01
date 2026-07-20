@@ -529,9 +529,9 @@ local function drawPreview(state, spec, colors)
 		previewFit = state.previewFit, previewZoom = state.previewZoom }, pane)
 	rect(shape, { colors.accent[1] * 0.18, colors.accent[2] * 0.22, colors.accent[3] * 0.24, 0.92 })
 	outline(shape, colors.accent, 2)
-	label(spec.previewLabel or "Component", (shape.x1 + shape.x2) * 0.5, (shape.y1 + shape.y2) * 0.5 - 5, 12, colors.text, "oc")
+	if type(spec.drawPreview) == "function" then spec.drawPreview(shape, colors)
+	else label(spec.previewLabel or "Component", (shape.x1 + shape.x2) * 0.5, (shape.y1 + shape.y2) * 0.5 - 5, 12, colors.text, "oc") end
 	label(spec.previewDetail or "Drag and resize in the live view", pane.x1 + 12, pane.y1 + 16, 9, colors.muted)
-	if type(spec.drawPreview) == "function" then spec.drawPreview(shape, colors) end
 end
 
 local function valueText(spec, row)

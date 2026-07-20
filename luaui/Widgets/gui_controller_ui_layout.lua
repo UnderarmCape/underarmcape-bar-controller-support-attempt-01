@@ -49,6 +49,9 @@ do
 	local ok, result = false, nil
 	if VFS and type(VFS.Include) == "function" then ok, result = pcall(VFS.Include, "LuaUI/Include/controller_ui_editor_workspace.lua") end
 	if ok and type(result) == "table" then extra.EditorWorkspace = result end
+	local glyphOK, glyphResult = false, nil
+	if VFS and type(VFS.Include) == "function" then glyphOK, glyphResult = pcall(VFS.Include, "LuaUI/Include/controller_glyphs.lua") end
+	if glyphOK and type(glyphResult) == "table" then extra.Glyphs = glyphResult end
 end
 
 local DEFAULTS = {
@@ -82,12 +85,13 @@ local DEFAULTS = {
 			padding = 12, maxWidth = 0.52, columns = 2, backgroundOpacity = 0.72,
 			textOpacity = 0.96, borderOpacity = 0.72, fadeDuration = 0.18,
 			compact = false, anchor = "bottomleft", mode = "Contextual", overflow = "Wrap",
-			presentation = "Text Chip + Action", showTapHold = true, showChip = true,
+			presentation = "Glyph + Action Text", showTapHold = true, showChip = true,
 			showActionText = true, showRowBackground = false, showCategoryHeaders = false,
 			showContextHeader = false, showSeparators = false, shadowEnabled = false,
 			glowEnabled = false, borderThickness = 1, wrapLines = 2, chordLayout = "Horizontal",
 			fontMinScale = 0.62, priorityHiding = true, marqueeEnabled = false,
 			marqueeMode = "Ping Pong", marqueeSpeed = 7, marqueeDelay = 1.2, maxItems = 14, expanded = false,
+			glyphColorMode = "Color-friendly", glyphSpacing = 4, glyphOpacity = 1,
 		},
 		bindingsButton = {
 			enabled = true, x = 1360 / 1920, y = 1044 / 1080, scale = 1,
@@ -258,6 +262,9 @@ for _, row in ipairs({
 	{ "marqueeMode", "Marquee behavior", "enum", nil, nil, nil, { "Loop", "Ping Pong" } },
 	{ "marqueeSpeed", "Marquee speed", "number", 1, 30, 1 },
 	{ "marqueeDelay", "Marquee delay", "number", 0, 5, 0.1 },
+	{ "glyphColorMode", "Glyph color mode", "enum", nil, nil, nil, { "Color-friendly", "Monochrome", "Theme Accent" } },
+	{ "glyphSpacing", "Glyph chord spacing", "number", 0, 16, 1 },
+	{ "glyphOpacity", "Glyph opacity", "number", 0.1, 1, 0.05 },
 }) do
 	local options = type(row[7]) == "table" and row[7] or nil
 	addProperty("Hints", "hints", row[1], row[2], row[3], row[4], row[5], row[6], "Advanced", options)
@@ -1496,7 +1503,7 @@ function extra.automaticAbbreviation(text)
 end
 
 function extra.hintPresentation(component)
-	local name = component.presentation or "Text Chip + Action"
+	local name = component.presentation or "Glyph + Action Text"
 	local chip, action, compact, abbreviated = true, true, false, false
 	if name == "Glyph + Action Text" then abbreviated = true
 	elseif name == "Button Chip Only" then action = false
@@ -1515,10 +1522,21 @@ local function drawHints()
 	local fontScale = effectiveFontScale("hints")
 	local fontSize = 14 * fontScale
 	local showChip, showActionText, presentationCompact, abbreviatedChip = extra.hintPresentation(component)
-	local rowHeight = math.max(22 * scale, fontSize + component.rowSpacing * scale)
-	if component.overflow == "Wrap" then rowHeight = rowHeight + fontSize * 0.72 * (math.max(2, component.wrapLines or 2) - 1) end
 	local displayCount = #visibleHints
 	if not component.expanded and component.priorityHiding ~= false then displayCount = math.min(displayCount, math.floor(component.maxItems or 14)) end
+	local glyphSize = math.max(18, 20 * scale * (component.iconScale or 1))
+	local glyphSequences, maxGlyphHeight = {}, 0
+	if extra.Glyphs and showChip then
+		for index = 1, displayCount do
+			glyphSequences[index] = extra.Glyphs.BuildSequence(visibleHints[index].inputs,
+				{ hold = visibleHints[index].hold, showTapHold = component.showTapHold })
+			local _, height = extra.Glyphs.Dimensions(glyphSequences[index], glyphSize,
+				(component.glyphSpacing or 4) * scale, component.chordLayout)
+			maxGlyphHeight = math.max(maxGlyphHeight, height)
+		end
+	end
+	local rowHeight = math.max(22 * scale, fontSize + component.rowSpacing * scale, maxGlyphHeight + 6 * scale)
+	if component.overflow == "Wrap" then rowHeight = rowHeight + fontSize * 0.72 * (math.max(2, component.wrapLines or 2) - 1) end
 	local columns = math.floor(component.columns or 0)
 	if columns <= 0 then columns = viewX < 1100 and 1 or 2 end
 	columns = math.max(1, math.min(columns, displayCount))
@@ -1559,13 +1577,26 @@ local function drawHints()
 		local ry = y1 + panelHeight - component.padding * scale - moreHeight - contextHeight - (row + 1) * rowHeight
 		local chip = formatInputs(hint)
 		if abbreviatedChip then chip = chip:gsub("D%-pad ", "D"):gsub("Left Stick", "LS"):gsub("Right Stick", "RS") end
-		local chipWidth = showChip and math.min(columnWidth * 0.46, math.max(38 * scale, (#chip * 7 + 14) * scale * component.iconScale)) or 0
+		local sequence = glyphSequences[index]
+		local glyphWidth = sequence and extra.Glyphs.Dimensions(sequence, glyphSize,
+			(component.glyphSpacing or 4) * scale, component.chordLayout) or nil
+		local chipWidth = showChip and math.min(columnWidth * (showActionText and 0.48 or 1),
+			math.max(38 * scale, sequence and glyphWidth + 8 * scale or (#chip * 7 + 14) * scale * component.iconScale)) or 0
 		if component.showRowBackground then glColor(theme.mutedR, theme.mutedG, theme.mutedB, 0.13 * opacity); glRect(rx, ry + 1, rx + columnWidth, ry + rowHeight - 1) end
 		if showChip then
 			glColor(0.08, 0.18, 0.23, 0.94 * opacity); glRect(rx, ry + 2 * scale, rx + chipWidth, ry + rowHeight - 2 * scale)
 			drawOutline(rx, ry + 2 * scale, rx + chipWidth, ry + rowHeight - 2 * scale, { theme.accentR, theme.accentG, theme.accentB, 0.9 * opacity })
-			glColor(0.76, 0.96, 1, component.textOpacity * opacity)
-			glText(chip, rx + chipWidth * 0.5, ry + (rowHeight - fontSize) * 0.5, fontSize * 0.82 * component.iconScale, "oc")
+			if sequence then
+				extra.Glyphs.DrawSequence(sequence, rx + 4 * scale, ry + (rowHeight - maxGlyphHeight) * 0.5, {
+					size = glyphSize, spacing = (component.glyphSpacing or 4) * scale, layout = component.chordLayout,
+					alignment = "left", maxWidth = chipWidth - 8 * scale, colorMode = component.glyphColorMode or "Color-friendly",
+					opacity = (component.glyphOpacity or 1) * component.textOpacity * opacity,
+					tint = { theme.accentR, theme.accentG, theme.accentB }, backgroundOpacity = 0, borderOpacity = 0,
+				})
+			else
+				glColor(0.76, 0.96, 1, component.textOpacity * opacity)
+				glText(chip, rx + chipWidth * 0.5, ry + (rowHeight - fontSize) * 0.5, fontSize * 0.82 * component.iconScale, "oc")
+			end
 		end
 		local label = (component.compact or presentationCompact) and (hint.compactLabel or extra.automaticAbbreviation(hint.label)) or hint.label
 		if component.showCategoryHeaders then label = "[" .. tostring(hint.group or "System") .. "] " .. tostring(label) end
@@ -2065,6 +2096,33 @@ function extra.selectedPreviewDefinition()
 	return { editor.selectedComponent or "hints", tabs[editor.tab] or "Component", 420, 180 }
 end
 
+function extra.workspaceGetValue(row)
+	local scope = getScope(row[1]); return scope and scope[row[2]]
+end
+
+function extra.workspaceGetSource(row)
+	return layerSources[rowID(row)] or "preview"
+end
+
+function extra.workspaceIsEnforced(row)
+	return isEnforced(row[1], row[2])
+end
+
+function extra.drawWorkspacePreview(shape, colors)
+	if editor.selectedComponent == "hints" and extra.Glyphs then
+		local sequence = extra.Glyphs.BuildSequence({ "back", "start", "LB", "RB" }, { hold = true, showTapHold = true })
+		local size = math.max(14, math.min(24, (shape.y2 - shape.y1) * 0.38))
+		extra.Glyphs.DrawSequence(sequence, (shape.x1 + shape.x2) * 0.5, shape.y1 + (shape.y2 - shape.y1 - size) * 0.5, {
+			size = size, spacing = 3, layout = "Horizontal", alignment = "center", maxWidth = shape.x2 - shape.x1 - 12,
+			colorMode = settings.components.hints.glyphColorMode or "Color-friendly", opacity = 1,
+			tint = { settings.theme.accentR, settings.theme.accentG, settings.theme.accentB },
+		})
+	else
+		glColor(colors.text[1], colors.text[2], colors.text[3], colors.text[4])
+		glText(extra.selectedPreviewDefinition()[2], (shape.x1 + shape.x2) * 0.5, (shape.y1 + shape.y2) * 0.5 - 5, 12, "oc")
+	end
+end
+
 function extra.drawEditor()
 	if not editor.open then editor.bounds = nil; return end
 	if not extra.workspace then extra.drawEditorTable(); return end
@@ -2082,9 +2140,8 @@ function extra.drawEditor()
 		previewContext = settings.authoring.contextPreview, previewLabel = preview[2], previewWidth = preview[3], previewHeight = preview[4],
 		previewDetail = "Drag the selection bounds in the live game view; resize handles appear where supported.",
 		scopeLabels = extra.editorScopeLabels,
-		getValue = function(row) local scope = getScope(row[1]); return scope and scope[row[2]] end,
-		getSource = function(row) return layerSources[rowID(row)] or "preview" end,
-		isModified = isRowModified, isEnforced = function(row) return isEnforced(row[1], row[2]) end,
+		getValue = extra.workspaceGetValue, getSource = extra.workspaceGetSource,
+		isModified = isRowModified, isEnforced = extra.workspaceIsEnforced, drawPreview = extra.drawWorkspacePreview,
 		emptyText = tabs[editor.tab] == "Recovery"
 			and (editor.recoveryAvailable and "Recovery data is active. Save or reset when ready." or "No recovery is pending.")
 			or "No properties match this filter or search.",
