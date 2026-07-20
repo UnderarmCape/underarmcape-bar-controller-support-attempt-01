@@ -93,6 +93,8 @@ widget:SetConfigData({
 assertEqual(api.Get("global", "scale"), 1.1, "schema-2 personal migration")
 assertEqual(api.Get("hints", "mode"), "Minimal", "personal precedence")
 assertEqual(api.GetPropertySource("hints", "mode"), "personal", "personal source")
+assertEqual(api.Get("hints", "glyphColorMode"), "Color-friendly", "schema-2 migration receives glyph default")
+assertEqual(api.Get("hints", "glyphSpacing"), 4, "glyph spacing default remains schema-3 compatible")
 
 currentContext = { buildPlacement = true, hasSelection = true, hasBuilder = true }
 api.Set("hints", "mode", "Contextual")
@@ -218,4 +220,9 @@ assertTrue(authorRecovery.authorData.shippingEnforcedPaths["hotSlots.slotGap"], 
 widget:SetConfigData(widget:GetConfigData())
 assertTrue(widget:GetConfigData().recovery.authorData.hiddenActions.selectCommander, "authoring recovery restored")
 
-print("Controller UI authoring tests passed: migration, precedence/enforcement, hint modes/categories, long-label previews, undo/redo, recovery, action audit, hold repeat, stress bounds.")
+local gameplaySource = readFile(root .. "/luaui/Widgets/gui_controller_camera_test.lua")
+assertTrue(string.find(gameplaySource, "ControllerCameraTestGetBinding", 1, true) ~= nil, "live binding resolver gameplay source remains present")
+assertTrue(string.find(gameplaySource, "BACK_START_EDITOR_HOLD_SECONDS", 1, true) ~= nil, "Back+Start editor hold gameplay source remains present")
+assertTrue(string.find(gameplaySource, "GetBackStartHoldProgress", 1, true) ~= nil, "Back+Start hold progress API remains present")
+
+print("Controller UI authoring tests passed: migration/default compatibility, precedence/enforcement, hint modes/categories, long-label previews, undo/redo, recovery, action audit, hold repeat, gameplay-source assertions, stress bounds.")

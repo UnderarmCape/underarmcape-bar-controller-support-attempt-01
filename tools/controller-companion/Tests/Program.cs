@@ -130,21 +130,29 @@ internal static class Program
             string manifestText = Encoding.UTF8.GetString(manifest);
             using JsonDocument parsed = JsonDocument.Parse(manifestText);
             string hash = parsed.RootElement.GetProperty("sha256").GetString() ?? throw new InvalidDataException("fixture hash missing");
+            string baseVersion = parsed.RootElement.GetProperty("defaultsVersion").GetString() ?? throw new InvalidDataException("fixture version missing");
+            int separator = baseVersion.LastIndexOf('-');
+            if (separator < 0 || !int.TryParse(baseVersion.Substring(separator + 1), out int baseRevision))
+                throw new InvalidDataException("fixture version must end in a numeric revision");
+            string versionPrefix = baseVersion.Substring(0, separator + 1);
+            string newerVersion = versionPrefix + (baseRevision + 1);
+            string mismatchVersion = versionPrefix + (baseRevision + 2);
+            string unknownActionVersion = versionPrefix + (baseRevision + 3);
             mismatchManifest = Encoding.UTF8.GetBytes(manifestText
-                .Replace("\"defaultsVersion\": \"0.6.0-1\"", "\"defaultsVersion\": \"0.6.0-3\"")
+                .Replace(baseVersion, mismatchVersion)
                 .Replace(hash, new string('0', 64)));
-            newerDefaults = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(defaults).Replace("\"defaultsVersion\": \"0.6.0-1\"", "\"defaultsVersion\": \"0.6.0-2\""));
+            newerDefaults = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(defaults).Replace(baseVersion, newerVersion));
             using SHA256 sha = SHA256.Create();
             string newerHash = BitConverter.ToString(sha.ComputeHash(newerDefaults)).Replace("-", string.Empty).ToLowerInvariant();
             newerManifest = Encoding.UTF8.GetBytes(manifestText
-                .Replace("\"defaultsVersion\": \"0.6.0-1\"", "\"defaultsVersion\": \"0.6.0-2\"")
+                .Replace(baseVersion, newerVersion)
                 .Replace(hash, newerHash));
             unknownActionDefaults = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(defaults)
-                .Replace("\"defaultsVersion\": \"0.6.0-1\"", "\"defaultsVersion\": \"0.6.0-4\"")
+                .Replace(baseVersion, unknownActionVersion)
                 .Replace("selectCommander", "notAControllerAction"));
             string unknownActionHash = BitConverter.ToString(sha.ComputeHash(unknownActionDefaults)).Replace("-", string.Empty).ToLowerInvariant();
             unknownActionManifest = Encoding.UTF8.GetBytes(manifestText
-                .Replace("\"defaultsVersion\": \"0.6.0-1\"", "\"defaultsVersion\": \"0.6.0-4\"")
+                .Replace(baseVersion, unknownActionVersion)
                 .Replace(hash, unknownActionHash));
             int port = ReservePort();
             BaseUrl = $"http://127.0.0.1:{port}/";
