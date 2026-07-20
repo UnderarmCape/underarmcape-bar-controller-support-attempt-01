@@ -70,7 +70,14 @@ function Get-PeMachine([string]$Path) {
 }
 
 function Invoke-SmokeProcess([string]$Path, [string[]]$Arguments, [int]$ExpectedExitCode, [string]$Label) {
-    $process = Start-Process -FilePath $Path -ArgumentList $Arguments -PassThru -Wait -WindowStyle Hidden
+    $startParameters = @{
+        FilePath = $Path
+        PassThru = $true
+        Wait = $true
+        WindowStyle = 'Hidden'
+    }
+    if ($Arguments.Count -gt 0) { $startParameters.ArgumentList = $Arguments }
+    $process = Start-Process @startParameters
     if ($process.ExitCode -ne $ExpectedExitCode) {
         throw "$Label smoke test returned $($process.ExitCode); expected $ExpectedExitCode."
     }
