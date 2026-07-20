@@ -1,0 +1,45 @@
+{
+  "packageName": "BAR Controller Companion",
+  "version": "0.6.0",
+  "repository": "UnderarmCape/underarmcape-bar-controller-support-attempt-01",
+  "releaseTitle": "BAR Controller Support v0.6.0 — UI Authoring Suite",
+  "releaseTag": "controller-support-v0.6.0-ui-authoring",
+  "releaseAssetName": "BAR_Controller_Support_v0.6.0_Widget_Companion.zip",
+  "releaseChecksumName": "BAR_Controller_Support_v0.6.0_Widget_Companion.zip.sha256",
+  "compatibleReleaseAssetPatterns": [
+    "BAR_Controller_Support_v*_Widget_Companion.zip",
+    "BAR_Controller_Companion_v*.zip"
+  ],
+  "requiredPublicFiles": [
+    "BAR_Controller_Companion_Installer_v0.6.0.exe",
+    "BAR_Controller_Companion_Restore_v0.6.0.exe",
+    "docs/README.md",
+    "docs/RELEASE_NOTES_v0.6.0.md",
+    "LICENSE.md",
+    "payload-sha256.json"
+  ],
+  "requiredLuaFiles": [
+    "luaui/Widgets/controller_socket_bridge.lua",
+    "luaui/Widgets/gui_controller_camera_test.lua",
+    "luaui/Widgets/gui_pregameui.lua",
+    "luaui/Widgets/cmd_area_mex.lua",
+    "luaui/Widgets/gui_controller_bindings_ui.lua",
+    "luaui/Widgets/gui_controller_smartx_mouse_audit.lua",
+    "luaui/Widgets/gui_controller_ui_layout.lua"
+  ],
+  "requiredBarDataFiles": [
+    "luaui/Include/controller_ui_editor_workspace.lua",
+    "luaui/Include/controller_ui_editor_input.lua",
+    "luaui/Include/controller_ui_shared_renderers.lua",
+    "luaui/Include/controller_glyphs.lua",
+    "luaui/Images/controller-glyphs/controller_glyph_atlas.png",
+    "luaui/Images/controller-glyphs/asset-manifest.json",
+    "luaui/Images/controller-glyphs/LICENSE.md",
+    "controller-ui/shipping-defaults.json",
+    "controller-ui/shipping-defaults-manifest.json"
+  ],
+  "requiredCompanionFiles": [
+    "companion/BARControllerBridge.exe",
+    "companion/BARControllerLauncher.exe"
+  ]
+}
