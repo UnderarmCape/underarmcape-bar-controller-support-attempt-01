@@ -614,10 +614,18 @@ internal static class ReleaseOperations
     {
         if (!backup.ExistedBeforeInstall)
         {
-            Status(
-                char.ToUpperInvariant(label[0]) + label.Substring(1)
-                    + " did not exist before installation; left in place: " + backup.Destination,
-                true);
+            if (File.Exists(backup.Destination))
+            {
+                File.Delete(backup.Destination);
+                Status("Removed newly installed " + label + ": " + backup.Destination, true);
+            }
+            else
+            {
+                Status(
+                    char.ToUpperInvariant(label[0]) + label.Substring(1)
+                        + " was already absent: " + backup.Destination,
+                    true);
+            }
             return;
         }
         if (backup.BackupPath != null && File.Exists(backup.BackupPath))
