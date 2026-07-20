@@ -142,8 +142,15 @@ try {
     $fixedTime = [DateTimeOffset]::new(2026, 7, 20, 0, 0, 0, [TimeSpan]::Zero)
     foreach ($file in @(Get-ChildItem -LiteralPath $target -Recurse -File | Sort-Object FullName)) {
         $relative = $targetName + '/' + $file.FullName.Substring($target.Length + 1).Replace('\', '/')
-        $entry = [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $relative, [IO.Compression.CompressionLevel]::Optimal)
+        $entry = $archive.CreateEntry($relative, [IO.Compression.CompressionLevel]::Optimal)
         $entry.LastWriteTime = $fixedTime
+        $sourceStream = [IO.File]::OpenRead($file.FullName)
+        $entryStream = $entry.Open()
+        try { $sourceStream.CopyTo($entryStream) }
+        finally {
+            $entryStream.Dispose()
+            $sourceStream.Dispose()
+        }
     }
 }
 finally { $archive.Dispose() }
