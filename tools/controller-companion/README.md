@@ -1,4 +1,21 @@
-# BAR Controller Companion v0.5.1
+# BAR Controller Companion v0.6.0 development
+
+No v0.6.0 package or release has been published from this branch. The v0.5.1 installation instructions below continue to describe the frozen public package; the source projects now report 0.6.0 for future staging.
+
+## v0.6 defaults and update commands
+
+The bridge performs a short, fail-soft background check for controller UI defaults and public application releases. It never applies a release at startup. Manual commands are:
+
+```text
+BARControllerBridge check
+BARControllerBridge defaults
+BARControllerBridge update
+BARControllerBridge status
+BARControllerBridge reload
+BARControllerBridge help
+```
+
+Defaults are checked for schema, compatibility, SHA-256, ranges, and known UI/action/category IDs, then handed to LuaUI through `LuaUI/Config/BARControllerSupport`. A newer pair backs up the previous known-good revision and older remote data cannot downgrade the cache. Application packages require user approval and a GitHub asset digest or `.sha256` sidecar. `update --yes` approves download only; `update --yes --apply` also approves launching the verified installer.
 
 BAR Controller Companion adds Xbox/XInput controller input to vanilla BAR
 without replacing Recoil or injecting into the game. The bridge sends physical

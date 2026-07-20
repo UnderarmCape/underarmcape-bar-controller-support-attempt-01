@@ -4,9 +4,9 @@
 
 - Open by clicking `UI Layout`, using `/luaui bar_controller_ui`, or holding Back/View + Start/Menu for 1.5 seconds.
 - Drag the header to move; drag the lower-right handle to resize.
-- Use General, Button Hints, Bindings Button, Radials, Other UI, and Reset / Defaults tabs.
-- Changes apply immediately. Reset Section and Reset All restore validated defaults.
-- Position/size and all component values persist in Controller UI Layout schema 2.
+- Use General, Hints, Actions, Hot Slots, Launchers, Radials, Status, Other, Theme, Authoring, and Recovery tabs with Basic/Advanced/All/Favorites/Recent/Modified filters.
+- Changes preview immediately; explicit Save promotes them. Reset Section and Reset All restore validated defaults.
+- Position/size and all component values migrate into Controller UI Layout schema 3. Explicit Save promotes a preview to personal settings; dirty recovery remains separate.
 - `ViewResize` recomputes automatic scale and clamps the editor and Bindings launcher on-screen.
 - The full Controller Bindings UI window has no new move, resize, position, or dimension code.
 
@@ -26,4 +26,3 @@
 ## Bindings launcher
 
 The launcher position is normalized and migrates once from legacy right/top offsets. It can be dragged only while the editor is open. Its existing left-click toggle behavior remains unchanged during normal play.
-

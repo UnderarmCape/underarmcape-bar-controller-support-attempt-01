@@ -25,4 +25,3 @@ Negative underwater ground heights are intentionally retained. No `max(0, y)` or
 - Single placement: final command uses the common resolver.
 - Line/grid/border/split: every native or fallback point is normalized and validated before preview and issue.
 - Rotation: re-resolution and validation use the current facing.
-

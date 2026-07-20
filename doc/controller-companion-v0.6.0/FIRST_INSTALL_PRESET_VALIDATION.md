@@ -17,4 +17,3 @@ Binding config schema is 2. A complete saved table is valid only when every curr
 3. Open Bindings and confirm `Build-First Commander` is Active.
 4. Rebind one action, restart, and confirm it remains changed and the preset status is Custom.
 5. Restore the test config backup after the clean-config test.
-

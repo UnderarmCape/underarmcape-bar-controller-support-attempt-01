@@ -85,4 +85,3 @@ The extra `.v060-test-backup` copy is intentionally retained as recovery insuran
 ## Regression pass
 
 Companion connection; native-controller preference; camera; selection; Smart X; hold-X multi-unit path; Area Mex; build/tactical/factory/selection radials; T2 mex upgrade; pregame controls; binding capture; Build-First preset button; custom binding persistence; short Mouse Mode chord. Inspect `infolog.txt` for Lua errors and watch for periodic frame-time spikes.
-
