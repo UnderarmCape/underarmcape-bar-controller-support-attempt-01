@@ -723,6 +723,7 @@ ControllerCameraTestBuildFirstPreset = ControllerCameraTestBuildFirstPreset or {
 	idlePrev = "dpadLeft", idleNext = "dpadRight",
 	groupSlotUp = "dpadUp", groupSlotDown = "dpadDown",
 	groupRecallOrAssign = "dpadLeft", groupAssign = "dpadRight", groupClear = "leftStickClick",
+	selectCommander = "dpadDown",
 }
 ControllerCameraTestQuickGroups = ControllerCameraTestQuickGroups or {
 	slots = {},
@@ -2167,6 +2168,7 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "groupRecallOrAssign", label = "Recall Current Group", default = "dpadLeft", group = "Idle / Groups" },
 		{ action = "groupAssign", label = "Assign Same-Type/Future Group", default = "dpadRight", group = "Idle / Groups" },
 		{ action = "groupClear", label = "Clear Group", default = "leftStickClick", group = "Idle / Groups" },
+		{ action = "selectCommander", label = "Select Commander", default = "dpadDown", group = "Idle / Groups" },
 	}
 	for _, def in ipairs(defs) do
 		def.default = ControllerCameraTestBuildFirstPreset[def.action] or def.default
@@ -11160,7 +11162,7 @@ function ControllerCameraTestHandleNormalUtilityInput()
 		ControllerCameraTestCycleDebug.lbHadPitchMotion = false
 	elseif WasButtonPressed("dpadUp") then
 		ControllerCameraTestHandleBookmarkButton("up")
-	elseif WasButtonPressed("dpadDown") then
+	elseif ControllerCameraTestActionPressed("selectCommander") then
 		if ControllerCameraTestFocusCommander() then
 			ControllerCameraTestShowHotkeyFeedback("COMMANDER", "commander")
 		end
@@ -11397,9 +11399,10 @@ local function drawReticleCircle(cx, cy, radius)
 	end)
 end
 
-local function drawReticleLines(cx, cy)
-	local RETICLE_GAP = 5
-	local RETICLE_LINE_LENGTH = 11
+local function drawReticleLines(cx, cy, scale)
+	scale = scale or 1
+	local RETICLE_GAP = 5 * scale
+	local RETICLE_LINE_LENGTH = 11 * scale
 	gl.BeginEnd(GL.LINES, function()
 		gl.Vertex(cx - RETICLE_GAP - RETICLE_LINE_LENGTH, cy)
 		gl.Vertex(cx - RETICLE_GAP, cy)
@@ -11420,30 +11423,32 @@ local function drawControllerReticle()
 	local reticleComponent = shared and type(shared.GetComponent) == "function" and shared.GetComponent("reticle") or nil
 	if not ControllerCameraTestControllerUIVisible("reticle", false) or (reticleComponent and reticleComponent.enabled == false) then return end
 
-	local RETICLE_RADIUS = ControllerCameraTestSettings.reticleSize * ControllerCameraTestGetControllerUIScale("reticle", false)
+	local reticleScale = ControllerCameraTestGetControllerUIScale("reticle", false)
+	local reticleOpacity = ControllerCameraTestGetControllerUIOpacity("reticle")
+	local RETICLE_RADIUS = ControllerCameraTestSettings.reticleSize * reticleScale
 	local rx, ry = screenCenterX, screenCenterY
 	if Spring.GetGameFrame() <= 0 then
 		rx, ry = Spring.GetMouseState()
 	end
 
 	gl.LineWidth(4)
-	gl.Color(0, 0, 0, 0.42)
+	gl.Color(0, 0, 0, 0.42 * reticleOpacity)
 	drawReticleCircle(rx, ry, RETICLE_RADIUS)
-	drawReticleLines(rx, ry)
+	drawReticleLines(rx, ry, reticleScale)
 
 	gl.LineWidth(2)
 
 	-- Apply colors based on unit alignment
 	if reticleTargetAlignment == "enemy" then
-		gl.Color(1.0, 0.2, 0.2, 0.9) -- Red for Enemies
+		gl.Color(1.0, 0.2, 0.2, 0.9 * reticleOpacity) -- Red for Enemies
 	elseif reticleTargetAlignment == "ally" then
-		gl.Color(0.2, 1.0, 0.2, 0.9) -- Green for Allies & Self
+		gl.Color(0.2, 1.0, 0.2, 0.9 * reticleOpacity) -- Green for Allies & Self
 	else
-		gl.Color(0.65, 0.92, 1.0, 0.78) -- Default Blue/White for Ground
+		gl.Color(0.65, 0.92, 1.0, 0.78 * reticleOpacity) -- Default Blue/White for Ground
 	end
 
 	drawReticleCircle(rx, ry, RETICLE_RADIUS)
-	drawReticleLines(rx, ry)
+	drawReticleLines(rx, ry, reticleScale)
 
 	gl.LineWidth(1)
 	gl.Color(1, 1, 1, 1)
@@ -12485,6 +12490,7 @@ function ControllerCameraTestDrawTacticalRadial()
 	local currentCategory = TacticalCategories.Info(menu.categoryKey or "tactical")
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
+	cx, cy = ControllerCameraTestGetControllerUIPosition("tacticalRadial", cx, cy)
 	local minView = math.min(viewSizeX, viewSizeY)
 	local radialScale = (ControllerCameraTestSettings.radialScale or 1) * ControllerCameraTestGetControllerUIScale("tacticalRadial", true)
 	local radius = math.min(520, math.max(220, minView * 0.28 * radialScale))
@@ -12658,6 +12664,7 @@ function ControllerCameraTestDrawAreaCommandCenterLabel()
 end
 
 function ControllerCameraTestDrawQueueIndicator()
+	if not ControllerCameraTestControllerUIVisible("queueStatus", false) then return end
 	if not ControllerCameraTestIsQueueModifierActive() then
 		return
 	end
@@ -12672,18 +12679,21 @@ function ControllerCameraTestDrawQueueIndicator()
 
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
-	gl.Color(0.02, 0.12, 0.06, 0.74)
-	gl.Rect(cx - 38, cy + 30, cx + 38, cy + 50)
-	gl.Color(0.35, 1.0, 0.62, 0.95)
+	cx, cy = ControllerCameraTestGetControllerUIPosition("queueStatus", cx, cy)
+	local scale = ControllerCameraTestGetControllerUIScale("queueStatus", false)
+	local opacity = ControllerCameraTestGetControllerUIOpacity("queueStatus")
+	gl.Color(0.02, 0.12, 0.06, 0.74 * opacity)
+	gl.Rect(cx - 38 * scale, cy - 10 * scale, cx + 38 * scale, cy + 10 * scale)
+	gl.Color(0.35, 1.0, 0.62, 0.95 * opacity)
 	gl.LineWidth(1.5)
 	gl.BeginEnd(GL.LINE_LOOP, function()
-		gl.Vertex(cx - 38, cy + 30)
-		gl.Vertex(cx + 38, cy + 30)
-		gl.Vertex(cx + 38, cy + 50)
-		gl.Vertex(cx - 38, cy + 50)
+		gl.Vertex(cx - 38 * scale, cy - 10 * scale)
+		gl.Vertex(cx + 38 * scale, cy - 10 * scale)
+		gl.Vertex(cx + 38 * scale, cy + 10 * scale)
+		gl.Vertex(cx - 38 * scale, cy + 10 * scale)
 	end)
-	gl.Color(0.8, 1, 0.86, 1)
-	gl.Text("QUEUE", cx, cy + 35, 12, "oc")
+	gl.Color(0.8, 1, 0.86, opacity)
+	gl.Text("QUEUE", cx, cy - 5 * scale, 12 * ControllerCameraTestGetControllerUIFontScale("queueStatus"), "oc")
 	gl.LineWidth(1)
 	gl.Color(1, 1, 1, 1)
 end
@@ -12696,6 +12706,7 @@ function ControllerCameraTestDrawFilterRadial()
 
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
+	cx, cy = ControllerCameraTestGetControllerUIPosition("selectionRadial", cx, cy)
 
 	if area.filterRadialOpen then
 		local radius = 130 * ControllerCameraTestGetControllerUIScale("selectionRadial", true)
@@ -12780,26 +12791,29 @@ end
 
 function ControllerCameraTestDrawPlacementPatternPopup()
 	local popup = ControllerCameraTestPlacementPopup
-	if not popup or (popup.expireTime or 0) <= debugEventTime then
+	if not ControllerCameraTestControllerUIVisible("placementStatus", false) or not popup or (popup.expireTime or 0) <= debugEventTime then
 		return
 	end
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
+	cx, cy = ControllerCameraTestGetControllerUIPosition("placementStatus", cx, cy)
 	local alpha = math.min(1, math.max(0, (popup.expireTime - debugEventTime) * 2))
-	local width = math.max(150, (#tostring(popup.text) * 8) + 28)
-	local bottom = math.max(38, cy - 116)
-	gl.Color(0.02, 0.04, 0.06, 0.84 * alpha)
-	gl.Rect(cx - (width / 2), bottom, cx + (width / 2), bottom + 30)
-	gl.Color(0.58, 0.84, 1, 0.88 * alpha)
+	local scale = ControllerCameraTestGetControllerUIScale("placementStatus", false)
+	local opacity = ControllerCameraTestGetControllerUIOpacity("placementStatus")
+	local width = math.max(150, (#tostring(popup.text) * 8) + 28) * scale
+	local bottom = math.max(38, cy - 15 * scale)
+	gl.Color(0.02, 0.04, 0.06, 0.84 * alpha * opacity)
+	gl.Rect(cx - (width / 2), bottom, cx + (width / 2), bottom + 30 * scale)
+	gl.Color(0.58, 0.84, 1, 0.88 * alpha * opacity)
 	gl.LineWidth(1.5)
 	gl.BeginEnd(GL.LINE_LOOP, function()
 		gl.Vertex(cx - (width / 2), bottom)
 		gl.Vertex(cx + (width / 2), bottom)
-		gl.Vertex(cx + (width / 2), bottom + 30)
-		gl.Vertex(cx - (width / 2), bottom + 30)
+		gl.Vertex(cx + (width / 2), bottom + 30 * scale)
+		gl.Vertex(cx - (width / 2), bottom + 30 * scale)
 	end)
-	gl.Color(0.92, 0.97, 1, alpha)
-	gl.Text(tostring(popup.text), cx, bottom + 9, 13, "oc")
+	gl.Color(0.92, 0.97, 1, alpha * opacity)
+	gl.Text(tostring(popup.text), cx, bottom + 9 * scale, 13 * ControllerCameraTestGetControllerUIFontScale("placementStatus"), "oc")
 	gl.Color(1, 1, 1, 1)
 	gl.LineWidth(1)
 end
@@ -12912,6 +12926,7 @@ function ControllerCameraTestBuildCompactSelectedStatus()
 end
 
 function ControllerCameraTestDrawCompactSelectedStatusPanel()
+	if not ControllerCameraTestControllerUIVisible("selectedStatus", false) then return end
 	local status = ControllerCameraTestBuildCompactSelectedStatus()
 	if not status then
 		return
@@ -12921,6 +12936,13 @@ function ControllerCameraTestDrawCompactSelectedStatusPanel()
 	local right = screenWidth - 16
 	local bottom = 50
 	local top = status.mode == "factory" and 154 or 124
+	local uiScale = ControllerCameraTestGetControllerUIScale("selectedStatus", false)
+	local uiBounds = ControllerCameraTestGetControllerUIBounds("selectedStatus", 294, status.mode == "factory" and 104 or 74)
+	if uiBounds then
+		gl.PushMatrix()
+		gl.Translate(uiBounds.x1 - left * uiScale, uiBounds.y1 - bottom * uiScale, 0)
+		gl.Scale(uiScale, uiScale, 1)
+	end
 	gl.Color(0.02, 0.04, 0.06, 0.82)
 	gl.Rect(left, bottom, right, top)
 	gl.Color(0.56, 0.84, 1, 0.7)
@@ -12977,9 +12999,10 @@ function ControllerCameraTestDrawCompactSelectedStatusPanel()
 	gl.Texture(false)
 	gl.Color(1, 1, 1, 1)
 	gl.LineWidth(1)
+	if uiBounds then gl.PopMatrix() end
 end
 
-function ControllerCameraTestDrawControlGroupOverlay()
+function ControllerCameraTestDrawControlGroupOverlayLegacy()
 	local groups = ControllerCameraTestControlGroups
 	if not (ControllerCameraTestActionDown("controlGroupModifier") or (groups.visibleUntil or 0) > debugEventTime) then
 		return
@@ -13059,6 +13082,79 @@ function ControllerCameraTestDrawControlGroupOverlay()
 	gl.Texture(false)
 	gl.LineWidth(1)
 	gl.Color(1, 1, 1, 1)
+end
+
+function ControllerCameraTestDrawControlGroupOverlay()
+	local groups = ControllerCameraTestControlGroups
+	if not ControllerCameraTestControllerUIVisible("hotSlots", false)
+		or not (ControllerCameraTestActionDown("controlGroupModifier") or (groups.visibleUntil or 0) > debugEventTime)
+	then return end
+
+	local shared = WG and WG.ControllerUISettings
+	local component = shared and type(shared.GetComponent) == "function" and shared.GetComponent("hotSlots") or nil
+	component = component or { slotSize = 42, slotGap = 5, slotCount = 10, showLabel = true, showCounts = true,
+		showAuto = true, backgroundOpacity = 0.72, iconScale = 1 }
+	local slotCount = math.max(1, math.min(10, math.floor(tonumber(component.slotCount) or 10)))
+	local baseSlotSize = tonumber(component.slotSize) or 42
+	local baseGap = tonumber(component.slotGap) or 5
+	local baseWidth = baseSlotSize * slotCount + baseGap * (slotCount - 1) + 24
+	local baseHeight = baseSlotSize + (component.showLabel and 34 or 18)
+	local bounds = ControllerCameraTestGetControllerUIBounds("hotSlots", baseWidth, baseHeight)
+	local scale = bounds and bounds.scale or ControllerCameraTestGetControllerUIScale("hotSlots", false)
+	local slotSize, gap = baseSlotSize * scale, baseGap * scale
+	local stripWidth, stripHeight = baseWidth * scale, baseHeight * scale
+	local left = bounds and bounds.x1 or math.max(12, ((viewSizeX > 0 and viewSizeX or 1280) - stripWidth) * 0.5)
+	local bottom = bounds and bounds.y1 or 86
+	local top = bottom + stripHeight
+	local opacity = ControllerCameraTestGetControllerUIOpacity("hotSlots")
+	local fontScale = ControllerCameraTestGetControllerUIFontScale("hotSlots")
+	local iconScale = math.max(0.5, math.min(2, tonumber(component.iconScale) or 1))
+	local activeSlot = ControllerCameraTestNormalizeControlGroupSlot(groups.activeSlot or 1)
+	local startSlot = math.max(1, math.min(11 - slotCount, activeSlot - math.floor(slotCount * 0.5)))
+
+	gl.Color(0, 0, 0, (tonumber(component.backgroundOpacity) or 0.72) * opacity)
+	gl.Rect(left, bottom, left + stripWidth, top)
+	gl.Color(0.36, 0.68, 1, 0.65 * opacity); gl.LineWidth(1.5)
+	gl.BeginEnd(GL.LINE_LOOP, function()
+		gl.Vertex(left, bottom); gl.Vertex(left + stripWidth, bottom); gl.Vertex(left + stripWidth, top); gl.Vertex(left, top)
+	end)
+
+	if component.showLabel then
+		gl.Color(0.82, 0.92, 1, opacity)
+		gl.Text("Controller Groups - Up/Down slot, Left recall/hold assign, Right assign, L3 clear",
+			left + 12 * scale, top - 18 * scale, 11 * fontScale, "o")
+	end
+
+	for visibleIndex = 1, slotCount do
+		local slot = startSlot + visibleIndex - 1
+		local x1 = left + 12 * scale + (visibleIndex - 1) * (slotSize + gap)
+		local y1 = bottom + 8 * scale
+		local x2, y2 = x1 + slotSize, y1 + slotSize
+		local entry = groups.slots[slot]
+		local isActive = slot == activeSlot
+		local isRecent = tostring(groups.lastSlot) == ControllerCameraTestGetControlGroupDisplaySlot(slot)
+		if isActive then gl.Color(0.18, 0.42, 0.78, 0.88 * opacity)
+		elseif entry then gl.Color(0.10, 0.18, 0.24, 0.82 * opacity)
+		else gl.Color(0.05, 0.07, 0.09, 0.74 * opacity) end
+		gl.Rect(x1, y1, x2, y2)
+		if entry and entry.unitDefID then
+			local inset = math.max(3 * scale, (slotSize - slotSize * math.min(0.92, iconScale * 0.72)) * 0.5)
+			gl.Texture("#" .. tostring(entry.unitDefID)); gl.Color(1, 1, 1, (isActive and 0.95 or 0.75) * opacity)
+			gl.TexRect(x1 + inset, y1 + inset, x2 - inset, y2 - inset); gl.Texture(false)
+		end
+		gl.Color(isActive and 1 or 0.55, isActive and 0.92 or 0.72, isActive and 0.35 or 0.82, opacity)
+		gl.LineWidth((isActive or isRecent) and 2.5 or 1)
+		gl.BeginEnd(GL.LINE_LOOP, function() gl.Vertex(x1, y1); gl.Vertex(x2, y1); gl.Vertex(x2, y2); gl.Vertex(x1, y2) end)
+		gl.Color(1, 1, 1, opacity); gl.Text(ControllerCameraTestGetControlGroupDisplaySlot(slot), x1 + 4 * scale, y2 - 13 * scale, 10 * fontScale, "o")
+		if component.showCounts and entry and (entry.count or 0) > 0 then
+			gl.Color(1, 0.92, 0.42, opacity); gl.Text("x" .. tostring(entry.count), x2 - 4 * scale, y1 + 3 * scale, 9 * fontScale, "ro")
+			if component.showAuto and entry.autoAddUnitDefID then gl.Color(0.52, 1, 0.66, 0.95 * opacity); gl.Text("AUTO", x1 + 4 * scale, y1 + 3 * scale, 7 * fontScale, "o") end
+		end
+	end
+
+	gl.Color(0.92, 0.96, 1, opacity)
+	gl.Text("Group " .. ControllerCameraTestGetControlGroupDisplaySlot(activeSlot) .. ": " .. tostring(groups.lastAction), left + 12 * scale, bottom - 16 * scale, 11 * fontScale, "o")
+	gl.Texture(false); gl.LineWidth(1); gl.Color(1, 1, 1, 1)
 end
 
 function ControllerCameraTestCleanRadialDescription(text)
@@ -13267,6 +13363,7 @@ function ControllerCameraTestDrawBuildRadial()
 
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
+	cx, cy = ControllerCameraTestGetControllerUIPosition(componentName, cx, cy)
 
 	local minView = math.min(viewSizeX, viewSizeY)
 	local radialScale = (ControllerCameraTestSettings.radialScale or 1) * ControllerCameraTestGetControllerUIScale(componentName, true)
@@ -13758,6 +13855,27 @@ function ControllerCameraTestGetControllerUIScale(componentName, includeSharedRa
 	return scale
 end
 
+function ControllerCameraTestGetControllerUIPosition(componentName, fallbackX, fallbackY)
+	local shared = WG and WG.ControllerUISettings
+	if shared and type(shared.GetComponentCenter) == "function" then
+		local x, y = shared.GetComponentCenter(componentName, fallbackX, fallbackY)
+		if type(x) == "number" and type(y) == "number" then return x, y end
+	end
+	return fallbackX, fallbackY
+end
+
+function ControllerCameraTestGetControllerUIOpacity(componentName)
+	local shared = WG and WG.ControllerUISettings
+	if shared and type(shared.GetEffectiveOpacity) == "function" then return tonumber(shared.GetEffectiveOpacity(componentName)) or 1 end
+	return 1
+end
+
+function ControllerCameraTestGetControllerUIBounds(componentName, baseWidth, baseHeight)
+	local shared = WG and WG.ControllerUISettings
+	if shared and type(shared.GetComponentBounds) == "function" then return shared.GetComponentBounds(componentName, baseWidth, baseHeight) end
+	return nil
+end
+
 function ControllerCameraTestControllerUIVisible(componentName, includeSharedRadials)
 	local shared = WG and WG.ControllerUISettings
 	if not shared or type(shared.GetComponent) ~= "function" then return true end
@@ -13772,7 +13890,9 @@ function ControllerCameraTestGetControllerUIFontScale(componentName)
 	local shared = WG and WG.ControllerUISettings
 	if not shared or type(shared.GetEffectiveFontScale) ~= "function" then return 1 end
 	local scale = tonumber(shared.GetEffectiveFontScale(componentName)) or 1
-	if type(shared.GetComponent) == "function" then
+	local radialComponent = componentName == "buildRadial" or componentName == "factoryRadial"
+		or componentName == "tacticalRadial" or componentName == "selectionRadial" or componentName == "radials"
+	if radialComponent and type(shared.GetComponent) == "function" then
 		local radial = shared.GetComponent("radials")
 		scale = scale * (radial and tonumber(radial.fontScale) or 1)
 	end
@@ -13787,6 +13907,7 @@ function ControllerCameraTestGetControllerUIIconScale(componentName)
 end
 
 function ControllerCameraTestDrawCompanionFeedback()
+	if not ControllerCameraTestControllerUIVisible("companionStatus", false) then return end
 	local feedback = ControllerCameraTestCompanionFeedback
 	local missing = feedback.missingVisible == true
 	local connected = not missing and (feedback.connectedUntil or 0) > debugEventTime
@@ -13794,21 +13915,23 @@ function ControllerCameraTestDrawCompanionFeedback()
 		return
 	end
 
-	local cx = viewSizeX * 0.5
-	local cy = viewSizeY * 0.73
-	local halfWidth = math.min(430, viewSizeX * 0.42)
-	local halfHeight = missing and 72 or 44
+	local cx, cy = ControllerCameraTestGetControllerUIPosition("companionStatus", viewSizeX * 0.5, viewSizeY * 0.73)
+	local scale = ControllerCameraTestGetControllerUIScale("companionStatus", false)
+	local fontScale = ControllerCameraTestGetControllerUIFontScale("companionStatus")
+	local opacity = ControllerCameraTestGetControllerUIOpacity("companionStatus")
+	local halfWidth = math.min(430, viewSizeX * 0.42) * scale
+	local halfHeight = (missing and 72 or 44) * scale
 
-	gl.Color(0.02, 0.04, 0.06, 0.92)
+	gl.Color(0.02, 0.04, 0.06, 0.92 * opacity)
 	gl.Rect(cx - halfWidth, cy - halfHeight, cx + halfWidth, cy + halfHeight)
 	if missing then
-		gl.Color(1.0, 0.35, 0.24, 0.98)
-		gl.Text("Controller Companion Not Running", cx, cy + 15, 31, "oc")
-		gl.Color(0.94, 0.96, 1.0, 0.96)
-		gl.Text("Start BARControllerBridge.exe, then return to BAR.", cx, cy - 29, 20, "oc")
+		gl.Color(1.0, 0.35, 0.24, 0.98 * opacity)
+		gl.Text("Controller Companion Not Running", cx, cy + 15 * scale, 31 * fontScale, "oc")
+		gl.Color(0.94, 0.96, 1.0, 0.96 * opacity)
+		gl.Text("Start BARControllerBridge.exe, then return to BAR.", cx, cy - 29 * scale, 20 * fontScale, "oc")
 	else
-		gl.Color(0.35, 1.0, 0.55, 0.98)
-		gl.Text("Controller Companion Connected", cx, cy - 11, 29, "oc")
+		gl.Color(0.35, 1.0, 0.55, 0.98 * opacity)
+		gl.Text("Controller Companion Connected", cx, cy - 11 * scale, 29 * fontScale, "oc")
 	end
 	gl.Color(1, 1, 1, 1)
 end
@@ -13833,14 +13956,14 @@ function widget:DrawScreen()
 	if not ControllerCameraTestSettingsUI.open then
 		ControllerCameraTestDrawControlGroupOverlay()
 	end
-	if ControllerCameraTestSettings.helpOverlayVisible then
+	if ControllerCameraTestSettings.helpOverlayVisible and ControllerCameraTestControllerUIVisible("instructional", false) then
 		ControllerCameraTestDrawHelpOverlay()
 	end
 	ControllerCameraTestDrawSettingsUI()
 	ControllerCameraTestDrawCompanionFeedback()
 
 	local feedback = ControllerCameraTestHotkeyFeedback
-	if feedback and feedback.text and feedback.startTime then
+	if ControllerCameraTestControllerUIVisible("notifications", false) and feedback and feedback.text and feedback.startTime then
 		local age = Spring.DiffTimers(Spring.GetTimer(), feedback.startTime)
 		if age < feedback.duration then
 			local alpha = 1.0
@@ -13852,9 +13975,10 @@ function widget:DrawScreen()
 			alpha = math.max(0, math.min(1, alpha))
 
 			local col = feedback.color
-			local cx = viewSizeX / 2
-			local cy = viewSizeY * 0.35
-			local size = 38
+			local cx, cy = ControllerCameraTestGetControllerUIPosition("notifications", viewSizeX / 2, viewSizeY * 0.35)
+			local uiOpacity = ControllerCameraTestGetControllerUIOpacity("notifications")
+			local size = 38 * ControllerCameraTestGetControllerUIFontScale("notifications")
+			alpha = alpha * uiOpacity
 
 			-- Outline/Shadow
 			gl.Color(0, 0, 0, 0.40 * alpha)
