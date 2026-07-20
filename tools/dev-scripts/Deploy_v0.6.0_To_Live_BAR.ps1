@@ -27,6 +27,8 @@ $WidgetFiles = @(
 )
 $LuaSupportFiles = @(
     'controller_ui_editor_workspace.lua',
+    'controller_ui_editor_input.lua',
+    'controller_ui_shared_renderers.lua',
     'controller_glyphs.lua'
 )
 $GlyphAssetFiles = @(
@@ -269,6 +271,8 @@ if (-not $SkipBuild) {
 Write-Step 'Running deployment test gates.'
 Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerUIAuthoring.lua'), $RepositoryRoot) -Label 'Controller UI authoring harness'
 Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerUIWorkspace.lua'), $RepositoryRoot) -Label 'Controller UI workspace navigation/scrolling harness'
+Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerUIModalInput.lua'), $RepositoryRoot) -Label 'Controller UI modal input/inspector harness'
+Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerUISharedRenderers.lua'), $RepositoryRoot) -Label 'Controller UI production/shared preview renderer harness'
 Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerGlyphs.lua'), $RepositoryRoot) -Label 'Controller glyph resolution/asset harness'
 Invoke-NativeChecked -FilePath 'dotnet' -Arguments @('run', '--project', (Join-Path $RepositoryRoot 'tools\controller-companion\Tests\BARControllerCompanionUpdateTests.csproj'), '-c', 'Release', '--no-build', '--no-restore') -Label 'Companion update/defaults tests'
 $publisherProject = Join-Path $RepositoryRoot 'tools\controller-ui-publisher\BARControllerUIDefaultsPublisher.csproj'
@@ -382,6 +386,8 @@ $deployMap = @(
     [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\Widgets\gui_controller_bindings_ui.lua'); destination = (Join-Path $WidgetDirectory 'gui_controller_bindings_ui.lua') },
     [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\Widgets\gui_controller_ui_layout.lua'); destination = (Join-Path $WidgetDirectory 'gui_controller_ui_layout.lua') },
     [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\Include\controller_ui_editor_workspace.lua'); destination = (Join-Path $LuaIncludeDirectory 'controller_ui_editor_workspace.lua') },
+    [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\Include\controller_ui_editor_input.lua'); destination = (Join-Path $LuaIncludeDirectory 'controller_ui_editor_input.lua') },
+    [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\Include\controller_ui_shared_renderers.lua'); destination = (Join-Path $LuaIncludeDirectory 'controller_ui_shared_renderers.lua') },
     [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\Include\controller_glyphs.lua'); destination = (Join-Path $LuaIncludeDirectory 'controller_glyphs.lua') },
     [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\images\controller-glyphs\controller_glyph_atlas.png'); destination = (Join-Path $GlyphAssetDirectory 'controller_glyph_atlas.png') },
     [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\images\controller-glyphs\asset-manifest.json'); destination = (Join-Path $GlyphAssetDirectory 'asset-manifest.json') },
