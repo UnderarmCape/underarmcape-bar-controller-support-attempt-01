@@ -119,16 +119,22 @@ function Build-FrozenRuntimeArtifacts {
         foreach ($name in $runtimeProjects.Keys) {
             $project = $runtimeProjects[$name]
             $publishDirectory = Join-Path $buildRoot $name
-            Invoke-Checked 'dotnet' @(
-                'publish', (Join-Path $workspaceRootFull $project.project),
-                '-c', 'Release', '-r', $runtimeIdentifier, '--self-contained', 'true',
-                '--force', '--nologo', '-o', $publishDirectory,
+            $projectPath = Join-Path $workspaceRootFull $project.project
+            $compilerProperties = @(
                 '/p:Deterministic=true', '/p:ContinuousIntegrationBuild=true',
                 '/p:DebugSymbols=false', '/p:DebugType=None',
                 "/p:SourceRevisionId=$sourceCommit", "/p:RepositoryCommit=$sourceCommit",
                 '/p:IncludeSourceRevisionInInformationalVersion=false',
                 "/p:PathMap=$workspaceRootFull=/_/src"
-            ) ("Publish frozen runtime " + $name)
+            )
+            Invoke-Checked 'dotnet' (@(
+                'build', $projectPath, '-c', 'Release', '-r', $runtimeIdentifier,
+                '--no-incremental', '--nologo', '/p:SelfContained=true'
+            ) + $compilerProperties) ("Compile frozen runtime " + $name)
+            Invoke-Checked 'dotnet' (@(
+                'publish', $projectPath, '-c', 'Release', '-r', $runtimeIdentifier,
+                '--self-contained', 'true', '--no-build', '--nologo', '-o', $publishDirectory
+            ) + $compilerProperties) ("Bundle frozen runtime " + $name)
             $publishedExe = Join-Path $publishDirectory $project.file
             if (-not (Test-Path -LiteralPath $publishedExe -PathType Leaf)) {
                 throw "Publish did not produce the expected executable: $publishedExe"
@@ -342,6 +348,13 @@ foreach ($file in $textFiles) {
     $content = [IO.File]::ReadAllText($file.FullName)
     if ($content -match '(?i)(ghp_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,}|AIza[0-9A-Za-z_-]{30,}|C:\\Users\\kaili)') {
         throw "Credential or private-path pattern found in $($file.FullName)"
+    }
+}
+$sensitiveBinaryPattern = '(?i)(ghp_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,}|AIza[0-9A-Za-z_-]{30,}|C:\\Users\\)'
+foreach ($file in @(Get-ChildItem -LiteralPath $target -Recurse -File)) {
+    $binaryText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($file.FullName))
+    if ($binaryText -match $sensitiveBinaryPattern) {
+        throw "Credential or private-path byte pattern found in $($file.FullName)"
     }
 }
 
