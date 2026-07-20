@@ -27,16 +27,50 @@ end
 
 function Workspace.New()
 	return {
-		panes = { nav = paneState(), inspector = paneState(), preview = paneState() },
+		panes = { nav = paneState(), inspector = paneState(), preview = paneState(), modal = paneState() },
 		inspectorScroll = {}, collapsed = {}, navGroups = {}, componentSearch = "",
 		focusId = nil, focusItems = {}, focusIndex = 0, hits = {}, modal = nil,
 		dragScrollbar = nil, hovered = nil, previewZoom = 1, previewFit = true,
 		showHelp = false, navCollapsed = false, forcedNavCollapsed = false,
+		previewCollapsed = false, autoCollapseUnavailable = true, navWidth = 190, previewWidth = 360,
+		showSafeMargins = false, showSelectionBounds = true, debugVisible = false,
+		dividerDrag = nil, lastDividerClick = {},
 	}
 end
 
-function Workspace.SetBounds(state, bounds)
+function Workspace.ExportChrome(state)
+	return {
+		navWidth = state.navWidth, previewWidth = state.previewWidth,
+		navCollapsed = state.navCollapsed == true, previewCollapsed = state.previewCollapsed == true,
+		autoCollapseUnavailable = state.autoCollapseUnavailable ~= false,
+		previewZoom = state.previewZoom, previewFit = state.previewFit ~= false,
+		showSafeMargins = state.showSafeMargins == true, showSelectionBounds = state.showSelectionBounds ~= false,
+	}
+end
+
+function Workspace.ImportChrome(state, chrome)
+	if type(chrome) ~= "table" then return false end
+	state.navWidth = clamp(chrome.navWidth or state.navWidth, 120, 420)
+	state.previewWidth = clamp(chrome.previewWidth or state.previewWidth, 180, 900)
+	state.navCollapsed = chrome.navCollapsed == true
+	state.previewCollapsed = chrome.previewCollapsed == true
+	state.autoCollapseUnavailable = chrome.autoCollapseUnavailable ~= false
+	state.previewZoom = clamp(chrome.previewZoom or state.previewZoom, 0.5, 2)
+	state.previewFit = chrome.previewFit ~= false
+	state.showSafeMargins = chrome.showSafeMargins == true
+	state.showSelectionBounds = chrome.showSelectionBounds ~= false
+	return true
+end
+
+function Workspace.ResetSession(state)
+	state.debugVisible = false
+	state.modal, state.showHelp, state.dividerDrag, state.dragScrollbar = nil, false, nil, nil
+	state.focusId, state.focusIndex = nil, 0
+end
+
+function Workspace.SetBounds(state, bounds, spec)
 	state.bounds = copyBounds(bounds)
+	spec = spec or {}
 	local width, bodyGap = state.bounds.width, 6
 	local headerH, toolbarH, footerH = 48, 40, 42
 	local body = { x1 = bounds.x1 + 8, y1 = bounds.y1 + footerH, x2 = bounds.x2 - 8,
@@ -45,20 +79,37 @@ function Workspace.SetBounds(state, bounds)
 	local forcedCollapse = width < 735
 	state.forcedNavCollapsed = forcedCollapse
 	local collapsed = forcedCollapse or state.navCollapsed
-	local navW = collapsed and 48 or clamp(width * 0.22, 164, 210)
-	local inspectorW = compact and (body.x2 - body.x1 - navW - bodyGap)
-		or clamp(width * 0.45, 330, 470)
+	local navW = collapsed and 48 or clamp(state.navWidth or width * 0.22, 164, min(280, width * 0.32))
+	local previewAvailable = spec.previewAvailable ~= false
+	local autoCollapsed = not previewAvailable and state.autoCollapseUnavailable ~= false
+	local previewCollapsed = compact or state.previewCollapsed or autoCollapsed
+	local bodyWidth = body.x2 - body.x1
+	local inspectorMin = min(330, max(250, bodyWidth - navW - bodyGap))
+	local previewW = 0
+	if not previewCollapsed then
+		local maximum = max(220, bodyWidth - navW - inspectorMin - bodyGap * 2)
+		previewW = clamp(state.previewWidth or width * 0.34, 220, maximum)
+	end
+	local inspectorW = bodyWidth - navW - bodyGap - (previewW > 0 and previewW + bodyGap or 0)
 	state.layout = {
 		header = { x1 = bounds.x1, y1 = bounds.y2 - headerH, x2 = bounds.x2, y2 = bounds.y2 },
 		toolbar = { x1 = bounds.x1 + 8, y1 = bounds.y2 - headerH - toolbarH, x2 = bounds.x2 - 8, y2 = bounds.y2 - headerH },
 		footer = { x1 = bounds.x1 + 8, y1 = bounds.y1 + 5, x2 = bounds.x2 - 8, y2 = bounds.y1 + footerH - 4 },
 		nav = { x1 = body.x1, y1 = body.y1, x2 = body.x1 + navW, y2 = body.y2 },
 		inspector = { x1 = body.x2 - inspectorW, y1 = body.y1, x2 = body.x2, y2 = body.y2 },
-		compact = compact, navCollapsed = collapsed,
+		compact = compact, navCollapsed = collapsed, previewCollapsed = previewCollapsed,
+		previewAvailable = previewAvailable, previewAutoCollapsed = autoCollapsed,
 	}
-	if not compact then
+	if previewW > 0 then
 		state.layout.preview = { x1 = state.layout.nav.x2 + bodyGap, y1 = body.y1,
-			x2 = state.layout.inspector.x1 - bodyGap, y2 = body.y2 }
+			x2 = state.layout.nav.x2 + bodyGap + previewW, y2 = body.y2 }
+		state.layout.inspector.x1 = state.layout.preview.x2 + bodyGap
+		state.layout.dividerNav = { x1 = state.layout.nav.x2, y1 = body.y1, x2 = state.layout.nav.x2 + bodyGap, y2 = body.y2 }
+		state.layout.dividerInspector = { x1 = state.layout.preview.x2, y1 = body.y1, x2 = state.layout.preview.x2 + bodyGap, y2 = body.y2 }
+	elseif not compact then
+		state.layout.previewCollapsedStrip = { x1 = state.layout.nav.x2 + 1, y1 = body.y1,
+			x2 = state.layout.nav.x2 + bodyGap + 25, y2 = body.y2 }
+		state.layout.inspector.x1 = state.layout.previewCollapsedStrip.x2 + bodyGap
 	end
 	return state.layout
 end
@@ -111,6 +162,10 @@ end
 
 function Workspace.MouseWheel(state, x, y, direction, shift)
 	if not inside(state.bounds, x, y) then return false end
+	if state.modal then
+		Workspace.Scroll(state, "modal", direction > 0 and -72 or 72)
+		return true
+	end
 	local layout = state.layout or {}
 	local paneName = inside(layout.nav, x, y) and "nav" or inside(layout.inspector, x, y) and "inspector" or nil
 	if paneName then
@@ -121,7 +176,7 @@ function Workspace.MouseWheel(state, x, y, direction, shift)
 end
 
 function Workspace.ScrollbarPress(state, x, y)
-	for _, name in ipairs({ "nav", "inspector" }) do
+	for _, name in ipairs({ "modal", "nav", "inspector" }) do
 		local pane = state.panes[name]
 		if inside(pane.thumb, x, y) then
 			state.dragScrollbar = { name = name, startY = y, startScroll = pane.scroll }
@@ -147,9 +202,39 @@ function Workspace.ScrollbarDrag(state, y)
 end
 
 function Workspace.EndPointer(state)
-	local handled = state.dragScrollbar ~= nil
-	state.dragScrollbar = nil
+	local handled = state.dragScrollbar ~= nil or state.dividerDrag ~= nil
+	state.dragScrollbar, state.dividerDrag = nil, nil
 	return handled
+end
+
+function Workspace.DividerPress(state, x, y, now)
+	local layout = state.layout or {}
+	local kind = inside(layout.dividerNav, x, y) and "nav" or inside(layout.dividerInspector, x, y) and "preview" or nil
+	if not kind then return false end
+	now = tonumber(now) or 0
+	local previous = state.lastDividerClick[kind]
+	state.lastDividerClick[kind] = now
+	if previous and now - previous <= 0.35 then
+		if kind == "nav" then state.navWidth = 190 else state.previewWidth = 360 end
+		state.dividerDrag = nil
+		return "reset"
+	end
+	state.dividerDrag = { kind = kind, startX = x, startNav = state.navWidth, startPreview = state.previewWidth }
+	return kind
+end
+
+function Workspace.DividerDrag(state, x)
+	local drag = state.dividerDrag
+	if not drag then return false end
+	if drag.kind == "nav" then state.navWidth = clamp(drag.startNav + x - drag.startX, 164, 280)
+	else state.previewWidth = clamp(drag.startPreview + x - drag.startX, 220, 900) end
+	return true
+end
+
+function Workspace.TogglePreview(state, available)
+	if not available then return false end
+	state.previewCollapsed = not state.previewCollapsed
+	return true
 end
 
 local function addFocus(state, item)
@@ -186,7 +271,8 @@ end
 function Workspace.EnsureFocusVisible(state)
 	local _, item = findFocus(state, state.focusId)
 	if not item or not item.virtualBounds or not item.pane then return false end
-	local paneBounds = item.pane == "inspector" and state.inspectorViewport or state.navViewport
+	local paneBounds = item.pane == "inspector" and state.inspectorViewport
+		or item.pane == "modal" and state.modalViewport or state.navViewport
 	local pane = state.panes[item.pane]
 	if not paneBounds or not pane then return false end
 	local top = item.virtualBounds.top
@@ -246,6 +332,7 @@ end
 
 function Workspace.OpenModal(state, title, options, opener)
 	state.modal = { title = tostring(title or "Choose"), options = options or {}, opener = opener or state.focusId, index = 1 }
+	state.panes.modal.scroll = 0
 	state.focusId = "modal:1"
 end
 
@@ -253,6 +340,7 @@ function Workspace.CloseModal(state)
 	if not state.modal then return false end
 	local opener = state.modal.opener
 	state.modal = nil
+	state.panes.modal.scroll = 0
 	state.focusId = opener
 	return true
 end
@@ -398,7 +486,8 @@ local function drawToolbar(state, spec, colors)
 		{ "Undo", 50, "undo", "Undo (Ctrl+Z)", spec.canUndo == false },
 		{ "Redo", 50, "redo", "Redo (Ctrl+Y)", spec.canRedo == false },
 		{ "Save", 52, "save", "Save personal settings (Ctrl+S)" },
-		{ "Preview: " .. tostring(spec.previewContext or "Live"), 154, "preview-context", "Change safe preview context" },
+		{ "Preview: " .. tostring(spec.previewContext or "Normal Gameplay"), 164, "preview-context", "Open categorized preview contexts" },
+		{ state.layout.previewCollapsed and "Show pane" or "Hide pane", 66, "toggle-preview", "Show or collapse the live preview pane", not spec.previewAvailable },
 		{ "Align", 54, "align-menu", "Alignment and distribution tools" },
 		{ "Help", 48, "help", "Keyboard help (F1)" },
 	}
@@ -407,10 +496,13 @@ local function drawToolbar(state, spec, colors)
 		button(state, b, "toolbar:" .. def[3], def[1], { type = def[3] }, colors, def[4], def[5])
 		x = b.x2 + 5
 	end
-	if spec.developer then
+	local debug = { x1 = bounds.x2 - 64, y1 = bounds.y1 + 6, x2 = bounds.x2, y2 = bounds.y2 - 6 }
+	button(state, debug, "toolbar:debug", state.debugVisible and "Debug ON" or "Debug", { type = "toggle-debug" }, colors,
+		"Show or hide session-only Advanced debug tools")
+	if spec.developer and bounds.x2 - x > 210 then
 		local width = 64
-		local draft = { x1 = bounds.x2 - 2 * width - 8, y1 = bounds.y1 + 6, x2 = bounds.x2 - width - 7, y2 = bounds.y2 - 6 }
-		local publish = { x1 = bounds.x2 - width - 3, y1 = bounds.y1 + 6, x2 = bounds.x2, y2 = bounds.y2 - 6 }
+		local draft = { x1 = debug.x1 - 2 * width - 12, y1 = bounds.y1 + 6, x2 = debug.x1 - width - 11, y2 = bounds.y2 - 6 }
+		local publish = { x1 = debug.x1 - width - 7, y1 = bounds.y1 + 6, x2 = debug.x1 - 6, y2 = bounds.y2 - 6 }
 		button(state, draft, "toolbar:draft", "Draft", { type = "draft" }, colors, "Save authoring draft (Ctrl+Shift+S)")
 		button(state, publish, "toolbar:publish", "Publish", { type = "publish" }, colors, "Create explicit publish request (Ctrl+Alt+S)")
 	end
@@ -510,7 +602,7 @@ local function drawPreview(state, spec, colors)
 	local pane = state.layout.preview
 	if not pane then return end
 	rect(pane, { 0.012, 0.023, 0.031, 0.98 }); outline(pane, colors.border, 1)
-	label("LIVE PREVIEW", pane.x1 + 12, pane.y2 - 24, 10, colors.muted)
+	label("PRODUCTION RENDERER PREVIEW", pane.x1 + 12, pane.y2 - 24, 10, colors.muted)
 	label(spec.previewLabel or "Selected component", pane.x1 + 12, pane.y2 - 44, 14, colors.text)
 	if tostring(spec.previewContext or "Live") ~= "Live" then
 		label("SIMULATED / NO GAMEPLAY COMMANDS", pane.x1 + 12, pane.y2 - 61, 9, colors.accent)
@@ -521,20 +613,53 @@ local function drawPreview(state, spec, colors)
 	button(state, fit, "preview:fit", "Fit", { type = "preview-fit" }, colors, "Fit selected component in preview")
 	button(state, less, "preview:zoom-out", "-", { type = "preview-zoom", delta = -0.1 }, colors, "Zoom preview out")
 	button(state, more, "preview:zoom-in", "+", { type = "preview-zoom", delta = 0.1 }, colors, "Zoom preview in")
+	local safe = { x1 = pane.x2 - 112, y1 = pane.y1 + 8, x2 = pane.x2 - 62, y2 = pane.y1 + 32 }
+	local boundsToggle = { x1 = pane.x2 - 58, y1 = pane.y1 + 8, x2 = pane.x2 - 8, y2 = pane.y1 + 32 }
+	button(state, safe, "preview:safe", "Safe", { type = "preview-safe" }, colors, "Toggle preview safe margins")
+	button(state, boundsToggle, "preview:bounds", "Bounds", { type = "preview-bounds" }, colors, "Toggle preview selection bounds")
 	for line = 1, 5 do
 		local y = pane.y1 + (pane.y2 - pane.y1) * line / 6
 		rect({ x1 = pane.x1 + 10, y1 = y, x2 = pane.x2 - 10, y2 = y + 1 }, { colors.muted[1], colors.muted[2], colors.muted[3], 0.10 })
 	end
 	local shape = previewShape({ previewWidth = spec.previewWidth, previewHeight = spec.previewHeight,
 		previewFit = state.previewFit, previewZoom = state.previewZoom }, pane)
-	rect(shape, { colors.accent[1] * 0.18, colors.accent[2] * 0.22, colors.accent[3] * 0.24, 0.92 })
-	outline(shape, colors.accent, 2)
+	if state.showSafeMargins then
+		local safeBounds = { x1 = pane.x1 + 20, y1 = pane.y1 + 42, x2 = pane.x2 - 20, y2 = pane.y2 - 72 }
+		outline(safeBounds, colors.muted, 1)
+	end
 	if type(spec.drawPreview) == "function" then spec.drawPreview(shape, colors)
-	else label(spec.previewLabel or "Component", (shape.x1 + shape.x2) * 0.5, (shape.y1 + shape.y2) * 0.5 - 5, 12, colors.text, "oc") end
+	else label("Preview not available for this component", (pane.x1 + pane.x2) * 0.5, (pane.y1 + pane.y2) * 0.5, 11, colors.muted, "oc") end
+	if state.showSelectionBounds then outline(shape, colors.accent, 2) end
 	label(spec.previewDetail or "Drag and resize in the live view", pane.x1 + 12, pane.y1 + 16, 9, colors.muted)
 end
 
+local function drawPaneChrome(state, spec, colors)
+	local layout = state.layout
+	for _, item in ipairs({ { layout.dividerNav, "divider:nav", "Resize component and preview panes" },
+		{ layout.dividerInspector, "divider:preview", "Resize preview and inspector panes" } }) do
+		if item[1] then
+			rect(item[1], colors.panelAlt)
+			local cx = (item[1].x1 + item[1].x2) * 0.5
+			rect({ x1 = cx - 1, y1 = (item[1].y1 + item[1].y2) * 0.5 - 18, x2 = cx + 1,
+				y2 = (item[1].y1 + item[1].y2) * 0.5 + 18 }, colors.accent)
+			addHit(state, { x1 = item[1].x1, y1 = item[1].y1, x2 = item[1].x2, y2 = item[1].y2,
+				id = item[2], action = { type = "pane-divider", divider = item[2] }, tooltip = item[3], accessibleLabel = item[3] }, false)
+		end
+	end
+	if layout.previewCollapsedStrip then
+		local strip = layout.previewCollapsedStrip
+		rect(strip, colors.panelAlt); outline(strip, colors.border, 1)
+		label(layout.previewAvailable and "PREVIEW HIDDEN" or "NO PREVIEW", (strip.x1 + strip.x2) * 0.5,
+			(strip.y1 + strip.y2) * 0.5 - 36, 9, colors.muted, "oc")
+		addHit(state, { x1 = strip.x1, y1 = strip.y1, x2 = strip.x2, y2 = strip.y2, id = "preview:collapsed",
+			action = { type = "toggle-preview" }, tooltip = layout.previewAvailable and "Show preview pane" or "Preview unavailable for this component",
+			accessibleLabel = "Collapsed preview pane" }, layout.previewAvailable)
+	end
+end
+
 local function valueText(spec, row)
+	local id = tostring(row[1]) .. "." .. tostring(row[2])
+	if spec.editingId == id then return tostring(spec.editingText or "") .. tostring(spec.composition or "") end
 	local value = spec.getValue(row)
 	if row[4] == "bool" then return value and "ON" or "OFF" end
 	if row[4] == "number" then return string.format((row[7] or 1) >= 1 and "%.0f" or "%.3f", tonumber(value) or 0) end
@@ -550,18 +675,35 @@ local function drawPropertyControl(state, spec, item, bounds, colors)
 		rect(control, spec.getValue(row) and colors.selected or colors.input)
 		outline(control, colors.border, 1)
 		label(valueText(spec, row), (control.x1 + control.x2) * 0.5, control.y1 + 10, 10, spec.getValue(row) and colors.accent or colors.muted, "oc")
+		addHit(state, { x1 = control.x1, y1 = control.y1, x2 = control.x2, y2 = control.y2, id = "control:" .. item.id,
+			action = action, tooltip = "Toggle " .. tostring(row[3]), accessibleLabel = tostring(row[3]) .. " " .. valueText(spec, row) }, false)
 	elseif kind == "number" then
-		rect(control, colors.input); outline(control, colors.border, 1)
+		local minus = { x1 = control.x1, y1 = control.y1, x2 = control.x1 + 24, y2 = control.y2 }
+		local plus = { x1 = control.x2 - 24, y1 = control.y1, x2 = control.x2, y2 = control.y2 }
+		local field = { x1 = max(minus.x2 + 48, plus.x1 - 58), y1 = control.y1, x2 = plus.x1 - 2, y2 = control.y2 }
+		local slider = { x1 = minus.x2 + 2, y1 = control.y1, x2 = field.x1 - 2, y2 = control.y2 }
+		rect(minus, colors.button); rect(plus, colors.button); rect(field, colors.input); rect(slider, colors.input)
+		outline(minus, colors.border, 1); outline(plus, colors.border, 1); outline(field, colors.border, 1); outline(slider, colors.border, 1)
 		local ratio = ((tonumber(spec.getValue(row)) or row[5]) - row[5]) / max(0.00001, row[6] - row[5])
-		rect({ x1 = control.x1 + 3, y1 = control.y1 + 3, x2 = control.x1 + 3 + (control.x2 - control.x1 - 6) * clamp(ratio, 0, 1), y2 = control.y1 + 7 }, colors.accent)
-		label(valueText(spec, row), (control.x1 + control.x2) * 0.5, control.y1 + 10, 10, colors.text, "oc")
+		rect({ x1 = slider.x1 + 3, y1 = slider.y1 + 3, x2 = slider.x1 + 3 + max(0, slider.x2 - slider.x1 - 6) * clamp(ratio, 0, 1), y2 = slider.y1 + 7 }, colors.accent)
+		label("-", (minus.x1 + minus.x2) * 0.5, minus.y1 + 9, 12, colors.text, "oc")
+		label("+", (plus.x1 + plus.x2) * 0.5, plus.y1 + 9, 12, colors.text, "oc")
+		label(valueText(spec, row), (field.x1 + field.x2) * 0.5, field.y1 + 10, 9, colors.text, "oc")
+		addHit(state, { x1 = minus.x1, y1 = minus.y1, x2 = minus.x2, y2 = minus.y2, id = "minus:" .. item.id,
+			action = { type = "property-step", row = row, rowIndex = item.rowIndex, delta = -1 }, tooltip = "Decrease " .. row[3], accessibleLabel = "Decrease " .. row[3] }, false)
+		addHit(state, { x1 = plus.x1, y1 = plus.y1, x2 = plus.x2, y2 = plus.y2, id = "plus:" .. item.id,
+			action = { type = "property-step", row = row, rowIndex = item.rowIndex, delta = 1 }, tooltip = "Increase " .. row[3], accessibleLabel = "Increase " .. row[3] }, false)
+		addHit(state, { x1 = slider.x1, y1 = slider.y1, x2 = slider.x2, y2 = slider.y2, id = "slider:" .. item.id,
+			action = { type = "property-slider", row = row, rowIndex = item.rowIndex, control = slider }, tooltip = "Drag to adjust " .. row[3], accessibleLabel = "Slider " .. row[3] }, false)
+		addHit(state, { x1 = field.x1, y1 = field.y1, x2 = field.x2, y2 = field.y2, id = "number:" .. item.id,
+			action = { type = "property-number-entry", row = row, rowIndex = item.rowIndex }, tooltip = "Type a value for " .. row[3], accessibleLabel = "Numeric field " .. row[3] }, false)
 	else
 		rect(control, colors.input); outline(control, colors.border, 1)
 		local suffix = kind == "enum" and "  [Choose]" or ""
 		label(valueText(spec, row) .. suffix, control.x1 + 7, control.y1 + 10, 10, colors.text)
+		addHit(state, { x1 = control.x1, y1 = control.y1, x2 = control.x2, y2 = control.y2, id = "control:" .. item.id,
+			action = action, tooltip = tostring(row[3]), accessibleLabel = tostring(row[3]) .. " " .. valueText(spec, row) }, false)
 	end
-	addHit(state, { x1 = control.x1, y1 = control.y1, x2 = control.x2, y2 = control.y2, id = "control:" .. item.id,
-		action = action, tooltip = tostring(row[3]), accessibleLabel = tostring(row[3]) .. " " .. valueText(spec, row) }, false)
 end
 
 local function drawInspectorHeader(state, spec, pane, colors)
@@ -574,6 +716,15 @@ local function drawInspectorHeader(state, spec, pane, colors)
 		spec.search ~= "" and colors.text or colors.muted)
 	addHit(state, { x1 = search.x1, y1 = search.y1, x2 = search.x2, y2 = search.y2, id = "inspector:search",
 		action = { type = "focus-property-search" }, tooltip = "Search properties", accessibleLabel = "Search properties" }, true)
+	if state.debugVisible and spec.selectedNav == "advanced" then
+		filterH = filterH + 72
+		local panel = { x1 = pane.x1 + 8, y1 = pane.y2 - 136, x2 = pane.x2 - 8, y2 = pane.y2 - 66 }
+		rect(panel, colors.input); outline(panel, colors.danger, 1)
+		label("DEBUG / SESSION ONLY", panel.x1 + 8, panel.y2 - 20, 9, colors.danger)
+		label(spec.debugInfo or "Modal ownership active; no gameplay commands", panel.x1 + 8, panel.y2 - 40, 9, colors.muted)
+		local audit = { x1 = panel.x2 - 62, y1 = panel.y1 + 6, x2 = panel.x2 - 6, y2 = panel.y1 + 30 }
+		button(state, audit, "debug:audit", "Audit", { type = "debug-audit" }, colors, "Write one controller UI audit summary to the console")
+	end
 	local actionsY1 = pane.y1 + 4
 	local selected = spec.rows and spec.rows[spec.selectedRow]
 	local x = pane.x1 + 8
@@ -619,14 +770,14 @@ local function drawInspectorItems(state, spec, viewport, items, colors)
 				local b = { x1 = viewport.x1 + 4, y1 = y1 + 2, x2 = viewport.x2 - 12, y2 = y2 - 2 }
 				local selected = item.rowIndex == spec.selectedRow
 				rect(b, selected and colors.selected or (item.rowIndex % 2 == 0 and colors.rowAlt or colors.row))
+				addHit(state, { x1 = b.x1, y1 = b.y1, x2 = b.x2, y2 = b.y2, id = rowId, action = action,
+					tooltip = tostring(item.row[3]), accessibleLabel = tostring(item.row[3]) }, false)
 				label(item.row[3], b.x1 + 9, b.y2 - 20, 10, colors.text)
 				local source = spec.getSource and spec.getSource(item.row) or "personal"
 				local flags = (spec.isModified and spec.isModified(item.row) and "modified / " or "")
 					.. (spec.isEnforced and spec.isEnforced(item.row) and "locked / " or "") .. source
 				label(flags, b.x1 + 9, b.y1 + 7, 8, colors.muted)
 				drawPropertyControl(state, spec, item, b, colors)
-				addHit(state, { x1 = b.x1, y1 = b.y1, x2 = b.x2, y2 = b.y2, id = rowId, action = action,
-					tooltip = tostring(item.row[3]), accessibleLabel = tostring(item.row[3]) }, false)
 				focusOutline(state, b, rowId, colors.focus)
 			end
 		end
@@ -673,7 +824,7 @@ end
 
 local function modalBounds(state, optionCount)
 	local bounds = state.bounds
-	local width, height = min(360, bounds.width - 40), min(bounds.height - 50, 52 + optionCount * 32)
+	local width, height = min(420, bounds.width - 40), min(bounds.height - 50, 72 + optionCount * 30)
 	return { x1 = (bounds.x1 + bounds.x2 - width) * 0.5, y1 = (bounds.y1 + bounds.y2 - height) * 0.5,
 		x2 = (bounds.x1 + bounds.x2 + width) * 0.5, y2 = (bounds.y1 + bounds.y2 + height) * 0.5 }
 end
@@ -686,18 +837,43 @@ local function drawModal(state, colors)
 	rect(bounds, colors.panelAlt); outline(bounds, colors.focus, 2)
 	label(modal.title, bounds.x1 + 12, bounds.y2 - 28, 13, colors.text)
 	state.hits, state.focusItems = {}, {}
-	for index, option in ipairs(modal.options) do
-		local y2 = bounds.y2 - 42 - (index - 1) * 32
-		local b = { x1 = bounds.x1 + 10, y1 = y2 - 28, x2 = bounds.x2 - 10, y2 = y2 }
-		button(state, b, "modal:" .. index, option.label, { type = "modal-option", option = option, index = index }, colors,
-			option.tooltip or option.label, option.disabled)
-	end
 	addHit(state, { x1 = state.bounds.x1, y1 = state.bounds.y1, x2 = state.bounds.x2, y2 = state.bounds.y2,
 		id = "modal:backdrop", action = { type = "close-modal" }, accessibleLabel = "Close menu" }, false)
-	-- Re-add option hits above the backdrop so they win reverse hit testing.
-	local optionHits = {}
-	for _, hit in ipairs(state.hits) do if hit.id and string.find(hit.id, "modal:", 1, true) == 1 and hit.id ~= "modal:backdrop" then optionHits[#optionHits + 1] = hit end end
-	for _, hit in ipairs(optionHits) do state.hits[#state.hits + 1] = hit end
+	local viewport = { x1 = bounds.x1 + 8, y1 = bounds.y1 + 10, x2 = bounds.x2 - 4, y2 = bounds.y2 - 42 }
+	state.modalViewport = viewport
+	local entries, content, offset = {}, 0, 0
+	for index, option in ipairs(modal.options) do
+		local height = option.heading and 24 or 30
+		entries[#entries + 1] = { index = index, option = option, offset = offset, height = height }
+		offset, content = offset + height, offset + height
+	end
+	Workspace.UpdatePane(state, "modal", content, viewport.y2 - viewport.y1, viewport)
+	local scroll = state.panes.modal.scroll
+	beginClip(viewport)
+	for _, entry in ipairs(entries) do
+		local option, index = entry.option, entry.index
+		local y2 = viewport.y2 - entry.offset + scroll
+		local y1 = y2 - entry.height
+		local virtual = { top = entry.offset + entry.height, bottom = entry.offset }
+		if option.heading then
+			if y2 >= viewport.y1 and y1 <= viewport.y2 then label(string.upper(tostring(option.label)), viewport.x1 + 7, y1 + 7, 9, colors.muted) end
+		else
+			local id = "modal:" .. index
+			local action = { type = "modal-option", option = option, index = index }
+			addFocus(state, { id = id, action = action, pane = "modal", virtualBounds = virtual,
+				disabled = option.disabled, accessibleLabel = option.label })
+			if y2 >= viewport.y1 and y1 <= viewport.y2 then
+				local b = { x1 = viewport.x1 + 2, y1 = y1 + 1, x2 = viewport.x2 - 10, y2 = y2 - 1 }
+				rect(b, option.disabled and colors.disabled or colors.button); outline(b, colors.border, 1)
+				label(option.label, (b.x1 + b.x2) * 0.5, b.y1 + max(5, (b.y2 - b.y1 - 11) * 0.5), 10, colors.text, "oc")
+				if not option.disabled then addHit(state, { x1 = b.x1, y1 = b.y1, x2 = b.x2, y2 = b.y2, id = id,
+					action = action, tooltip = option.tooltip or option.label, accessibleLabel = option.label }, false) end
+				focusOutline(state, b, id, colors.focus)
+			end
+		end
+	end
+	endClip()
+	drawScrollbar(state, "modal", colors)
 	ensureFocusExists(state)
 end
 
@@ -730,7 +906,7 @@ end
 
 function Workspace.Draw(state, spec)
 	if not gl then return end
-	Workspace.SetBounds(state, spec.bounds)
+	Workspace.SetBounds(state, spec.bounds, spec)
 	state.hits, state.focusItems = {}, {}
 	local colors = workspaceColors(spec.theme or {})
 	rect(state.bounds, colors.background); outline(state.bounds, colors.focus, 1)
@@ -739,6 +915,7 @@ function Workspace.Draw(state, spec)
 	drawNav(state, spec, colors)
 	drawPreview(state, spec, colors)
 	drawInspector(state, spec, colors)
+	drawPaneChrome(state, spec, colors)
 	drawFooter(state, spec, colors)
 	ensureFocusExists(state)
 	if state.showHelp then drawHelp(state, colors) end
@@ -781,6 +958,10 @@ function Workspace.OpenFilterMenu(state, current)
 		options[#options + 1] = { label = (mode == current and "Selected: " or "") .. mode, action = "set-filter", value = mode }
 	end
 	Workspace.OpenModal(state, "Property view", options, state.focusId)
+end
+
+function Workspace.OpenPreviewMenu(state, entries)
+	Workspace.OpenModal(state, "Preview context", entries or {}, "toolbar:preview-context")
 end
 
 Workspace.Clamp = clamp

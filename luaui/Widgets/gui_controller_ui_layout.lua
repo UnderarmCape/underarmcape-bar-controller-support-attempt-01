@@ -10,7 +10,9 @@ function widget:GetInfo()
 		author = "Kailil / Codex",
 		date = "2026-07-19",
 		license = "GNU GPL, v2 or later",
-		layer = 1000001,
+		-- BAR dispatches interactive call-ins from lower layers first. Keep the
+		-- authoring modal alongside native modal windows such as Options.
+		layer = -99991,
 		enabled = true,
 		handler = true,
 	}
@@ -49,9 +51,15 @@ do
 	local ok, result = false, nil
 	if VFS and type(VFS.Include) == "function" then ok, result = pcall(VFS.Include, "LuaUI/Include/controller_ui_editor_workspace.lua") end
 	if ok and type(result) == "table" then extra.EditorWorkspace = result end
+	local inputOK, inputResult = false, nil
+	if VFS and type(VFS.Include) == "function" then inputOK, inputResult = pcall(VFS.Include, "LuaUI/Include/controller_ui_editor_input.lua") end
+	if inputOK and type(inputResult) == "table" then extra.EditorInput = inputResult end
 	local glyphOK, glyphResult = false, nil
 	if VFS and type(VFS.Include) == "function" then glyphOK, glyphResult = pcall(VFS.Include, "LuaUI/Include/controller_glyphs.lua") end
 	if glyphOK and type(glyphResult) == "table" then extra.Glyphs = glyphResult end
+	local rendererOK, rendererResult = false, nil
+	if VFS and type(VFS.Include) == "function" then rendererOK, rendererResult = pcall(VFS.Include, "LuaUI/Include/controller_ui_shared_renderers.lua") end
+	if rendererOK and type(rendererResult) == "table" then extra.SharedRenderers = rendererResult end
 end
 
 local DEFAULTS = {
@@ -160,9 +168,14 @@ local editor = {
 	favorite = nil, saveValue = nil, applyValue = nil, savePreset = nil, applyPreset = nil,
 	undo = nil, redo = nil, save = nil, context = nil, draft = nil, publish = nil, reload = nil,
 	propertyDrag = nil, activeText = nil, selectAll = false, previousTextOwner = nil,
+	textBuffer = "", textOriginal = "", textNumeric = false, composition = "", pointerCapture = nil,
+	previewContext = "Normal Gameplay",
+	filterMode = "Basic",
+	chrome = { x = 0.55, y = 0.14, width = 0.42, height = 0.76 },
 }
 
 extra.workspace = extra.EditorWorkspace and extra.EditorWorkspace.New() or nil
+extra.input = extra.EditorInput and extra.EditorInput.New() or nil
 
 local tabs = { "General", "Hints", "Actions", "Hot Slots", "Launchers", "Radials", "Status", "Other", "Theme", "Authoring", "Recovery" }
 local filterModes = { "Basic", "Advanced", "All", "Favorites", "Recent", "Modified" }
@@ -1274,11 +1287,11 @@ local function recentContains(id)
 end
 
 local function currentRows()
-	local cacheKey = table.concat({ tostring(editor.tab), tostring(settings.authoring.filterMode),
+	local cacheKey = table.concat({ tostring(editor.tab), tostring(editor.filterMode),
 		tostring(editor.search or ""), tostring(revision) }, "|")
 	if editor.rowsCacheKey == cacheKey and editor.rowsCache then return editor.rowsCache end
 	local result = {}
-	local filterMode = settings.authoring.filterMode or "Basic"
+	local filterMode = editor.filterMode or "Basic"
 	local search = string.lower(editor.search or "")
 	for _, row in ipairs(definitions[tabs[editor.tab]] or {}) do
 		local id, level = rowID(row), row[8] or "Basic"
@@ -1404,20 +1417,36 @@ local function setComponentPresetFlag(name, flag, enabled)
 	return mutateAuthorData("Update preset " .. tostring(name), function() preset[flag] = enabled == true end)
 end
 
-local function claimEditorInput()
+local function claimEditorInput(reclaim)
 	if not widgetHandler then return end
-	if widgetHandler.textOwner ~= widget then editor.previousTextOwner = widgetHandler.textOwner end
+	if not reclaim and widgetHandler.textOwner ~= widget then editor.previousTextOwner = widgetHandler.textOwner end
 	widgetHandler.textOwner = widget
+	if Spring and type(Spring.SDLStartTextInput) == "function" then Spring.SDLStartTextInput() end
 end
 
 local function releaseEditorInput()
 	if widgetHandler and widgetHandler.textOwner == widget then widgetHandler.textOwner = editor.previousTextOwner end
+	if widgetHandler and widgetHandler.mouseOwner == widget then widgetHandler.mouseOwner = nil end
+	if not editor.previousTextOwner and Spring and type(Spring.SDLStopTextInput) == "function" then Spring.SDLStopTextInput() end
 	editor.previousTextOwner = nil
 end
 
 local function setEditorOpen(open)
 	editor.open = not not open
-	if editor.open then claimEditorInput() else releaseEditorInput(); editor.activeText, editor.searchActive, editor.textRow = nil, false, nil end
+	if editor.open then
+		if extra.input then extra.EditorInput.Open(extra.input) end
+		if extra.workspace then extra.EditorWorkspace.ResetSession(extra.workspace) end
+		editor.previewContext = editor.previewContext or settings.authoring.contextPreview or "Normal Gameplay"
+		claimEditorInput()
+		if widgetHandler and type(widgetHandler.RaiseWidget) == "function" then widgetHandler:RaiseWidget(widget) end
+	else
+		if extra.input then extra.EditorInput.Close(extra.input) end
+		if extra.workspace then extra.EditorWorkspace.ResetSession(extra.workspace) end
+		editor.dragComponent, editor.resizeComponent, editor.dragging, editor.resizing = nil, nil, false, false
+		editor.propertyDrag, editor.held, editor.pointerCapture = nil, nil, nil
+		editor.activeText, editor.searchActive, editor.textRow, editor.composition = nil, false, nil, ""
+		endMutation(); releaseEditorInput()
+	end
 	local api = support()
 	if api and type(api.SetLayoutEditorOpen) == "function" then api.SetLayoutEditorOpen(editor.open) end
 end
@@ -1517,6 +1546,17 @@ end
 
 local function drawHints()
 	if not settings.global.enabled or not settings.components.hints.enabled or #visibleHints == 0 then return end
+	if extra.SharedRenderers then
+		local rendered = extra.SharedRenderers.DrawHints({
+			model = visibleHints, settings = settings.components.hints, theme = settings.theme,
+			viewportWidth = viewX, viewportHeight = viewY, margin = settings.global.safeMargin * automaticScale,
+			scale = effectiveScale("hints"), fontScale = effectiveFontScale("hints"),
+			opacity = effectiveOpacity("hints") * hintAlpha, glyphs = extra.Glyphs,
+			contextLabel = activeHintContextLabel, formatInputs = formatInputs,
+		})
+		hintHits, hintMoreHit = rendered.hits or {}, rendered.moreHit
+		return
+	end
 	local component = settings.components.hints
 	local scale = effectiveScale("hints")
 	local fontScale = effectiveFontScale("hints")
@@ -1664,7 +1704,7 @@ local function drawEditorLauncher()
 end
 
 local function editorBounds()
-	local component = settings.components.editor
+	local component = editor.chrome or settings.components.editor
 	local margin = math.min(settings.global.safeMargin, math.max(0, math.min(viewX, viewY) * 0.08))
 	local availableW, availableH = math.max(100, viewX - margin * 2), math.max(100, viewY - margin * 2)
 	local minW, minH = math.min(MIN_EDITOR_W, availableW), math.min(MIN_EDITOR_H, availableH)
@@ -1686,9 +1726,42 @@ local canvasComponents = {
 	{ "companionStatus", "Companion Status", 680, 120 }, { "reticle", "Reticle", 44, 44 },
 }
 
-local previewContexts = { "Live", "Normal Gameplay", "Nothing Selected", "Single Unit", "Multiple Units", "Builder Selected",
-	"Factory Selected", "Transport Selected", "Build Menu", "Build Placement", "Tactical Radial", "Selection Radial",
-	"Factory Radial", "Mouse Mode", "Pregame", "Bindings UI", "Layout Editor", "Unit Hot Slots", "Long Binding Stress Test" }
+local previewContexts = { "Normal Gameplay", "Nothing Selected", "Single Unit", "Multiple Units", "Builder Selected",
+	"Factory Selected", "Transport Selected", "Mouse Mode", "Build Menu", "Build Placement", "Placement Rotation", "Placement Queue",
+	"Build Radial", "Tactical Radial", "Selection Radial", "Factory Radial", "Unit Hot Slots", "Empty Hot Slots",
+	"Populated Hot Slots", "Selected Hot Slot", "Long Binding Stress Test", "Multi-column Hint Stress Test",
+	"Maximum Wrapping Stress Test", "Long Chord Stress Test" }
+
+function extra.previewKind()
+	local selected = editor.selectedComponent
+	if selected == "hints" then return "hints" end
+	if selected == "hotSlots" then return "hotSlots" end
+	if selected == "buildRadial" or selected == "factoryRadial" or selected == "tacticalRadial" or selected == "selectionRadial" then return "radials" end
+	return nil
+end
+
+function extra.previewMenuEntries()
+	local kind, entries = extra.previewKind(), {}
+	local function category(label, values)
+		entries[#entries + 1] = { label = label, heading = true, disabled = true }
+		for _, value in ipairs(values) do
+			entries[#entries + 1] = { label = (editor.previewContext == value and "Selected: " or "") .. value,
+				action = "set-preview-context", value = value }
+		end
+	end
+	if kind == "hints" then
+		category("Gameplay", { "Normal Gameplay", "Nothing Selected", "Single Unit", "Multiple Units", "Builder Selected",
+			"Factory Selected", "Transport Selected", "Mouse Mode" })
+		category("Building", { "Build Menu", "Build Placement", "Placement Rotation", "Placement Queue" })
+		category("Stress Tests", { "Long Binding Stress Test", "Multi-column Hint Stress Test", "Maximum Wrapping Stress Test", "Long Chord Stress Test" })
+	elseif kind == "radials" then
+		category("Radials", { "Build Radial", "Tactical Radial", "Selection Radial", "Factory Radial" })
+		category("Stress Tests", { "Long Chord Stress Test" })
+	elseif kind == "hotSlots" then
+		category("Groups", { "Unit Hot Slots", "Empty Hot Slots", "Populated Hot Slots", "Selected Hot Slot" })
+	end
+	return entries
+end
 
 local function canvasBounds(name, baseWidth, baseHeight)
 	if name == "hotSlots" then
@@ -1797,8 +1870,8 @@ local function distributeComponents(axis)
 	editor.status = "Distributed visible components " .. axis
 end
 
-local function previewContext(base)
-	local mode = settings.authoring.contextPreview or "Live"
+local function previewContext(base, mode)
+	mode = mode or editor.previewContext or "Normal Gameplay"
 	if mode == "Live" then return base end
 	local result = { selectedCount = 0, hasSelection = false }
 	if mode == "Normal Gameplay" then result.hasSelection, result.selectedCount, result.hasBuilder = true, 1, true
@@ -1824,33 +1897,26 @@ local function previewContext(base)
 end
 
 local function cyclePreviewContext()
-	local current = settings.authoring.contextPreview or "Live"; local index = 1
+	local current = editor.previewContext or "Normal Gameplay"; local index = 1
 	for i, name in ipairs(previewContexts) do if name == current then index = i; break end end
-	setValue("authoring", "contextPreview", previewContexts[(index % #previewContexts) + 1])
-	lastContextSignature = ""; editor.status = "Preview: " .. settings.authoring.contextPreview
+	editor.previewContext = previewContexts[(index % #previewContexts) + 1]
+	editor.status = "Preview: " .. editor.previewContext
 end
 
 local function drawCanvasAuthoring()
 	if not editor.open then editor.componentHits = {}; return end
 	local theme, margin = settings.theme, settings.global.safeMargin * automaticScale
-	if settings.authoring.contextPreview ~= "Live" then
-		glColor(theme.accentR, theme.accentG, theme.accentB, 0.94)
-		glText("SIMULATED PREVIEW - " .. tostring(settings.authoring.contextPreview), viewX * 0.5, viewY - margin - 24, 14 * automaticScale, "oc")
-	end
 	if settings.authoring.showSafeArea then drawOutline(margin, margin, viewX - margin, viewY - margin, { theme.mutedR, theme.mutedG, theme.mutedB, 0.65 }) end
 	editor.componentHits = {}
 	if settings.authoring.showOutlines then
 		for _, def in ipairs(canvasComponents) do
 			local item = settings.components[def[1]]
-			if item and item.enabled ~= false then
+			if item and item.enabled ~= false and def[1] == editor.selectedComponent then
 				local bounds = canvasBounds(def[1], def[3], def[4])
-				local selected = def[1] == editor.selectedComponent
-				drawOutline(bounds.x1, bounds.y1, bounds.x2, bounds.y2, selected
-					and { theme.accentR, theme.accentG, theme.accentB, 0.98 }
-					or { theme.mutedR, theme.mutedG, theme.mutedB, 0.62 })
+				drawOutline(bounds.x1, bounds.y1, bounds.x2, bounds.y2, { theme.accentR, theme.accentG, theme.accentB, 0.98 })
 				glColor(theme.backgroundR, theme.backgroundG, theme.backgroundB, 0.72); glRect(bounds.x1, bounds.y2 - 18, bounds.x1 + math.min(bounds.width, 150), bounds.y2)
 				glColor(theme.foregroundR, theme.foregroundG, theme.foregroundB, 0.9); glText(def[2], bounds.x1 + 5, bounds.y2 - 14, 10, "o")
-				if selected and item.width and item.height then
+				if item.width and item.height then
 					bounds.resize = { x1 = bounds.x2 - 9, y1 = bounds.y2 - 9, x2 = bounds.x2 + 2, y2 = bounds.y2 + 2 }
 					glColor(theme.accentR, theme.accentG, theme.accentB, 0.95); glRect(bounds.resize.x1, bounds.resize.y1, bounds.resize.x2, bounds.resize.y2)
 				end
@@ -1959,7 +2025,7 @@ function extra.drawEditorTable()
 		local x1 = b.x1 + 12 + (index - 1) * (filterW + 3)
 		local hit = { x1 = x1, y1 = filterY1, x2 = x1 + filterW, y2 = filterY2, mode = mode }
 		editor.filterHits[#editor.filterHits + 1] = hit
-		glColor(settings.authoring.filterMode == mode and 0.12 or 0.04, settings.authoring.filterMode == mode and 0.30 or 0.08, settings.authoring.filterMode == mode and 0.34 or 0.10, 0.96)
+		glColor(editor.filterMode == mode and 0.12 or 0.04, editor.filterMode == mode and 0.30 or 0.08, editor.filterMode == mode and 0.34 or 0.10, 0.96)
 		glRect(hit.x1, hit.y1, hit.x2, hit.y2); glColor(theme.foregroundR, theme.foregroundG, theme.foregroundB, 1)
 		glText(mode, (hit.x1 + hit.x2) * 0.5, hit.y1 + 7, 9, "oc")
 	end
@@ -2109,17 +2175,38 @@ function extra.workspaceIsEnforced(row)
 end
 
 function extra.drawWorkspacePreview(shape, colors)
-	if editor.selectedComponent == "hints" and extra.Glyphs then
-		local sequence = extra.Glyphs.BuildSequence({ "back", "start", "LB", "RB" }, { hold = true, showTapHold = true })
-		local size = math.max(14, math.min(24, (shape.y2 - shape.y1) * 0.38))
-		extra.Glyphs.DrawSequence(sequence, (shape.x1 + shape.x2) * 0.5, shape.y1 + (shape.y2 - shape.y1 - size) * 0.5, {
-			size = size, spacing = 3, layout = "Horizontal", alignment = "center", maxWidth = shape.x2 - shape.x1 - 12,
-			colorMode = settings.components.hints.glyphColorMode or "Color-friendly", opacity = 1,
-			tint = { settings.theme.accentR, settings.theme.accentG, settings.theme.accentB },
-		})
-	else
-		glColor(colors.text[1], colors.text[2], colors.text[3], colors.text[4])
-		glText(extra.selectedPreviewDefinition()[2], (shape.x1 + shape.x2) * 0.5, (shape.y1 + shape.y2) * 0.5 - 5, 12, "oc")
+	if not extra.SharedRenderers then return end
+	local kind, context = extra.previewKind(), editor.previewContext or "Normal Gameplay"
+	if kind == "hints" then
+		local model = {
+			{ inputs = { "A" }, label = "Select", compactLabel = "Select", group = "Selection" },
+			{ inputs = { "B" }, label = "Cancel", compactLabel = "Cancel", group = "System" },
+			{ inputs = { "LB", "RB" }, label = "Change category", compactLabel = "Category", group = "Navigation" },
+			{ inputs = { "leftStick" }, label = "Move cursor", compactLabel = "Move", group = "Navigation" },
+		}
+		if string.find(context, "Stress Test", 1, true) then
+			model[#model + 1] = { inputs = { "back", "start", "LB", "RB", "LT", "RT" }, hold = true,
+				label = "Long binding stress test action with maximum wrapping", compactLabel = "Stress", group = "Stress Tests" }
+			model[#model + 1] = { inputs = { "dpadUp", "dpadRight", "A" }, label = "Queue and rotate placement", group = "Building" }
+		end
+		extra.SharedRenderers.DrawHints({ model = model, settings = settings.components.hints, theme = settings.theme,
+			bounds = shape, viewportWidth = shape.x2 - shape.x1, viewportHeight = shape.y2 - shape.y1,
+			scale = 1, fontScale = 1, opacity = effectiveOpacity("hints"), glyphs = extra.Glyphs,
+			contextLabel = context, formatInputs = formatInputs })
+	elseif kind == "radials" then
+		local entries = {}
+		for index, label in ipairs({ "Economy", "Energy", "Defense", "Factory", "Assist", "Repair", "Reclaim", "Orders" }) do entries[index] = { label = label } end
+		extra.SharedRenderers.DrawRadial({ bounds = shape, theme = settings.theme,
+			model = { title = context, subtitle = "Production radial geometry", entries = entries, selectedIndex = 3 },
+			opacity = effectiveOpacity(editor.selectedComponent) })
+	elseif kind == "hotSlots" then
+		local slots = {}
+		for index = 1, 10 do slots[index] = { label = tostring(index % 10), count = context == "Empty Hot Slots" and 0 or index * 3,
+			empty = context == "Empty Hot Slots" or index % 4 == 0, selected = context == "Selected Hot Slot" and index == 3,
+			role = index % 2 == 0 and "builder" or "combat" } end
+		extra.SharedRenderers.DrawHotSlots({ bounds = shape, settings = settings.components.hotSlots, theme = settings.theme,
+			model = { slots = slots, selectedIndex = context == "Selected Hot Slot" and 3 or 1, status = "Synthetic data / production renderer" },
+			opacity = effectiveOpacity("hotSlots") })
 	end
 end
 
@@ -2134,14 +2221,19 @@ function extra.drawEditor()
 		bounds = bounds, theme = settings.theme, title = "Controller UI Authoring", status = editor.status,
 		dirty = history.dirty, canUndo = #history.undo > 0, canRedo = #history.redo > 0,
 		components = extra.editorNavigation, selectedNav = extra.selectedNavigationID(), selectedComponent = editor.selectedComponent,
-		tabName = tabs[editor.tab], rows = rows, selectedRow = editor.row, filterMode = settings.authoring.filterMode,
-		inspectorKey = tostring(editor.selectedComponent or tabs[editor.tab]) .. "|" .. tostring(tabs[editor.tab]) .. "|" .. tostring(settings.authoring.filterMode),
+		tabName = tabs[editor.tab], rows = rows, selectedRow = editor.row, filterMode = editor.filterMode,
+		inspectorKey = tostring(editor.selectedComponent or tabs[editor.tab]) .. "|" .. tostring(tabs[editor.tab]) .. "|" .. tostring(editor.filterMode),
 		search = editor.search or "", searchActive = editor.searchActive, developer = settings.authoring.developerAuthoring,
-		previewContext = settings.authoring.contextPreview, previewLabel = preview[2], previewWidth = preview[3], previewHeight = preview[4],
+		previewContext = editor.previewContext, previewLabel = preview[2], previewWidth = preview[3], previewHeight = preview[4],
+		previewAvailable = extra.previewKind() ~= nil,
 		previewDetail = "Drag the selection bounds in the live game view; resize handles appear where supported.",
 		scopeLabels = extra.editorScopeLabels,
 		getValue = extra.workspaceGetValue, getSource = extra.workspaceGetSource,
-		isModified = isRowModified, isEnforced = extra.workspaceIsEnforced, drawPreview = extra.drawWorkspacePreview,
+		editingId = editor.activeText == "propertyValue" and editor.textRow and rowID(editor.textRow) or nil,
+		editingText = editor.textBuffer, composition = editor.composition,
+		isModified = isRowModified, isEnforced = extra.workspaceIsEnforced,
+		drawPreview = extra.previewKind() and extra.drawWorkspacePreview or nil,
+		debugInfo = "focus=" .. tostring(extra.workspace.focusId or "none") .. "  input=modal  upvalues<60",
 		emptyText = tabs[editor.tab] == "Recovery"
 			and (editor.recoveryAvailable and "Recovery data is active. Save or reset when ready." or "No recovery is pending.")
 			or "No properties match this filter or search.",
@@ -2363,7 +2455,7 @@ function widget:Initialize()
 		RevertSession = revertSession,
 		ReloadDefaults = function() return reloadDefaults(true) end, WriteAuthoringDraft = writeAuthoringDraft,
 		WritePublishRequest = writePublishRequest, SetShippingEnforcement = setShippingEnforcement,
-		GetPreviewContext = function() return settings.authoring.contextPreview end,
+		GetPreviewContext = function() return editor.previewContext end,
 		SetActionHidden = setActionHidden, SetActionCategory = setActionCategory, SetActionOrder = setActionOrder,
 		SetActionShortLabel = setActionShortLabel, SetCategoryVisible = setCategoryVisible,
 		ResetHintOrganization = resetHintOrganization, GetHintCategories = getHintCategories,
@@ -2396,7 +2488,7 @@ function widget:ViewResize(vsx, vsy)
 	viewX, viewY = math.max(1, vsx or 1), math.max(1, vsy or 1)
 	recalculateScale()
 	local b = editorBounds()
-	settings.components.editor.x, settings.components.editor.y = b.x1 / viewX, b.y1 / viewY
+	editor.chrome.x, editor.chrome.y = b.x1 / viewX, b.y1 / viewY
 	local bb = componentBounds("bindingsButton", 110, 28)
 	if bb then settings.components.bindingsButton.x, settings.components.bindingsButton.y = bb.x1 / viewX, bb.y1 / viewY end
 end
@@ -2405,6 +2497,19 @@ function widget:Update(dt)
 	hintAnimationTime = hintAnimationTime + math.max(0, tonumber(dt) or 0)
 	local api = support()
 	dt = dt or 0
+	if editor.open then
+		if widgetHandler and widgetHandler.textOwner ~= widget then claimEditorInput(true) end
+		local _, _, left, middle, right, offscreen = Spring.GetMouseState()
+		if offscreen or (extra.input and extra.EditorInput.Pointer(extra.input) and not (left or middle or right)) then
+			if extra.workspace then extra.EditorWorkspace.EndPointer(extra.workspace) end
+			if extra.input then extra.EditorInput.LostFocus(extra.input) end
+			if offscreen and widgetHandler and widgetHandler.mouseOwner == widget then widgetHandler.mouseOwner = nil end
+			editor.propertyDrag, editor.dragging, editor.resizing, editor.dragComponent, editor.resizeComponent = nil, false, false, nil, nil
+			editor.held = nil; endMutation()
+		end
+		if editor.held and editor.held.keyboard and editor.held.key and type(Spring.GetKeyState) == "function"
+				and not Spring.GetKeyState(editor.held.key) then editor.held = nil; endMutation() end
+	end
 	if editor.held then
 		editor.held.elapsed = editor.held.elapsed + dt
 		if editor.held.elapsed >= editor.held.nextRepeat then
@@ -2445,7 +2550,9 @@ function widget:Update(dt)
 	hintRefreshElapsed = hintRefreshElapsed + dt
 	if hintRefreshElapsed < 0.12 or not api or type(api.GetContextSnapshot) ~= "function" then return end
 	hintRefreshElapsed = 0
-	local context = previewContext(api.GetContextSnapshot())
+	-- Production hints always use the real gameplay snapshot. Synthetic editor
+	-- contexts are rendered only inside the preview pane.
+	local context = api.GetContextSnapshot()
 	if type(context) ~= "table" then return end
 	local signature = contextSignature(context) .. "|" .. tostring(hintRevision) .. "|" .. tostring(revision)
 	local bindingRevision = type(api.GetBindingRevision) == "function" and api.GetBindingRevision() or 0
@@ -2580,10 +2687,19 @@ local function beginComponentDrag(hit, x, y)
 	return true
 end
 
-function extra.focusTextField(kind)
+function extra.focusTextField(kind, numeric)
 	editor.activeText, editor.selectAll = kind, false
 	editor.searchActive = kind == "propertySearch"
-	if kind ~= "propertyValue" then editor.textRow = nil end
+	editor.composition = ""
+	if kind == "propertyValue" and editor.textRow then
+		local target = getScope(editor.textRow[1])
+		editor.textBuffer = tostring(target and target[editor.textRow[2]] or "")
+		editor.textOriginal = editor.textBuffer
+		editor.textNumeric = numeric == true or editor.textRow[4] == "number"
+	else
+		editor.textNumeric = false
+		if kind ~= "propertyValue" then editor.textRow = nil end
+	end
 	claimEditorInput()
 end
 
@@ -2602,7 +2718,11 @@ function extra.selectNavigationItem(item)
 		for index, name in ipairs(tabs) do if name == item.tab then editor.tab = index; break end end
 	end
 	if item.component then editor.selectedComponent = item.component end
-	if item.filter then setValue("authoring", "filterMode", item.filter) end
+	local previewKind = extra.previewKind()
+	if previewKind == "radials" and not string.find(editor.previewContext or "", "Radial", 1, true) then editor.previewContext = "Build Radial"
+	elseif previewKind == "hotSlots" and not string.find(editor.previewContext or "", "Hot Slots", 1, true) then editor.previewContext = "Unit Hot Slots"
+	elseif previewKind == "hints" and (string.find(editor.previewContext or "", "Radial", 1, true) or string.find(editor.previewContext or "", "Hot Slot", 1, true)) then editor.previewContext = "Normal Gameplay" end
+	if item.filter then editor.filterMode = item.filter end
 	editor.row = 1
 	extra.workspace.pendingFocus = "first-property"
 	editor.status = "Selected " .. tostring(item.label)
@@ -2618,7 +2738,7 @@ function extra.beginPropertyControl(action, x)
 	elseif action.kind == "enum" then
 		local target = getScope(row[1]); extra.EditorWorkspace.OpenEnumMenu(extra.workspace, row, row[9], target and target[row[2]])
 	elseif action.kind == "text" then
-		beginMutation("Edit " .. rowID(row)); editor.textRow = row; extra.focusTextField("propertyValue")
+		editor.textRow = row; extra.focusTextField("propertyValue", false)
 	elseif action.kind == "number" then
 		local ratio = clamp((x - action.control.x1) / math.max(1, action.control.x2 - action.control.x1), 0, 1)
 		local value = row[5] + (row[6] - row[5]) * ratio
@@ -2640,7 +2760,8 @@ function extra.performModalOption(option)
 	elseif action == "toggle-enforcement" then
 		local id = rowID(row); setShippingEnforcement(row[1], row[2], authorData.shippingEnforcedPaths[id] ~= true)
 	elseif action == "set-enum" then setValue(row[1], row[2], option.value)
-	elseif action == "set-filter" then setValue("authoring", "filterMode", option.value); editor.row = 1; extra.workspace.pendingFocus = "first-property"
+	elseif action == "set-preview-context" then editor.previewContext = tostring(option.value or "Normal Gameplay"); editor.status = "Preview: " .. editor.previewContext
+	elseif action == "set-filter" then editor.filterMode = option.value; editor.row = 1; extra.workspace.pendingFocus = "first-property"
 	elseif action == "align-left" then alignSelected("left")
 	elseif action == "align-hcenter" then alignSelected("hcenter")
 	elseif action == "align-right" then alignSelected("right")
@@ -2657,10 +2778,12 @@ function extra.handleWorkspaceAction(action, x, y, button)
 	local kind = action.type
 	if kind == "close" then setEditorOpen(false)
 	elseif kind == "move-window" and button == 1 then
-		beginMutation("Move editor"); editor.dragging = true; editor.dragDX, editor.dragDY = x - editor.bounds.x1, y - editor.bounds.y1
+		editor.dragging = true; editor.dragDX, editor.dragDY = x - editor.bounds.x1, y - editor.bounds.y1
+		if extra.input then extra.EditorInput.Capture(extra.input, "move-window", {}, button, x, y) end
 	elseif kind == "resize-window" and button == 1 then
-		beginMutation("Resize editor"); editor.resizing = true; editor.startX, editor.startY = x, y
+		editor.resizing = true; editor.startX, editor.startY = x, y
 		editor.startW, editor.startH = editor.bounds.width, editor.bounds.height
+		if extra.input then extra.EditorInput.Capture(extra.input, "resize-window", {}, button, x, y) end
 	elseif kind == "toggle-nav" then extra.workspace.navCollapsed = not extra.workspace.navCollapsed
 	elseif kind == "toggle-nav-group" then extra.workspace.navGroups[action.group] = not extra.workspace.navGroups[action.group]
 	elseif kind == "select-component" then extra.selectNavigationItem(action.component)
@@ -2669,19 +2792,40 @@ function extra.handleWorkspaceAction(action, x, y, button)
 	elseif kind == "undo" then undo()
 	elseif kind == "redo" then redo()
 	elseif kind == "save" then savePersonal()
-	elseif kind == "preview-context" then cyclePreviewContext()
+	elseif kind == "preview-context" then extra.EditorWorkspace.OpenPreviewMenu(extra.workspace, extra.previewMenuEntries())
+	elseif kind == "toggle-preview" then extra.EditorWorkspace.TogglePreview(extra.workspace, extra.previewKind() ~= nil)
+	elseif kind == "preview-safe" then extra.workspace.showSafeMargins = not extra.workspace.showSafeMargins
+	elseif kind == "preview-bounds" then extra.workspace.showSelectionBounds = not extra.workspace.showSelectionBounds
+	elseif kind == "toggle-debug" then extra.workspace.debugVisible = not extra.workspace.debugVisible
+		editor.status = extra.workspace.debugVisible and "Debug tools visible in Advanced" or "Debug tools hidden"
+	elseif kind == "debug-audit" then
+		local report = getHintAudit(support()); Spring.Echo(string.format("Controller editor audit: focus=%s hints=%d missing=%d",
+			tostring(extra.workspace.focusId), report.hintCount, #report.missingBindings))
+	elseif kind == "pane-divider" and button == 1 then
+		local result = extra.EditorWorkspace.DividerPress(extra.workspace, x, y, Spring and Spring.GetGameSeconds and Spring.GetGameSeconds() or 0)
+		if result and result ~= "reset" and extra.input then extra.EditorInput.Capture(extra.input, "pane-divider", { divider = result }, button, x, y) end
 	elseif kind == "align-menu" then extra.EditorWorkspace.OpenAlignmentMenu(extra.workspace)
 	elseif kind == "help" then extra.workspace.showHelp = true
 	elseif kind == "draft" then writeAuthoringDraft()
 	elseif kind == "publish" then writePublishRequest()
-	elseif kind == "filter" then setValue("authoring", "filterMode", action.mode); editor.row = 1; extra.workspace.pendingFocus = "first-property"
-	elseif kind == "filter-menu" then extra.EditorWorkspace.OpenFilterMenu(extra.workspace, settings.authoring.filterMode)
+	elseif kind == "filter" then editor.filterMode = action.mode; editor.row = 1; extra.workspace.pendingFocus = "first-property"
+	elseif kind == "filter-menu" then extra.EditorWorkspace.OpenFilterMenu(extra.workspace, editor.filterMode)
 	elseif kind == "toggle-property-group" then extra.EditorWorkspace.ToggleGroup(extra.workspace, action.group)
 	elseif kind == "focus-property" then
 		editor.row = action.rowIndex or editor.row
 		if button == 3 then extra.EditorWorkspace.OpenPropertyMenu(extra.workspace, action.row, settings.authoring.developerAuthoring,
 			authorData.savedValues[rowID(action.row)] ~= nil) end
 	elseif kind == "property-control" then extra.beginPropertyControl(action, x)
+	elseif kind == "property-slider" then extra.beginPropertyControl({ row = action.row, rowIndex = action.rowIndex,
+		kind = "number", control = action.control }, x)
+		if extra.input then extra.EditorInput.Capture(extra.input, "property-slider", { row = action.row }, button, x, y) end
+	elseif kind == "property-step" then
+		editor.row = action.rowIndex or editor.row; beginMutation("Adjust " .. rowID(action.row)); adjustRow(action.delta)
+		editor.held = { delta = action.delta, elapsed = 0, nextRepeat = 0.38, pointer = true, row = action.row }
+		if extra.input then extra.EditorInput.Capture(extra.input, "property-step", { row = action.row }, button, x, y) end
+	elseif kind == "property-number-entry" then
+		editor.row, editor.textRow = action.rowIndex or editor.row, action.row
+		extra.focusTextField("propertyValue", true)
 	elseif kind == "favorite-property" then toggleFavorite(action.row)
 	elseif kind == "reset-property" then extra.resetProperty(action.row)
 	elseif kind == "property-menu" then extra.EditorWorkspace.OpenPropertyMenu(extra.workspace, action.row, settings.authoring.developerAuthoring,
@@ -2697,27 +2841,44 @@ function extra.handleWorkspaceAction(action, x, y, button)
 	return true
 end
 
+function widget:IsAbove(x, y)
+	if editor.open then return true end
+	return pointInside(editor.launcher, x, y) or pointInside(hintMoreHit, x, y)
+end
+
+function widget:GetTooltip(x, y)
+	if not editor.open or not extra.workspace then return "" end
+	local hit = extra.EditorWorkspace.FindHit(extra.workspace, x, y)
+	return hit and tostring(hit.tooltip or hit.accessibleLabel or "") or "Controller UI Authoring modal"
+end
+
 function widget:MousePress(x, y, button)
-	if button == 1 and pointInside(hintMoreHit, x, y) then setValue("hints", "expanded", true); return true end
 	if not editor.open then
+		if button == 1 and pointInside(hintMoreHit, x, y) then setValue("hints", "expanded", true); return true end
 		if button == 1 and pointInside(editor.launcher, x, y) then toggleEditor(); return true end
 		return false
 	end
+	if extra.input then extra.EditorInput.Press(extra.input, button, x, y) end
 
 	local insidePanel = pointInside(editor.bounds, x, y)
 	if insidePanel then
 		if extra.workspace then
-			if button == 1 and extra.EditorWorkspace.ScrollbarPress(extra.workspace, x, y) then return true end
+			if button == 1 and extra.EditorWorkspace.ScrollbarPress(extra.workspace, x, y) then
+				if extra.input then extra.EditorInput.Capture(extra.input, "scrollbar", {}, button, x, y) end
+				return true
+			end
 			local hit = extra.EditorWorkspace.FindHit(extra.workspace, x, y)
 			if hit then
-				if hit.id then extra.EditorWorkspace.SetFocus(extra.workspace, hit.id) end
+				if hit.action and hit.action.row then
+					extra.EditorWorkspace.SetFocus(extra.workspace, "property:" .. rowID(hit.action.row))
+				elseif hit.id then extra.EditorWorkspace.SetFocus(extra.workspace, hit.id) end
 				return extra.handleWorkspaceAction(hit.action, x, y, button)
 			end
 			return true
 		end
 		if button == 1 and pointInside(editor.close, x, y) then setEditorOpen(false); return true end
 		for _, hit in ipairs(editor.tabs or {}) do if button == 1 and pointInside(hit, x, y) then editor.tab, editor.row, editor.scroll = hit.index, 1, 0; return true end end
-		for _, hit in ipairs(editor.filterHits or {}) do if button == 1 and pointInside(hit, x, y) then setValue("authoring", "filterMode", hit.mode); editor.row, editor.scroll = 1, 0; return true end end
+		for _, hit in ipairs(editor.filterHits or {}) do if button == 1 and pointInside(hit, x, y) then editor.filterMode = hit.mode; editor.row, editor.scroll = 1, 0; return true end end
 		if button == 1 and pointInside(editor.searchHit, x, y) then editor.searchActive, editor.textRow = true, nil; return true end
 		if button == 1 and pointInside(editor.undo, x, y) then undo(); return true end
 		if button == 1 and pointInside(editor.redo, x, y) then redo(); return true end
@@ -2762,28 +2923,39 @@ function widget:MousePress(x, y, button)
 		end
 		return true
 	end
-
+	-- Full-screen modal shield: an outside press may dismiss transient editor
+	-- state, but it never reaches selection, commands, or camera handling.
+	if extra.workspace and extra.workspace.modal then
+		extra.EditorWorkspace.CloseModal(extra.workspace); extra.workspace.showHelp = false; return true
+	elseif editor.activeText then extra.finishTextField(nil, false); return true end
 	if button == 1 then
-		if pointInside(editor.launcher, x, y) then
-			local hit = deepCopy(editor.launcher); hit.component = "editorLauncher"; return beginComponentDrag(hit, x, y)
-		end
-		for index = #(editor.componentHits or {}), 1, -1 do
+		for index = #editor.componentHits, 1, -1 do
 			local hit = editor.componentHits[index]
 			if pointInside(hit.resize, x, y) then
-				beginMutation("Resize " .. hit.component); editor.resizeComponent = hit.component
-				editor.startX, editor.startY = x, y; editor.startW = settings.components[hit.component].width; editor.startH = settings.components[hit.component].height
+				selectComponent(hit.component)
+				local item = settings.components[hit.component]
+				if item and item.width and item.height then
+					beginMutation("Resize " .. hit.component)
+					editor.resizeComponent, editor.startX, editor.startY = hit.component, x, y
+					editor.startW, editor.startH = item.width, item.height
+					if extra.input then extra.EditorInput.Capture(extra.input, "live-component-resize", { component = hit.component }, button, x, y) end
+				end
+				return true
+			elseif pointInside(hit, x, y) then
+				beginComponentDrag(hit, x, y)
+				if extra.input then extra.EditorInput.Capture(extra.input, "live-component-move", { component = hit.component }, button, x, y) end
 				return true
 			end
-			if pointInside(hit, x, y) then return beginComponentDrag(hit, x, y) end
 		end
 	end
-	-- The open authoring surface owns the live view as a safe preview/canvas.
-	-- Consume unmatched presses so they cannot issue selection or command input.
 	return true
 end
 
 function widget:MouseMove(x, y)
-	if extra.workspace and extra.EditorWorkspace.ScrollbarDrag(extra.workspace, y) then return true
+	if not editor.open then return false end
+	if extra.input then extra.EditorInput.Move(extra.input, x, y) end
+	if extra.workspace and extra.EditorWorkspace.DividerDrag(extra.workspace, x) then return true
+	elseif extra.workspace and extra.EditorWorkspace.ScrollbarDrag(extra.workspace, y) then return true
 	elseif editor.propertyDrag then
 		local drag, row = editor.propertyDrag, editor.propertyDrag.row
 		local ratio = clamp((x - drag.control.x1) / math.max(1, drag.control.x2 - drag.control.x1), 0, 1)
@@ -2806,30 +2978,39 @@ function widget:MouseMove(x, y)
 		local b, margin = editorBounds(), settings.global.safeMargin
 		local px = clamp(x - editor.dragDX, margin, viewX - margin - b.width)
 		local py = clamp(y - editor.dragDY, margin, viewY - margin - b.height)
-		settings.components.editor.x, settings.components.editor.y = px / viewX, py / viewY; history.dirty = true; touch(); return true
+		editor.chrome.x, editor.chrome.y = px / viewX, py / viewY; return true
 	elseif editor.resizing then
 		local maxW = math.max(100, viewX - editor.bounds.x1 - settings.global.safeMargin)
 		local maxH = math.max(100, viewY - editor.bounds.y1 - settings.global.safeMargin)
 		local width = clamp(editor.startW + (x - editor.startX), math.min(MIN_EDITOR_W, maxW), maxW)
 		local height = clamp(editor.startH - (y - editor.startY), math.min(MIN_EDITOR_H, maxH), maxH)
-		settings.components.editor.width, settings.components.editor.height = width / viewX, height / viewY; history.dirty = true; touch(); return true
+		editor.chrome.width, editor.chrome.height = width / viewX, height / viewY; return true
 	end
-	return editor.open and pointInside(editor.bounds, x, y) or false
+	return true
 end
 
-function widget:MouseRelease()
-	local workspaceHandled = extra.workspace and extra.EditorWorkspace.EndPointer(extra.workspace)
-	local handled = workspaceHandled or editor.propertyDrag or editor.dragComponent or editor.resizeComponent or editor.dragging or editor.resizing or editor.held
+function widget:MouseRelease(x, y, button)
+	if not editor.open then return false end
+	if extra.workspace then extra.EditorWorkspace.EndPointer(extra.workspace) end
+	if extra.input then extra.EditorInput.Release(extra.input, button) end
 	editor.dragComponent, editor.resizeComponent, editor.dragging, editor.resizing, editor.held = nil, nil, false, false, nil
 	editor.propertyDrag = nil
-	editor.guides = {}; endMutation(); return handled and true or false
+	editor.guides = {}; endMutation(); return true
 end
 
-function widget:MouseWheel(up)
+function widget:MouseWheel(up, value)
 	if not editor.open then return false end
 	if extra.workspace then
 		local x, y = Spring.GetMouseState()
-		local _, _, _, shift = Spring.GetModKeyState()
+		local alt, ctrl, _, shift = Spring.GetModKeyState()
+		local hit = extra.EditorWorkspace.FindHit(extra.workspace, x, y)
+		local action = hit and hit.action
+		if action and action.row and action.row[4] == "number" then
+			editor.row = action.rowIndex or editor.row
+			local multiplier = shift and 10 or ctrl and 0.1 or 1
+			beginMutation("Adjust " .. rowID(action.row)); adjustRow(up and 1 or -1, multiplier); endMutation()
+			return true
+		end
 		extra.EditorWorkspace.MouseWheel(extra.workspace, x, y, up and 1 or -1, shift)
 		return true
 	end
@@ -2853,9 +3034,7 @@ end
 function extra.activeTextValue()
 	if editor.activeText == "componentSearch" then return extra.workspace and extra.workspace.componentSearch or "" end
 	if editor.activeText == "propertySearch" then return editor.search or "" end
-	if editor.activeText == "propertyValue" and editor.textRow then
-		local target = getScope(editor.textRow[1]); return tostring(target and target[editor.textRow[2]] or "")
-	end
+	if editor.activeText == "propertyValue" and editor.textRow then return tostring(editor.textBuffer or "") end
 	return ""
 end
 
@@ -2863,12 +3042,20 @@ function extra.setActiveTextValue(value)
 	value = tostring(value or "")
 	if editor.activeText == "componentSearch" and extra.workspace then extra.workspace.componentSearch = value
 	elseif editor.activeText == "propertySearch" then editor.search, editor.row = value, 1
-	elseif editor.activeText == "propertyValue" and editor.textRow then setValue(editor.textRow[1], editor.textRow[2], value) end
+	elseif editor.activeText == "propertyValue" and editor.textRow then editor.textBuffer = value end
 end
 
-function extra.finishTextField(focusResult)
-	if editor.activeText == "propertyValue" then editor.textRow = nil; endMutation() end
+function extra.finishTextField(focusResult, commit)
+	if editor.activeText == "propertyValue" and editor.textRow then
+		if commit then
+			local value = editor.textNumeric and tonumber(editor.textBuffer) or editor.textBuffer
+			if value ~= nil then setValue(editor.textRow[1], editor.textRow[2], value)
+			else editor.status = "Invalid numeric value; edit cancelled" end
+		end
+		editor.textRow = nil
+	end
 	editor.activeText, editor.searchActive, editor.selectAll = nil, false, false
+	editor.textBuffer, editor.textOriginal, editor.textNumeric, editor.composition = "", "", false, ""
 	if extra.workspace and focusResult == "property" then extra.workspace.pendingFocus = "first-property" end
 	if extra.workspace and focusResult == "component" then
 		for _, item in ipairs(extra.workspace.focusItems) do
@@ -2897,9 +3084,9 @@ function extra.handleTextFieldKey(key, mods, label)
 	end
 	if KEYSYMS and key == KEYSYMS.RETURN then
 		local result = editor.activeText == "componentSearch" and "component" or editor.activeText == "propertySearch" and "property" or nil
-		extra.finishTextField(result); return true
+		extra.finishTextField(result, true); return true
 	end
-	if KEYSYMS and key == KEYSYMS.ESCAPE then extra.finishTextField(nil); return true end
+	if KEYSYMS and key == KEYSYMS.ESCAPE then extra.finishTextField(nil, false); return true end
 	return true
 end
 
@@ -2913,27 +3100,28 @@ function extra.activateFocusedControl()
 		if action.row[4] == "bool" then beginMutation("Toggle " .. rowID(action.row)); adjustRow(1); endMutation()
 		elseif action.row[4] == "enum" then
 			local target = getScope(action.row[1]); extra.EditorWorkspace.OpenEnumMenu(extra.workspace, action.row, action.row[9], target and target[action.row[2]])
-		elseif action.row[4] == "text" then
-			beginMutation("Edit " .. rowID(action.row)); editor.textRow = action.row; extra.focusTextField("propertyValue")
+		elseif action.row[4] == "text" or action.row[4] == "number" then
+			editor.textRow = action.row; extra.focusTextField("propertyValue", action.row[4] == "number")
 		else editor.status = "Use Left/Right to adjust " .. tostring(action.row[3]) end
 		return true
 	end
 	return extra.handleWorkspaceAction(action, editor.bounds.x1, editor.bounds.y1, 1)
 end
 
-function extra.adjustFocusedControl(delta, multiplier, isRepeat)
+function extra.adjustFocusedControl(delta, multiplier, isRepeat, key)
 	local item = extra.workspace and extra.EditorWorkspace.Focused(extra.workspace) or nil
 	if not item or not item.row then return true end
 	editor.row = item.rowIndex or editor.row
 	if not isRepeat and not editor.held then
 		beginMutation("Adjust " .. rowID(item.row)); adjustRow(delta, multiplier)
-		editor.held = { delta = delta, elapsed = 0, nextRepeat = 0.38, keyboard = true }
+		editor.held = { delta = delta, elapsed = 0, nextRepeat = 0.38, keyboard = true, key = key, row = item.row }
 	end
 	return true
 end
 
 function widget:KeyPress(key, mods, isRepeat, label)
 	if not editor.open then return false end
+	if extra.input then extra.EditorInput.KeyDown(extra.input, key) end
 	mods = mods or {}
 	if extra.workspace and extra.workspace.modal then
 		if KEYSYMS and key == KEYSYMS.ESCAPE then extra.EditorWorkspace.CloseModal(extra.workspace); extra.workspace.showHelp = false; return true end
@@ -2941,6 +3129,8 @@ function widget:KeyPress(key, mods, isRepeat, label)
 		if KEYSYMS and (key == KEYSYMS.DOWN or key == KEYSYMS.RIGHT) then extra.EditorWorkspace.MoveFocus(extra.workspace, 1); return true end
 		if KEYSYMS and key == KEYSYMS.HOME then extra.EditorWorkspace.FocusBoundary(extra.workspace, false); return true end
 		if KEYSYMS and key == KEYSYMS.END then extra.EditorWorkspace.FocusBoundary(extra.workspace, true); return true end
+		if KEYSYMS and key == KEYSYMS.PAGEUP then extra.EditorWorkspace.Page(extra.workspace, -1); return true end
+		if KEYSYMS and key == KEYSYMS.PAGEDOWN then extra.EditorWorkspace.Page(extra.workspace, 1); return true end
 		if shortcutMatches(settings.authoring.shortcutPrevious, key, mods, label) then extra.EditorWorkspace.MoveFocus(extra.workspace, -1); return true end
 		if shortcutMatches(settings.authoring.shortcutNext, key, mods, label) then extra.EditorWorkspace.MoveFocus(extra.workspace, 1); return true end
 		if KEYSYMS and (key == KEYSYMS.SPACE or key == KEYSYMS.RETURN) then return extra.activateFocusedControl() end
@@ -2963,8 +3153,8 @@ function widget:KeyPress(key, mods, isRepeat, label)
 		if KEYSYMS and key == KEYSYMS.UP then extra.EditorWorkspace.MoveFocus(extra.workspace, -1); return true end
 		if KEYSYMS and key == KEYSYMS.DOWN then extra.EditorWorkspace.MoveFocus(extra.workspace, 1); return true end
 		local multiplier = mods.shift and 10 or (mods.ctrl and 0.1 or 1)
-		if KEYSYMS and key == KEYSYMS.LEFT then return extra.adjustFocusedControl(-1, multiplier, isRepeat) end
-		if KEYSYMS and key == KEYSYMS.RIGHT then return extra.adjustFocusedControl(1, multiplier, isRepeat) end
+		if KEYSYMS and key == KEYSYMS.LEFT then return extra.adjustFocusedControl(-1, multiplier, isRepeat, key) end
+		if KEYSYMS and key == KEYSYMS.RIGHT then return extra.adjustFocusedControl(1, multiplier, isRepeat, key) end
 		if KEYSYMS and key == KEYSYMS.PAGEUP then extra.EditorWorkspace.Page(extra.workspace, -1); return true end
 		if KEYSYMS and key == KEYSYMS.PAGEDOWN then extra.EditorWorkspace.Page(extra.workspace, 1); return true end
 		if KEYSYMS and (key == KEYSYMS.HOME or key == KEYSYMS.END) then
@@ -2974,7 +3164,7 @@ function widget:KeyPress(key, mods, isRepeat, label)
 			return true
 		end
 		if KEYSYMS and (key == KEYSYMS.SPACE or key == KEYSYMS.RETURN) then return extra.activateFocusedControl() end
-		if KEYSYMS and key == KEYSYMS.DELETE then local item = extra.EditorWorkspace.Focused(extra.workspace); if item and item.row then extra.resetProperty(item.row) end; return true end
+		if KEYSYMS and key == KEYSYMS.DELETE then editor.status = "Delete is available only for selected custom items"; return true end
 		return true
 	end
 	if KEYSYMS and key == KEYSYMS.UP then editor.row = math.max(1, editor.row - 1); return true end
@@ -3001,9 +3191,10 @@ function widget:KeyPress(key, mods, isRepeat, label)
 	return true
 end
 
-function widget:KeyRelease()
+function widget:KeyRelease(key)
 	if not editor.open then return false end
-	if editor.held and editor.held.keyboard then editor.held = nil; endMutation() end
+	if extra.input then extra.EditorInput.KeyUp(extra.input, key) end
+	if editor.held and editor.held.keyboard and (editor.held.key == nil or editor.held.key == key) then editor.held = nil; endMutation() end
 	return true
 end
 
@@ -3011,8 +3202,15 @@ function widget:TextInput(value)
 	if not editor.open or type(value) ~= "string" then return false end
 	if editor.activeText then
 		extra.setActiveTextValue(editor.selectAll and value or extra.activeTextValue() .. value)
-		editor.selectAll = false; return true
+		editor.selectAll, editor.composition = false, ""; if extra.input then extra.EditorInput.SetComposition(extra.input, "") end; return true
 	end
+	return true
+end
+
+function widget:TextEditing(value)
+	if not editor.open then return false end
+	editor.composition = editor.activeText and tostring(value or "") or ""
+	if extra.input then extra.EditorInput.SetComposition(extra.input, editor.composition) end
 	return true
 end
 
@@ -3066,9 +3264,12 @@ function widget:TextCommand(command)
 end
 
 function widget:GetConfigData()
+	local workspaceChrome = extra.workspace and extra.EditorWorkspace.ExportChrome(extra.workspace) or nil
 	return { schemaVersion = SCHEMA_VERSION, personalSettings = personalSettings or history.lastSaved,
 		settings = personalSettings or history.lastSaved, authorData = history.dirty and history.lastSavedAuthorData or authorData,
 		recovery = history.dirty and { dirty = true, settings = settings, authorData = authorData } or { dirty = false },
+		editorChrome = { window = deepCopy(editor.chrome), workspace = workspaceChrome, tab = editor.tab,
+			selectedComponent = editor.selectedComponent, filterMode = editor.filterMode, previewContext = editor.previewContext },
 		editorOpen = false, migratedLegacyLauncher = migratedLegacyLauncher }
 end
 
@@ -3098,4 +3299,15 @@ function widget:SetConfigData(data)
 	else history.dirty = false end
 	history.undo, history.redo, history.active = {}, {}, nil
 	migratedLegacyLauncher = data.migratedLegacyLauncher == true
+	local chrome = type(data.editorChrome) == "table" and data.editorChrome or {}
+	local window = type(chrome.window) == "table" and chrome.window or settings.components.editor or DEFAULTS.components.editor
+	editor.chrome = {
+		x = clamp(window.x, 0, 1), y = clamp(window.y, 0, 1),
+		width = clamp(window.width, 0.20, 0.95), height = clamp(window.height, 0.30, 0.95),
+	}
+	editor.tab = clamp(chrome.tab or editor.tab, 1, #tabs)
+	editor.selectedComponent = type(chrome.selectedComponent) == "string" and chrome.selectedComponent or editor.selectedComponent
+	editor.filterMode = type(chrome.filterMode) == "string" and chrome.filterMode or "Basic"
+	editor.previewContext = type(chrome.previewContext) == "string" and chrome.previewContext or "Normal Gameplay"
+	if extra.workspace then extra.EditorWorkspace.ImportChrome(extra.workspace, chrome.workspace); extra.EditorWorkspace.ResetSession(extra.workspace) end
 end

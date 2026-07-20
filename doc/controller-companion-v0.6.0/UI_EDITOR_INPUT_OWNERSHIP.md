@@ -52,6 +52,20 @@ and the engine did not see a UI surface above the world outside the editor
 rectangle. Right-click orders, selection clicks, and camera-wheel input could
 therefore execute before or instead of the editor action.
 
+## Why property controls did not execute
+
+The immediate-mode workspace resolves overlapping hits from the most recently
+registered item to the earliest item. Property rows registered their slider,
+toggle, or value field first and then registered the full parent row over the
+same rectangle. Reverse hit testing therefore returned the parent selection
+action before it could ever return the child control action. The controls were
+drawn but were not the interactive surface under the pointer.
+
+The repaired workspace registers the parent row first and its concrete child
+controls afterward. This preserves row selection and right-click property menus
+while giving toggles, step buttons, sliders, typed values, and wheel adjustment
+the expected hit priority.
+
 ## Why keyboard navigation did not execute
 
 Normal BAR key actions run before ordinary widget `KeyPress` call-ins. The old

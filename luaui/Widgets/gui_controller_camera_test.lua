@@ -30,6 +30,12 @@ local spGetSelectedUnits = Spring.GetSelectedUnits
 local spGiveOrderToUnit = Spring.GiveOrderToUnit
 local spGiveOrderToUnitArray = Spring.GiveOrderToUnitArray
 
+ControllerUISharedRenderers = ControllerUISharedRenderers or nil
+do
+	local ok, module = pcall(VFS.Include, "LuaUI/Include/controller_ui_shared_renderers.lua")
+	if ok and type(module) == "table" then ControllerUISharedRenderers = module end
+end
+
 function serializeTable(t)
 	if type(t) ~= "table" then return tostring(t) end
 	local s = {}
@@ -12477,6 +12483,28 @@ function ControllerCameraTestDrawTacticalRadial()
 	if not menu.open or not ControllerCameraTestControllerUIVisible("tacticalRadial", true) then
 		return
 	end
+	if ControllerUISharedRenderers then
+		local commands = ControllerCameraTestGetTacticalCommands(false, "draw")
+		local category = TacticalCategories.Info(menu.categoryKey or "tactical")
+		local categoryColor = TacticalCategories.Colors[category.key] or { 1, 1, 1 }
+		local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
+		local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
+		cx, cy = ControllerCameraTestGetControllerUIPosition("tacticalRadial", cx, cy)
+		local minView = math.min(viewSizeX, viewSizeY)
+		local radialScale = (ControllerCameraTestSettings.radialScale or 1) * ControllerCameraTestGetControllerUIScale("tacticalRadial", true)
+		local radius = math.min(520, math.max(220, minView * 0.28 * radialScale))
+		local entries = {}
+		for index, command in ipairs(commands) do entries[index] = { label = command.shortLabel or command.name or "Command" } end
+		ControllerUISharedRenderers.DrawRadial({
+			bounds = { x1 = cx - radius * 1.45, y1 = cy - radius * 1.45, x2 = cx + radius * 1.45, y2 = cy + radius * 1.45 },
+			model = { title = category.label, subtitle = "LS choose  A/X confirm  B/Y close", entries = entries,
+				selectedIndex = menu.selectedIndex, accent = categoryColor },
+			theme = { backgroundR = 0.02, backgroundG = 0.03, backgroundB = 0.04,
+				accentR = categoryColor[1], accentG = categoryColor[2], accentB = categoryColor[3] },
+			opacity = ControllerCameraTestGetControllerUIOpacity("tacticalRadial"),
+		})
+		return
+	end
 
 	gl.PushMatrix()
 
@@ -12711,6 +12739,21 @@ function ControllerCameraTestDrawFilterRadial()
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 	cx, cy = ControllerCameraTestGetControllerUIPosition("selectionRadial", cx, cy)
+	if area.filterRadialOpen and ControllerUISharedRenderers then
+		local labels = { "All Mobile", "Combat", "Air", "Builders" }
+		local selectedIndex = 1
+		for index, label in ipairs(labels) do if area.highlightedFilter == label then selectedIndex = index end end
+		local radius = 130 * ControllerCameraTestGetControllerUIScale("selectionRadial", true)
+		ControllerUISharedRenderers.DrawRadial({
+			bounds = { x1 = cx - radius * 1.55, y1 = cy - radius * 1.55, x2 = cx + radius * 1.55, y2 = cy + radius * 1.55 },
+			model = { title = "SELECT FILTER", subtitle = "Release X to set", entries = {
+				{ label = labels[1] }, { label = labels[2] }, { label = labels[3] }, { label = labels[4] },
+			}, selectedIndex = selectedIndex, accent = { 0.25, 0.75, 1.0 } },
+			theme = { backgroundR = 0.02, backgroundG = 0.03, backgroundB = 0.04, accentR = 0.25, accentG = 0.75, accentB = 1.0 },
+			opacity = ControllerCameraTestGetControllerUIOpacity("selectionRadial"),
+		})
+		return
+	end
 
 	if area.filterRadialOpen then
 		local radius = 130 * ControllerCameraTestGetControllerUIScale("selectionRadial", true)
@@ -13141,6 +13184,31 @@ function ControllerCameraTestDrawControlGroupOverlay()
 		if component.scrollBehavior == "Wrap" and #availableSlots > 0 then sourceIndex = ((sourceIndex - 1) % #availableSlots) + 1 end
 		if availableSlots[sourceIndex] then displaySlots[#displaySlots + 1] = availableSlots[sourceIndex] end
 	end
+	if ControllerUISharedRenderers then
+		local modelSlots, selectedIndex = {}, 1
+		for visibleIndex, slot in ipairs(displaySlots) do
+			local entry = groups.slots[slot]
+			if slot == activeSlot then selectedIndex = visibleIndex end
+			modelSlots[visibleIndex] = {
+				label = ControllerCameraTestGetControlGroupDisplaySlot(slot), count = entry and entry.count or 0,
+				empty = entry == nil, selected = slot == activeSlot,
+				recent = tostring(groups.lastSlot) == ControllerCameraTestGetControlGroupDisplaySlot(slot),
+				auto = entry and entry.autoAddUnitDefID ~= nil,
+				role = entry and tostring(entry.typeName or "assigned") or nil,
+				texture = entry and entry.unitDefID and ("#" .. tostring(entry.unitDefID)) or nil,
+			}
+		end
+		ControllerUISharedRenderers.DrawHotSlots({
+			bounds = { x1 = left, y1 = bottom, x2 = left + stripWidth, y2 = top }, settings = component,
+			theme = { backgroundR = backgroundColor[1], backgroundG = backgroundColor[2], backgroundB = backgroundColor[3],
+				foregroundR = foregroundColor[1], foregroundG = foregroundColor[2], foregroundB = foregroundColor[3],
+				accentR = accentColor[1], accentG = accentColor[2], accentB = accentColor[3] },
+			model = { slots = modelSlots, selectedIndex = selectedIndex,
+				status = "Group " .. ControllerCameraTestGetControlGroupDisplaySlot(activeSlot) .. ": " .. tostring(groups.lastAction) },
+			opacity = opacity, scale = scale, fontScale = fontScale,
+		})
+		return
+	end
 
 	gl.Color(backgroundColor[1], backgroundColor[2], backgroundColor[3], (tonumber(component.backgroundOpacity) or 0.72) * opacity)
 	gl.Rect(left, bottom, left + stripWidth, top)
@@ -13417,6 +13485,32 @@ function ControllerCameraTestDrawBuildRadial()
 	-- Resolve page/category color
 	local catKey = string.lower(menu.radialCategoryName or "economy")
 	local pageColor = BuildRadialPageColors[catKey] or BuildRadialPageColors.economy
+	if ControllerUISharedRenderers then
+		local entries, selectedIndex = {}, 1
+		for index, option in ipairs(visibleOptions) do
+			if option.menuIndex == menu.selectedIndex then selectedIndex = index end
+			local affordable = ControllerCameraTestGetCachedAffordability(option)
+			local progress = isFactoryContext and option.cmdID and menu.factoryQueueProgress and menu.factoryQueueProgress[option.cmdID]
+			local queueCount = isFactoryContext and option.cmdID and menu.factoryQueueCounts and menu.factoryQueueCounts[option.cmdID] or 0
+			entries[index] = { label = option.shortLabel or option.name or "Build", texture = option.iconTexture,
+				disabled = not affordable, progress = progress, badge = queueCount, indexLabel = index }
+		end
+		local current = visibleOptions[selectedIndex]
+		local details = {}
+		local info = current and ControllerCameraTestBuildRadialUnitInfo(current)
+		if info and info.description and info.description ~= "" then details[#details + 1] = info.description end
+		if info then for index = 1, math.min(3, #(info.stats or {})) do details[#details + 1] = info.stats[index] end end
+		ControllerUISharedRenderers.DrawRadial({
+			bounds = { x1 = cx - radius * 1.45, y1 = cy - radius * 1.45, x2 = cx + radius * 1.45, y2 = cy + radius * 1.45 },
+			model = { title = current and (current.name or current.shortLabel) or (isFactoryContext and "Factory" or "Build"),
+				subtitle = isFactoryContext and "A/X adjust queue  B/Y close" or "A place  X quick-place  B/Y close",
+				entries = entries, selectedIndex = selectedIndex, accent = pageColor.accent, details = details },
+			theme = { backgroundR = pageColor.fill[1], backgroundG = pageColor.fill[2], backgroundB = pageColor.fill[3],
+				accentR = pageColor.accent[1], accentG = pageColor.accent[2], accentB = pageColor.accent[3] },
+			opacity = ControllerCameraTestGetControllerUIOpacity(componentName),
+		})
+		return
+	end
 
 	-- 1. Translucent backdrop (large colored circle around the reticle)
 	local fillR = pageColor.fill[1]
