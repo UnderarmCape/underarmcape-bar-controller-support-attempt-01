@@ -1,0 +1,18 @@
+{
+  "kind": "bar-controller-ui-defaults-manifest",
+  "manifestVersion": 1,
+  "schemaVersion": 3,
+  "revision": 3,
+  "defaultsVersion": "0.6.0-3",
+  "defaultsFile": "shipping-defaults.json",
+  "sha256": "90b7b3e674747d7bcc52164c59b0cdd39fb61c6a359c5c9241a7efab937781bb",
+  "generatedAt": "2026-07-20T00:00:00Z",
+  "publishedAt": "2026-07-20T00:00:00Z",
+  "minimumCompanionVersion": "0.6.0",
+  "minimumModVersion": "0.6.0",
+  "maximumModVersion": "0.6.x",
+  "sourceBranch": "controller-ui-live-defaults",
+  "sourceCommit": "unpublished-local",
+  "changeSummary": "Restored polished radials and hot slots; clean shadowed hints with working hold, glow, label background, and marquee controls.",
+  "releaseChannel": "stable"
+}
