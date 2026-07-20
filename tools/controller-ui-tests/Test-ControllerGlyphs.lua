@@ -13,12 +13,12 @@ local function readFile(path)
 	local content = file:read("*a"); file:close(); return content
 end
 
-local texRects, textFallbacks, textureAvailable = 0, 0, true
+local texRects, textFallbacks, textureAvailable, lastTexRect = 0, 0, true, nil
 gl = setmetatable({
 	Color = function() end, Rect = function() end,
 	Text = function() textFallbacks = textFallbacks + 1 end,
 	Texture = function(path) if path == false then return true end return textureAvailable end,
-	TexRect = function() texRects = texRects + 1 end,
+	TexRect = function(x1, y1, x2, y2) texRects = texRects + 1; lastTexRect = { x1, y1, x2, y2 } end,
 }, { __index = function() return function() end end })
 
 local Glyphs = dofile(root .. "/luaui/Include/controller_glyphs.lua")
@@ -40,6 +40,13 @@ assertEqual(sequence[1].id, "hold", "hold indicator prefixes chord")
 assertEqual(#sequence, 8, "hold plus four-button chord layout")
 assertEqual(sequence[3].id, "plus", "chord separator inserted")
 assertEqual(sequence[#sequence].id, "RB", "final chord glyph retained")
+local tapSequence = Glyphs.BuildSequence({ "A" }, { hold = false, showTapHold = true })
+assertEqual(#tapSequence, 1, "ordinary tap never adds a TAP label")
+assertEqual(tapSequence[1].id, "A", "ordinary tap begins with its live binding")
+local boldHoldSequence = Glyphs.BuildSequence({ "A" }, { hold = true, showHold = true, holdStyle = "Bold HOLD" })
+assertEqual(boldHoldSequence[1].id, "A", "bold HOLD style leaves label treatment to the renderer")
+local glyphHoldSequence = Glyphs.BuildSequence({ "A" }, { hold = true, showHold = true, holdStyle = "Hold Glyph" })
+assertEqual(glyphHoldSequence[1].id, "hold", "hold-glyph style prefixes the live sequence")
 
 local rebound = Glyphs.BuildSequence({ "A" }, {})
 assertEqual(rebound[1].id, "A", "first live binding resolution")
@@ -73,6 +80,12 @@ local _, _, fallbackCount = Glyphs.DrawSequence(sequence, 10, 10, {
 })
 assertEqual(texRects, #sequence, "atlas renders each chord glyph")
 assertEqual(fallbackCount, 0, "complete chord has no text fallbacks")
+
+texRects, lastTexRect, textureAvailable = 0, nil, true
+Glyphs.DrawSequence(Glyphs.BuildSequence({ "dpadUp" }, {}), 10, 10, { size = 31, spacing = 0 })
+assertEqual(texRects, 1, "directional D-pad draws from atlas")
+assertTrue(math.abs((lastTexRect[3] - lastTexRect[1]) - (lastTexRect[4] - lastTexRect[2])) < 0.001,
+	"directional D-pad destination preserves square atlas aspect")
 
 texRects, textFallbacks, textureAvailable = 0, 0, false
 local missingTextureCount = select(3, Glyphs.DrawSequence(sequence, 10, 10, { size = 22 }))

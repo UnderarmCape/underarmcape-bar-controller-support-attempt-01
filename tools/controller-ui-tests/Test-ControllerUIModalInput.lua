@@ -70,11 +70,14 @@ VFS = {
 		return nil
 	end,
 }
+local controllerDebugVisible = false
 WG.BARControllerSupport = {
 	GetBinding = function() return "A" end, GetBindingRevision = function() return 1 end,
 	GetBindingDefinitions = function() return {} end, GetShortcutBinding = function() return nil end,
 	GetContextSnapshot = function() return {} end, GetBackStartHoldProgress = function() return 0 end,
-	IsInputPressed = function() return false end, SetLayoutEditorOpen = function() end,
+	IsInputPressed = function() return false end, SetLayoutEditorOpen = function() controllerDebugVisible = false end,
+	ToggleDebugPanel = function() controllerDebugVisible = not controllerDebugVisible; return controllerDebugVisible end,
+	IsDebugPanelVisible = function() return controllerDebugVisible end,
 }
 
 dofile(root .. "/luaui/Widgets/gui_controller_ui_layout.lua")
@@ -107,11 +110,17 @@ widget:TextInput("1.25")
 widget:KeyPress(KEYSYMS.RETURN, {}, false, "return")
 assertEqual(api.Get("global", "scale"), 1.25, "direct numeric entry applies")
 
+widget:MousePress(850, 325, 1); widget:MouseRelease(850, 325, 1)
+local beforeHoverWheel = api.Get("global", "scale"); mouseX, mouseY = 1000, 325; widget:MouseWheel(true, 1)
+assertEqual(api.Get("global", "scale"), beforeHoverWheel, "hover wheel scrolls without changing a value")
 local beforeSlider = api.Get("global", "scale")
 widget:MousePress(1000, 325, 1); widget:MouseMove(1100, 325); widget:MouseRelease(1100, 325, 1)
 assertTrue(api.Get("global", "scale") ~= beforeSlider, "slider drag applies")
 local beforeWheel = api.Get("global", "scale"); mouseX, mouseY = 1000, 325; widget:MouseWheel(true, 1)
-assertTrue(api.Get("global", "scale") ~= beforeWheel, "numeric wheel applies")
+assertTrue(api.Get("global", "scale") ~= beforeWheel, "explicitly focused numeric wheel applies")
+widget:MousePress(850, 325, 1); widget:MouseRelease(850, 325, 1)
+local afterBlur = api.Get("global", "scale"); mouseX, mouseY = 1000, 325; widget:MouseWheel(true, 1)
+assertEqual(api.Get("global", "scale"), afterBlur, "wheel remains browse-only after clicking elsewhere")
 local beforeArrow = api.Get("global", "scale"); widget:KeyPress(KEYSYMS.RIGHT, {}, false, "right"); widget:KeyRelease(KEYSYMS.RIGHT)
 assertTrue(api.Get("global", "scale") ~= beforeArrow, "arrow adjustment applies")
 
@@ -174,4 +183,4 @@ for _, value in ipairs(texts) do if value == "Debug ON" then debugOn = true end 
 assertTrue(not debugOn, "debug hidden on reopen")
 api.CloseEditor(); widget:Shutdown()
 
-print("Controller UI modal input tests passed: full-screen mouse and wheel shield, BAR text ownership, capture lifecycle, live component drag/resize, real controls, numeric typing/drag/wheel/arrow input, categorized preview menu, chrome-only move/resize, and hidden debug state.")
+print("Controller UI modal input tests passed: full-screen ownership, focus-gated wheel editing, live controls, categorized preview, real Controller Debug toggle, chrome-only move/resize, and hidden debug state.")
