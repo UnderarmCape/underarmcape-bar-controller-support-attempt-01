@@ -4,6 +4,8 @@
 
 Copyright (c) 2026 Kailil and BAR Controller Companion contributors.
 
+SPDX asset license identifiers: `GPL-2.0-or-later OR CC0-1.0`.
+
 The atlas, its generator source, and the glyph metadata in `LuaUI/Include/controller_glyphs.lua` are licensed under the GNU General Public License, version 2 or (at your option) any later version, consistently with the widget code. They may also be redistributed under CC0 1.0 where a standalone asset-only license is required.
 
 The face-button colors are metadata tints applied at runtime to original monochrome shapes. Button letters and generic input names are functional labels, not brand artwork.
