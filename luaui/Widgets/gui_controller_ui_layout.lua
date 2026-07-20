@@ -45,6 +45,12 @@ end
 
 local extra = {}
 
+do
+	local ok, result = false, nil
+	if VFS and type(VFS.Include) == "function" then ok, result = pcall(VFS.Include, "LuaUI/Include/controller_ui_editor_workspace.lua") end
+	if ok and type(result) == "table" then extra.EditorWorkspace = result end
+end
+
 local DEFAULTS = {
 	global = {
 		enabled = true, scale = 1, opacity = 1, fontScale = 1,
@@ -149,7 +155,10 @@ local editor = {
 	held = nil, guides = {}, status = "Ready", recoveryAvailable = false,
 	favorite = nil, saveValue = nil, applyValue = nil, savePreset = nil, applyPreset = nil,
 	undo = nil, redo = nil, save = nil, context = nil, draft = nil, publish = nil, reload = nil,
+	propertyDrag = nil, activeText = nil, selectAll = false, previousTextOwner = nil,
 }
+
+extra.workspace = extra.EditorWorkspace and extra.EditorWorkspace.New() or nil
 
 local tabs = { "General", "Hints", "Actions", "Hot Slots", "Launchers", "Radials", "Status", "Other", "Theme", "Authoring", "Recovery" }
 local filterModes = { "Basic", "Advanced", "All", "Favorites", "Recent", "Modified" }
@@ -1258,6 +1267,9 @@ local function recentContains(id)
 end
 
 local function currentRows()
+	local cacheKey = table.concat({ tostring(editor.tab), tostring(settings.authoring.filterMode),
+		tostring(editor.search or ""), tostring(revision) }, "|")
+	if editor.rowsCacheKey == cacheKey and editor.rowsCache then return editor.rowsCache end
 	local result = {}
 	local filterMode = settings.authoring.filterMode or "Basic"
 	local search = string.lower(editor.search or "")
@@ -1274,6 +1286,7 @@ local function currentRows()
 		end
 		if include then result[#result + 1] = row end
 	end
+	editor.rowsCacheKey, editor.rowsCache = cacheKey, result
 	return result
 end
 
@@ -1384,8 +1397,20 @@ local function setComponentPresetFlag(name, flag, enabled)
 	return mutateAuthorData("Update preset " .. tostring(name), function() preset[flag] = enabled == true end)
 end
 
+local function claimEditorInput()
+	if not widgetHandler then return end
+	if widgetHandler.textOwner ~= widget then editor.previousTextOwner = widgetHandler.textOwner end
+	widgetHandler.textOwner = widget
+end
+
+local function releaseEditorInput()
+	if widgetHandler and widgetHandler.textOwner == widget then widgetHandler.textOwner = editor.previousTextOwner end
+	editor.previousTextOwner = nil
+end
+
 local function setEditorOpen(open)
 	editor.open = not not open
+	if editor.open then claimEditorInput() else releaseEditorInput(); editor.activeText, editor.searchActive, editor.textRow = nil, false, nil end
 	local api = support()
 	if api and type(api.SetLayoutEditorOpen) == "function" then api.SetLayoutEditorOpen(editor.open) end
 end
@@ -1869,7 +1894,7 @@ local function drawEditorLegacy()
 	if bb then drawOutline(bb.x1 - 3, bb.y1 - 3, bb.x2 + 3, bb.y2 + 3, { 0.35, 0.95, 0.65, 0.95 }) end
 end
 
-local function drawEditor()
+function extra.drawEditorTable()
 	if not editor.open then editor.bounds = nil; return end
 	local b = editorBounds(); editor.bounds = b
 	local opacity, theme = effectiveOpacity("editor"), settings.theme
@@ -1996,6 +2021,80 @@ local function drawEditor()
 	end
 	editor.resize = { x1 = b.x2 - 22, y1 = b.y1, x2 = b.x2, y2 = b.y1 + 22 }
 	glColor(theme.accentR, theme.accentG, theme.accentB, 0.8); glRect(b.x2 - 16, b.y1 + 4, b.x2 - 4, b.y1 + 7); glRect(b.x2 - 10, b.y1 + 10, b.x2 - 4, b.y1 + 13)
+end
+
+extra.editorNavigation = {
+	{ id = "general", label = "General", icon = "G", group = "Interface", tab = "General" },
+	{ id = "hints", label = "Button Hints", icon = "H", group = "Interface", tab = "Hints", component = "hints" },
+	{ id = "actions", label = "Actions", icon = "A", group = "Interface", tab = "Actions" },
+	{ id = "hotSlots", label = "Hot Slots", icon = "#", group = "Interface", tab = "Hot Slots", component = "hotSlots" },
+	{ id = "launchers", label = "Launchers", icon = "L", group = "Interface", tab = "Launchers", component = "editorLauncher" },
+	{ id = "radials", label = "Radials", icon = "R", group = "Interface", tab = "Radials", component = "buildRadial" },
+	{ id = "status", label = "Status", icon = "S", group = "Interface", tab = "Status", component = "selectedStatus" },
+	{ id = "pregame", label = "Pregame", icon = "P", group = "Interface", tab = "Other", component = "pregame" },
+	{ id = "reticle", label = "Reticle", icon = "+", group = "Interface", tab = "Other", component = "reticle" },
+	{ id = "mouseMode", label = "Mouse Mode", icon = "M", group = "Interface", tab = "Other" },
+	{ id = "theme", label = "Themes", icon = "T", group = "Design", tab = "Theme" },
+	{ id = "favorites", label = "Favorites", icon = "*", group = "Design", filter = "Favorites" },
+	{ id = "authoring", label = "Authoring", icon = "Au", group = "System", tab = "Authoring" },
+	{ id = "recovery", label = "Recovery", icon = "!", group = "System", tab = "Recovery" },
+	{ id = "advanced", label = "Advanced", icon = "Ad", group = "System", filter = "Advanced" },
+}
+
+extra.editorScopeLabels = {
+	global = "Global interface", hints = "Controller hints", hotSlots = "Hot slots", theme = "Theme",
+	authoring = "Authoring", bindingsButton = "Bindings launcher", editorLauncher = "Layout launcher",
+	radials = "All radials", buildRadial = "Build radial", tacticalRadial = "Tactical radial",
+	selectionRadial = "Selection radial", factoryRadial = "Factory radial", selectedStatus = "Selected status",
+	queueStatus = "Queue status", placementStatus = "Placement status", notifications = "Notifications",
+	pregame = "Pregame", instructional = "Instructional", companionStatus = "Companion status", reticle = "Reticle",
+}
+
+function extra.selectedNavigationID()
+	if editor.navigationSelection then return editor.navigationSelection end
+	local tabName = tabs[editor.tab]
+	for _, item in ipairs(extra.editorNavigation) do
+		if item.component and item.component == editor.selectedComponent and item.tab == tabName then return item.id end
+	end
+	for _, item in ipairs(extra.editorNavigation) do if item.tab == tabName and not item.component then return item.id end end
+	return string.lower(tostring(tabName or "general"))
+end
+
+function extra.selectedPreviewDefinition()
+	for _, def in ipairs(canvasComponents) do if def[1] == editor.selectedComponent then return def end end
+	return { editor.selectedComponent or "hints", tabs[editor.tab] or "Component", 420, 180 }
+end
+
+function extra.drawEditor()
+	if not editor.open then editor.bounds = nil; return end
+	if not extra.workspace then extra.drawEditorTable(); return end
+	local bounds, rows = editorBounds(), currentRows()
+	editor.bounds = bounds
+	editor.row = math.max(1, math.min(math.max(1, #rows), editor.row))
+	local preview = extra.selectedPreviewDefinition()
+	extra.EditorWorkspace.Draw(extra.workspace, {
+		bounds = bounds, theme = settings.theme, title = "Controller UI Authoring", status = editor.status,
+		dirty = history.dirty, canUndo = #history.undo > 0, canRedo = #history.redo > 0,
+		components = extra.editorNavigation, selectedNav = extra.selectedNavigationID(), selectedComponent = editor.selectedComponent,
+		tabName = tabs[editor.tab], rows = rows, selectedRow = editor.row, filterMode = settings.authoring.filterMode,
+		inspectorKey = tostring(editor.selectedComponent or tabs[editor.tab]) .. "|" .. tostring(tabs[editor.tab]) .. "|" .. tostring(settings.authoring.filterMode),
+		search = editor.search or "", searchActive = editor.searchActive, developer = settings.authoring.developerAuthoring,
+		previewContext = settings.authoring.contextPreview, previewLabel = preview[2], previewWidth = preview[3], previewHeight = preview[4],
+		previewDetail = "Drag the selection bounds in the live game view; resize handles appear where supported.",
+		scopeLabels = extra.editorScopeLabels,
+		getValue = function(row) local scope = getScope(row[1]); return scope and scope[row[2]] end,
+		getSource = function(row) return layerSources[rowID(row)] or "preview" end,
+		isModified = isRowModified, isEnforced = function(row) return isEnforced(row[1], row[2]) end,
+		emptyText = tabs[editor.tab] == "Recovery"
+			and (editor.recoveryAvailable and "Recovery data is active. Save or reset when ready." or "No recovery is pending.")
+			or "No properties match this filter or search.",
+	})
+	if extra.workspace.pendingFocus == "first-property" then
+		for _, item in ipairs(extra.workspace.focusItems) do
+			if item.pane == "inspector" and item.row then extra.EditorWorkspace.SetFocus(extra.workspace, item.id); break end
+		end
+		extra.workspace.pendingFocus = nil
+	end
 end
 
 local function getComponentCenter(name, fallbackX, fallbackY)
@@ -2300,7 +2399,7 @@ function widget:Update(dt)
 end
 
 function widget:DrawScreen()
-	drawHints(); drawHoldProgress(); drawEditorLauncher(); drawCanvasAuthoring(); drawEditor(); glColor(1, 1, 1, 1)
+	drawHints(); drawHoldProgress(); drawEditorLauncher(); drawCanvasAuthoring(); extra.drawEditor(); glColor(1, 1, 1, 1)
 end
 
 function widget:LegacyMousePress(x, y, button)
@@ -2411,6 +2510,7 @@ local componentTabs = {
 
 local function selectComponent(name)
 	editor.selectedComponent = name
+	editor.navigationSelection = nil
 	local wanted = componentTabs[name]
 	if wanted then for index, tab in ipairs(tabs) do if tab == wanted then editor.tab = index; editor.row = 1; break end end end
 	editor.status = "Selected component: " .. tostring(name)
@@ -2423,6 +2523,123 @@ local function beginComponentDrag(hit, x, y)
 	return true
 end
 
+function extra.focusTextField(kind)
+	editor.activeText, editor.selectAll = kind, false
+	editor.searchActive = kind == "propertySearch"
+	if kind ~= "propertyValue" then editor.textRow = nil end
+	claimEditorInput()
+end
+
+function extra.resetProperty(row)
+	if not row then return false end
+	local _, defaultsForScope = getScope(row[1])
+	if not defaultsForScope then return false end
+	setValue(row[1], row[2], deepCopy(defaultsForScope[row[2]]))
+	editor.status = "Reset " .. rowID(row)
+	return true
+end
+
+function extra.selectNavigationItem(item)
+	editor.navigationSelection = item.id
+	if item.tab then
+		for index, name in ipairs(tabs) do if name == item.tab then editor.tab = index; break end end
+	end
+	if item.component then editor.selectedComponent = item.component end
+	if item.filter then setValue("authoring", "filterMode", item.filter) end
+	editor.row = 1
+	extra.workspace.pendingFocus = "first-property"
+	editor.status = "Selected " .. tostring(item.label)
+	return true
+end
+
+function extra.beginPropertyControl(action, x)
+	local row = action.row
+	if not row then return true end
+	editor.row = action.rowIndex or editor.row
+	if action.kind == "bool" then
+		beginMutation("Toggle " .. rowID(row)); adjustRow(1); endMutation()
+	elseif action.kind == "enum" then
+		local target = getScope(row[1]); extra.EditorWorkspace.OpenEnumMenu(extra.workspace, row, row[9], target and target[row[2]])
+	elseif action.kind == "text" then
+		beginMutation("Edit " .. rowID(row)); editor.textRow = row; extra.focusTextField("propertyValue")
+	elseif action.kind == "number" then
+		local ratio = clamp((x - action.control.x1) / math.max(1, action.control.x2 - action.control.x1), 0, 1)
+		local value = row[5] + (row[6] - row[5]) * ratio
+		if row[7] and row[7] > 0 then value = math.floor(value / row[7] + 0.5) * row[7] end
+		beginMutation("Adjust " .. rowID(row)); setValue(row[1], row[2], clamp(value, row[5], row[6]))
+		editor.propertyDrag = { row = row, control = action.control }
+	end
+	return true
+end
+
+function extra.performModalOption(option)
+	if not option then return true end
+	local action, row = option.action, option.row
+	extra.EditorWorkspace.CloseModal(extra.workspace); extra.workspace.showHelp = false
+	if action == "favorite" then toggleFavorite(row)
+	elseif action == "reset" then extra.resetProperty(row)
+	elseif action == "save-value" then saveCurrentValue(row)
+	elseif action == "apply-value" then applySavedValue(row)
+	elseif action == "toggle-enforcement" then
+		local id = rowID(row); setShippingEnforcement(row[1], row[2], authorData.shippingEnforcedPaths[id] ~= true)
+	elseif action == "set-enum" then setValue(row[1], row[2], option.value)
+	elseif action == "set-filter" then setValue("authoring", "filterMode", option.value); editor.row = 1; extra.workspace.pendingFocus = "first-property"
+	elseif action == "align-left" then alignSelected("left")
+	elseif action == "align-hcenter" then alignSelected("hcenter")
+	elseif action == "align-right" then alignSelected("right")
+	elseif action == "align-bottom" then alignSelected("bottom")
+	elseif action == "align-vcenter" then alignSelected("vcenter")
+	elseif action == "align-top" then alignSelected("top")
+	elseif action == "distribute-horizontal" then distributeComponents("horizontal")
+	elseif action == "distribute-vertical" then distributeComponents("vertical") end
+	return true
+end
+
+function extra.handleWorkspaceAction(action, x, y, button)
+	if not action then return true end
+	local kind = action.type
+	if kind == "close" then setEditorOpen(false)
+	elseif kind == "move-window" and button == 1 then
+		beginMutation("Move editor"); editor.dragging = true; editor.dragDX, editor.dragDY = x - editor.bounds.x1, y - editor.bounds.y1
+	elseif kind == "resize-window" and button == 1 then
+		beginMutation("Resize editor"); editor.resizing = true; editor.startX, editor.startY = x, y
+		editor.startW, editor.startH = editor.bounds.width, editor.bounds.height
+	elseif kind == "toggle-nav" then extra.workspace.navCollapsed = not extra.workspace.navCollapsed
+	elseif kind == "toggle-nav-group" then extra.workspace.navGroups[action.group] = not extra.workspace.navGroups[action.group]
+	elseif kind == "select-component" then extra.selectNavigationItem(action.component)
+	elseif kind == "focus-component-search" then extra.focusTextField("componentSearch")
+	elseif kind == "focus-property-search" then extra.focusTextField("propertySearch")
+	elseif kind == "undo" then undo()
+	elseif kind == "redo" then redo()
+	elseif kind == "save" then savePersonal()
+	elseif kind == "preview-context" then cyclePreviewContext()
+	elseif kind == "align-menu" then extra.EditorWorkspace.OpenAlignmentMenu(extra.workspace)
+	elseif kind == "help" then extra.workspace.showHelp = true
+	elseif kind == "draft" then writeAuthoringDraft()
+	elseif kind == "publish" then writePublishRequest()
+	elseif kind == "filter" then setValue("authoring", "filterMode", action.mode); editor.row = 1; extra.workspace.pendingFocus = "first-property"
+	elseif kind == "filter-menu" then extra.EditorWorkspace.OpenFilterMenu(extra.workspace, settings.authoring.filterMode)
+	elseif kind == "toggle-property-group" then extra.EditorWorkspace.ToggleGroup(extra.workspace, action.group)
+	elseif kind == "focus-property" then
+		editor.row = action.rowIndex or editor.row
+		if button == 3 then extra.EditorWorkspace.OpenPropertyMenu(extra.workspace, action.row, settings.authoring.developerAuthoring,
+			authorData.savedValues[rowID(action.row)] ~= nil) end
+	elseif kind == "property-control" then extra.beginPropertyControl(action, x)
+	elseif kind == "favorite-property" then toggleFavorite(action.row)
+	elseif kind == "reset-property" then extra.resetProperty(action.row)
+	elseif kind == "property-menu" then extra.EditorWorkspace.OpenPropertyMenu(extra.workspace, action.row, settings.authoring.developerAuthoring,
+		action.row and authorData.savedValues[rowID(action.row)] ~= nil)
+	elseif kind == "reset-section" then resetCurrentTab()
+	elseif kind == "reset-all" then resetAll()
+	elseif kind == "save-preset" then saveComponentPreset(editor.selectedComponent)
+	elseif kind == "apply-preset" then applyComponentPreset(editor.selectedComponent)
+	elseif kind == "preview-fit" then extra.workspace.previewFit, extra.workspace.previewZoom = true, 1
+	elseif kind == "preview-zoom" then extra.workspace.previewFit = false; extra.workspace.previewZoom = clamp(extra.workspace.previewZoom + action.delta, 0.5, 2)
+	elseif kind == "modal-option" then extra.performModalOption(action.option)
+	elseif kind == "close-modal" then extra.EditorWorkspace.CloseModal(extra.workspace); extra.workspace.showHelp = false end
+	return true
+end
+
 function widget:MousePress(x, y, button)
 	if button == 1 and pointInside(hintMoreHit, x, y) then setValue("hints", "expanded", true); return true end
 	if not editor.open then
@@ -2432,6 +2649,15 @@ function widget:MousePress(x, y, button)
 
 	local insidePanel = pointInside(editor.bounds, x, y)
 	if insidePanel then
+		if extra.workspace then
+			if button == 1 and extra.EditorWorkspace.ScrollbarPress(extra.workspace, x, y) then return true end
+			local hit = extra.EditorWorkspace.FindHit(extra.workspace, x, y)
+			if hit then
+				if hit.id then extra.EditorWorkspace.SetFocus(extra.workspace, hit.id) end
+				return extra.handleWorkspaceAction(hit.action, x, y, button)
+			end
+			return true
+		end
 		if button == 1 and pointInside(editor.close, x, y) then setEditorOpen(false); return true end
 		for _, hit in ipairs(editor.tabs or {}) do if button == 1 and pointInside(hit, x, y) then editor.tab, editor.row, editor.scroll = hit.index, 1, 0; return true end end
 		for _, hit in ipairs(editor.filterHits or {}) do if button == 1 and pointInside(hit, x, y) then setValue("authoring", "filterMode", hit.mode); editor.row, editor.scroll = 1, 0; return true end end
@@ -2494,11 +2720,20 @@ function widget:MousePress(x, y, button)
 			if pointInside(hit, x, y) then return beginComponentDrag(hit, x, y) end
 		end
 	end
-	return false
+	-- The open authoring surface owns the live view as a safe preview/canvas.
+	-- Consume unmatched presses so they cannot issue selection or command input.
+	return true
 end
 
 function widget:MouseMove(x, y)
-	if editor.resizeComponent then
+	if extra.workspace and extra.EditorWorkspace.ScrollbarDrag(extra.workspace, y) then return true
+	elseif editor.propertyDrag then
+		local drag, row = editor.propertyDrag, editor.propertyDrag.row
+		local ratio = clamp((x - drag.control.x1) / math.max(1, drag.control.x2 - drag.control.x1), 0, 1)
+		local value = row[5] + (row[6] - row[5]) * ratio
+		if row[7] and row[7] > 0 then value = math.floor(value / row[7] + 0.5) * row[7] end
+		setValue(row[1], row[2], clamp(value, row[5], row[6])); return true
+	elseif editor.resizeComponent then
 		local item = settings.components[editor.resizeComponent]
 		local scale = math.max(0.01, effectiveScale(editor.resizeComponent))
 		item.width = clamp(editor.startW + (x - editor.startX) / (REFERENCE_WIDTH * scale), 0.02, 0.95)
@@ -2526,13 +2761,21 @@ function widget:MouseMove(x, y)
 end
 
 function widget:MouseRelease()
-	local handled = editor.dragComponent or editor.resizeComponent or editor.dragging or editor.resizing or editor.held
+	local workspaceHandled = extra.workspace and extra.EditorWorkspace.EndPointer(extra.workspace)
+	local handled = workspaceHandled or editor.propertyDrag or editor.dragComponent or editor.resizeComponent or editor.dragging or editor.resizing or editor.held
 	editor.dragComponent, editor.resizeComponent, editor.dragging, editor.resizing, editor.held = nil, nil, false, false, nil
+	editor.propertyDrag = nil
 	editor.guides = {}; endMutation(); return handled and true or false
 end
 
 function widget:MouseWheel(up)
 	if not editor.open then return false end
+	if extra.workspace then
+		local x, y = Spring.GetMouseState()
+		local _, _, _, shift = Spring.GetModKeyState()
+		extra.EditorWorkspace.MouseWheel(extra.workspace, x, y, up and 1 or -1, shift)
+		return true
+	end
 	local _, ctrl, _, shift = Spring.GetModKeyState()
 	local multiplier = shift and 10 or ctrl and 0.1 or 1
 	adjustRow(up and 1 or -1, multiplier); return true
@@ -2550,17 +2793,100 @@ local function shortcutMatches(spec, key, mods, label)
 	return symbol ~= nil and key == symbol
 end
 
-function widget:KeyPress(key, mods, isRepeat, label)
-	if not editor.open then return false end
-	if editor.searchActive then
-		if KEYSYMS and key == KEYSYMS.BACKSPACE then editor.search = string.sub(editor.search, 1, math.max(0, #editor.search - 1)); editor.row = 1
-		elseif KEYSYMS and (key == KEYSYMS.RETURN or key == KEYSYMS.ESCAPE) then editor.searchActive = false end
+function extra.activeTextValue()
+	if editor.activeText == "componentSearch" then return extra.workspace and extra.workspace.componentSearch or "" end
+	if editor.activeText == "propertySearch" then return editor.search or "" end
+	if editor.activeText == "propertyValue" and editor.textRow then
+		local target = getScope(editor.textRow[1]); return tostring(target and target[editor.textRow[2]] or "")
+	end
+	return ""
+end
+
+function extra.setActiveTextValue(value)
+	value = tostring(value or "")
+	if editor.activeText == "componentSearch" and extra.workspace then extra.workspace.componentSearch = value
+	elseif editor.activeText == "propertySearch" then editor.search, editor.row = value, 1
+	elseif editor.activeText == "propertyValue" and editor.textRow then setValue(editor.textRow[1], editor.textRow[2], value) end
+end
+
+function extra.finishTextField(focusResult)
+	if editor.activeText == "propertyValue" then editor.textRow = nil; endMutation() end
+	editor.activeText, editor.searchActive, editor.selectAll = nil, false, false
+	if extra.workspace and focusResult == "property" then extra.workspace.pendingFocus = "first-property" end
+	if extra.workspace and focusResult == "component" then
+		for _, item in ipairs(extra.workspace.focusItems) do
+			if item.id and string.find(item.id, "component:", 1, true) == 1 then extra.EditorWorkspace.SetFocus(extra.workspace, item.id); break end
+		end
+	end
+end
+
+function extra.handleTextFieldKey(key, mods, label)
+	mods = mods or {}
+	local named = string.lower(tostring(label or ""))
+	if mods.ctrl and named == "a" then editor.selectAll = true; return true end
+	if mods.ctrl and (named == "c" or named == "x") then
+		if Spring and type(Spring.SetClipboard) == "function" then Spring.SetClipboard(extra.activeTextValue()) end
+		if named == "x" then extra.setActiveTextValue(""); editor.selectAll = false end
 		return true
 	end
-	if editor.textRow then
-		if KEYSYMS and key == KEYSYMS.BACKSPACE then
-			local target = getScope(editor.textRow[1]); setValue(editor.textRow[1], editor.textRow[2], string.sub(tostring(target[editor.textRow[2]] or ""), 1, -2))
-		elseif KEYSYMS and (key == KEYSYMS.RETURN or key == KEYSYMS.ESCAPE) then editor.textRow = nil; endMutation() end
+	if mods.ctrl and named == "v" then
+		local pasted = Spring and type(Spring.GetClipboard) == "function" and Spring.GetClipboard() or ""
+		extra.setActiveTextValue(editor.selectAll and pasted or extra.activeTextValue() .. tostring(pasted or "")); editor.selectAll = false
+		return true
+	end
+	if KEYSYMS and key == KEYSYMS.BACKSPACE then
+		local value = extra.activeTextValue(); extra.setActiveTextValue(editor.selectAll and "" or string.sub(value, 1, math.max(0, #value - 1)))
+		editor.selectAll = false; return true
+	end
+	if KEYSYMS and key == KEYSYMS.RETURN then
+		local result = editor.activeText == "componentSearch" and "component" or editor.activeText == "propertySearch" and "property" or nil
+		extra.finishTextField(result); return true
+	end
+	if KEYSYMS and key == KEYSYMS.ESCAPE then extra.finishTextField(nil); return true end
+	return true
+end
+
+function extra.activateFocusedControl()
+	if not extra.workspace then return false end
+	local item = extra.EditorWorkspace.Focused(extra.workspace)
+	if not item or not item.action then return true end
+	local action = item.action
+	if action.type == "focus-property" then
+		editor.row = action.rowIndex or editor.row
+		if action.row[4] == "bool" then beginMutation("Toggle " .. rowID(action.row)); adjustRow(1); endMutation()
+		elseif action.row[4] == "enum" then
+			local target = getScope(action.row[1]); extra.EditorWorkspace.OpenEnumMenu(extra.workspace, action.row, action.row[9], target and target[action.row[2]])
+		elseif action.row[4] == "text" then
+			beginMutation("Edit " .. rowID(action.row)); editor.textRow = action.row; extra.focusTextField("propertyValue")
+		else editor.status = "Use Left/Right to adjust " .. tostring(action.row[3]) end
+		return true
+	end
+	return extra.handleWorkspaceAction(action, editor.bounds.x1, editor.bounds.y1, 1)
+end
+
+function extra.adjustFocusedControl(delta, multiplier, isRepeat)
+	local item = extra.workspace and extra.EditorWorkspace.Focused(extra.workspace) or nil
+	if not item or not item.row then return true end
+	editor.row = item.rowIndex or editor.row
+	if not isRepeat and not editor.held then
+		beginMutation("Adjust " .. rowID(item.row)); adjustRow(delta, multiplier)
+		editor.held = { delta = delta, elapsed = 0, nextRepeat = 0.38, keyboard = true }
+	end
+	return true
+end
+
+function widget:KeyPress(key, mods, isRepeat, label)
+	if not editor.open then return false end
+	mods = mods or {}
+	if extra.workspace and extra.workspace.modal then
+		if KEYSYMS and key == KEYSYMS.ESCAPE then extra.EditorWorkspace.CloseModal(extra.workspace); extra.workspace.showHelp = false; return true end
+		if KEYSYMS and (key == KEYSYMS.UP or key == KEYSYMS.LEFT) then extra.EditorWorkspace.MoveFocus(extra.workspace, -1); return true end
+		if KEYSYMS and (key == KEYSYMS.DOWN or key == KEYSYMS.RIGHT) then extra.EditorWorkspace.MoveFocus(extra.workspace, 1); return true end
+		if KEYSYMS and key == KEYSYMS.HOME then extra.EditorWorkspace.FocusBoundary(extra.workspace, false); return true end
+		if KEYSYMS and key == KEYSYMS.END then extra.EditorWorkspace.FocusBoundary(extra.workspace, true); return true end
+		if shortcutMatches(settings.authoring.shortcutPrevious, key, mods, label) then extra.EditorWorkspace.MoveFocus(extra.workspace, -1); return true end
+		if shortcutMatches(settings.authoring.shortcutNext, key, mods, label) then extra.EditorWorkspace.MoveFocus(extra.workspace, 1); return true end
+		if KEYSYMS and (key == KEYSYMS.SPACE or key == KEYSYMS.RETURN) then return extra.activateFocusedControl() end
 		return true
 	end
 	if shortcutMatches(settings.authoring.shortcutUndo, key, mods, label) then if not isRepeat then undo() end; return true end
@@ -2568,8 +2894,32 @@ function widget:KeyPress(key, mods, isRepeat, label)
 	if shortcutMatches(settings.authoring.shortcutSave, key, mods, label) then if not isRepeat then savePersonal() end; return true end
 	if shortcutMatches(settings.authoring.shortcutDraft, key, mods, label) then if not isRepeat then writeAuthoringDraft() end; return true end
 	if shortcutMatches(settings.authoring.shortcutPublish, key, mods, label) then if not isRepeat then writePublishRequest() end; return true end
-	if shortcutMatches(settings.authoring.shortcutSearch, key, mods, label) then editor.searchActive = true; return true end
+	if shortcutMatches(settings.authoring.shortcutSearch, key, mods, label) then extra.focusTextField("propertySearch"); if extra.workspace then extra.EditorWorkspace.SetFocus(extra.workspace, "inspector:search") end; return true end
+	if editor.activeText then return extra.handleTextFieldKey(key, mods, label) end
+	if (KEYSYMS and KEYSYMS.F1 and key == KEYSYMS.F1) or string.lower(tostring(label or "")) == "f1" then
+		if extra.workspace then extra.workspace.showHelp = not extra.workspace.showHelp end; return true
+	end
 	if shortcutMatches(settings.authoring.shortcutClose, key, mods, label) then setEditorOpen(false); return true end
+	if extra.workspace then
+		if shortcutMatches(settings.authoring.shortcutPrevious, key, mods, label) then extra.EditorWorkspace.MoveFocus(extra.workspace, -1); return true end
+		if shortcutMatches(settings.authoring.shortcutNext, key, mods, label) then extra.EditorWorkspace.MoveFocus(extra.workspace, 1); return true end
+		if KEYSYMS and key == KEYSYMS.UP then extra.EditorWorkspace.MoveFocus(extra.workspace, -1); return true end
+		if KEYSYMS and key == KEYSYMS.DOWN then extra.EditorWorkspace.MoveFocus(extra.workspace, 1); return true end
+		local multiplier = mods.shift and 10 or (mods.ctrl and 0.1 or 1)
+		if KEYSYMS and key == KEYSYMS.LEFT then return extra.adjustFocusedControl(-1, multiplier, isRepeat) end
+		if KEYSYMS and key == KEYSYMS.RIGHT then return extra.adjustFocusedControl(1, multiplier, isRepeat) end
+		if KEYSYMS and key == KEYSYMS.PAGEUP then extra.EditorWorkspace.Page(extra.workspace, -1); return true end
+		if KEYSYMS and key == KEYSYMS.PAGEDOWN then extra.EditorWorkspace.Page(extra.workspace, 1); return true end
+		if KEYSYMS and (key == KEYSYMS.HOME or key == KEYSYMS.END) then
+			local item = extra.EditorWorkspace.Focused(extra.workspace)
+			if item and item.row and item.row[4] == "number" then setValue(item.row[1], item.row[2], key == KEYSYMS.HOME and item.row[5] or item.row[6])
+			else extra.EditorWorkspace.FocusBoundary(extra.workspace, key == KEYSYMS.END) end
+			return true
+		end
+		if KEYSYMS and (key == KEYSYMS.SPACE or key == KEYSYMS.RETURN) then return extra.activateFocusedControl() end
+		if KEYSYMS and key == KEYSYMS.DELETE then local item = extra.EditorWorkspace.Focused(extra.workspace); if item and item.row then extra.resetProperty(item.row) end; return true end
+		return true
+	end
 	if KEYSYMS and key == KEYSYMS.UP then editor.row = math.max(1, editor.row - 1); return true end
 	if KEYSYMS and key == KEYSYMS.DOWN then editor.row = math.min(math.max(1, #currentRows()), editor.row + 1); return true end
 	local multiplier = mods and mods.shift and 10 or (mods and mods.ctrl and 0.1 or 1)
@@ -2594,13 +2944,19 @@ function widget:KeyPress(key, mods, isRepeat, label)
 	return true
 end
 
+function widget:KeyRelease()
+	if not editor.open then return false end
+	if editor.held and editor.held.keyboard then editor.held = nil; endMutation() end
+	return true
+end
+
 function widget:TextInput(value)
 	if not editor.open or type(value) ~= "string" then return false end
-	if editor.searchActive then editor.search = editor.search .. value; editor.row, editor.scroll = 1, 0; return true end
-	if editor.textRow then
-		local target = getScope(editor.textRow[1]); setValue(editor.textRow[1], editor.textRow[2], tostring(target[editor.textRow[2]] or "") .. value); return true
+	if editor.activeText then
+		extra.setActiveTextValue(editor.selectAll and value or extra.activeTextValue() .. value)
+		editor.selectAll = false; return true
 	end
-	return false
+	return true
 end
 
 function widget:TextCommand(command)
