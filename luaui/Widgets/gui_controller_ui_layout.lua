@@ -90,23 +90,39 @@ local DEFAULTS = {
 		hints = {
 			enabled = true, x = 0.018, y = 0.035, scale = 1, opacity = 1, fontScale = 1,
 			iconScale = 1, rowSpacing = 5, columnSpacing = 18, iconTextSpacing = 8,
-			padding = 12, maxWidth = 0.52, columns = 2, backgroundOpacity = 0.72,
-			textOpacity = 0.96, borderOpacity = 0.72, fadeDuration = 0.18,
+			padding = 12, maxWidth = 0.52, columns = 2, backgroundOpacity = 0,
+			textOpacity = 1, borderOpacity = 0, fadeDuration = 0.18,
 			compact = false, anchor = "bottomleft", mode = "Contextual", overflow = "Wrap",
-			presentation = "Glyph + Action Text", showTapHold = true, showChip = true,
+			presentation = "Glyph + Action Text", showChip = true,
 			showActionText = true, showRowBackground = false, showCategoryHeaders = false,
-			showContextHeader = false, showSeparators = false, shadowEnabled = false,
-			glowEnabled = false, borderThickness = 1, wrapLines = 2, chordLayout = "Horizontal",
-			fontMinScale = 0.62, priorityHiding = true, marqueeEnabled = false,
-			marqueeMode = "Ping Pong", marqueeSpeed = 7, marqueeDelay = 1.2, maxItems = 14, expanded = false,
+			showContextHeader = false, showSeparators = false, borderThickness = 0, wrapLines = 2,
+			chordLayout = "Horizontal", priorityHiding = true,
+			marqueeSpeed = 28, marqueeDelay = 0.8, marqueeGap = 36, maxItems = 14, expanded = false,
 			glyphColorMode = "Color-friendly", glyphSpacing = 4, glyphOpacity = 1,
+			glyphBackgroundEnabled = false, glyphBackgroundOpacity = 0, glyphBorderEnabled = false, glyphBorderOpacity = 0,
+			textShadowEnabled = true, textShadowOpacity = 0.82, textShadowOffsetX = 2, textShadowOffsetY = -2,
+			textShadowSpread = 1, textShadowR = 0, textShadowG = 0, textShadowB = 0,
+			glyphShadowEnabled = true, glyphShadowOpacity = 0.74, glyphShadowOffsetX = 2, glyphShadowOffsetY = -2,
+			glyphShadowSpread = 1, glyphShadowR = 0, glyphShadowG = 0, glyphShadowB = 0,
+			textGlowEnabled = false, textGlowOpacity = 0.34, textGlowSize = 2, textGlowIntensity = 1,
+			textGlowR = 0.34, textGlowG = 0.82, textGlowB = 0.92,
+			glyphGlowEnabled = false, glyphGlowOpacity = 0.28, glyphGlowSize = 2, glyphGlowIntensity = 1,
+			glyphGlowR = 0.34, glyphGlowG = 0.82, glyphGlowB = 0.92,
+			textBackgroundEnabled = false, textBackgroundOpacity = 0.62, textBackgroundPaddingX = 5,
+			textBackgroundPaddingY = 2, textBackgroundBorderOpacity = 0, textBackgroundBorderThickness = 1,
+			textBackgroundR = 0.018, textBackgroundG = 0.028, textBackgroundB = 0.040,
+			showHoldIndicator = true, holdStyle = "Bold HOLD", holdLabelScale = 1.08, holdLabelSpacing = 7,
+			holdOpacity = 1, holdColorR = 1, holdColorG = 0.72, holdColorB = 0.22,
+			holdGlyphThickness = 2, holdGlyphOpacity = 0.9,
 		},
 		bindingsButton = {
 			enabled = true, x = 1360 / 1920, y = 1044 / 1080, scale = 1,
 			opacity = 1, fontScale = 1, anchor = "bottomleft", width = 110 / 1920,
 			height = 28 / 1080, backgroundOpacity = 0.85,
 		},
-		radials = { enabled = true, scale = 1, opacity = 1, fontScale = 1, iconScale = 1 },
+		radials = { enabled = true, scale = 1, opacity = 1, fontScale = 1, iconScale = 1,
+			centerTextScale = 1, selectedScale = 1.06, selectedBorderThickness = 3,
+			itemSpacing = 1, legacyThemeOpacity = 1, pageStatusVisible = true },
 		buildRadial = { enabled = true, x = 0.5, y = 0.5, scale = 1, opacity = 1, fontScale = 1, iconScale = 1, anchor = "center" },
 		tacticalRadial = { enabled = true, x = 0.5, y = 0.5, scale = 1, opacity = 1, fontScale = 1, iconScale = 1, anchor = "center" },
 		selectionRadial = { enabled = true, x = 0.5, y = 0.5, scale = 1, opacity = 1, fontScale = 1, iconScale = 1, anchor = "center" },
@@ -168,6 +184,7 @@ local editor = {
 	favorite = nil, saveValue = nil, applyValue = nil, savePreset = nil, applyPreset = nil,
 	undo = nil, redo = nil, save = nil, context = nil, draft = nil, publish = nil, reload = nil,
 	propertyDrag = nil, activeText = nil, selectAll = false, previousTextOwner = nil,
+	wheelEditId = nil, wheelEditRow = nil,
 	textBuffer = "", textOriginal = "", textNumeric = false, composition = "", pointerCapture = nil,
 	previewContext = "Normal Gameplay",
 	filterMode = "Basic",
@@ -254,33 +271,63 @@ end
 
 addProperty("Hints", "hints", "mode", "Display mode", "enum", nil, nil, nil, "Basic", { "Contextual", "Layered", "Minimal", "Everything" })
 addProperty("Hints", "hints", "presentation", "Visual presentation", "enum", nil, nil, nil, "Basic", {
-	"Glyph + Action Text", "Text Chip + Action", "Button Chip Only", "Action Text Only",
+	"Glyph + Action Text", "Button Chip Only", "Action Text Only",
 	"Background Only", "Minimal Glyph", "Compact", "Full Descriptive", "Custom",
 })
-addProperty("Hints", "hints", "overflow", "Long-label strategy", "enum", nil, nil, nil, "Basic", { "Wrap", "Shrink", "Truncate", "Scroll", "Marquee" })
-addProperty("Hints", "hints", "showTapHold", "Show Tap / Hold wording", "bool")
+addProperty("Hints", "hints", "overflow", "Long-label strategy", "enum", nil, nil, nil, "Basic", { "Wrap", "Clip", "Marquee", "Ping Pong" })
 addProperty("Hints", "hints", "expanded", "Always expanded", "bool")
 addProperty("Hints", "hints", "maxItems", "Collapsed item limit", "number", 3, 40, 1)
 for _, row in ipairs({
 	{ "showChip", "Show button chip layer", "bool" }, { "showActionText", "Show action-text layer", "bool" },
 	{ "showRowBackground", "Show row backgrounds", "bool" }, { "showCategoryHeaders", "Show category headings", "bool" },
 	{ "showContextHeader", "Show context heading", "bool" }, { "showSeparators", "Show separators", "bool" },
-	{ "shadowEnabled", "Drop shadow", "bool" }, { "glowEnabled", "Accent glow", "bool" },
 	{ "borderThickness", "Border thickness", "number", 0, 5, 0.25 },
 	{ "wrapLines", "Maximum wrapped lines", "number", 2, 8, 1 },
 	{ "chordLayout", "Chord layout", "enum", nil, nil, nil, { "Horizontal", "Vertical", "Stacked" } },
-	{ "fontMinScale", "Minimum shrink scale", "number", 0.4, 1, 0.02 },
 	{ "priorityHiding", "Hide low priority when constrained", "bool" },
-	{ "marqueeEnabled", "Enable optional marquee", "bool" },
-	{ "marqueeMode", "Marquee behavior", "enum", nil, nil, nil, { "Loop", "Ping Pong" } },
-	{ "marqueeSpeed", "Marquee speed", "number", 1, 30, 1 },
+	{ "marqueeSpeed", "Marquee speed", "number", 1, 120, 1 },
 	{ "marqueeDelay", "Marquee delay", "number", 0, 5, 0.1 },
+	{ "marqueeGap", "Marquee loop gap", "number", 8, 100, 2 },
 	{ "glyphColorMode", "Glyph color mode", "enum", nil, nil, nil, { "Color-friendly", "Monochrome", "Theme Accent" } },
 	{ "glyphSpacing", "Glyph chord spacing", "number", 0, 16, 1 },
 	{ "glyphOpacity", "Glyph opacity", "number", 0.1, 1, 0.05 },
 }) do
 	local options = type(row[7]) == "table" and row[7] or nil
 	addProperty("Hints", "hints", row[1], row[2], row[3], row[4], row[5], row[6], "Advanced", options)
+end
+
+for _, row in ipairs({
+	{ "glyphBackgroundEnabled", "Glyph background", "bool" }, { "glyphBackgroundOpacity", "Glyph background opacity", "number", 0, 1, 0.05 },
+	{ "glyphBorderEnabled", "Glyph border", "bool" }, { "glyphBorderOpacity", "Glyph border opacity", "number", 0, 1, 0.05 },
+	{ "textShadowEnabled", "Text drop shadow", "bool" }, { "textShadowOpacity", "Text shadow opacity", "number", 0, 1, 0.05 },
+	{ "textShadowOffsetX", "Text shadow X offset", "number", -8, 8, 0.5 }, { "textShadowOffsetY", "Text shadow Y offset", "number", -8, 8, 0.5 },
+	{ "textShadowSpread", "Text shadow spread", "number", 0, 2, 1 },
+	{ "glyphShadowEnabled", "Glyph drop shadow", "bool" }, { "glyphShadowOpacity", "Glyph shadow opacity", "number", 0, 1, 0.05 },
+	{ "glyphShadowOffsetX", "Glyph shadow X offset", "number", -8, 8, 0.5 }, { "glyphShadowOffsetY", "Glyph shadow Y offset", "number", -8, 8, 0.5 },
+	{ "glyphShadowSpread", "Glyph shadow spread", "number", 0, 2, 1 },
+	{ "textGlowEnabled", "Text glow", "bool" }, { "textGlowOpacity", "Text glow opacity", "number", 0, 1, 0.05 },
+	{ "textGlowSize", "Text glow size", "number", 1, 6, 1 }, { "textGlowIntensity", "Text glow intensity", "number", 0.1, 3, 0.1 },
+	{ "glyphGlowEnabled", "Glyph glow", "bool" }, { "glyphGlowOpacity", "Glyph glow opacity", "number", 0, 1, 0.05 },
+	{ "glyphGlowSize", "Glyph glow size", "number", 1, 6, 1 }, { "glyphGlowIntensity", "Glyph glow intensity", "number", 0.1, 3, 0.1 },
+	{ "textBackgroundEnabled", "Action-label background", "bool" }, { "textBackgroundOpacity", "Label background opacity", "number", 0, 1, 0.05 },
+	{ "textBackgroundPaddingX", "Label background horizontal padding", "number", 0, 20, 1 },
+	{ "textBackgroundPaddingY", "Label background vertical padding", "number", 0, 12, 1 },
+	{ "textBackgroundBorderOpacity", "Label background border opacity", "number", 0, 1, 0.05 },
+	{ "textBackgroundBorderThickness", "Label background border thickness", "number", 1, 4, 1 },
+	{ "showHoldIndicator", "Show hold treatment", "bool" },
+	{ "holdStyle", "Hold style", "enum", nil, nil, nil, { "Bold HOLD", "Hold Glyph" } },
+	{ "holdLabelScale", "HOLD label scale", "number", 0.7, 2, 0.05 }, { "holdLabelSpacing", "HOLD label spacing", "number", 0, 24, 1 },
+	{ "holdOpacity", "Hold treatment opacity", "number", 0.1, 1, 0.05 },
+	{ "holdGlyphThickness", "Hold glyph outline", "number", 1, 6, 0.5 }, { "holdGlyphOpacity", "Hold glyph outline opacity", "number", 0.1, 1, 0.05 },
+}) do
+	local options = type(row[7]) == "table" and row[7] or nil
+	addProperty("Hints", "hints", row[1], row[2], row[3], row[4], row[5], row[6], "Advanced", options)
+end
+
+for _, prefix in ipairs({ "textShadow", "glyphShadow", "textGlow", "glyphGlow", "textBackground", "holdColor" }) do
+	for _, channel in ipairs({ "R", "G", "B" }) do
+		addProperty("Hints", "hints", prefix .. channel, prefix .. " " .. string.lower(channel), "number", 0, 1, 0.02, "Advanced")
+	end
 end
 
 local ACTION_IDS = {
@@ -357,6 +404,12 @@ addProperty("Launchers", "editorLauncher", "backgroundOpacity", "UI Layout backg
 addProperty("Hot Slots", "hotSlots", "anchor", "Hot-slot anchor", "enum", nil, nil, nil, "Advanced",
 	{ "bottomleft", "bottomcenter", "bottomright", "center" })
 addComponentProperties("Radials", "radials", "All radials", false)
+addProperty("Radials", "radials", "centerTextScale", "Center text scale", "number", 0.5, 2, 0.05, "Advanced")
+addProperty("Radials", "radials", "selectedScale", "Selected item scale", "number", 1, 1.3, 0.01, "Advanced")
+addProperty("Radials", "radials", "selectedBorderThickness", "Selected border thickness", "number", 1, 6, 0.25, "Advanced")
+addProperty("Radials", "radials", "itemSpacing", "Radial item spacing", "number", 0.75, 1.2, 0.01, "Advanced")
+addProperty("Radials", "radials", "legacyThemeOpacity", "Legacy color layering", "number", 0.2, 1, 0.05, "Advanced")
+addProperty("Radials", "radials", "pageStatusVisible", "Page and status labels", "bool", nil, nil, nil, "Advanced")
 for _, item in ipairs({ { "buildRadial", "Build radial" }, { "factoryRadial", "Factory radial" },
 	{ "tacticalRadial", "Tactical radial" }, { "selectionRadial", "Selection radial" } }) do
 	addComponentProperties("Radials", item[1], item[2])
@@ -413,7 +466,7 @@ local ranges = {
 	slotWidth = { 24, 120 }, slotHeight = { 24, 100 }, panelPadding = { 0, 32 }, rows = { 1, 5 },
 	selectedBorderThickness = { 1, 6 }, emptyOpacity = { 0, 1 }, autoCollapseDelay = { 0.5, 10 },
 	animationDuration = { 0, 1.5 }, borderThickness = { 0, 5 }, wrapLines = { 2, 8 },
-	fontMinScale = { 0.4, 1 }, marqueeSpeed = { 1, 30 }, marqueeDelay = { 0, 5 },
+	marqueeSpeed = { 1, 120 }, marqueeDelay = { 0, 5 }, marqueeGap = { 8, 100 },
 	actionOrder = { -1000, 2000 }, categorySortOrder = { 0, 1000 },
 	snapGrid = { 1, 64 }, snapThreshold = { 1, 32 },
 	backgroundR = { 0, 1 }, backgroundG = { 0, 1 }, backgroundB = { 0, 1 },
@@ -619,7 +672,7 @@ local function applyThemePreset(name)
 		settings.components.hints.padding = 7; settings.components.hints.rowSpacing = 2
 	elseif name == "Large Accessibility" then
 		settings.global.fontScale = math.max(settings.global.fontScale, 1.3)
-		settings.components.hints.fontMinScale = 0.82; settings.components.hints.backgroundOpacity = 0.92
+		settings.components.hints.backgroundOpacity = 0.92
 	elseif name == "Transparent" then
 		settings.components.hints.backgroundOpacity = 0.18; settings.components.hints.borderOpacity = 0.38
 		settings.components.hotSlots.backgroundOpacity = 0.24
@@ -1267,11 +1320,10 @@ end
 local function formatInputs(hint)
 	local labels = {}
 	for i, input in ipairs(hint.inputs) do labels[i] = inputLabel(input) end
-	local prefix = settings.components.hints.showTapHold and (hint.hold and "Hold " or "Tap ") or (hint.hold and "Hold " or "")
 	local layout = settings.components.hints.chordLayout
-	if layout == "Vertical" then return prefix .. table.concat(labels, " / ") end
-	if layout == "Stacked" then return prefix .. "[" .. table.concat(labels, "][") .. "]" end
-	return prefix .. table.concat(labels, " + ")
+	if layout == "Vertical" then return table.concat(labels, " / ") end
+	if layout == "Stacked" then return "[" .. table.concat(labels, "][") .. "]" end
+	return table.concat(labels, " + ")
 end
 
 local function rowID(row) return row and propertyID(row[1], row[2]) or "" end
@@ -1433,6 +1485,7 @@ end
 
 local function setEditorOpen(open)
 	editor.open = not not open
+	editor.wheelEditId, editor.wheelEditRow = nil, nil
 	if editor.open then
 		if extra.input then extra.EditorInput.Open(extra.input) end
 		if extra.workspace then extra.EditorWorkspace.ResetSession(extra.workspace) end
@@ -1553,6 +1606,7 @@ local function drawHints()
 			scale = effectiveScale("hints"), fontScale = effectiveFontScale("hints"),
 			opacity = effectiveOpacity("hints") * hintAlpha, glyphs = extra.Glyphs,
 			contextLabel = activeHintContextLabel, formatInputs = formatInputs,
+			time = hintAnimationTime,
 		})
 		hintHits, hintMoreHit = rendered.hits or {}, rendered.moreHit
 		return
@@ -2192,12 +2246,24 @@ function extra.drawWorkspacePreview(shape, colors)
 		extra.SharedRenderers.DrawHints({ model = model, settings = settings.components.hints, theme = settings.theme,
 			bounds = shape, viewportWidth = shape.x2 - shape.x1, viewportHeight = shape.y2 - shape.y1,
 			scale = 1, fontScale = 1, opacity = effectiveOpacity("hints"), glyphs = extra.Glyphs,
-			contextLabel = context, formatInputs = formatInputs })
+			contextLabel = context, formatInputs = formatInputs, time = hintAnimationTime })
 	elseif kind == "radials" then
 		local entries = {}
-		for index, label in ipairs({ "Economy", "Energy", "Defense", "Factory", "Assist", "Repair", "Reclaim", "Orders" }) do entries[index] = { label = label } end
+		local style = string.find(context, "Tactical", 1, true) and "tactical"
+			or string.find(context, "Selection", 1, true) and "selection" or "build"
+		local labels = style == "selection" and { "All Mobile", "Air", "Combat", "Builders" }
+			or { "Economy", "Energy", "Defense", "Factory", "Assist", "Repair", "Reclaim", "Orders" }
+		for index, label in ipairs(labels) do entries[index] = { label = label } end
+		local component = settings.components[editor.selectedComponent] or {}
 		extra.SharedRenderers.DrawRadial({ bounds = shape, theme = settings.theme,
-			model = { title = context, subtitle = "Production radial geometry", entries = entries, selectedIndex = 3 },
+			model = { style = style, title = context, categoryLabel = style == "tactical" and "TACTICAL" or "BUILD",
+				subtitle = "Production radial geometry", pageLabel = "PAGE 1/2", entries = entries, selectedIndex = 3 },
+			settings = { iconScale = (component.iconScale or 1) * (settings.components.radials.iconScale or 1),
+				fontScale = effectiveFontScale(editor.selectedComponent), centerTextScale = settings.components.radials.centerTextScale,
+				selectedScale = settings.components.radials.selectedScale,
+				selectedBorderThickness = settings.components.radials.selectedBorderThickness,
+				itemSpacing = settings.components.radials.itemSpacing, legacyThemeOpacity = settings.components.radials.legacyThemeOpacity,
+				pageStatusVisible = settings.components.radials.pageStatusVisible },
 			opacity = effectiveOpacity(editor.selectedComponent) })
 	elseif kind == "hotSlots" then
 		local slots = {}
@@ -2206,7 +2272,7 @@ function extra.drawWorkspacePreview(shape, colors)
 			role = index % 2 == 0 and "builder" or "combat" } end
 		extra.SharedRenderers.DrawHotSlots({ bounds = shape, settings = settings.components.hotSlots, theme = settings.theme,
 			model = { slots = slots, selectedIndex = context == "Selected Hot Slot" and 3 or 1, status = "Synthetic data / production renderer" },
-			opacity = effectiveOpacity("hotSlots") })
+			opacity = effectiveOpacity("hotSlots"), scale = effectiveScale("hotSlots"), fontScale = effectiveFontScale("hotSlots") })
 	end
 end
 
@@ -2230,9 +2296,12 @@ function extra.drawEditor()
 		scopeLabels = extra.editorScopeLabels,
 		getValue = extra.workspaceGetValue, getSource = extra.workspaceGetSource,
 		editingId = editor.activeText == "propertyValue" and editor.textRow and rowID(editor.textRow) or nil,
+		wheelEditingId = editor.wheelEditId,
 		editingText = editor.textBuffer, composition = editor.composition,
 		isModified = isRowModified, isEnforced = extra.workspaceIsEnforced,
 		drawPreview = extra.previewKind() and extra.drawWorkspacePreview or nil,
+		controllerDebugVisible = support() and type(support().IsDebugPanelVisible) == "function"
+			and support().IsDebugPanelVisible() or false,
 		debugInfo = "focus=" .. tostring(extra.workspace.focusId or "none") .. "  input=modal  upvalues<60",
 		emptyText = tabs[editor.tab] == "Recovery"
 			and (editor.recoveryAvailable and "Recovery data is active. Save or reset when ready." or "No recovery is pending.")
@@ -2673,6 +2742,7 @@ local componentTabs = {
 }
 
 local function selectComponent(name)
+	editor.wheelEditId, editor.wheelEditRow = nil, nil
 	editor.selectedComponent = name
 	editor.navigationSelection = nil
 	local wanted = componentTabs[name]
@@ -2713,6 +2783,7 @@ function extra.resetProperty(row)
 end
 
 function extra.selectNavigationItem(item)
+	editor.wheelEditId, editor.wheelEditRow = nil, nil
 	editor.navigationSelection = item.id
 	if item.tab then
 		for index, name in ipairs(tabs) do if name == item.tab then editor.tab = index; break end end
@@ -2753,6 +2824,7 @@ function extra.performModalOption(option)
 	if not option then return true end
 	local action, row = option.action, option.row
 	extra.EditorWorkspace.CloseModal(extra.workspace); extra.workspace.showHelp = false
+	editor.wheelEditId, editor.wheelEditRow = nil, nil
 	if action == "favorite" then toggleFavorite(row)
 	elseif action == "reset" then extra.resetProperty(row)
 	elseif action == "save-value" then saveCurrentValue(row)
@@ -2796,8 +2868,13 @@ function extra.handleWorkspaceAction(action, x, y, button)
 	elseif kind == "toggle-preview" then extra.EditorWorkspace.TogglePreview(extra.workspace, extra.previewKind() ~= nil)
 	elseif kind == "preview-safe" then extra.workspace.showSafeMargins = not extra.workspace.showSafeMargins
 	elseif kind == "preview-bounds" then extra.workspace.showSelectionBounds = not extra.workspace.showSelectionBounds
-	elseif kind == "toggle-debug" then extra.workspace.debugVisible = not extra.workspace.debugVisible
-		editor.status = extra.workspace.debugVisible and "Debug tools visible in Advanced" or "Debug tools hidden"
+	elseif kind == "toggle-debug" then
+		local api = support()
+		local visible = api and type(api.ToggleDebugPanel) == "function" and api.ToggleDebugPanel("Controller UI Authoring") or false
+		editor.status = visible and "Controller Debug shown" or "Controller Debug hidden"
+	elseif kind == "toggle-authoring-diagnostics" then
+		extra.workspace.debugVisible = not extra.workspace.debugVisible
+		editor.status = extra.workspace.debugVisible and "Authoring diagnostics visible in Advanced" or "Authoring diagnostics hidden"
 	elseif kind == "debug-audit" then
 		local report = getHintAudit(support()); Spring.Echo(string.format("Controller editor audit: focus=%s hints=%d missing=%d",
 			tostring(extra.workspace.focusId), report.hintCount, #report.missingBindings))
@@ -2818,13 +2895,16 @@ function extra.handleWorkspaceAction(action, x, y, button)
 	elseif kind == "property-control" then extra.beginPropertyControl(action, x)
 	elseif kind == "property-slider" then extra.beginPropertyControl({ row = action.row, rowIndex = action.rowIndex,
 		kind = "number", control = action.control }, x)
+		editor.wheelEditId, editor.wheelEditRow = rowID(action.row), action.row
 		if extra.input then extra.EditorInput.Capture(extra.input, "property-slider", { row = action.row }, button, x, y) end
 	elseif kind == "property-step" then
 		editor.row = action.rowIndex or editor.row; beginMutation("Adjust " .. rowID(action.row)); adjustRow(action.delta)
+		editor.wheelEditId, editor.wheelEditRow = rowID(action.row), action.row
 		editor.held = { delta = action.delta, elapsed = 0, nextRepeat = 0.38, pointer = true, row = action.row }
 		if extra.input then extra.EditorInput.Capture(extra.input, "property-step", { row = action.row }, button, x, y) end
 	elseif kind == "property-number-entry" then
 		editor.row, editor.textRow = action.rowIndex or editor.row, action.row
+		editor.wheelEditId, editor.wheelEditRow = rowID(action.row), action.row
 		extra.focusTextField("propertyValue", true)
 	elseif kind == "favorite-property" then toggleFavorite(action.row)
 	elseif kind == "reset-property" then extra.resetProperty(action.row)
@@ -2837,7 +2917,8 @@ function extra.handleWorkspaceAction(action, x, y, button)
 	elseif kind == "preview-fit" then extra.workspace.previewFit, extra.workspace.previewZoom = true, 1
 	elseif kind == "preview-zoom" then extra.workspace.previewFit = false; extra.workspace.previewZoom = clamp(extra.workspace.previewZoom + action.delta, 0.5, 2)
 	elseif kind == "modal-option" then extra.performModalOption(action.option)
-	elseif kind == "close-modal" then extra.EditorWorkspace.CloseModal(extra.workspace); extra.workspace.showHelp = false end
+	elseif kind == "close-modal" then extra.EditorWorkspace.CloseModal(extra.workspace); extra.workspace.showHelp = false
+		editor.wheelEditId, editor.wheelEditRow = nil, nil end
 	return true
 end
 
@@ -2869,11 +2950,16 @@ function widget:MousePress(x, y, button)
 			end
 			local hit = extra.EditorWorkspace.FindHit(extra.workspace, x, y)
 			if hit then
+				local actionType = hit.action and hit.action.type
+				local valueClick = actionType == "property-slider" or actionType == "property-step"
+					or actionType == "property-number-entry"
+				if button == 1 and not valueClick then editor.wheelEditId, editor.wheelEditRow = nil, nil end
 				if hit.action and hit.action.row then
 					extra.EditorWorkspace.SetFocus(extra.workspace, "property:" .. rowID(hit.action.row))
 				elseif hit.id then extra.EditorWorkspace.SetFocus(extra.workspace, hit.id) end
 				return extra.handleWorkspaceAction(hit.action, x, y, button)
 			end
+			if button == 1 then editor.wheelEditId, editor.wheelEditRow = nil, nil end
 			return true
 		end
 		if button == 1 and pointInside(editor.close, x, y) then setEditorOpen(false); return true end
@@ -3005,10 +3091,14 @@ function widget:MouseWheel(up, value)
 		local alt, ctrl, _, shift = Spring.GetModKeyState()
 		local hit = extra.EditorWorkspace.FindHit(extra.workspace, x, y)
 		local action = hit and hit.action
-		if action and action.row and action.row[4] == "number" then
+		if editor.wheelEditRow and action and action.row and rowID(action.row) == editor.wheelEditId then
 			editor.row = action.rowIndex or editor.row
 			local multiplier = shift and 10 or ctrl and 0.1 or 1
-			beginMutation("Adjust " .. rowID(action.row)); adjustRow(up and 1 or -1, multiplier); endMutation()
+			local row = editor.wheelEditRow
+			local target = getScope(row[1]); local step = (row[7] or 1) * multiplier
+			beginMutation("Adjust " .. rowID(row))
+			setValue(row[1], row[2], clamp((tonumber(target[row[2]]) or row[5]) + (up and step or -step), row[5], row[6]))
+			endMutation()
 			return true
 		end
 		extra.EditorWorkspace.MouseWheel(extra.workspace, x, y, up and 1 or -1, shift)
@@ -3086,7 +3176,8 @@ function extra.handleTextFieldKey(key, mods, label)
 		local result = editor.activeText == "componentSearch" and "component" or editor.activeText == "propertySearch" and "property" or nil
 		extra.finishTextField(result, true); return true
 	end
-	if KEYSYMS and key == KEYSYMS.ESCAPE then extra.finishTextField(nil, false); return true end
+	if KEYSYMS and key == KEYSYMS.ESCAPE then extra.finishTextField(nil, false)
+		editor.wheelEditId, editor.wheelEditRow = nil, nil; return true end
 	return true
 end
 
@@ -3101,6 +3192,7 @@ function extra.activateFocusedControl()
 		elseif action.row[4] == "enum" then
 			local target = getScope(action.row[1]); extra.EditorWorkspace.OpenEnumMenu(extra.workspace, action.row, action.row[9], target and target[action.row[2]])
 		elseif action.row[4] == "text" or action.row[4] == "number" then
+			if action.row[4] == "number" then editor.wheelEditId, editor.wheelEditRow = rowID(action.row), action.row end
 			editor.textRow = action.row; extra.focusTextField("propertyValue", action.row[4] == "number")
 		else editor.status = "Use Left/Right to adjust " .. tostring(action.row[3]) end
 		return true
@@ -3124,7 +3216,8 @@ function widget:KeyPress(key, mods, isRepeat, label)
 	if extra.input then extra.EditorInput.KeyDown(extra.input, key) end
 	mods = mods or {}
 	if extra.workspace and extra.workspace.modal then
-		if KEYSYMS and key == KEYSYMS.ESCAPE then extra.EditorWorkspace.CloseModal(extra.workspace); extra.workspace.showHelp = false; return true end
+		if KEYSYMS and key == KEYSYMS.ESCAPE then extra.EditorWorkspace.CloseModal(extra.workspace); extra.workspace.showHelp = false
+			editor.wheelEditId, editor.wheelEditRow = nil, nil; return true end
 		if KEYSYMS and (key == KEYSYMS.UP or key == KEYSYMS.LEFT) then extra.EditorWorkspace.MoveFocus(extra.workspace, -1); return true end
 		if KEYSYMS and (key == KEYSYMS.DOWN or key == KEYSYMS.RIGHT) then extra.EditorWorkspace.MoveFocus(extra.workspace, 1); return true end
 		if KEYSYMS and key == KEYSYMS.HOME then extra.EditorWorkspace.FocusBoundary(extra.workspace, false); return true end
@@ -3143,6 +3236,9 @@ function widget:KeyPress(key, mods, isRepeat, label)
 	if shortcutMatches(settings.authoring.shortcutPublish, key, mods, label) then if not isRepeat then writePublishRequest() end; return true end
 	if shortcutMatches(settings.authoring.shortcutSearch, key, mods, label) then extra.focusTextField("propertySearch"); if extra.workspace then extra.EditorWorkspace.SetFocus(extra.workspace, "inspector:search") end; return true end
 	if editor.activeText then return extra.handleTextFieldKey(key, mods, label) end
+	if KEYSYMS and key == KEYSYMS.ESCAPE and editor.wheelEditId then
+		editor.wheelEditId, editor.wheelEditRow = nil, nil; editor.status = "Wheel value editing exited"; return true
+	end
 	if (KEYSYMS and KEYSYMS.F1 and key == KEYSYMS.F1) or string.lower(tostring(label or "")) == "f1" then
 		if extra.workspace then extra.workspace.showHelp = not extra.workspace.showHelp end; return true
 	end

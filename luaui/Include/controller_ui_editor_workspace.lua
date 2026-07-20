@@ -497,14 +497,19 @@ local function drawToolbar(state, spec, colors)
 		x = b.x2 + 5
 	end
 	local debug = { x1 = bounds.x2 - 64, y1 = bounds.y1 + 6, x2 = bounds.x2, y2 = bounds.y2 - 6 }
-	button(state, debug, "toolbar:debug", state.debugVisible and "Debug ON" or "Debug", { type = "toggle-debug" }, colors,
-		"Show or hide session-only Advanced debug tools")
+	button(state, debug, "toolbar:debug", spec.controllerDebugVisible and "Debug ON" or "Debug", { type = "toggle-debug" }, colors,
+		"Show or hide the session-only Controller Debug panel")
 	if spec.developer and bounds.x2 - x > 210 then
 		local width = 64
 		local draft = { x1 = debug.x1 - 2 * width - 12, y1 = bounds.y1 + 6, x2 = debug.x1 - width - 11, y2 = bounds.y2 - 6 }
 		local publish = { x1 = debug.x1 - width - 7, y1 = bounds.y1 + 6, x2 = debug.x1 - 6, y2 = bounds.y2 - 6 }
 		button(state, draft, "toolbar:draft", "Draft", { type = "draft" }, colors, "Save authoring draft (Ctrl+Shift+S)")
 		button(state, publish, "toolbar:publish", "Publish", { type = "publish" }, colors, "Create explicit publish request (Ctrl+Alt+S)")
+		if draft.x1 - x > 82 then
+			local diagnostics = { x1 = draft.x1 - 78, y1 = bounds.y1 + 6, x2 = draft.x1 - 6, y2 = bounds.y2 - 6 }
+			button(state, diagnostics, "toolbar:authoring-diagnostics", state.debugVisible and "Diag ON" or "Author Diag",
+				{ type = "toggle-authoring-diagnostics" }, colors, "Show internal authoring diagnostics (separate from Controller Debug)")
+		end
 	end
 end
 
@@ -678,17 +683,21 @@ local function drawPropertyControl(state, spec, item, bounds, colors)
 		addHit(state, { x1 = control.x1, y1 = control.y1, x2 = control.x2, y2 = control.y2, id = "control:" .. item.id,
 			action = action, tooltip = "Toggle " .. tostring(row[3]), accessibleLabel = tostring(row[3]) .. " " .. valueText(spec, row) }, false)
 	elseif kind == "number" then
+		local wheelEditing = spec.wheelEditingId == item.id
 		local minus = { x1 = control.x1, y1 = control.y1, x2 = control.x1 + 24, y2 = control.y2 }
 		local plus = { x1 = control.x2 - 24, y1 = control.y1, x2 = control.x2, y2 = control.y2 }
 		local field = { x1 = max(minus.x2 + 48, plus.x1 - 58), y1 = control.y1, x2 = plus.x1 - 2, y2 = control.y2 }
 		local slider = { x1 = minus.x2 + 2, y1 = control.y1, x2 = field.x1 - 2, y2 = control.y2 }
 		rect(minus, colors.button); rect(plus, colors.button); rect(field, colors.input); rect(slider, colors.input)
-		outline(minus, colors.border, 1); outline(plus, colors.border, 1); outline(field, colors.border, 1); outline(slider, colors.border, 1)
+		outline(minus, colors.border, 1); outline(plus, colors.border, 1)
+		outline(field, wheelEditing and colors.focus or colors.border, wheelEditing and 2 or 1)
+		outline(slider, wheelEditing and colors.focus or colors.border, wheelEditing and 2 or 1)
 		local ratio = ((tonumber(spec.getValue(row)) or row[5]) - row[5]) / max(0.00001, row[6] - row[5])
 		rect({ x1 = slider.x1 + 3, y1 = slider.y1 + 3, x2 = slider.x1 + 3 + max(0, slider.x2 - slider.x1 - 6) * clamp(ratio, 0, 1), y2 = slider.y1 + 7 }, colors.accent)
 		label("-", (minus.x1 + minus.x2) * 0.5, minus.y1 + 9, 12, colors.text, "oc")
 		label("+", (plus.x1 + plus.x2) * 0.5, plus.y1 + 9, 12, colors.text, "oc")
 		label(valueText(spec, row), (field.x1 + field.x2) * 0.5, field.y1 + 10, 9, colors.text, "oc")
+		if wheelEditing then label("WHEEL", slider.x1 + 4, slider.y1 + 10, 7, colors.focus, "o") end
 		addHit(state, { x1 = minus.x1, y1 = minus.y1, x2 = minus.x2, y2 = minus.y2, id = "minus:" .. item.id,
 			action = { type = "property-step", row = row, rowIndex = item.rowIndex, delta = -1 }, tooltip = "Decrease " .. row[3], accessibleLabel = "Decrease " .. row[3] }, false)
 		addHit(state, { x1 = plus.x1, y1 = plus.y1, x2 = plus.x2, y2 = plus.y2, id = "plus:" .. item.id,

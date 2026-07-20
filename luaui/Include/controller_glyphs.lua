@@ -42,6 +42,10 @@ for index, id in ipairs(order) do
 		u1 = column / Glyphs.columns, v1 = row / Glyphs.rows,
 		u2 = (column + 1) / Glyphs.columns, v2 = (row + 1) / Glyphs.rows,
 		color = faceColors[id], widthFactor = (id == "plus" or id == "chord") and 0.55 or (id == "sequence" and 0.72 or 1),
+		-- Every atlas cell is square. Keeping this explicit makes destination
+		-- aspect preservation testable and prevents directional D-pads from
+		-- inheriting a stretched control rectangle.
+		textureAspect = 1,
 	}
 end
 
@@ -112,8 +116,12 @@ end
 function Glyphs.BuildSequence(inputs, options)
 	options = options or {}
 	local sequence = {}
-	if options.showTapHold then sequence[#sequence + 1] = Glyphs.definitions[options.hold and "hold" or "tap"]
-	elseif options.hold then sequence[#sequence + 1] = Glyphs.definitions.hold end
+	-- Tap is the ordinary interaction and is intentionally never advertised.
+	-- Hold can be represented by the atlas only when the selected hold style
+	-- asks for it; the renderer supplies the alternative bold HOLD treatment.
+	local holdGlyph = options.hold and (options.holdStyle == "Hold Glyph"
+		or options.showTapHold == true or (options.showHold == nil and options.holdStyle == nil))
+	if holdGlyph then sequence[#sequence + 1] = Glyphs.definitions.hold end
 	for index, input in ipairs(type(inputs) == "table" and inputs or { inputs }) do
 		if index > 1 then sequence[#sequence + 1] = Glyphs.definitions.plus end
 		splitBinding(sequence, input)
@@ -198,7 +206,14 @@ function Glyphs.DrawSequence(sequence, x, y, options)
 				math.max(8, math.min(12, (entry.y2 - entry.y1) * 0.38)), "oc")
 		else
 			local color = glyphColor(glyph, options); gl.Color(color[1], color[2], color[3], color[4])
-			gl.TexRect(entry.x1, entry.y1, entry.x2, entry.y2, glyph.u1, glyph.v2, glyph.u2, glyph.v1)
+			local availableWidth, availableHeight = entry.x2 - entry.x1, entry.y2 - entry.y1
+			local aspect = tonumber(glyph.textureAspect) or 1
+			local drawWidth, drawHeight = availableWidth, availableHeight
+			if availableWidth / math.max(0.001, availableHeight) > aspect then drawWidth = availableHeight * aspect
+			else drawHeight = availableWidth / math.max(0.001, aspect) end
+			local centerX, centerY = (entry.x1 + entry.x2) * 0.5, (entry.y1 + entry.y2) * 0.5
+			gl.TexRect(centerX - drawWidth * 0.5, centerY - drawHeight * 0.5,
+				centerX + drawWidth * 0.5, centerY + drawHeight * 0.5, glyph.u1, glyph.v2, glyph.u2, glyph.v1)
 		end
 	end
 	gl.Texture(false); gl.Color(1, 1, 1, 1)

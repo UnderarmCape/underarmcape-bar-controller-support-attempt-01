@@ -656,7 +656,7 @@ function ControllerCameraTestGetDefaultSettings()
 		hideCompactStatusWhenRadialOpen = true,
 		placementPopupEnabled = true,
 		preferNativeBlueprint = true,
-		debugPanelVisible = true,
+		debugPanelVisible = false,
 		helpOverlayVisible = false,
 		compactBuildMenuEnabled = true,
 		compactBuildMenuScale = 0.85,
@@ -833,7 +833,7 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.hideCompactStatusWhenRadialOpen = settings.hideCompactStatusWhenRadialOpen ~= false
 	settings.placementPopupEnabled = settings.placementPopupEnabled ~= false
 	settings.preferNativeBlueprint = settings.preferNativeBlueprint ~= false
-	settings.debugPanelVisible = settings.debugPanelVisible ~= false
+	settings.debugPanelVisible = settings.debugPanelVisible == true
 	settings.helpOverlayVisible = settings.helpOverlayVisible == true
 	ControllerCameraTestAreaSelect.radius = settings.areaSelectRadius
 end
@@ -2329,6 +2329,9 @@ end
 
 function ControllerCameraTestSetLayoutEditorOpen(open)
 	ControllerCameraTestExternalBindingUI.layoutEditorOpen = not not open
+	-- The Controller Debug panel is deliberately session-only and never follows
+	-- editor persistence. Every editor open/close transition starts hidden.
+	ControllerCameraTestSettings.debugPanelVisible = false
 end
 
 function ControllerCameraTestCanUseLBHotkeys()
@@ -2542,6 +2545,19 @@ function ControllerCameraTestInstallWGAPI()
 	WG.BARControllerSupport.ResetAllSettings = ControllerCameraTestResetSettingsToDefaults
 	WG.BARControllerSupport.GetContextSnapshot = ControllerCameraTestGetContextSnapshot
 	WG.BARControllerSupport.SetLayoutEditorOpen = ControllerCameraTestSetLayoutEditorOpen
+	WG.BARControllerSupport.SetDebugPanelVisible = function(visible, source)
+		ControllerCameraTestSettings.debugPanelVisible = visible == true
+		ControllerCameraTestRecordUIToggleAction(tostring(source or "Controller UI") .. " debug panel "
+			.. (ControllerCameraTestSettings.debugPanelVisible and "shown" or "hidden"))
+		return ControllerCameraTestSettings.debugPanelVisible
+	end
+	WG.BARControllerSupport.ToggleDebugPanel = function(source)
+		ControllerCameraTestToggleDebugPanel(source or "Controller UI")
+		return ControllerCameraTestSettings.debugPanelVisible
+	end
+	WG.BARControllerSupport.IsDebugPanelVisible = function()
+		return ControllerCameraTestSettings.debugPanelVisible == true
+	end
 	WG.BARControllerSupport.GetShortcutBinding = function(shortcut)
 		if shortcut == "mouseMode" or shortcut == "uiSettings" then return { "back", "start" } end
 		return nil
@@ -2576,6 +2592,9 @@ function ControllerCameraTestRemoveWGAPI()
 	WG.BARControllerSupport.ResetAllSettings = nil
 	WG.BARControllerSupport.GetContextSnapshot = nil
 	WG.BARControllerSupport.SetLayoutEditorOpen = nil
+	WG.BARControllerSupport.SetDebugPanelVisible = nil
+	WG.BARControllerSupport.ToggleDebugPanel = nil
+	WG.BARControllerSupport.IsDebugPanelVisible = nil
 	WG.BARControllerSupport.GetShortcutBinding = nil
 	WG.BARControllerSupport.GetBackStartHoldProgress = nil
 end
@@ -11465,6 +11484,8 @@ local function drawControllerReticle()
 end
 
 function widget:Initialize()
+	-- Debug visibility is a fresh-session concern, never a persisted preference.
+	ControllerCameraTestSettings.debugPanelVisible = false
 	local nativeApiAvailable = type(spGetAvailableControllers) == "function"
 		and type(spGetControllerState) == "function"
 	if nativeApiAvailable then
@@ -12269,7 +12290,7 @@ end
 
 function ControllerCameraTestToggleDebugPanel(source)
 	ControllerCameraTestSettings.debugPanelVisible = not ControllerCameraTestSettings.debugPanelVisible
-	ControllerCameraTestRecordUIToggleAction(tostring(source) .. " debug panel "
+	ControllerCameraTestRecordUIToggleAction(tostring(source or "Controller UI") .. " debug panel "
 		.. (ControllerCameraTestSettings.debugPanelVisible and "shown" or "hidden"))
 end
 
@@ -12495,13 +12516,22 @@ function ControllerCameraTestDrawTacticalRadial()
 		local radius = math.min(520, math.max(220, minView * 0.28 * radialScale))
 		local entries = {}
 		for index, command in ipairs(commands) do entries[index] = { label = command.shortLabel or command.name or "Command" } end
+		local chips = {}
+		for _, direction in ipairs(TacticalCategories.Order) do
+			local item = TacticalCategories.ByDirection[direction]
+			chips[#chips + 1] = { direction = direction, label = item.shortLabel,
+				selected = item.key == category.key, color = TacticalCategories.Colors[item.key] }
+		end
 		ControllerUISharedRenderers.DrawRadial({
 			bounds = { x1 = cx - radius * 1.45, y1 = cy - radius * 1.45, x2 = cx + radius * 1.45, y2 = cy + radius * 1.45 },
-			model = { title = category.label, subtitle = "LS choose  A/X confirm  B/Y close", entries = entries,
-				selectedIndex = menu.selectedIndex, accent = categoryColor },
+			model = { style = "tactical", title = category.label, categoryLabel = category.label,
+				subtitle = "LS choose  A/X confirm  B/Y close", detail = "D-pad: Up Utility  |  Down Tactical Actions",
+				entries = entries, categoryChips = chips, selectedIndex = menu.selectedIndex, accent = categoryColor,
+				fill = TacticalCategories.FillColors[category.key] },
 			theme = { backgroundR = 0.02, backgroundG = 0.03, backgroundB = 0.04,
 				accentR = categoryColor[1], accentG = categoryColor[2], accentB = categoryColor[3] },
 			opacity = ControllerCameraTestGetControllerUIOpacity("tacticalRadial"),
+			settings = ControllerCameraTestGetRadialRendererSettings("tacticalRadial"),
 		})
 		return
 	end
@@ -12740,17 +12770,19 @@ function ControllerCameraTestDrawFilterRadial()
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
 	cx, cy = ControllerCameraTestGetControllerUIPosition("selectionRadial", cx, cy)
 	if area.filterRadialOpen and ControllerUISharedRenderers then
-		local labels = { "All Mobile", "Combat", "Air", "Builders" }
+		local labels = { "All Mobile", "Air", "Combat", "Builders" }
 		local selectedIndex = 1
 		for index, label in ipairs(labels) do if area.highlightedFilter == label then selectedIndex = index end end
 		local radius = 130 * ControllerCameraTestGetControllerUIScale("selectionRadial", true)
 		ControllerUISharedRenderers.DrawRadial({
 			bounds = { x1 = cx - radius * 1.55, y1 = cy - radius * 1.55, x2 = cx + radius * 1.55, y2 = cy + radius * 1.55 },
-			model = { title = "SELECT FILTER", subtitle = "Release X to set", entries = {
-				{ label = labels[1] }, { label = labels[2] }, { label = labels[3] }, { label = labels[4] },
+			model = { style = "selection", title = "SELECT FILTER", subtitle = "Release X to set", entries = {
+				{ label = labels[1], color = { 0.25, 0.75, 1.0 } }, { label = labels[2], color = { 0.65, 0.45, 1.0 } },
+				{ label = labels[3], color = { 1.0, 0.35, 0.2 } }, { label = labels[4], color = { 1.0, 0.85, 0.25 } },
 			}, selectedIndex = selectedIndex, accent = { 0.25, 0.75, 1.0 } },
 			theme = { backgroundR = 0.02, backgroundG = 0.03, backgroundB = 0.04, accentR = 0.25, accentG = 0.75, accentB = 1.0 },
 			opacity = ControllerCameraTestGetControllerUIOpacity("selectionRadial"),
+			settings = ControllerCameraTestGetRadialRendererSettings("selectionRadial"),
 		})
 		return
 	end
@@ -12984,15 +13016,19 @@ function ControllerCameraTestDrawCompactSelectedStatusPanel()
 	local bottom = 50
 	local top = status.mode == "factory" and 154 or 124
 	local uiScale = ControllerCameraTestGetControllerUIScale("selectedStatus", false)
+	local uiOpacity = ControllerCameraTestGetControllerUIOpacity("selectedStatus")
+	local uiFontScale = ControllerCameraTestGetControllerUIFontScale("selectedStatus")
+	local uiIconScale = ControllerCameraTestGetControllerUIIconScale("selectedStatus")
+	local function uiColor(r, g, b, a) gl.Color(r, g, b, (a == nil and 1 or a) * uiOpacity) end
 	local uiBounds = ControllerCameraTestGetControllerUIBounds("selectedStatus", 294, status.mode == "factory" and 104 or 74)
 	if uiBounds then
 		gl.PushMatrix()
 		gl.Translate(uiBounds.x1 - left * uiScale, uiBounds.y1 - bottom * uiScale, 0)
 		gl.Scale(uiScale, uiScale, 1)
 	end
-	gl.Color(0.02, 0.04, 0.06, 0.82)
+	uiColor(0.02, 0.04, 0.06, 0.82)
 	gl.Rect(left, bottom, right, top)
-	gl.Color(0.56, 0.84, 1, 0.7)
+	uiColor(0.56, 0.84, 1, 0.7)
 	gl.LineWidth(1)
 	gl.BeginEnd(GL.LINE_LOOP, function()
 		gl.Vertex(left, bottom)
@@ -13000,10 +13036,10 @@ function ControllerCameraTestDrawCompactSelectedStatusPanel()
 		gl.Vertex(right, top)
 		gl.Vertex(left, top)
 	end)
-	gl.Color(0.82, 0.94, 1, 1)
-	gl.Text(status.mode == "factory" and "Factory Status" or "Constructor Status", left + 12, top - 19, 13, "o")
-	gl.Color(1, 1, 1, 0.96)
-	gl.Text(tostring(status.name), left + 12, top - 39, 13, "o")
+	uiColor(0.82, 0.94, 1, 1)
+	gl.Text(status.mode == "factory" and "Factory Status" or "Constructor Status", left + 12, top - 19, 13 * uiFontScale, "o")
+	uiColor(1, 1, 1, 0.96)
+	gl.Text(tostring(status.name), left + 12, top - 39, 13 * uiFontScale, "o")
 
 	if status.mode == "factory" then
 		local currentDefID = status.currentCmdID and -status.currentCmdID or nil
@@ -13011,37 +13047,39 @@ function ControllerCameraTestDrawCompactSelectedStatusPanel()
 		local buildText = currentDef and ControllerCameraTestGetReadableUnitName(currentDef) or "Idle"
 		if currentDefID then
 			gl.Texture("#" .. tostring(currentDefID))
-			gl.Color(1, 1, 1, 0.92)
-			gl.TexRect(left + 12, bottom + 25, left + 50, bottom + 63)
+			uiColor(1, 1, 1, 0.92)
+			local iconSize = 38 * uiIconScale
+			gl.TexRect(left + 12, bottom + 25, left + 12 + iconSize, bottom + 25 + iconSize)
 			gl.Texture(false)
 		end
 		local progressText = status.progress and (" " .. tostring(math.floor(status.progress * 100 + 0.5)) .. "%") or ""
-		gl.Color(0.92, 0.96, 1, 0.95)
-		gl.Text("Building: " .. buildText .. progressText, left + 58, bottom + 52, 11, "o")
-		gl.Text("Repeat: " .. tostring(status.repeatState) .. "  Queue:", left + 58, bottom + 34, 10, "o")
+		uiColor(0.92, 0.96, 1, 0.95)
+		gl.Text("Building: " .. buildText .. progressText, left + 58, bottom + 52, 11 * uiFontScale, "o")
+		gl.Text("Repeat: " .. tostring(status.repeatState) .. "  Queue:", left + 58, bottom + 34, 10 * uiFontScale, "o")
 		local iconX = left + 164
 		for i = 1, math.min(3, #(status.queueItems or {})) do
 			local item = status.queueItems[i]
 			gl.Texture("#" .. tostring(item.unitDefID))
-			gl.Color(1, 1, 1, 0.88)
-			gl.TexRect(iconX, bottom + 21, iconX + 26, bottom + 47)
+			uiColor(1, 1, 1, 0.88)
+			local queueIconSize = 26 * uiIconScale
+			gl.TexRect(iconX, bottom + 21, iconX + queueIconSize, bottom + 21 + queueIconSize)
 			gl.Texture(false)
-			gl.Color(1, 0.92, 0.42, 1)
-			gl.Text("x" .. tostring(item.count), iconX + 13, bottom + 10, 9, "oc")
-			iconX = iconX + 34
+			uiColor(1, 0.92, 0.42, 1)
+			gl.Text("x" .. tostring(item.count), iconX + queueIconSize * 0.5, bottom + 10, 9 * uiFontScale, "oc")
+			iconX = iconX + math.max(34, queueIconSize + 8)
 		end
-		gl.Color(0.66, 0.9, 1, 0.95)
-		gl.Text("Y: Factory radial", left + 12, bottom + 7, 10, "o")
+		uiColor(0.66, 0.9, 1, 0.95)
+		gl.Text("Y: Factory radial", left + 12, bottom + 7, 10 * uiFontScale, "o")
 	else
-		gl.Color(0.92, 0.96, 1, 0.95)
-		gl.Text("Action: " .. tostring(status.currentAction or "idle"), left + 12, bottom + 38, 11, "o")
+		uiColor(0.92, 0.96, 1, 0.95)
+		gl.Text("Action: " .. tostring(status.currentAction or "idle"), left + 12, bottom + 38, 11 * uiFontScale, "o")
 		local placementText = ControllerCameraTestBuildPlacement.active
 			and ("Pattern: " .. ControllerCameraTestPlacementPatternLabel(ControllerCameraTestBuildPlacement.placementPattern)
 				.. "  Space: " .. tostring(ControllerCameraTestBuildPlacement.placementSpacing or 0))
 			or "Ready for construction"
-		gl.Text(placementText, left + 12, bottom + 23, 11, "o")
-		gl.Color(0.66, 0.9, 1, 0.95)
-		gl.Text("Y: Build radial", left + 12, bottom + 7, 10, "o")
+		gl.Text(placementText, left + 12, bottom + 23, 11 * uiFontScale, "o")
+		uiColor(0.66, 0.9, 1, 0.95)
+		gl.Text("Y: Build radial", left + 12, bottom + 7, 10 * uiFontScale, "o")
 	end
 	gl.Texture(false)
 	gl.Color(1, 1, 1, 1)
@@ -13500,14 +13538,22 @@ function ControllerCameraTestDrawBuildRadial()
 		local info = current and ControllerCameraTestBuildRadialUnitInfo(current)
 		if info and info.description and info.description ~= "" then details[#details + 1] = info.description end
 		if info then for index = 1, math.min(3, #(info.stats or {})) do details[#details + 1] = info.stats[index] end end
+		local renderSettings = ControllerCameraTestGetRadialRendererSettings(componentName)
+		renderSettings.iconScale = renderSettings.iconScale * (BuildRadialTuning.iconScale or 1)
+		renderSettings.fontScale = renderSettings.fontScale * (BuildRadialTuning.textScale or 1)
+		renderSettings.selectedBorderThickness = renderSettings.selectedBorderThickness * (BuildRadialTuning.selectedBorderScale or 1)
+		renderSettings.itemSpacing = renderSettings.itemSpacing * (BuildRadialTuning.itemSpacing or 1)
 		ControllerUISharedRenderers.DrawRadial({
 			bounds = { x1 = cx - radius * 1.45, y1 = cy - radius * 1.45, x2 = cx + radius * 1.45, y2 = cy + radius * 1.45 },
-			model = { title = current and (current.name or current.shortLabel) or (isFactoryContext and "Factory" or "Build"),
+			model = { style = "build", title = current and (current.name or current.shortLabel) or (isFactoryContext and "Factory" or "Build"),
 				subtitle = isFactoryContext and "A/X adjust queue  B/Y close" or "A place  X quick-place  B/Y close",
-				entries = entries, selectedIndex = selectedIndex, accent = pageColor.accent, details = details },
+				categoryLabel = menu.radialCategoryName or (isFactoryContext and "Factory" or "Build"),
+				pageLabel = "PAGE " .. tostring(menu.radialPage or 1) .. "/" .. tostring(menu.radialPageCount or 1),
+				entries = entries, selectedIndex = selectedIndex, accent = pageColor.accent, fill = pageColor.fill, details = details },
 			theme = { backgroundR = pageColor.fill[1], backgroundG = pageColor.fill[2], backgroundB = pageColor.fill[3],
 				accentR = pageColor.accent[1], accentG = pageColor.accent[2], accentB = pageColor.accent[3] },
 			opacity = ControllerCameraTestGetControllerUIOpacity(componentName),
+			settings = renderSettings,
 		})
 		return
 	end
@@ -14005,7 +14051,15 @@ end
 
 function ControllerCameraTestGetControllerUIOpacity(componentName)
 	local shared = WG and WG.ControllerUISettings
-	if shared and type(shared.GetEffectiveOpacity) == "function" then return tonumber(shared.GetEffectiveOpacity(componentName)) or 1 end
+	if shared and type(shared.GetEffectiveOpacity) == "function" then
+		local opacity = tonumber(shared.GetEffectiveOpacity(componentName)) or 1
+		local radialComponent = componentName == "buildRadial" or componentName == "factoryRadial"
+			or componentName == "tacticalRadial" or componentName == "selectionRadial"
+		if radialComponent and type(shared.GetComponent) == "function" then
+			local radial = shared.GetComponent("radials"); opacity = opacity * (radial and tonumber(radial.opacity) or 1)
+		end
+		return opacity
+	end
 	return 1
 end
 
@@ -14043,6 +14097,21 @@ function ControllerCameraTestGetControllerUIIconScale(componentName)
 	if not shared or type(shared.GetComponent) ~= "function" then return 1 end
 	local component, radial = shared.GetComponent(componentName), shared.GetComponent("radials")
 	return (component and tonumber(component.iconScale) or 1) * (radial and tonumber(radial.iconScale) or 1)
+end
+
+function ControllerCameraTestGetRadialRendererSettings(componentName)
+	local shared = WG and WG.ControllerUISettings
+	local radial = shared and type(shared.GetComponent) == "function" and shared.GetComponent("radials") or nil
+	return {
+		iconScale = ControllerCameraTestGetControllerUIIconScale(componentName),
+		fontScale = ControllerCameraTestGetControllerUIFontScale(componentName),
+		centerTextScale = radial and tonumber(radial.centerTextScale) or 1,
+		selectedScale = radial and tonumber(radial.selectedScale) or 1.06,
+		selectedBorderThickness = radial and tonumber(radial.selectedBorderThickness) or 3,
+		itemSpacing = radial and tonumber(radial.itemSpacing) or 1,
+		legacyThemeOpacity = radial and tonumber(radial.legacyThemeOpacity) or 1,
+		pageStatusVisible = not radial or radial.pageStatusVisible ~= false,
+	}
 end
 
 function ControllerCameraTestDrawCompanionFeedback()
@@ -14782,7 +14851,7 @@ function widget:GetConfigData()
 	ControllerCameraTestEnsureBindings()
 	local settings = {}
 	for key, value in pairs(ControllerCameraTestSettings) do
-		if type(value) ~= "table" then
+		if type(value) ~= "table" and key ~= "debugPanelVisible" then
 			settings[key] = value
 		end
 	end
@@ -14815,7 +14884,7 @@ function widget:SetConfigData(data)
 
 	if type(data.settings) == "table" then
 		for key, value in pairs(data.settings) do
-			if ControllerCameraTestSettings[key] ~= nil then
+			if key ~= "debugPanelVisible" and ControllerCameraTestSettings[key] ~= nil then
 				local val = value
 				if key == "stickDeadzone" and val == 3000 then
 					val = 5000
@@ -14825,6 +14894,7 @@ function widget:SetConfigData(data)
 		end
 	end
 	ControllerCameraTestApplySettingsDefaults()
+	ControllerCameraTestSettings.debugPanelVisible = false
 	ControllerCameraTestEnsureBindings()
 	local explicitSchema = tonumber(data.configSchema)
 	local schemaSupported = explicitSchema == nil or explicitSchema == 1 or explicitSchema == CONTROLLER_BINDINGS_CONFIG_SCHEMA
