@@ -2165,6 +2165,24 @@ local function resetCurrentTab()
 	if ownMutation then endMutation() end
 end
 
+-- BAR's Lua runtime limits a function to 60 captured upvalues. Keep the hint
+-- registry construction outside Initialize so adding public authoring methods
+-- cannot silently make the widget unloadable even when desktop luac accepts it.
+extra.installHintRegistry = function()
+	WG.ControllerHintRegistry = {
+		Register = addHint,
+		Unregister = function(id) hintRegistry[id] = nil; hintRevision = hintRevision + 1 end,
+		GetVisibleActions = function() return visibleHints end,
+		GetDefinitions = function() return hintRegistry end,
+		GetCategories = getHintCategories,
+		SetActionHidden = setActionHidden, SetActionCategory = setActionCategory, SetActionOrder = setActionOrder,
+		SetActionShortLabel = setActionShortLabel, SetCategoryVisible = setCategoryVisible,
+		ResetOrganization = resetHintOrganization,
+		GetAuditReport = function() return getHintAudit(support()) end,
+		Invalidate = function() lastContextSignature = "" end,
+	}
+end
+
 function widget:Initialize()
 	recalculateScale()
 	local recoveredPreview = history.dirty and deepCopy(settings) or nil
@@ -2208,18 +2226,7 @@ function widget:Initialize()
 			migratedLegacyLauncher = true; touch(); return true
 		end,
 	}
-	WG.ControllerHintRegistry = {
-		Register = addHint,
-		Unregister = function(id) hintRegistry[id] = nil; hintRevision = hintRevision + 1 end,
-		GetVisibleActions = function() return visibleHints end,
-		GetDefinitions = function() return hintRegistry end,
-		GetCategories = getHintCategories,
-		SetActionHidden = setActionHidden, SetActionCategory = setActionCategory, SetActionOrder = setActionOrder,
-		SetActionShortLabel = setActionShortLabel, SetCategoryVisible = setCategoryVisible,
-		ResetOrganization = resetHintOrganization,
-		GetAuditReport = function() return getHintAudit(support()) end,
-		Invalidate = function() lastContextSignature = "" end,
-	}
+	extra.installHintRegistry()
 	if widgetHandler and widgetHandler.AddAction then widgetHandler:AddAction("bar_controller_ui", toggleEditor, nil, "t") end
 end
 
