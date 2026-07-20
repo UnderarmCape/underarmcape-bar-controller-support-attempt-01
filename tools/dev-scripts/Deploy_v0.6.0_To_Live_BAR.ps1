@@ -25,6 +25,15 @@ $WidgetFiles = @(
     'gui_controller_bindings_ui.lua',
     'gui_controller_ui_layout.lua'
 )
+$LuaSupportFiles = @(
+    'controller_ui_editor_workspace.lua',
+    'controller_glyphs.lua'
+)
+$GlyphAssetFiles = @(
+    'controller_glyph_atlas.png',
+    'asset-manifest.json',
+    'LICENSE.md'
+)
 
 function Write-Step([string]$Message) {
     Write-Host ('[dev-deploy] ' + $Message)
@@ -215,6 +224,19 @@ foreach ($widgetFile in $WidgetFiles) {
     $source = Join-Path $RepositoryRoot ('luaui\Widgets\' + $widgetFile)
     Invoke-NativeChecked -FilePath 'luac' -Arguments @('-p', $source) -Label ('Lua parse ' + $widgetFile)
 }
+$LuaIncludeDirectory = Join-Path $BarDataPath 'LuaUI\Include'
+$GlyphAssetDirectory = Join-Path $BarDataPath 'LuaUI\Images\controller-glyphs'
+foreach ($supportFile in $LuaSupportFiles) {
+    $source = Join-Path $RepositoryRoot ('luaui\Include\' + $supportFile)
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Lua support module is missing: $source" }
+    Invoke-NativeChecked -FilePath 'luac' -Arguments @('-p', $source) -Label ('Lua parse ' + $supportFile)
+    $supportUpvalues = Get-MaxLuaUpvalues -Path $source
+    if ($supportUpvalues -gt 60) { throw "$supportFile captures $supportUpvalues upvalues; BAR permits 60." }
+}
+foreach ($assetFile in $GlyphAssetFiles) {
+    $source = Join-Path $RepositoryRoot ('luaui\images\controller-glyphs\' + $assetFile)
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Controller glyph asset is missing: $source" }
+}
 $layoutSource = Join-Path $RepositoryRoot 'luaui\Widgets\gui_controller_ui_layout.lua'
 $maximumUpvalues = Get-MaxLuaUpvalues -Path $layoutSource
 if ($maximumUpvalues -gt 60) { throw "Controller UI Layout captures $maximumUpvalues upvalues; BAR permits 60." }
@@ -245,7 +267,9 @@ if (-not $SkipBuild) {
 }
 
 Write-Step 'Running deployment test gates.'
-Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerUIAuthoring.lua')) -Label 'Controller UI authoring harness'
+Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerUIAuthoring.lua'), $RepositoryRoot) -Label 'Controller UI authoring harness'
+Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerUIWorkspace.lua'), $RepositoryRoot) -Label 'Controller UI workspace navigation/scrolling harness'
+Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerGlyphs.lua'), $RepositoryRoot) -Label 'Controller glyph resolution/asset harness'
 Invoke-NativeChecked -FilePath 'dotnet' -Arguments @('run', '--project', (Join-Path $RepositoryRoot 'tools\controller-companion\Tests\BARControllerCompanionUpdateTests.csproj'), '-c', 'Release', '--no-build', '--no-restore') -Label 'Companion update/defaults tests'
 $publisherProject = Join-Path $RepositoryRoot 'tools\controller-ui-publisher\BARControllerUIDefaultsPublisher.csproj'
 $sourceDefaults = Join-Path $RepositoryRoot 'controller-ui\shipping-defaults.json'
@@ -288,6 +312,12 @@ function Backup-LiveFile([string]$Source, [string]$Relative, [string]$Purpose) {
 }
 foreach ($widgetFile in $WidgetFiles) {
     Backup-LiveFile (Join-Path $WidgetDirectory $widgetFile) (Join-Path 'live-before\LuaUI\Widgets' $widgetFile) 'live Lua widget'
+}
+foreach ($supportFile in $LuaSupportFiles) {
+    Backup-LiveFile (Join-Path $LuaIncludeDirectory $supportFile) (Join-Path 'live-before\LuaUI\Include' $supportFile) 'live Lua support module'
+}
+foreach ($assetFile in $GlyphAssetFiles) {
+    Backup-LiveFile (Join-Path $GlyphAssetDirectory $assetFile) (Join-Path 'live-before\LuaUI\Images\controller-glyphs' $assetFile) 'controller glyph asset'
 }
 Backup-LiveFile $WidgetConfigPath 'live-before\LuaUI\Config\BYAR.lua' 'widget enablement and personal widget settings'
 Backup-LiveFile $SettingsPath 'live-before\springsettings.cfg' 'BAR settings'
@@ -333,7 +363,7 @@ $manifest = [ordered]@{
     timestamp = (Get-Date).ToString('o'); sourceCommit = $commit; sourceBranch = $branch
     sourceRoot = $RepositoryRoot; barDataPath = $BarDataPath; companionInstallPath = $CompanionInstallPath
     backupRoot = $backupRoot; backedUpFiles = $backupRecords; relocatedWidgetBackups = $relocatedBackups
-    deployedFiles = @(); postDeploymentHashes = @(); widgetConfigChanged = $false; cameraSettingChanged = $false
+    deployedFiles = @(); postDeploymentHashes = @(); runtimeSupportFiles = @(); widgetConfigChanged = $false; cameraSettingChanged = $false
     rollbackScript = (Join-Path $backupRoot 'Rollback-Deployment.ps1')
 }
 Write-JsonAtomic -Path $manifestPath -Value $manifest
@@ -351,6 +381,11 @@ $deployMap = @(
     [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\Widgets\gui_controller_camera_test.lua'); destination = (Join-Path $WidgetDirectory 'gui_controller_camera_test.lua') },
     [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\Widgets\gui_controller_bindings_ui.lua'); destination = (Join-Path $WidgetDirectory 'gui_controller_bindings_ui.lua') },
     [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\Widgets\gui_controller_ui_layout.lua'); destination = (Join-Path $WidgetDirectory 'gui_controller_ui_layout.lua') },
+    [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\Include\controller_ui_editor_workspace.lua'); destination = (Join-Path $LuaIncludeDirectory 'controller_ui_editor_workspace.lua') },
+    [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\Include\controller_glyphs.lua'); destination = (Join-Path $LuaIncludeDirectory 'controller_glyphs.lua') },
+    [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\images\controller-glyphs\controller_glyph_atlas.png'); destination = (Join-Path $GlyphAssetDirectory 'controller_glyph_atlas.png') },
+    [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\images\controller-glyphs\asset-manifest.json'); destination = (Join-Path $GlyphAssetDirectory 'asset-manifest.json') },
+    [pscustomobject]@{ source = (Join-Path $RepositoryRoot 'luaui\images\controller-glyphs\LICENSE.md'); destination = (Join-Path $GlyphAssetDirectory 'LICENSE.md') },
     [pscustomobject]@{ source = $publishedBridge; destination = (Join-Path $CompanionInstallPath 'BARControllerBridge.exe') },
     [pscustomobject]@{ source = $publishedLauncher; destination = (Join-Path $CompanionInstallPath 'BARControllerLauncher.exe') },
     [pscustomobject]@{ source = $publishedRestore; destination = (Join-Path $CompanionInstallPath 'BAR_Controller_Companion_Restore_v0.6.0.exe') },
@@ -381,6 +416,22 @@ foreach ($widgetFile in $WidgetFiles) {
     if ($copies.Count -ne 1) { throw "Expected exactly one live $widgetFile, found $($copies.Count)." }
     Invoke-NativeChecked -FilePath 'luac' -Arguments @('-p', $copies[0].FullName) -Label ('Installed Lua parse ' + $widgetFile)
 }
+foreach ($supportFile in $LuaSupportFiles) {
+    $installedSupport = Join-Path $LuaIncludeDirectory $supportFile
+    Invoke-NativeChecked -FilePath 'luac' -Arguments @('-p', $installedSupport) -Label ('Installed Lua parse ' + $supportFile)
+    if ((Get-MaxLuaUpvalues -Path $installedSupport) -gt 60) { throw "Installed $supportFile exceeds BAR upvalue limit." }
+}
+$installedGlyphManifest = Get-Content -Raw -Encoding UTF8 (Join-Path $GlyphAssetDirectory 'asset-manifest.json') | ConvertFrom-Json
+if ($installedGlyphManifest.kind -ne 'bar-controller-original-glyph-atlas' -or @($installedGlyphManifest.glyphs).Count -lt 40) {
+    throw 'Installed controller glyph asset manifest is invalid or incomplete.'
+}
+$installedGlyphLicense = [IO.File]::ReadAllText((Join-Path $GlyphAssetDirectory 'LICENSE.md'))
+if ($installedGlyphLicense -notmatch 'original generic controller/input artwork' -or $installedGlyphLicense -notmatch 'GPL-2.0-or-later') {
+    throw 'Installed controller glyph license/source declaration is incomplete.'
+}
+if ((Get-Item -LiteralPath (Join-Path $GlyphAssetDirectory 'controller_glyph_atlas.png')).Length -lt 1024) {
+    throw 'Installed controller glyph atlas is unexpectedly small.'
+}
 if ((Get-MaxLuaUpvalues -Path (Join-Path $WidgetDirectory 'gui_controller_ui_layout.lua')) -gt 60) { throw 'Installed layout widget exceeds BAR upvalue limit.' }
 Invoke-NativeChecked -FilePath 'dotnet' -Arguments @('run', '--project', $publisherProject, '-c', 'Release', '--no-build', '--', 'validate', '--defaults', (Join-Path $BarDataPath 'controller-ui\shipping-defaults.json'), '--manifest', (Join-Path $BarDataPath 'controller-ui\shipping-defaults-manifest.json')) -Label 'Installed defaults validation'
 Invoke-NativeChecked -FilePath (Join-Path $CompanionInstallPath 'BARControllerBridge.exe') -Arguments @('help') -Label 'Installed bridge help smoke test'
@@ -407,6 +458,7 @@ Assert-RuntimeStopped
 
 $manifest.deployedFiles = $deployedRecords
 $manifest.postDeploymentHashes = $deployedRecords
+$manifest.runtimeSupportFiles = @($deployedRecords | Where-Object { $_.destination -like '*\LuaUI\Include\controller_*' -or $_.destination -like '*\LuaUI\Images\controller-glyphs\*' })
 $manifest.widgetConfigChanged = $widgetConfigChanged
 $manifest.widgetConfigPreSha256 = $widgetConfigBefore
 $manifest.widgetConfigPostSha256 = $widgetConfigAfter

@@ -56,6 +56,13 @@ function Assert-AllowedDestination([string]$Path) {
     throw "Rollback destination escaped the recorded live roots: $Path"
 }
 
+$destinationSet = @{}
+foreach ($deployed in @($manifest.deployedFiles)) {
+    $destination = Assert-AllowedDestination ([string]$deployed.destination)
+    if ($destinationSet.ContainsKey($destination)) { throw "Deployment manifest contains a duplicate destination: $destination" }
+    $destinationSet[$destination] = $true
+}
+
 if ($ValidateOnly) {
     foreach ($deployed in @($manifest.deployedFiles)) {
         $destination = Assert-AllowedDestination ([string]$deployed.destination)
@@ -124,4 +131,5 @@ $result = [ordered]@{
 $resultPath = Join-Path $BackupRoot 'rollback-result.json'
 [IO.File]::WriteAllText($resultPath, ($result | ConvertTo-Json -Depth 6) + [Environment]::NewLine, (New-Object Text.UTF8Encoding($false)))
 Write-Output ('ROLLBACK_COMPLETE=' + $BackupRoot)
-Write-Output 'BAR was not launched. Old recursively scanned widget backups were restored exactly; move them out of LuaUI\Widgets before starting BAR if the rollback is only for runtime binaries.'
+Write-Output 'BAR was not launched. Widgets, Lua support modules, controller glyph assets, defaults, and runtime files were restored or moved to rollback artifacts from the deployment manifest.'
+Write-Output 'Old recursively scanned widget backups were restored exactly; move them out of LuaUI\Widgets before starting BAR if the rollback is only for runtime binaries.'
