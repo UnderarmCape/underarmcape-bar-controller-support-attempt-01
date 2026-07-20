@@ -396,9 +396,13 @@ $deployedRecords = New-Object Collections.Generic.List[object]
 foreach ($item in $deployMap) {
     $existed = Test-Path -LiteralPath $item.destination -PathType Leaf
     $preHash = if ($existed) { Get-Sha256 $item.destination } else { $null }
+    $sourceHash = Get-Sha256 $item.source
+    if ($existed -and $preHash -eq $sourceHash) {
+        Write-Step ('Unchanged; preserving installed file: ' + $item.destination)
+        continue
+    }
     New-Item -ItemType Directory -Path (Split-Path -Parent $item.destination) -Force | Out-Null
     Copy-Item -LiteralPath $item.source -Destination $item.destination -Force
-    $sourceHash = Get-Sha256 $item.source
     $destinationHash = Get-Sha256 $item.destination
     if ($sourceHash -ne $destinationHash) { throw "Deployment hash mismatch: $($item.destination)" }
     $deployedRecords.Add([pscustomobject][ordered]@{ source = $item.source; destination = $item.destination; existedBefore = $existed; preSha256 = $preHash; postSha256 = $destinationHash })
