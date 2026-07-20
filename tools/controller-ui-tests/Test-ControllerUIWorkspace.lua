@@ -60,6 +60,46 @@ assertTrue(scissorCalls >= 4, "navigation and inspector clipping")
 assertTrue(state.panes.inspector.maxScroll > state.panes.inspector.viewport * 3, "stress list spans several screens")
 assertTrue(state.panes.inspector.thumb ~= nil, "visible inspector scrollbar")
 
+assertTrue(Workspace.TogglePreview(state, true), "preview pane collapses")
+Workspace.Draw(state, spec)
+assertTrue(state.layout.preview == nil and state.layout.previewCollapsedStrip ~= nil, "collapsed preview leaves a reopen strip")
+assertTrue(Workspace.TogglePreview(state, true), "preview pane reopens")
+Workspace.Draw(state, spec)
+assertTrue(state.layout.preview ~= nil, "preview pane restores")
+assertTrue(not Workspace.TogglePreview(state, false), "unavailable preview cannot be opened")
+
+local navDivider = state.layout.dividerNav
+local navDividerX, dividerY = (navDivider.x1 + navDivider.x2) * 0.5, (navDivider.y1 + navDivider.y2) * 0.5
+assertEqual(Workspace.DividerPress(state, navDividerX, dividerY, 1), "nav", "navigation divider captures")
+assertTrue(Workspace.DividerDrag(state, navDividerX + 25), "navigation divider drags")
+assertEqual(state.navWidth, 215, "navigation divider changes persistent width")
+assertTrue(Workspace.EndPointer(state), "navigation divider releases")
+Workspace.Draw(state, spec)
+navDivider = state.layout.dividerNav
+navDividerX = (navDivider.x1 + navDivider.x2) * 0.5
+assertEqual(Workspace.DividerPress(state, navDividerX, dividerY, 2), "nav", "first reset click starts divider drag")
+assertEqual(Workspace.DividerPress(state, navDividerX, dividerY, 2.2), "reset", "divider double click resets")
+assertEqual(state.navWidth, 190, "navigation divider resets to default")
+
+Workspace.Draw(state, spec)
+local previewDivider = state.layout.dividerInspector
+local previewDividerX = (previewDivider.x1 + previewDivider.x2) * 0.5
+assertEqual(Workspace.DividerPress(state, previewDividerX, dividerY, 3), "preview", "preview divider captures")
+assertTrue(Workspace.DividerDrag(state, previewDividerX + 35), "preview divider drags")
+assertEqual(state.previewWidth, 395, "preview divider changes persistent width")
+Workspace.EndPointer(state)
+
+state.debugVisible = true
+local exportedChrome = Workspace.ExportChrome(state)
+assertTrue(exportedChrome.debugVisible == nil, "session debug state is not persisted")
+local imported = Workspace.New()
+assertTrue(Workspace.ImportChrome(imported, exportedChrome), "workspace chrome imports")
+assertEqual(imported.previewWidth, 395, "preview width survives chrome import")
+assertTrue(Workspace.ImportChrome(imported, { debugVisible = true }), "untrusted chrome table is accepted safely")
+assertTrue(not imported.debugVisible, "persisted or remote data cannot force session debug visible")
+Workspace.ResetSession(state)
+assertTrue(not state.debugVisible, "session reset hides debug")
+
 assertTrue(Workspace.SetFocus(state, "property:stress.p1"), "first property focusable")
 assertEqual(state.panes.inspector.scroll, 0, "first property at top")
 assertTrue(Workspace.SetFocus(state, "property:stress.p40"), "middle property focusable")
@@ -142,4 +182,15 @@ assertTrue(Workspace.CloseModal(state), "modal closes")
 Workspace.Draw(state, spec)
 assertEqual(state.focusId, opener, "modal restores opener focus")
 
-print("Controller UI workspace tests passed: responsive panes, clipping, independent wheel scrolling, scrollbars, first/middle/final reachability, focus order, paging, search, collapse, per-component scroll, and modal trapping.")
+local categorized = { { label = "Gameplay", heading = true, disabled = true } }
+for index = 1, 30 do categorized[#categorized + 1] = { label = "Context " .. index, action = "context-" .. index } end
+Workspace.OpenModal(state, "Preview context", categorized, opener)
+Workspace.Draw(state, spec)
+assertEqual(state.focusId, "modal:2", "modal heading is skipped by keyboard focus")
+assertTrue(state.panes.modal.maxScroll > 0, "long categorized menu scrolls")
+local beforeModalWheel = state.panes.modal.scroll
+assertTrue(Workspace.MouseWheel(state, bounds.x1 + 100, bounds.y1 + 100, -1, false), "wheel is trapped by modal")
+assertTrue(state.panes.modal.scroll > beforeModalWheel, "modal wheel scrolls categorized menu")
+Workspace.CloseModal(state)
+
+print("Controller UI workspace tests passed: responsive panes, collapsible/resizable preview, divider reset, session-only debug, clipping, independent wheel scrolling, scrollbars, first/middle/final reachability, focus order, paging, search, collapse, per-component scroll, categorized menus, and modal trapping.")

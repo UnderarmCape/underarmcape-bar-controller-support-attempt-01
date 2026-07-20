@@ -42,6 +42,12 @@ VFS = {
 		if path == "LuaUI/Include/controller_ui_editor_workspace.lua" then
 			return dofile(root .. "/luaui/Include/controller_ui_editor_workspace.lua")
 		end
+		if path == "LuaUI/Include/controller_ui_editor_input.lua" then
+			return dofile(root .. "/luaui/Include/controller_ui_editor_input.lua")
+		end
+		if path == "LuaUI/Include/controller_ui_shared_renderers.lua" then
+			return dofile(root .. "/luaui/Include/controller_ui_shared_renderers.lua")
+		end
 		if path == "LuaUI/Include/controller_glyphs.lua" then
 			return dofile(root .. "/luaui/Include/controller_glyphs.lua")
 		end
@@ -134,7 +140,7 @@ for _, presentation in ipairs({ "Glyph + Action Text", "Text Chip + Action", "Bu
 end
 local stressVisible = 0
 for _, hint in ipairs(WG.ControllerHintRegistry.GetVisibleActions()) do if string.find(hint.id, "stress%-long") then stressVisible = stressVisible + 1 end end
-assertEqual(stressVisible, 3, "long binding stress preview")
+assertEqual(stressVisible, 0, "synthetic preview does not replace production hint context")
 api.Set("authoring", "contextPreview", "Live")
 api.Save()
 
