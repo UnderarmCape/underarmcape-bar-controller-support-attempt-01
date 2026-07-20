@@ -15,6 +15,7 @@ if ([string]::IsNullOrWhiteSpace($LegacyPackageRoot)) {
 }
 $installer = Join-Path $packageRoot 'BAR_Controller_Companion_Installer_v0.6.0.exe'
 $restore = Join-Path $packageRoot 'BAR_Controller_Companion_Restore_v0.6.0.exe'
+$runtimeManifestPath = Join-Path $packageRoot 'frozen-runtime-manifest.json'
 $testRoot = [IO.Path]::GetFullPath((Join-Path $WorkspaceRoot 'test-output\v0.6.0-release-isolated'))
 $allowedRoot = [IO.Path]::GetFullPath((Join-Path $WorkspaceRoot 'test-output')).TrimEnd('\') + '\'
 if (-not $testRoot.StartsWith($allowedRoot, [StringComparison]::OrdinalIgnoreCase)) {
@@ -99,6 +100,23 @@ function Assert-Installed([object]$Environment) {
 
 if (-not (Test-Path -LiteralPath $installer -PathType Leaf) -or -not (Test-Path -LiteralPath $restore -PathType Leaf)) {
     throw 'v0.6.0 package must be staged before running release tests.'
+}
+$runtimeManifest = Get-Content -Raw -LiteralPath $runtimeManifestPath | ConvertFrom-Json
+$sourceCommit = (& git -C $WorkspaceRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]$runtimeManifest.sourceCommit -ne $sourceCommit -or [string]$runtimeManifest.version -ne '0.6.0') {
+    throw 'Frozen runtime manifest does not match the tested source commit and version.'
+}
+foreach ($runtime in $runtimeManifest.artifacts) {
+    $runtimePath = if ([string]$runtime.filename -eq 'BARControllerBridge.exe' -or [string]$runtime.filename -eq 'BARControllerLauncher.exe') {
+        Join-Path $packageRoot ('companion\' + [string]$runtime.filename)
+    } else {
+        Join-Path $packageRoot ([string]$runtime.filename)
+    }
+    if (-not (Test-Path -LiteralPath $runtimePath -PathType Leaf) -or
+        (Get-Item -LiteralPath $runtimePath).Length -ne [long]$runtime.size -or
+        (Get-Sha256 $runtimePath) -ne [string]$runtime.sha256) {
+        throw "Packaged runtime does not match its frozen manifest: $($runtime.filename)"
+    }
 }
 $expectedZipHash = ([regex]::Match([IO.File]::ReadAllText($checksumPath), '\b[a-fA-F0-9]{64}\b').Value).ToLowerInvariant()
 if ($expectedZipHash -ne (Get-Sha256 $zipPath)) { throw 'ZIP checksum sidecar mismatch.' }

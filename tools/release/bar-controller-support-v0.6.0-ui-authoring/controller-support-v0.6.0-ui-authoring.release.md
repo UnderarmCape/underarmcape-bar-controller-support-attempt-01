@@ -28,10 +28,10 @@ Upgrading from v0.5.1 preserves valid controller bindings and personal UI settin
 ## Known limitations
 
 - Executables are not code-signed.
+- The .NET 5 single-file bundler does not produce byte-identical executables across independent publishes in this environment. The release executables were built once, smoke-tested, hash-frozen, and used unchanged for deterministic package staging.
 - Mouse Mode has no appearance controls in this authoring release; existing gameplay behavior remains intact.
 - Preview data is synthetic, but all preview drawing/layout uses the production renderer.
 
 ## Integrity
 
 ZIP SHA-256: `__FINAL_ZIP_SHA256__`
-

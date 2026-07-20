@@ -16,6 +16,7 @@
     "docs/README.md",
     "docs/RELEASE_NOTES_v0.6.0.md",
     "LICENSE.md",
+    "frozen-runtime-manifest.json",
     "payload-sha256.json"
   ],
   "requiredLuaFiles": [
