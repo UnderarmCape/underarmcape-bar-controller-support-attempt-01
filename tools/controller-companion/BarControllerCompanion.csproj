@@ -19,5 +19,6 @@
     <Compile Remove="Installer\**\*.cs" />
     <Compile Remove="Restore\**\*.cs" />
     <Compile Remove="Shared\**\*.cs" />
+    <Compile Remove="Tests\**\*.cs" />
   </ItemGroup>
 </Project>

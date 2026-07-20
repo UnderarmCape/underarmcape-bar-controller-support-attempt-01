@@ -6977,7 +6977,11 @@ function ControllerCameraTestGetControlGroupDisplaySlot(slot)
 end
 
 function ControllerCameraTestShowControlGroupOverlay(seconds)
-	ControllerCameraTestControlGroups.visibleUntil = debugEventTime + (seconds or 1.5)
+	local duration = seconds or 1.5
+	local shared = WG and WG.ControllerUISettings
+	local component = shared and type(shared.GetComponent) == "function" and shared.GetComponent("hotSlots") or nil
+	if component and component.autoCollapse then duration = math.min(duration, tonumber(component.autoCollapseDelay) or 2.5) end
+	ControllerCameraTestControlGroups.visibleUntil = debugEventTime + duration
 end
 
 function ControllerCameraTestPruneDeadUnitsFromControlGroup(slot)
@@ -12399,7 +12403,7 @@ function widget:MousePress(x, y, button)
 	if button ~= 1 then
 		return
 	end
-	if not ControllerCameraTestSettings.debugPanelVisible then
+	if not ControllerCameraTestSettings.debugPanelVisible or not ControllerCameraTestControllerUIVisible("debug", false) then
 		return
 	end
 
@@ -13092,68 +13096,105 @@ function ControllerCameraTestDrawControlGroupOverlay()
 
 	local shared = WG and WG.ControllerUISettings
 	local component = shared and type(shared.GetComponent) == "function" and shared.GetComponent("hotSlots") or nil
-	component = component or { slotSize = 42, slotGap = 5, slotCount = 10, showLabel = true, showCounts = true,
-		showAuto = true, backgroundOpacity = 0.72, iconScale = 1 }
+	local backgroundColor = shared and type(shared.GetColor) == "function" and shared.GetColor("background", 1, "hotSlots") or { 0, 0, 0, 1 }
+	local accentColor = shared and type(shared.GetColor) == "function" and shared.GetColor("accent", 1, "hotSlots") or { 0.36, 0.68, 1, 1 }
+	local foregroundColor = shared and type(shared.GetColor) == "function" and shared.GetColor("foreground", 1, "hotSlots") or { 0.92, 0.96, 1, 1 }
+	component = component or { slotSize = 42, slotWidth = 42, slotHeight = 42, slotGap = 5, slotCount = 10,
+		orientation = "Horizontal", rows = 1, panelPadding = 12, showLabel = true, headerLabel = "Controller Groups",
+		showStatus = true, showCounts = true, showAuto = true, showRole = false, hideEmpty = false,
+		selectedBorderThickness = 2.5, emptyOpacity = 0.74, backgroundOpacity = 0.72, iconScale = 1 }
 	local slotCount = math.max(1, math.min(10, math.floor(tonumber(component.slotCount) or 10)))
-	local baseSlotSize = tonumber(component.slotSize) or 42
+	local baseSlotWidth = tonumber(component.slotWidth) or tonumber(component.slotSize) or 42
+	local baseSlotHeight = tonumber(component.slotHeight) or tonumber(component.slotSize) or 42
 	local baseGap = tonumber(component.slotGap) or 5
-	local baseWidth = baseSlotSize * slotCount + baseGap * (slotCount - 1) + 24
-	local baseHeight = baseSlotSize + (component.showLabel and 34 or 18)
+	local padding = tonumber(component.panelPadding) or 12
+	local orientation = tostring(component.orientation or "Horizontal")
+	local rowCount = orientation == "Vertical" and slotCount or orientation == "Grid" and math.max(1, math.min(slotCount, math.floor(tonumber(component.rows) or 2))) or 1
+	local columnCount = math.ceil(slotCount / rowCount)
+	local headerHeight, statusHeight = component.showLabel and 24 or 0, component.showStatus and 20 or 0
+	local baseWidth = padding * 2 + baseSlotWidth * columnCount + baseGap * math.max(0, columnCount - 1)
+	local baseHeight = padding * 2 + baseSlotHeight * rowCount + baseGap * math.max(0, rowCount - 1) + headerHeight + statusHeight
 	local bounds = ControllerCameraTestGetControllerUIBounds("hotSlots", baseWidth, baseHeight)
 	local scale = bounds and bounds.scale or ControllerCameraTestGetControllerUIScale("hotSlots", false)
-	local slotSize, gap = baseSlotSize * scale, baseGap * scale
+	local slotWidth, slotHeight, gap = baseSlotWidth * scale, baseSlotHeight * scale, baseGap * scale
 	local stripWidth, stripHeight = baseWidth * scale, baseHeight * scale
 	local left = bounds and bounds.x1 or math.max(12, ((viewSizeX > 0 and viewSizeX or 1280) - stripWidth) * 0.5)
 	local bottom = bounds and bounds.y1 or 86
 	local top = bottom + stripHeight
 	local opacity = ControllerCameraTestGetControllerUIOpacity("hotSlots")
+	local animationDuration = math.max(0, tonumber(component.animationDuration) or 0)
+	if animationDuration > 0 and not ControllerCameraTestActionDown("controlGroupModifier") then
+		opacity = opacity * math.max(0, math.min(1, ((groups.visibleUntil or 0) - debugEventTime) / animationDuration))
+	end
 	local fontScale = ControllerCameraTestGetControllerUIFontScale("hotSlots")
 	local iconScale = math.max(0.5, math.min(2, tonumber(component.iconScale) or 1))
 	local activeSlot = ControllerCameraTestNormalizeControlGroupSlot(groups.activeSlot or 1)
-	local startSlot = math.max(1, math.min(11 - slotCount, activeSlot - math.floor(slotCount * 0.5)))
+	local availableSlots = {}
+	for slot = 1, 10 do if not component.hideEmpty or groups.slots[slot] or slot == activeSlot then availableSlots[#availableSlots + 1] = slot end end
+	local activeIndex = 1
+	for index, slot in ipairs(availableSlots) do if slot == activeSlot then activeIndex = index; break end end
+	local startIndex = 1
+	if component.scrollBehavior ~= "Fixed" then startIndex = math.max(1, math.min(math.max(1, #availableSlots - slotCount + 1), activeIndex - math.floor(slotCount * 0.5))) end
+	local displaySlots = {}
+	for index = 0, slotCount - 1 do
+		local sourceIndex = startIndex + index
+		if component.scrollBehavior == "Wrap" and #availableSlots > 0 then sourceIndex = ((sourceIndex - 1) % #availableSlots) + 1 end
+		if availableSlots[sourceIndex] then displaySlots[#displaySlots + 1] = availableSlots[sourceIndex] end
+	end
 
-	gl.Color(0, 0, 0, (tonumber(component.backgroundOpacity) or 0.72) * opacity)
+	gl.Color(backgroundColor[1], backgroundColor[2], backgroundColor[3], (tonumber(component.backgroundOpacity) or 0.72) * opacity)
 	gl.Rect(left, bottom, left + stripWidth, top)
-	gl.Color(0.36, 0.68, 1, 0.65 * opacity); gl.LineWidth(1.5)
+	gl.Color(accentColor[1], accentColor[2], accentColor[3], 0.65 * opacity); gl.LineWidth(1.5)
 	gl.BeginEnd(GL.LINE_LOOP, function()
 		gl.Vertex(left, bottom); gl.Vertex(left + stripWidth, bottom); gl.Vertex(left + stripWidth, top); gl.Vertex(left, top)
 	end)
 
 	if component.showLabel then
-		gl.Color(0.82, 0.92, 1, opacity)
-		gl.Text("Controller Groups - Up/Down slot, Left recall/hold assign, Right assign, L3 clear",
-			left + 12 * scale, top - 18 * scale, 11 * fontScale, "o")
+		gl.Color(foregroundColor[1], foregroundColor[2], foregroundColor[3], opacity)
+		gl.Text(tostring(component.headerLabel or "Controller Groups"), left + padding * scale, top - 17 * scale, 11 * fontScale, "o")
 	end
 
-	for visibleIndex = 1, slotCount do
-		local slot = startSlot + visibleIndex - 1
-		local x1 = left + 12 * scale + (visibleIndex - 1) * (slotSize + gap)
-		local y1 = bottom + 8 * scale
-		local x2, y2 = x1 + slotSize, y1 + slotSize
+	for visibleIndex, slot in ipairs(displaySlots) do
+		local gridIndex = visibleIndex - 1
+		local column = gridIndex % columnCount
+		local row = math.floor(gridIndex / columnCount)
+		local x1 = left + padding * scale + column * (slotWidth + gap)
+		local y1 = bottom + (padding + statusHeight) * scale + (rowCount - row - 1) * (slotHeight + gap)
+		local x2, y2 = x1 + slotWidth, y1 + slotHeight
 		local entry = groups.slots[slot]
 		local isActive = slot == activeSlot
 		local isRecent = tostring(groups.lastSlot) == ControllerCameraTestGetControlGroupDisplaySlot(slot)
 		if isActive then gl.Color(0.18, 0.42, 0.78, 0.88 * opacity)
 		elseif entry then gl.Color(0.10, 0.18, 0.24, 0.82 * opacity)
-		else gl.Color(0.05, 0.07, 0.09, 0.74 * opacity) end
+		else gl.Color(0.05, 0.07, 0.09, (tonumber(component.emptyOpacity) or 0.74) * opacity) end
 		gl.Rect(x1, y1, x2, y2)
 		if entry and entry.unitDefID then
-			local inset = math.max(3 * scale, (slotSize - slotSize * math.min(0.92, iconScale * 0.72)) * 0.5)
+			local shortSide = math.min(slotWidth, slotHeight)
+			local inset = math.max(3 * scale, (shortSide - shortSide * math.min(0.92, iconScale * 0.72)) * 0.5)
 			gl.Texture("#" .. tostring(entry.unitDefID)); gl.Color(1, 1, 1, (isActive and 0.95 or 0.75) * opacity)
 			gl.TexRect(x1 + inset, y1 + inset, x2 - inset, y2 - inset); gl.Texture(false)
 		end
 		gl.Color(isActive and 1 or 0.55, isActive and 0.92 or 0.72, isActive and 0.35 or 0.82, opacity)
-		gl.LineWidth((isActive or isRecent) and 2.5 or 1)
+		gl.LineWidth((isActive or isRecent) and (tonumber(component.selectedBorderThickness) or 2.5) or 1)
 		gl.BeginEnd(GL.LINE_LOOP, function() gl.Vertex(x1, y1); gl.Vertex(x2, y1); gl.Vertex(x2, y2); gl.Vertex(x1, y2) end)
 		gl.Color(1, 1, 1, opacity); gl.Text(ControllerCameraTestGetControlGroupDisplaySlot(slot), x1 + 4 * scale, y2 - 13 * scale, 10 * fontScale, "o")
 		if component.showCounts and entry and (entry.count or 0) > 0 then
 			gl.Color(1, 0.92, 0.42, opacity); gl.Text("x" .. tostring(entry.count), x2 - 4 * scale, y1 + 3 * scale, 9 * fontScale, "ro")
 			if component.showAuto and entry.autoAddUnitDefID then gl.Color(0.52, 1, 0.66, 0.95 * opacity); gl.Text("AUTO", x1 + 4 * scale, y1 + 3 * scale, 7 * fontScale, "o") end
 		end
+		if component.showRole and entry then
+			gl.Color(0.76, 0.9, 1, 0.9 * opacity)
+			local role = tostring(entry.typeName or "assigned")
+			if #role > 12 then role = string.sub(role, 1, 11) .. "." end
+			gl.Text(role, (x1 + x2) * 0.5, y1 + 3 * scale, 7 * fontScale, "oc")
+		end
 	end
 
-	gl.Color(0.92, 0.96, 1, opacity)
-	gl.Text("Group " .. ControllerCameraTestGetControlGroupDisplaySlot(activeSlot) .. ": " .. tostring(groups.lastAction), left + 12 * scale, bottom - 16 * scale, 11 * fontScale, "o")
+	if component.showStatus then
+		gl.Color(foregroundColor[1], foregroundColor[2], foregroundColor[3], opacity)
+		gl.Text("Group " .. ControllerCameraTestGetControlGroupDisplaySlot(activeSlot) .. ": " .. tostring(groups.lastAction),
+			left + padding * scale, bottom + 5 * scale, 10 * fontScale, "o")
+	end
 	gl.Texture(false); gl.LineWidth(1); gl.Color(1, 1, 1, 1)
 end
 
@@ -13761,16 +13802,20 @@ end
 function ControllerCameraTestDrawHelpOverlay()
 	local screenWidth = viewSizeX > 0 and viewSizeX or 1280
 	local screenHeight = viewSizeY > 0 and viewSizeY or 720
-	local width = math.min(760, math.max(300, screenWidth - 40))
-	local height = math.min(430, math.max(300, screenHeight - 60))
-	local left = math.max(20, (screenWidth - width) * 0.5)
-	local top = math.min(screenHeight - 20, height + 20)
+	local scale = ControllerCameraTestGetControllerUIScale("instructional", false)
+	local fontScale = ControllerCameraTestGetControllerUIFontScale("instructional")
+	local opacity = ControllerCameraTestGetControllerUIOpacity("instructional")
+	local width = math.min(screenWidth - 40, math.min(760, math.max(300, screenWidth - 40)) * scale)
+	local height = math.min(screenHeight - 40, math.min(430, math.max(300, screenHeight - 60)) * scale)
+	local cx, cy = ControllerCameraTestGetControllerUIPosition("instructional", screenWidth * 0.5, screenHeight * 0.5)
+	local left = math.max(20, math.min(screenWidth - width - 20, cx - width * 0.5))
+	local top = math.max(height + 20, math.min(screenHeight - 20, cy + height * 0.5))
 	local bottom = top - height
 	local right = left + width
-	local x = left + 18
-	local y = top - 24
-	local lineHeight = 17
-	local maxChars = math.max(28, math.floor((width - 36) / 7.5))
+	local x = left + 18 * scale
+	local y = top - 24 * scale
+	local lineHeight = 17 * fontScale
+	local maxChars = math.max(28, math.floor((width - 36 * scale) / math.max(1, 7.5 * fontScale)))
 	local lines = {
 		"Controller Camera Test Help",
 		"Camera/Move: LS pan | RS X rotate | RS Y zoom | LB+RS Y pitch | LT: Camera speed modifier",
@@ -13803,21 +13848,21 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Tuning Selection: " .. ControllerCameraTestCurrentSettingLabel(),
 	}
 
-	gl.Color(0, 0, 0, 0.86)
+	gl.Color(0, 0, 0, 0.86 * opacity)
 	gl.Rect(left, bottom, right, top)
-	gl.Color(0.12, 0.18, 0.23, 0.96)
-	gl.Rect(left, top - 34, right, top)
-	gl.Color(0.72, 0.88, 1, 0.9)
-	gl.Rect(left, top - 34, right, top - 33)
-	gl.Color(1, 1, 1, 1)
+	gl.Color(0.12, 0.18, 0.23, 0.96 * opacity)
+	gl.Rect(left, top - 34 * scale, right, top)
+	gl.Color(0.72, 0.88, 1, 0.9 * opacity)
+	gl.Rect(left, top - 34 * scale, right, top - 33 * scale)
+	gl.Color(1, 1, 1, opacity)
 
 	for i, line in ipairs(lines) do
-		local size = (i == 1) and 18 or 14
+		local size = ((i == 1) and 18 or 14) * fontScale
 		local colorIsHeader = i == 1
 		if colorIsHeader then
-			gl.Color(0.72, 0.9, 1, 1)
+			gl.Color(0.72, 0.9, 1, opacity)
 		else
-			gl.Color(1, 1, 1, 0.96)
+			gl.Color(1, 1, 1, 0.96 * opacity)
 		end
 		local remaining = line
 		local first = true

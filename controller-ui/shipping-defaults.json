@@ -3,6 +3,7 @@
   "schemaVersion": 3,
   "defaultsVersion": "0.6.0-1",
   "generatedAt": "2026-07-20T00:00:00Z",
+  "compatibleModVersion": "0.6.0",
   "settings": {
     "global": {
       "enabled": true,
@@ -28,7 +29,13 @@
       "mutedB": 0.6,
       "dangerR": 0.92,
       "dangerG": 0.28,
-      "dangerB": 0.24
+      "dangerB": 0.24,
+      "advancedColorEditor": false,
+      "colorTarget": "Accent",
+      "colorHex": "#57D1EB",
+      "colorHue": 190,
+      "colorSaturation": 0.63,
+      "colorValue": 0.92
     },
     "authoring": {
       "snapEnabled": true,
@@ -41,8 +48,22 @@
       "shortcutUndo": "Ctrl+Z",
       "shortcutRedo": "Ctrl+Y",
       "shortcutSave": "Ctrl+S",
+      "shortcutDraft": "Ctrl+Shift+S",
+      "shortcutPublish": "Ctrl+Alt+S",
       "shortcutSearch": "Ctrl+F",
       "shortcutClose": "Escape",
+      "shortcutNext": "Tab",
+      "shortcutPrevious": "Shift+Tab",
+      "shortcutFine": "Ctrl",
+      "shortcutCoarse": "Shift",
+      "actionTarget": "select",
+      "actionVisible": true,
+      "actionCategory": "Selection",
+      "actionOrder": 100,
+      "actionShortLabel": "",
+      "categoryTarget": "Selection",
+      "categoryVisible": true,
+      "categorySortOrder": 10,
       "developerAuthoring": false
     },
     "components": {
@@ -67,8 +88,26 @@
         "compact": false,
         "anchor": "bottomleft",
         "mode": "Contextual",
+        "presentation": "Text Chip + Action",
         "overflow": "Wrap",
         "showTapHold": true,
+        "showChip": true,
+        "showActionText": true,
+        "showRowBackground": false,
+        "showCategoryHeaders": false,
+        "showContextHeader": false,
+        "showSeparators": false,
+        "shadowEnabled": false,
+        "glowEnabled": false,
+        "borderThickness": 1,
+        "wrapLines": 2,
+        "chordLayout": "Horizontal",
+        "fontMinScale": 0.62,
+        "priorityHiding": true,
+        "marqueeEnabled": false,
+        "marqueeMode": "Ping Pong",
+        "marqueeSpeed": 7,
+        "marqueeDelay": 1.2,
         "maxItems": 14,
         "expanded": false
       },
@@ -102,13 +141,29 @@
         "fontScale": 1.0,
         "iconScale": 1.0,
         "slotSize": 42,
+        "slotWidth": 42,
+        "slotHeight": 42,
         "slotGap": 5,
         "slotCount": 10,
+        "orientation": "Horizontal",
+        "rows": 1,
+        "panelPadding": 12,
         "showLabel": true,
+        "headerLabel": "Controller Groups",
+        "showStatus": true,
         "showCounts": true,
         "showAuto": true,
+        "showRole": false,
+        "hideEmpty": false,
+        "selectedBorderThickness": 2.5,
+        "emptyOpacity": 0.74,
         "backgroundOpacity": 0.72,
-        "anchor": "bottomcenter"
+        "autoCollapse": false,
+        "autoCollapseDelay": 2.5,
+        "animationDuration": 0.18,
+        "scrollBehavior": "Follow Active",
+        "anchor": "bottomcenter",
+        "themeOverride": "Global"
       },
       "selectedStatus": {
         "enabled": true,
@@ -125,6 +180,7 @@
       "queueStatus": { "enabled": true, "x": 0.5, "y": 0.537, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "anchor": "center" },
       "placementStatus": { "enabled": true, "x": 0.5, "y": 0.405, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "anchor": "center" },
       "companionStatus": { "enabled": true, "x": 0.5, "y": 0.73, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "anchor": "center" },
+      "debug": { "enabled": true },
       "editorLauncher": {
         "enabled": true,
         "x": 0.79,
@@ -134,11 +190,63 @@
         "fontScale": 1.0,
         "width": 0.0604166667,
         "height": 0.0259259259,
+        "padding": 7,
         "backgroundOpacity": 0.88,
         "anchor": "bottomleft"
       },
       "editor": { "enabled": true, "x": 0.55, "y": 0.14, "width": 0.42, "height": 0.76, "scale": 1.0, "opacity": 1.0 }
     }
+  },
+  "hintProfile": {
+    "categories": [
+      { "id": "Selection", "label": "Selection", "order": 10, "visible": true },
+      { "id": "Commands", "label": "Commands", "order": 20, "visible": true },
+      { "id": "Camera", "label": "Camera", "order": 30, "visible": true },
+      { "id": "Building", "label": "Building", "order": 40, "visible": true },
+      { "id": "Placement", "label": "Placement", "order": 50, "visible": true },
+      { "id": "Factory", "label": "Factory", "order": 60, "visible": true },
+      { "id": "Tactical", "label": "Tactical", "order": 70, "visible": true },
+      { "id": "Radials", "label": "Radials", "order": 80, "visible": true },
+      { "id": "Groups / Hot Slots", "label": "Groups / Hot Slots", "order": 90, "visible": true },
+      { "id": "Mouse Mode", "label": "Mouse Mode", "order": 100, "visible": true },
+      { "id": "Pregame", "label": "Pregame", "order": 110, "visible": true },
+      { "id": "Editor", "label": "Editor", "order": 120, "visible": true },
+      { "id": "System", "label": "System", "order": 130, "visible": true },
+      { "id": "Advanced", "label": "Advanced", "order": 140, "visible": true }
+    ],
+    "actionOrdering": [
+      "select", "cancel", "smartAction", "buildRadial", "commandLayer", "insertNextCommandModifier",
+      "appendQueueModifier", "controlGroupModifier", "pitchModifier", "removeQueuedCommand",
+      "removeLastQueuedCommand", "radialSelect", "radialCancel", "radialQuick", "radialClose",
+      "radialPrevPage", "radialNextPage", "place", "placeStay", "cancelPlacement", "rotateBuildingLeft",
+      "rotateBuildingRight", "spacingUp", "spacingDown", "patternPrev", "patternNext", "tacticalSelect",
+      "tacticalCancel", "tacticalClose", "commandUp", "commandDown", "commandLeft", "commandRight",
+      "idlePrev", "idleNext", "groupSlotUp", "groupSlotDown", "groupRecallOrAssign", "groupAssign",
+      "groupClear", "selectCommander"
+    ],
+    "actionCategoryOverrides": {},
+    "hiddenActions": [],
+    "defaultShortLabels": {
+      "selectCommander": "Commander",
+      "groupRecallOrAssign": "Recall group",
+      "insertNextCommandModifier": "Insert next",
+      "removeQueuedCommand": "Remove queue item",
+      "removeLastQueuedCommand": "Remove last queued"
+    }
+  },
+  "themes": {
+    "BAR Default": { "kind": "appearance", "background": "#05080C", "foreground": "#F0FAFF", "accent": "#4DA8FF" },
+    "Minimal": { "kind": "appearance", "background": "#030405", "foreground": "#EBF5FA", "accent": "#7AC2DB" },
+    "Compact": { "kind": "appearance", "background": "#05070A", "foreground": "#F0FAFF", "accent": "#57D1EB" },
+    "Large Accessibility": { "kind": "appearance", "background": "#000000", "foreground": "#FFFFFF", "accent": "#FFD11F" },
+    "Transparent": { "kind": "appearance", "background": "#030507", "foreground": "#F5FAFF", "accent": "#5CD1F0" },
+    "High Contrast": { "kind": "appearance", "background": "#000000", "foreground": "#FFFFFF", "accent": "#FFD11F" },
+    "Custom": { "kind": "appearance" }
+  },
+  "componentPresets": {
+    "Minimal Hints": { "component": "hints", "favorite": true, "shipping": true, "settings": { "presentation": "Action Text Only", "compact": true, "backgroundOpacity": 0.34 } },
+    "Large Radials": { "component": "radials", "favorite": false, "shipping": true, "settings": { "scale": 1.25, "fontScale": 1.2, "iconScale": 1.15 } },
+    "Compact Hot Slots": { "component": "hotSlots", "favorite": true, "shipping": true, "settings": { "slotSize": 34, "slotWidth": 34, "slotHeight": 34, "showLabel": true, "showStatus": false } }
   },
   "enforcedSettings": {},
   "enforcedPaths": []

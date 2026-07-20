@@ -15,6 +15,39 @@ internal static class Program
     private const string DefaultsName = "shipping-defaults.json";
     private const string ManifestName = "shipping-defaults-manifest.json";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly object RequestLock = new();
+    private static readonly HashSet<string> ProcessedRequestIds = new(StringComparer.Ordinal);
+    private static string? LastPublishedCommit;
+    private static readonly HashSet<string> KnownComponents = new(StringComparer.Ordinal)
+    {
+        "hints", "bindingsButton", "radials", "buildRadial", "tacticalRadial", "selectionRadial", "factoryRadial",
+        "pregame", "reticle", "notifications", "instructional", "hotSlots", "selectedStatus", "queueStatus",
+        "placementStatus", "companionStatus", "debug", "editorLauncher", "editor",
+    };
+    private static readonly HashSet<string> KnownActions = new(StringComparer.Ordinal)
+    {
+        "select", "cancel", "smartAction", "buildRadial", "commandLayer", "insertNextCommandModifier",
+        "appendQueueModifier", "controlGroupModifier", "pitchModifier", "removeQueuedCommand",
+        "removeLastQueuedCommand", "radialSelect", "radialCancel", "radialQuick", "radialClose",
+        "radialPrevPage", "radialNextPage", "place", "placeStay", "cancelPlacement", "rotateBuildingLeft",
+        "rotateBuildingRight", "spacingUp", "spacingDown", "patternPrev", "patternNext", "tacticalSelect",
+        "tacticalCancel", "tacticalClose", "commandUp", "commandDown", "commandLeft", "commandRight",
+        "idlePrev", "idleNext", "groupSlotUp", "groupSlotDown", "groupRecallOrAssign", "groupAssign",
+        "groupClear", "selectCommander",
+    };
+    private static readonly HashSet<string> KnownCategories = new(StringComparer.Ordinal)
+    {
+        "Selection", "Commands", "Camera", "Building", "Placement", "Factory", "Tactical", "Radials",
+        "Groups / Hot Slots", "Mouse Mode", "Pregame", "Editor", "System", "Advanced",
+    };
+    private static readonly Dictionary<string, (double Minimum, double Maximum)> NumericRanges = new(StringComparer.Ordinal)
+    {
+        ["x"] = (0, 1), ["y"] = (0, 1), ["scale"] = (0.5, 2), ["opacity"] = (0, 1),
+        ["fontScale"] = (0.5, 2), ["iconScale"] = (0.5, 2), ["backgroundOpacity"] = (0, 1),
+        ["textOpacity"] = (0, 1), ["borderOpacity"] = (0, 1), ["slotCount"] = (1, 10),
+        ["slotSize"] = (24, 84), ["slotWidth"] = (24, 120), ["slotHeight"] = (24, 100),
+        ["rows"] = (1, 5), ["wrapLines"] = (2, 8), ["fontMinScale"] = (0.4, 1),
+    };
 
     private static int Main(string[] args)
     {
@@ -64,6 +97,7 @@ internal static class Program
         JsonElement draft = draftDocument.RootElement;
         RequireString(draft, "kind", "bar-controller-ui-defaults");
         RequireSchema(draft);
+        ValidateDefaultsStructure(draft);
         int schemaVersion = draft.GetProperty("schemaVersion").GetInt32();
         Directory.CreateDirectory(options.OutputDirectory);
         string defaultsPath = Path.Combine(options.OutputDirectory, DefaultsName);
@@ -89,12 +123,17 @@ internal static class Program
             ["kind"] = "bar-controller-ui-defaults-manifest",
             ["manifestVersion"] = 1,
             ["schemaVersion"] = schemaVersion,
+            ["revision"] = ParseRevision(version),
             ["defaultsVersion"] = version,
             ["defaultsFile"] = DefaultsName,
             ["sha256"] = sha,
             ["generatedAt"] = DateTimeOffset.UtcNow.ToString("O"),
+            ["publishedAt"] = DateTimeOffset.UtcNow.ToString("O"),
             ["minimumCompanionVersion"] = options.MinimumCompanionVersion ?? "0.6.0",
+            ["minimumModVersion"] = "0.6.0",
             ["sourceBranch"] = options.Branch,
+            ["sourceCommit"] = "pending-publish",
+            ["changeSummary"] = "Controller UI defaults " + version,
             ["releaseChannel"] = options.Channel ?? "stable",
         };
         string manifestPath = Path.Combine(options.OutputDirectory, ManifestName);
@@ -130,7 +169,9 @@ internal static class Program
         string outbox = Path.GetFullPath(options.OutboxDirectory);
         Directory.CreateDirectory(outbox);
         Console.WriteLine("[publisher] Watching " + outbox);
-        Console.WriteLine("[publisher] Watch mode validates drafts only. It never publishes.");
+        Console.WriteLine(options.ArmExplicitPublish
+            ? "[publisher] Explicit publish-request processing is ARMED; ordinary drafts and saves are ignored."
+            : "[publisher] Watch mode validates drafts only. It never publishes unless --arm-explicit-publish is supplied.");
         string draftName = Path.GetFileName(options.DraftPath ?? "shipping-defaults.draft.json");
         using var watcher = new FileSystemWatcher(outbox, draftName)
         {
@@ -139,9 +180,104 @@ internal static class Program
         };
         watcher.Changed += (_, eventArgs) => ValidateDraftWithRetry(eventArgs.FullPath);
         watcher.Created += (_, eventArgs) => ValidateDraftWithRetry(eventArgs.FullPath);
+        FileSystemWatcher? requestWatcher = null;
+        if (options.ArmExplicitPublish)
+        {
+            requestWatcher = new FileSystemWatcher(outbox, "publish-request.json")
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
+                EnableRaisingEvents = true,
+            };
+            requestWatcher.Changed += (_, eventArgs) => ProcessExplicitPublishRequest(options, eventArgs.FullPath);
+            requestWatcher.Created += (_, eventArgs) => ProcessExplicitPublishRequest(options, eventArgs.FullPath);
+        }
         Console.CancelKeyPress += (_, eventArgs) => { eventArgs.Cancel = true; Environment.Exit(0); };
         Thread.Sleep(Timeout.Infinite);
+        requestWatcher?.Dispose();
         return 0;
+    }
+
+    private static void ProcessExplicitPublishRequest(Options watcherOptions, string requestPath)
+    {
+        string requestId = "unknown";
+        try
+        {
+            Thread.Sleep(180);
+            using JsonDocument requestDocument = ParseDocument(requestPath);
+            JsonElement request = requestDocument.RootElement;
+            RequireString(request, "kind", "bar-controller-ui-publish-request");
+            if (!request.TryGetProperty("explicit", out JsonElement explicitElement) || explicitElement.ValueKind != JsonValueKind.True)
+            {
+                throw new InvalidDataException("Publish request is not explicitly approved.");
+            }
+            requestId = RequireString(request, "requestId");
+            lock (RequestLock)
+            {
+                if (!ProcessedRequestIds.Add(requestId)) return;
+            }
+            string requestedVersion = RequireString(request, "requestedVersion");
+            string repository = RequireString(request, "repository");
+            string branch = RequireString(request, "branch");
+            if (!string.Equals(repository, watcherOptions.Repository, StringComparison.Ordinal)
+                || !string.Equals(branch, watcherOptions.Branch, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("Publish request target differs from the armed watcher target.");
+            }
+            string draftName = Path.GetFileName(RequireString(request, "draftFile"));
+            string draftPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(requestPath))!, draftName);
+            using (JsonDocument draftDocument = ParseDocument(draftPath))
+            {
+                JsonElement draft = draftDocument.RootElement;
+                if (!draft.TryGetProperty("draftMetadata", out JsonElement metadata)
+                    || !string.Equals(RequireString(metadata, "authoringIntent"), "explicit", StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException("Automatic/recovery drafts cannot be published.");
+                }
+            }
+            string preparedDirectory = Path.Combine(Path.GetDirectoryName(draftPath)!, "prepared-" + requestId);
+            var prepareOptions = new Options
+            {
+                DraftPath = draftPath,
+                Version = requestedVersion,
+                OutputDirectory = preparedDirectory,
+                Branch = branch,
+            };
+            PrepareCommand(prepareOptions);
+            var publishOptions = new Options
+            {
+                DefaultsPath = Path.Combine(preparedDirectory, DefaultsName),
+                ManifestPath = Path.Combine(preparedDirectory, ManifestName),
+                Repository = repository,
+                Branch = branch,
+                ConfirmPublish = true,
+            };
+            PublishCommand(publishOptions);
+            WritePublishResult(requestPath, requestId, true, "Published " + requestedVersion + " at commit " + (LastPublishedCommit ?? "unknown") + ".");
+        }
+        catch (Exception exception)
+        {
+            lock (RequestLock) ProcessedRequestIds.Remove(requestId);
+            WritePublishResult(requestPath, requestId, false, exception.Message);
+            Console.Error.WriteLine("[publisher] Explicit request failed; request and draft retained: " + exception.Message);
+        }
+    }
+
+    private static void WritePublishResult(string requestPath, string requestId, bool success, string message)
+    {
+        try
+        {
+            string resultPath = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(requestPath))!, "publish-result.json");
+            var result = new Dictionary<string, object>
+            {
+                ["kind"] = "bar-controller-ui-publish-result",
+                ["requestId"] = requestId,
+                ["success"] = success,
+                ["message"] = message,
+                ["completedAt"] = DateTimeOffset.UtcNow.ToString("O"),
+            };
+            WriteAtomic(resultPath, JsonSerializer.Serialize(result, JsonOptions) + Environment.NewLine);
+        }
+        catch { }
     }
 
     private static int PublishCommand(Options options)
@@ -172,8 +308,9 @@ internal static class Program
                 return 0;
             }
             Run("git", new[] { "-C", tempRoot, "commit", "-m", $"controller-ui defaults {pair.Version}" });
+            LastPublishedCommit = RunCapture("git", new[] { "-C", tempRoot, "rev-parse", "HEAD" });
             Run("git", new[] { "-C", tempRoot, "push", "origin", $"HEAD:refs/heads/{options.Branch}" });
-            Console.WriteLine($"[publisher] Published defaults {pair.Version} to {options.Repository}:{options.Branch}.");
+            Console.WriteLine($"[publisher] Published defaults {pair.Version} at {LastPublishedCommit} to {options.Repository}:{options.Branch}.");
             return 0;
         }
         finally
@@ -204,12 +341,7 @@ internal static class Program
             throw new InvalidDataException("Defaults and manifest versions do not match.");
         }
         RequireString(manifest, "defaultsFile", DefaultsName);
-        if (!defaults.TryGetProperty("settings", out JsonElement settingsElement) || settingsElement.ValueKind != JsonValueKind.Object
-            || !defaults.TryGetProperty("enforcedSettings", out JsonElement enforcedElement) || enforcedElement.ValueKind != JsonValueKind.Object
-            || !defaults.TryGetProperty("enforcedPaths", out JsonElement enforcedPathsElement) || enforcedPathsElement.ValueKind != JsonValueKind.Array)
-        {
-            throw new InvalidDataException("Defaults document is missing settings/enforcement structures.");
-        }
+        ValidateDefaultsStructure(defaults);
         string actual = ComputeSha256(defaultsPath);
         string expected = RequireString(manifest, "sha256").ToLowerInvariant();
         if (!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(actual), Encoding.ASCII.GetBytes(expected)))
@@ -217,6 +349,141 @@ internal static class Program
             throw new InvalidDataException($"Defaults SHA-256 mismatch; expected {expected}, got {actual}.");
         }
         return new ValidatedPair(defaultsPath, manifestPath, version, actual);
+    }
+
+    private static void ValidateDefaultsStructure(JsonElement defaults)
+    {
+        if (!defaults.TryGetProperty("settings", out JsonElement settingsElement) || settingsElement.ValueKind != JsonValueKind.Object
+            || !defaults.TryGetProperty("enforcedSettings", out JsonElement enforcedElement) || enforcedElement.ValueKind != JsonValueKind.Object
+            || !defaults.TryGetProperty("enforcedPaths", out JsonElement enforcedPathsElement) || enforcedPathsElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidDataException("Defaults document is missing settings/enforcement structures.");
+        }
+        ValidateSettings(settingsElement);
+        ValidateHintProfile(defaults);
+        ValidateComponentPresets(defaults);
+        foreach (JsonElement pathElement in enforcedPathsElement.EnumerateArray())
+        {
+            string path = pathElement.ValueKind == JsonValueKind.String ? pathElement.GetString() ?? string.Empty : string.Empty;
+            string scope = path.Split('.').FirstOrDefault() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(path) || (!KnownComponents.Contains(scope) && scope != "global" && scope != "theme" && scope != "authoring"))
+            {
+                throw new InvalidDataException("Unknown enforced path: " + path);
+            }
+            if (string.Equals(path, "authoring.developerAuthoring", StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("Developer Authoring Mode cannot be remotely enforced.");
+            }
+        }
+    }
+
+    private static void ValidateSettings(JsonElement settings)
+    {
+        if (settings.TryGetProperty("authoring", out JsonElement authoring) && authoring.ValueKind == JsonValueKind.Object
+            && authoring.TryGetProperty("developerAuthoring", out JsonElement developerMode) && developerMode.ValueKind == JsonValueKind.True)
+        {
+            throw new InvalidDataException("Remote defaults cannot enable Developer Authoring Mode.");
+        }
+        if (!settings.TryGetProperty("components", out JsonElement components) || components.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException("settings.components must be an object.");
+        }
+        foreach (JsonProperty component in components.EnumerateObject())
+        {
+            if (!KnownComponents.Contains(component.Name)) throw new InvalidDataException("Unknown component ID: " + component.Name);
+            ValidateRanges(component.Value, "components." + component.Name);
+        }
+        ValidateRanges(settings, "settings");
+    }
+
+    private static void ValidateRanges(JsonElement element, string path)
+    {
+        if (element.ValueKind != JsonValueKind.Object) return;
+        foreach (JsonProperty property in element.EnumerateObject())
+        {
+            string childPath = path + "." + property.Name;
+            if (property.Value.ValueKind == JsonValueKind.Number && NumericRanges.TryGetValue(property.Name, out var range))
+            {
+                double value = property.Value.GetDouble();
+                if (double.IsNaN(value) || double.IsInfinity(value) || value < range.Minimum || value > range.Maximum)
+                {
+                    throw new InvalidDataException($"Value outside range at {childPath}: {value}.");
+                }
+            }
+            else if (property.Value.ValueKind == JsonValueKind.Object) ValidateRanges(property.Value, childPath);
+        }
+    }
+
+    private static void ValidateHintProfile(JsonElement defaults)
+    {
+        if (!defaults.TryGetProperty("hintProfile", out JsonElement profile) || profile.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException("hintProfile must be an object.");
+        }
+        if (!profile.TryGetProperty("categories", out JsonElement categories) || categories.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidDataException("hintProfile.categories must be an array.");
+        }
+        var seenCategories = new HashSet<string>(StringComparer.Ordinal);
+        foreach (JsonElement category in categories.EnumerateArray())
+        {
+            string id = RequireString(category, "id");
+            if (!KnownCategories.Contains(id) || !seenCategories.Add(id)) throw new InvalidDataException("Unknown or duplicate category ID: " + id);
+        }
+        ValidateActionArray(profile, "actionOrdering", allowMissing: false);
+        ValidateActionArray(profile, "hiddenActions", allowMissing: false);
+        ValidateActionMap(profile, "defaultShortLabels", validateCategoryValues: false);
+        ValidateActionMap(profile, "actionCategoryOverrides", validateCategoryValues: true);
+    }
+
+    private static void ValidateActionArray(JsonElement profile, string name, bool allowMissing)
+    {
+        if (!profile.TryGetProperty(name, out JsonElement values))
+        {
+            if (allowMissing) return;
+            throw new InvalidDataException("hintProfile." + name + " must be an array.");
+        }
+        if (values.ValueKind != JsonValueKind.Array) throw new InvalidDataException("hintProfile." + name + " must be an array.");
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (JsonElement value in values.EnumerateArray())
+        {
+            string id = value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
+            if (!KnownActions.Contains(id) || !seen.Add(id)) throw new InvalidDataException($"Unknown or duplicate action ID in {name}: {id}");
+        }
+    }
+
+    private static void ValidateActionMap(JsonElement profile, string name, bool validateCategoryValues)
+    {
+        if (!profile.TryGetProperty(name, out JsonElement values) || values.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException("hintProfile." + name + " must be an object.");
+        }
+        foreach (JsonProperty value in values.EnumerateObject())
+        {
+            if (!KnownActions.Contains(value.Name)) throw new InvalidDataException($"Unknown action ID in {name}: {value.Name}");
+            if (validateCategoryValues && (value.Value.ValueKind != JsonValueKind.String || !KnownCategories.Contains(value.Value.GetString() ?? "")))
+            {
+                throw new InvalidDataException($"Unknown category in {name} for {value.Name}.");
+            }
+        }
+    }
+
+    private static void ValidateComponentPresets(JsonElement defaults)
+    {
+        if (!defaults.TryGetProperty("componentPresets", out JsonElement presets) || presets.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException("componentPresets must be an object.");
+        }
+        foreach (JsonProperty preset in presets.EnumerateObject())
+        {
+            string component = RequireString(preset.Value, "component");
+            if (!KnownComponents.Contains(component)) throw new InvalidDataException("Unknown preset component ID: " + component);
+            if (!preset.Value.TryGetProperty("settings", out JsonElement settings) || settings.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidDataException("Preset settings must be an object: " + preset.Name);
+            }
+            ValidateRanges(settings, "componentPresets." + preset.Name);
+        }
     }
 
     private static void RequireSchema(JsonElement document)
@@ -256,6 +523,12 @@ internal static class Program
         return BitConverter.ToString(digest).Replace("-", string.Empty).ToLowerInvariant();
     }
 
+    private static int ParseRevision(string version)
+    {
+        string suffix = version.Split('-').LastOrDefault() ?? "";
+        return int.TryParse(suffix, out int revision) && revision > 0 ? revision : 1;
+    }
+
     private static void CopyPair(ValidatedPair pair, string destination)
     {
         File.Copy(pair.DefaultsPath, Path.Combine(destination, DefaultsName), overwrite: true);
@@ -278,6 +551,7 @@ internal static class Program
                 using JsonDocument draft = ParseDocument(path);
                 RequireString(draft.RootElement, "kind", "bar-controller-ui-defaults");
                 RequireSchema(draft.RootElement);
+                ValidateDefaultsStructure(draft.RootElement);
                 Console.WriteLine($"[publisher] Validated local draft at {DateTimeOffset.Now:T}; explicit prepare/publish still required.");
                 return;
             }
@@ -305,6 +579,20 @@ internal static class Program
         if (exitCode != 0) throw new InvalidOperationException($"{fileName} exited with code {exitCode}.");
     }
 
+    private static string RunCapture(string fileName, IEnumerable<string> arguments)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo(fileName) { UseShellExecute = false, RedirectStandardOutput = true },
+        };
+        foreach (string argument in arguments) process.StartInfo.ArgumentList.Add(argument);
+        process.Start();
+        string output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        if (process.ExitCode != 0) throw new InvalidOperationException($"{fileName} exited with code {process.ExitCode}.");
+        return output.Trim();
+    }
+
     private static void RemoveWorkingFilesExceptGit(string root)
     {
         foreach (string file in Directory.EnumerateFiles(root)) File.Delete(file);
@@ -322,7 +610,7 @@ internal static class Program
         Console.WriteLine("  validate [--defaults path] [--manifest path]");
         Console.WriteLine("  prepare --draft path --version X --output directory");
         Console.WriteLine("  dry-run --local-repository disposable-path");
-        Console.WriteLine("  watch [--outbox directory]  # validation only; never publishes");
+        Console.WriteLine("  watch [--outbox directory] [--arm-explicit-publish]  # publish requests require explicit arming");
         Console.WriteLine("  publish --confirm-publish [--repository owner/name] [--branch name]");
         Console.WriteLine("No token is accepted. Live publish uses the existing gh authenticated session.");
     }
@@ -331,19 +619,20 @@ internal static class Program
 
     private sealed class Options
     {
-        public string DefaultsPath { get; private set; } = Path.Combine("controller-ui", DefaultsName);
-        public string ManifestPath { get; private set; } = Path.Combine("controller-ui", ManifestName);
-        public string? DraftPath { get; private set; }
-        public string OutputDirectory { get; private set; } = Path.Combine("controller-ui", "outbox");
-        public string OutboxDirectory { get; private set; } = Path.Combine("LuaUI", "Config", "BARControllerSupport", "outbox");
-        public string Repository { get; private set; } = DefaultRepository;
-        public string Branch { get; private set; } = DefaultBranch;
-        public string? LocalRepository { get; private set; }
-        public string? Version { get; private set; }
-        public string? MinimumCompanionVersion { get; private set; }
-        public string? Channel { get; private set; }
-        public bool ConfirmPublish { get; private set; }
-        public bool AllowDraft { get; private set; }
+        public string DefaultsPath { get; set; } = Path.Combine("controller-ui", DefaultsName);
+        public string ManifestPath { get; set; } = Path.Combine("controller-ui", ManifestName);
+        public string? DraftPath { get; set; }
+        public string OutputDirectory { get; set; } = Path.Combine("controller-ui", "outbox");
+        public string OutboxDirectory { get; set; } = Path.Combine("LuaUI", "Config", "BARControllerSupport", "outbox");
+        public string Repository { get; set; } = DefaultRepository;
+        public string Branch { get; set; } = DefaultBranch;
+        public string? LocalRepository { get; set; }
+        public string? Version { get; set; }
+        public string? MinimumCompanionVersion { get; set; }
+        public string? Channel { get; set; }
+        public bool ConfirmPublish { get; set; }
+        public bool AllowDraft { get; set; }
+        public bool ArmExplicitPublish { get; set; }
 
         public static Options Parse(string[] args)
         {
@@ -367,6 +656,7 @@ internal static class Program
                     case "--channel": result.Channel = Next(); break;
                     case "--confirm-publish": result.ConfirmPublish = true; break;
                     case "--allow-draft": result.AllowDraft = true; break;
+                    case "--arm-explicit-publish": result.ArmExplicitPublish = true; break;
                     default: throw new ArgumentException("Unknown option: " + argument);
                 }
             }

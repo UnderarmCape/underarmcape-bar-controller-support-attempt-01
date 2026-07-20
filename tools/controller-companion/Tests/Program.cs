@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -30,7 +31,20 @@ internal static class Program
             string cachedDefaults = Path.Combine(cacheDirectory, "controller-ui-defaults.json");
             string cachedManifest = Path.Combine(cacheDirectory, "controller-ui-defaults-manifest.json");
             Assert(File.Exists(cachedDefaults) && File.Exists(cachedManifest), "valid pair cached");
+            byte[] originalCache = File.ReadAllBytes(cachedDefaults);
+
+            server.Mode = FixtureMode.Newer;
+            Assert(UpdateService.RunCommand(new[] { "defaults", "--bar-data", barData, "--timeout-ms", "2000" }) == 0, "newer defaults command");
+            string previousDefaults = Path.Combine(cacheDirectory, "controller-ui-defaults.previous.json");
+            string previousManifest = Path.Combine(cacheDirectory, "controller-ui-defaults-manifest.previous.json");
+            Assert(File.Exists(previousDefaults) && File.Exists(previousManifest), "previous known-good pair backed up");
+            Assert(originalCache.SequenceEqual(File.ReadAllBytes(previousDefaults)), "backup preserves prior defaults");
             byte[] stableCache = File.ReadAllBytes(cachedDefaults);
+            Assert(!stableCache.SequenceEqual(originalCache), "newer defaults installed");
+
+            server.Mode = FixtureMode.Valid;
+            Assert(UpdateService.RunCommand(new[] { "defaults", "--bar-data", barData, "--timeout-ms", "2000" }) == 0, "older remote does not downgrade cache");
+            Assert(stableCache.SequenceEqual(File.ReadAllBytes(cachedDefaults)), "newer cache preserved against downgrade");
 
             server.Mode = FixtureMode.MalformedManifest;
             Assert(UpdateService.RunCommand(new[] { "defaults", "--bar-data", barData, "--timeout-ms", "2000" }) == 0, "malformed JSON falls back");
@@ -39,6 +53,10 @@ internal static class Program
             server.Mode = FixtureMode.HashMismatch;
             Assert(UpdateService.RunCommand(new[] { "defaults", "--bar-data", barData, "--timeout-ms", "2000" }) == 0, "hash mismatch falls back");
             Assert(stableCache.SequenceEqual(File.ReadAllBytes(cachedDefaults)), "hash mismatch preserves cache");
+
+            server.Mode = FixtureMode.UnknownAction;
+            Assert(UpdateService.RunCommand(new[] { "defaults", "--bar-data", barData, "--timeout-ms", "2000" }) == 0, "unknown action ID falls back");
+            Assert(stableCache.SequenceEqual(File.ReadAllBytes(cachedDefaults)), "unknown action preserves cache");
 
             server.Mode = FixtureMode.Timeout;
             DateTime started = DateTime.UtcNow;
@@ -57,7 +75,7 @@ internal static class Program
             using JsonDocument reload = JsonDocument.Parse(File.ReadAllText(Path.Combine(cacheDirectory, "reload-request.json")));
             Assert(reload.RootElement.GetProperty("kind").GetString() == "bar-controller-ui-reload-request", "reload handoff format");
 
-            Console.WriteLine("Update/defaults tests passed: valid pair, malformed JSON, hash failure, timeout/offline cache, release report, reload handoff.");
+            Console.WriteLine("Update/defaults tests passed: valid/newer pair, known-good backup, downgrade prevention, malformed JSON, hash/ID failure, timeout/offline cache, release report, reload handoff.");
             return 0;
         }
         catch (Exception exception)
@@ -90,7 +108,7 @@ internal static class Program
         if (!condition) throw new InvalidOperationException("Assertion failed: " + label);
     }
 
-    private enum FixtureMode { Valid, MalformedManifest, HashMismatch, Timeout }
+    private enum FixtureMode { Valid, Newer, MalformedManifest, HashMismatch, UnknownAction, Timeout }
 
     private sealed class FixtureServer : IDisposable
     {
@@ -99,6 +117,10 @@ internal static class Program
         private readonly byte[] defaults;
         private readonly byte[] manifest;
         private readonly byte[] mismatchManifest;
+        private readonly byte[] newerDefaults;
+        private readonly byte[] newerManifest;
+        private readonly byte[] unknownActionDefaults;
+        private readonly byte[] unknownActionManifest;
         private readonly Task loop;
 
         public FixtureServer(byte[] defaults, byte[] manifest)
@@ -108,7 +130,22 @@ internal static class Program
             string manifestText = Encoding.UTF8.GetString(manifest);
             using JsonDocument parsed = JsonDocument.Parse(manifestText);
             string hash = parsed.RootElement.GetProperty("sha256").GetString() ?? throw new InvalidDataException("fixture hash missing");
-            mismatchManifest = Encoding.UTF8.GetBytes(manifestText.Replace(hash, new string('0', 64)));
+            mismatchManifest = Encoding.UTF8.GetBytes(manifestText
+                .Replace("\"defaultsVersion\": \"0.6.0-1\"", "\"defaultsVersion\": \"0.6.0-3\"")
+                .Replace(hash, new string('0', 64)));
+            newerDefaults = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(defaults).Replace("\"defaultsVersion\": \"0.6.0-1\"", "\"defaultsVersion\": \"0.6.0-2\""));
+            using SHA256 sha = SHA256.Create();
+            string newerHash = BitConverter.ToString(sha.ComputeHash(newerDefaults)).Replace("-", string.Empty).ToLowerInvariant();
+            newerManifest = Encoding.UTF8.GetBytes(manifestText
+                .Replace("\"defaultsVersion\": \"0.6.0-1\"", "\"defaultsVersion\": \"0.6.0-2\"")
+                .Replace(hash, newerHash));
+            unknownActionDefaults = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(defaults)
+                .Replace("\"defaultsVersion\": \"0.6.0-1\"", "\"defaultsVersion\": \"0.6.0-4\"")
+                .Replace("selectCommander", "notAControllerAction"));
+            string unknownActionHash = BitConverter.ToString(sha.ComputeHash(unknownActionDefaults)).Replace("-", string.Empty).ToLowerInvariant();
+            unknownActionManifest = Encoding.UTF8.GetBytes(manifestText
+                .Replace("\"defaultsVersion\": \"0.6.0-1\"", "\"defaultsVersion\": \"0.6.0-4\"")
+                .Replace(hash, unknownActionHash));
             int port = ReservePort();
             BaseUrl = $"http://127.0.0.1:{port}/";
             listener.Prefixes.Add(BaseUrl);
@@ -137,9 +174,13 @@ internal static class Program
                     if (path.EndsWith("shipping-defaults-manifest.json", StringComparison.Ordinal))
                     {
                         payload = Mode == FixtureMode.MalformedManifest ? Encoding.UTF8.GetBytes("{")
-                            : Mode == FixtureMode.HashMismatch ? mismatchManifest : manifest;
+                            : Mode == FixtureMode.HashMismatch ? mismatchManifest : Mode == FixtureMode.Newer ? newerManifest
+                            : Mode == FixtureMode.UnknownAction ? unknownActionManifest : manifest;
                     }
-                    else if (path.EndsWith("shipping-defaults.json", StringComparison.Ordinal)) payload = defaults;
+                    else if (path.EndsWith("shipping-defaults.json", StringComparison.Ordinal))
+                    {
+                        payload = Mode == FixtureMode.Newer ? newerDefaults : Mode == FixtureMode.UnknownAction ? unknownActionDefaults : defaults;
+                    }
                     else if (path.EndsWith("release", StringComparison.Ordinal))
                     {
                         payload = Encoding.UTF8.GetBytes("{\"tag_name\":\"v0.6.1\",\"assets\":[{\"name\":\"BAR_Controller_Support_v0.6.1_Widget_Companion.zip\",\"browser_download_url\":\"" + BaseUrl + "package.zip\",\"digest\":\"sha256:" + new string('a', 64) + "\"}]}");

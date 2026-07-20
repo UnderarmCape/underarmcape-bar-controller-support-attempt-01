@@ -21,6 +21,8 @@ internal static class UpdateService
     private const string DefaultsManifestFileName = "shipping-defaults-manifest.json";
     private const string CacheDefaultsFileName = "controller-ui-defaults.json";
     private const string CacheManifestFileName = "controller-ui-defaults-manifest.json";
+    private const string PreviousDefaultsFileName = "controller-ui-defaults.previous.json";
+    private const string PreviousManifestFileName = "controller-ui-defaults-manifest.previous.json";
     private const string StatusFileName = "update-status.json";
     private const string ReloadRequestFileName = "reload-request.json";
     private const int StartupTimeoutMilliseconds = 2500;
@@ -39,6 +41,27 @@ internal static class UpdateService
     private static readonly HashSet<string> Commands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "check", "defaults", "update", "status", "reload", "help",
+    };
+    private static readonly HashSet<string> KnownComponents = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "hints", "bindingsButton", "radials", "buildRadial", "tacticalRadial", "selectionRadial", "factoryRadial",
+        "pregame", "reticle", "notifications", "instructional", "hotSlots", "selectedStatus", "queueStatus",
+        "placementStatus", "companionStatus", "debug", "editorLauncher", "editor",
+    };
+    private static readonly HashSet<string> KnownActions = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "select", "cancel", "smartAction", "buildRadial", "commandLayer", "insertNextCommandModifier",
+        "appendQueueModifier", "controlGroupModifier", "pitchModifier", "removeQueuedCommand", "removeLastQueuedCommand",
+        "radialSelect", "radialCancel", "radialQuick", "radialClose", "radialPrevPage", "radialNextPage", "place",
+        "placeStay", "cancelPlacement", "rotateBuildingLeft", "rotateBuildingRight", "spacingUp", "spacingDown",
+        "patternPrev", "patternNext", "tacticalSelect", "tacticalCancel", "tacticalClose", "commandUp", "commandDown",
+        "commandLeft", "commandRight", "idlePrev", "idleNext", "groupSlotUp", "groupSlotDown", "groupRecallOrAssign",
+        "groupAssign", "groupClear", "selectCommander",
+    };
+    private static readonly HashSet<string> KnownCategories = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "Selection", "Commands", "Camera", "Building", "Placement", "Factory", "Tactical", "Radials",
+        "Groups / Hot Slots", "Mouse Mode", "Pregame", "Editor", "System", "Advanced",
     };
 
     public static bool IsCommand(string[] args) => args.Length > 0 && Commands.Contains(args[0]);
@@ -144,21 +167,33 @@ internal static class UpdateService
         Directory.CreateDirectory(cacheDirectory);
         string defaultsPath = Path.Combine(cacheDirectory, CacheDefaultsFileName);
         string manifestPath = Path.Combine(cacheDirectory, CacheManifestFileName);
+        byte[]? previousDefaults = null;
+        byte[]? previousManifest = null;
         if (File.Exists(defaultsPath) && File.Exists(manifestPath))
         {
             try
             {
-                DefaultsManifest local = JsonSerializer.Deserialize<DefaultsManifest>(File.ReadAllText(manifestPath), JsonOptions)
+                previousDefaults = File.ReadAllBytes(defaultsPath);
+                previousManifest = File.ReadAllBytes(manifestPath);
+                DefaultsManifest local = JsonSerializer.Deserialize<DefaultsManifest>(previousManifest, JsonOptions)
                     ?? throw new InvalidDataException("Cached defaults manifest is empty.");
-                if (local.DefaultsVersion == manifest.DefaultsVersion
-                    && FixedHashEquals(ComputeSha256(File.ReadAllBytes(defaultsPath)), manifest.Sha256))
+                ValidateManifest(local);
+                DefaultsDocument localDefaults = Deserialize<DefaultsDocument>(previousDefaults, "cached controller UI defaults");
+                bool localValid = localDefaults.Kind == "bar-controller-ui-defaults" && localDefaults.SchemaVersion == local.SchemaVersion
+                    && localDefaults.DefaultsVersion == local.DefaultsVersion && localDefaults.Settings.ValueKind == JsonValueKind.Object
+                    && FixedHashEquals(ComputeSha256(previousDefaults), local.Sha256);
+                if (localValid) ValidateDefaultsDocument(localDefaults);
+                if (!localValid) throw new InvalidDataException("Cached defaults pair is invalid.");
+                if (CompareDefaultsVersions(local.DefaultsVersion, manifest.DefaultsVersion) >= 0)
                 {
-                    return new DefaultsSyncResult(manifest.DefaultsVersion, "Cached controller UI defaults are current (" + manifest.DefaultsVersion + ").");
+                    return new DefaultsSyncResult(local.DefaultsVersion, "Cached controller UI defaults are current (" + local.DefaultsVersion + ").");
                 }
             }
             catch
             {
                 // A malformed or interrupted pair is replaced atomically below.
+                previousDefaults = null;
+                previousManifest = null;
             }
         }
 
@@ -177,9 +212,15 @@ internal static class UpdateService
         {
             throw new InvalidDataException("Defaults payload does not match its manifest.");
         }
+        ValidateDefaultsDocument(defaults);
+        if (previousDefaults != null && previousManifest != null)
+        {
+            WriteAtomic(Path.Combine(cacheDirectory, PreviousDefaultsFileName), previousDefaults);
+            WriteAtomic(Path.Combine(cacheDirectory, PreviousManifestFileName), previousManifest);
+        }
         WriteAtomic(defaultsPath, defaultsBytes);
         WriteAtomic(manifestPath, manifestBytes); // manifest-last makes the pair visible only after the payload is durable
-        return new DefaultsSyncResult(manifest.DefaultsVersion, "Installed cached controller UI defaults " + manifest.DefaultsVersion + ".");
+        return new DefaultsSyncResult(manifest.DefaultsVersion, "Controller UI defaults updated: revision " + manifest.DefaultsVersion);
     }
 
     private static async Task<ReleaseInfo> GetLatestReleaseAsync(CommandOptions options)
@@ -365,9 +406,113 @@ internal static class UpdateService
         if (manifest.Kind != "bar-controller-ui-defaults-manifest" || manifest.ManifestVersion != 1
             || manifest.SchemaVersion < 1 || manifest.SchemaVersion > 3
             || manifest.DefaultsFile != DefaultsFileName || string.IsNullOrWhiteSpace(manifest.DefaultsVersion)
+            || (!string.IsNullOrWhiteSpace(manifest.MinimumCompanionVersion)
+                && CompareVersions(manifest.MinimumCompanionVersion, CurrentVersion) > 0)
             || !Regex.IsMatch(manifest.Sha256 ?? string.Empty, "^[a-fA-F0-9]{64}$"))
         {
             throw new InvalidDataException("Controller UI defaults manifest is invalid or unsupported.");
+        }
+    }
+
+    private static void ValidateDefaultsDocument(DefaultsDocument defaults)
+    {
+        if (defaults.Settings.TryGetProperty("authoring", out JsonElement authoring) && authoring.ValueKind == JsonValueKind.Object
+            && authoring.TryGetProperty("developerAuthoring", out JsonElement developerMode) && developerMode.ValueKind == JsonValueKind.True)
+        {
+            throw new InvalidDataException("Remote defaults cannot enable Developer Authoring Mode.");
+        }
+        if (!defaults.Settings.TryGetProperty("components", out JsonElement components) || components.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException("Controller UI defaults settings.components is missing.");
+        }
+        foreach (JsonProperty component in components.EnumerateObject())
+        {
+            if (!KnownComponents.Contains(component.Name)) throw new InvalidDataException("Unknown controller UI component ID: " + component.Name);
+            ValidateValueRanges(component.Value, "components." + component.Name);
+        }
+        if (defaults.HintProfile.ValueKind != JsonValueKind.Object
+            || !defaults.HintProfile.TryGetProperty("categories", out JsonElement categories) || categories.ValueKind != JsonValueKind.Array
+            || !defaults.HintProfile.TryGetProperty("actionOrdering", out JsonElement actionOrdering) || actionOrdering.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidDataException("Controller UI hint profile is missing.");
+        }
+        var categoryIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (JsonElement category in categories.EnumerateArray())
+        {
+            string id = category.TryGetProperty("id", out JsonElement idElement) && idElement.ValueKind == JsonValueKind.String
+                ? idElement.GetString() ?? string.Empty : string.Empty;
+            if (!KnownCategories.Contains(id) || !categoryIds.Add(id)) throw new InvalidDataException("Unknown or duplicate hint category ID: " + id);
+        }
+        ValidateActionArray(actionOrdering, "actionOrdering");
+        if (defaults.HintProfile.TryGetProperty("hiddenActions", out JsonElement hiddenActions)) ValidateActionArray(hiddenActions, "hiddenActions");
+        ValidateActionMap(defaults.HintProfile, "defaultShortLabels", categoryValues: false);
+        ValidateActionMap(defaults.HintProfile, "actionCategoryOverrides", categoryValues: true);
+        if (defaults.ComponentPresets.ValueKind != JsonValueKind.Object) throw new InvalidDataException("componentPresets must be an object.");
+        foreach (JsonProperty preset in defaults.ComponentPresets.EnumerateObject())
+        {
+            string component = preset.Value.TryGetProperty("component", out JsonElement componentElement)
+                && componentElement.ValueKind == JsonValueKind.String ? componentElement.GetString() ?? string.Empty : string.Empty;
+            if (!KnownComponents.Contains(component)) throw new InvalidDataException("Unknown preset component ID: " + component);
+        }
+        if (defaults.EnforcedPaths.ValueKind != JsonValueKind.Array) throw new InvalidDataException("enforcedPaths must be an array.");
+        foreach (JsonElement pathElement in defaults.EnforcedPaths.EnumerateArray())
+        {
+            string path = pathElement.ValueKind == JsonValueKind.String ? pathElement.GetString() ?? string.Empty : string.Empty;
+            string scope = path.Split('.').FirstOrDefault() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(path) || (!KnownComponents.Contains(scope) && scope != "global" && scope != "theme" && scope != "authoring"))
+            {
+                throw new InvalidDataException("Unknown enforced controller UI path: " + path);
+            }
+            if (string.Equals(path, "authoring.developerAuthoring", StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("Developer Authoring Mode cannot be remotely enforced.");
+            }
+        }
+    }
+
+    private static void ValidateActionArray(JsonElement values, string label)
+    {
+        if (values.ValueKind != JsonValueKind.Array) throw new InvalidDataException(label + " must be an array.");
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (JsonElement value in values.EnumerateArray())
+        {
+            string id = value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
+            if (!KnownActions.Contains(id) || !seen.Add(id)) throw new InvalidDataException("Unknown or duplicate action ID in " + label + ": " + id);
+        }
+    }
+
+    private static void ValidateActionMap(JsonElement profile, string name, bool categoryValues)
+    {
+        if (!profile.TryGetProperty(name, out JsonElement values) || values.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidDataException(name + " must be an object.");
+        }
+        foreach (JsonProperty value in values.EnumerateObject())
+        {
+            if (!KnownActions.Contains(value.Name)) throw new InvalidDataException("Unknown action ID in " + name + ": " + value.Name);
+            if (categoryValues && (value.Value.ValueKind != JsonValueKind.String || !KnownCategories.Contains(value.Value.GetString() ?? string.Empty)))
+            {
+                throw new InvalidDataException("Unknown category in " + name + ".");
+            }
+        }
+    }
+
+    private static void ValidateValueRanges(JsonElement value, string path)
+    {
+        if (value.ValueKind != JsonValueKind.Object) return;
+        foreach (JsonProperty property in value.EnumerateObject())
+        {
+            if (property.Value.ValueKind == JsonValueKind.Number)
+            {
+                double number = property.Value.GetDouble();
+                bool normalized = property.Name == "x" || property.Name == "y" || property.Name.EndsWith("Opacity", StringComparison.Ordinal);
+                bool positiveScale = property.Name == "scale" || property.Name == "fontScale" || property.Name == "iconScale";
+                if ((normalized && (number < 0 || number > 1)) || (positiveScale && (number < 0.5 || number > 2)))
+                {
+                    throw new InvalidDataException($"Controller UI value outside range at {path}.{property.Name}: {number}.");
+                }
+            }
+            else if (property.Value.ValueKind == JsonValueKind.Object) ValidateValueRanges(property.Value, path + "." + property.Name);
         }
     }
 
@@ -413,6 +558,19 @@ internal static class UpdateService
     private static int CompareVersions(string first, string second)
     {
         return Version.Parse(NormalizeVersion(first)).CompareTo(Version.Parse(NormalizeVersion(second)));
+    }
+
+    private static int CompareDefaultsVersions(string first, string second)
+    {
+        int[] firstParts = Regex.Matches(first ?? string.Empty, @"\d+").Cast<Match>().Select(match => int.Parse(match.Value)).ToArray();
+        int[] secondParts = Regex.Matches(second ?? string.Empty, @"\d+").Cast<Match>().Select(match => int.Parse(match.Value)).ToArray();
+        for (int index = 0; index < Math.Max(firstParts.Length, secondParts.Length); index++)
+        {
+            int firstValue = index < firstParts.Length ? firstParts[index] : 0;
+            int secondValue = index < secondParts.Length ? secondParts[index] : 0;
+            if (firstValue != secondValue) return firstValue.CompareTo(secondValue);
+        }
+        return 0;
     }
 
     private static bool IsYes(string? value) => string.Equals(value?.Trim(), "y", StringComparison.OrdinalIgnoreCase)
@@ -492,6 +650,7 @@ internal static class UpdateService
         public string DefaultsVersion { get; set; } = string.Empty;
         public string DefaultsFile { get; set; } = string.Empty;
         public string Sha256 { get; set; } = string.Empty;
+        public string? MinimumCompanionVersion { get; set; }
     }
 
     private sealed class DefaultsDocument
@@ -500,6 +659,9 @@ internal static class UpdateService
         public int SchemaVersion { get; set; }
         public string? DefaultsVersion { get; set; }
         public JsonElement Settings { get; set; }
+        public JsonElement HintProfile { get; set; }
+        public JsonElement ComponentPresets { get; set; }
+        public JsonElement EnforcedPaths { get; set; }
     }
 
     private sealed class GitHubRelease
