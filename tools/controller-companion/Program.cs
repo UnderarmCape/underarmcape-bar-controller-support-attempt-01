@@ -18,6 +18,10 @@ internal static class Program
 
     private static int Main(string[] args)
     {
+        if (UpdateService.IsCommand(args))
+        {
+            return UpdateService.RunCommand(args);
+        }
         if (!TryParseArguments(
             args,
             out int port,
@@ -49,7 +53,7 @@ internal static class Program
 
         CameraSettingResult cameraSetting =
             CameraSettings.EnsureCardinalDirectionLockDisabled(settingsPath);
-        Console.WriteLine("BAR Controller Bridge v0.5.1");
+        Console.WriteLine("BAR Controller Bridge v0.6.0");
         Console.WriteLine("Camera setting: " + GetCameraStatus(cameraSetting.Status));
         if (verbose)
         {
@@ -68,6 +72,8 @@ internal static class Program
         {
             return cameraSetting.Status == CameraSettingStatus.Failed ? 1 : 0;
         }
+
+        UpdateService.StartBackgroundStartupCheck();
 
         using var udp = new UdpClient(AddressFamily.InterNetwork);
         var destination = new IPEndPoint(IPAddress.Loopback, port);
@@ -288,7 +294,8 @@ internal static class Program
     {
         Console.Error.WriteLine(
             "Usage: BARControllerBridge [--port 28777] [--rate 120] " +
-            "[--settings-file path] [--configure-only] [--verbose]");
+            "[--settings-file path] [--configure-only] [--verbose]\n" +
+            "       BARControllerBridge <check|defaults|update|status|reload|help> [options]");
     }
 
     [DllImport("xinput1_4.dll", EntryPoint = "XInputGetState")]

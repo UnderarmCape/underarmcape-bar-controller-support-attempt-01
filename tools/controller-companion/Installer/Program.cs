@@ -4,7 +4,10 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 internal sealed class InstallerOptions
 {
@@ -31,7 +34,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        Console.Title = "BAR Controller Companion Installer v0.5.1";
+        Console.Title = "BAR Controller Companion Installer v0.6.0";
         if (!TryParseArguments(args, out InstallerOptions options))
         {
             PrintUsage();
@@ -131,9 +134,9 @@ internal static class Program
         try
         {
             ReleaseOperations.Status("Checking the official GitHub repository for a newer package...");
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "BAR-Controller-Companion-Installer/0.5.1");
+                "BAR-Controller-Companion-Installer/0.6.0");
             string releaseJson = client.GetStringAsync(
                 "https://api.github.com/repos/" + OfficialRepository + "/releases/latest")
                 .GetAwaiter()
@@ -192,6 +195,25 @@ internal static class Program
                 asset.Value.GetProperty("browser_download_url").GetString()
                 ?? throw new InvalidDataException("Release asset has no download URL.");
             byte[] zipBytes = client.GetByteArrayAsync(downloadUrl).GetAwaiter().GetResult();
+            string expectedHash = GetAssetHash(asset.Value);
+            if (expectedHash.Length == 0)
+            {
+                JsonElement? sidecar = assets.EnumerateArray().FirstOrDefault(item =>
+                    string.Equals(item.GetProperty("name").GetString(), assetName + ".sha256", StringComparison.OrdinalIgnoreCase));
+                if (sidecar == null || sidecar.Value.ValueKind == JsonValueKind.Undefined)
+                {
+                    throw new InvalidDataException("Downloaded package has no SHA-256 digest or sidecar.");
+                }
+                string sidecarUrl = sidecar.Value.GetProperty("browser_download_url").GetString()
+                    ?? throw new InvalidDataException("SHA-256 sidecar has no download URL.");
+                string sidecarText = client.GetStringAsync(sidecarUrl).GetAwaiter().GetResult();
+                expectedHash = Regex.Match(sidecarText, @"\b[a-fA-F0-9]{64}\b").Value.ToLowerInvariant();
+            }
+            string actualHash = ComputeSha256(zipBytes);
+            if (!FixedHashEquals(actualHash, expectedHash))
+            {
+                throw new InvalidDataException("Downloaded package SHA-256 does not match the release digest.");
+            }
             File.WriteAllBytes(zipPath, zipBytes);
             string extractRoot = Path.Combine(temporaryUpdateRoot, "extracted");
             ZipFile.ExtractToDirectory(zipPath, extractRoot);
@@ -352,9 +374,28 @@ internal static class Program
     private static void PrintUsage()
     {
         Console.Error.WriteLine(
-            "Usage: BAR_Controller_Companion_Installer_v0.5.1.exe "
+            "Usage: BAR_Controller_Companion_Installer_v0.6.0.exe "
             + "[--check-updates] [--no-pause] [--package-root path] "
             + "[--bar-data path] [--install-root path] [--shortcut path]");
+    }
+
+    private static string GetAssetHash(JsonElement asset)
+    {
+        if (!asset.TryGetProperty("digest", out JsonElement digest) || digest.ValueKind != JsonValueKind.String) return string.Empty;
+        Match match = Regex.Match(digest.GetString() ?? string.Empty, @"(?:sha256:)?(?<hash>[a-fA-F0-9]{64})");
+        return match.Success ? match.Groups["hash"].Value.ToLowerInvariant() : string.Empty;
+    }
+
+    private static string ComputeSha256(byte[] content)
+    {
+        using SHA256 sha = SHA256.Create();
+        return BitConverter.ToString(sha.ComputeHash(content)).Replace("-", string.Empty).ToLowerInvariant();
+    }
+
+    private static bool FixedHashEquals(string actual, string expected)
+    {
+        if (actual.Length != 64 || expected.Length != 64) return false;
+        return CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(actual), Encoding.ASCII.GetBytes(expected));
     }
 
     private static void PauseIfNeeded(bool noPause)

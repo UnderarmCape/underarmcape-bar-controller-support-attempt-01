@@ -9,14 +9,15 @@ using System.Text.RegularExpressions;
 internal static class ReleaseOperations
 {
     public const string ExpectedPackageName = "BAR Controller Companion";
-    public const string InstallerFileName = "BAR_Controller_Companion_Installer_v0.5.1.exe";
-    public const string RestoreFileName = "BAR_Controller_Companion_Restore_v0.5.1.exe";
+    public const string InstallerFileName = "BAR_Controller_Companion_Installer_v0.6.0.exe";
+    public const string RestoreFileName = "BAR_Controller_Companion_Restore_v0.6.0.exe";
     public const string StateFileName = "install-state.json";
     private const string CameraSettingLine = "CamSpringLockCardinalDirections = 0";
     private static readonly string[] RequiredWidgetNames =
     {
         "Controller Camera Test",
         "Controller Bindings UI",
+        "Controller UI Layout",
     };
     private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
     {

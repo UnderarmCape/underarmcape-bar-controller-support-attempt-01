@@ -5,7 +5,7 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
-        Console.Title = "BAR Controller Companion Restore v0.5.1";
+        Console.Title = "BAR Controller Companion Restore v0.6.0";
         string installRoot = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Programs",
@@ -30,7 +30,7 @@ internal static class Program
             else
             {
                 Console.Error.WriteLine(
-                    "Usage: BAR_Controller_Companion_Restore_v0.5.1.exe "
+                    "Usage: BAR_Controller_Companion_Restore_v0.6.0.exe "
                     + "[--restore-camera] [--install-root path] [--no-pause]");
                 return 2;
             }

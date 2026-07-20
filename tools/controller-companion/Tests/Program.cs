@@ -1,0 +1,175 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+
+internal static class Program
+{
+    private static int Main()
+    {
+        string testRoot = Path.Combine(Path.GetTempPath(), "bar-controller-update-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(testRoot);
+        try
+        {
+            string repositoryRoot = FindRepositoryRoot();
+            byte[] defaults = File.ReadAllBytes(Path.Combine(repositoryRoot, "controller-ui", "shipping-defaults.json"));
+            byte[] manifest = File.ReadAllBytes(Path.Combine(repositoryRoot, "controller-ui", "shipping-defaults-manifest.json"));
+            using var server = new FixtureServer(defaults, manifest);
+            Environment.SetEnvironmentVariable("BAR_CONTROLLER_DEFAULTS_BASE_URL", server.BaseUrl);
+            Environment.SetEnvironmentVariable("BAR_CONTROLLER_RELEASE_URL", server.BaseUrl + "release");
+            Environment.SetEnvironmentVariable("BAR_CONTROLLER_PROGRAM_DATA", Path.Combine(testRoot, "program-data"));
+            string barData = Path.Combine(testRoot, "bar-data");
+
+            Assert(UpdateService.RunCommand(new[] { "defaults", "--bar-data", barData, "--timeout-ms", "2000" }) == 0, "valid defaults command");
+            string cacheDirectory = Path.Combine(barData, "LuaUI", "Config", "BARControllerSupport");
+            string cachedDefaults = Path.Combine(cacheDirectory, "controller-ui-defaults.json");
+            string cachedManifest = Path.Combine(cacheDirectory, "controller-ui-defaults-manifest.json");
+            Assert(File.Exists(cachedDefaults) && File.Exists(cachedManifest), "valid pair cached");
+            byte[] stableCache = File.ReadAllBytes(cachedDefaults);
+
+            server.Mode = FixtureMode.MalformedManifest;
+            Assert(UpdateService.RunCommand(new[] { "defaults", "--bar-data", barData, "--timeout-ms", "2000" }) == 0, "malformed JSON falls back");
+            Assert(stableCache.SequenceEqual(File.ReadAllBytes(cachedDefaults)), "malformed JSON preserves cache");
+
+            server.Mode = FixtureMode.HashMismatch;
+            Assert(UpdateService.RunCommand(new[] { "defaults", "--bar-data", barData, "--timeout-ms", "2000" }) == 0, "hash mismatch falls back");
+            Assert(stableCache.SequenceEqual(File.ReadAllBytes(cachedDefaults)), "hash mismatch preserves cache");
+
+            server.Mode = FixtureMode.Timeout;
+            DateTime started = DateTime.UtcNow;
+            Assert(UpdateService.RunCommand(new[] { "defaults", "--bar-data", barData, "--timeout-ms", "250" }) == 0, "timeout falls back");
+            Assert((DateTime.UtcNow - started).TotalSeconds < 2.0, "timeout is bounded");
+            Assert(stableCache.SequenceEqual(File.ReadAllBytes(cachedDefaults)), "timeout preserves cache");
+
+            server.Mode = FixtureMode.Valid;
+            Assert(UpdateService.RunCommand(new[] { "check", "--bar-data", barData, "--timeout-ms", "2000" }) == 0, "combined check");
+            string statusPath = Path.Combine(testRoot, "program-data", "update-status.json");
+            using JsonDocument status = JsonDocument.Parse(File.ReadAllText(statusPath));
+            Assert(status.RootElement.GetProperty("ReleaseAvailable").GetBoolean(), "newer release reported, not applied");
+            Assert(status.RootElement.GetProperty("LatestRelease").GetString() == "0.6.1", "release version parsed");
+
+            Assert(UpdateService.RunCommand(new[] { "reload", "--bar-data", barData }) == 0, "reload marker");
+            using JsonDocument reload = JsonDocument.Parse(File.ReadAllText(Path.Combine(cacheDirectory, "reload-request.json")));
+            Assert(reload.RootElement.GetProperty("kind").GetString() == "bar-controller-ui-reload-request", "reload handoff format");
+
+            Console.WriteLine("Update/defaults tests passed: valid pair, malformed JSON, hash failure, timeout/offline cache, release report, reload handoff.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine("Update/defaults tests failed: " + exception);
+            return 1;
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("BAR_CONTROLLER_DEFAULTS_BASE_URL", null);
+            Environment.SetEnvironmentVariable("BAR_CONTROLLER_RELEASE_URL", null);
+            Environment.SetEnvironmentVariable("BAR_CONTROLLER_PROGRAM_DATA", null);
+            if (Directory.Exists(testRoot)) Directory.Delete(testRoot, recursive: true);
+        }
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        DirectoryInfo? directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "controller-ui", "shipping-defaults.json"))) return directory.FullName;
+            directory = directory.Parent;
+        }
+        throw new DirectoryNotFoundException("Could not locate controller-mod repository root.");
+    }
+
+    private static void Assert(bool condition, string label)
+    {
+        if (!condition) throw new InvalidOperationException("Assertion failed: " + label);
+    }
+
+    private enum FixtureMode { Valid, MalformedManifest, HashMismatch, Timeout }
+
+    private sealed class FixtureServer : IDisposable
+    {
+        private readonly HttpListener listener = new HttpListener();
+        private readonly CancellationTokenSource stop = new CancellationTokenSource();
+        private readonly byte[] defaults;
+        private readonly byte[] manifest;
+        private readonly byte[] mismatchManifest;
+        private readonly Task loop;
+
+        public FixtureServer(byte[] defaults, byte[] manifest)
+        {
+            this.defaults = defaults;
+            this.manifest = manifest;
+            string manifestText = Encoding.UTF8.GetString(manifest);
+            using JsonDocument parsed = JsonDocument.Parse(manifestText);
+            string hash = parsed.RootElement.GetProperty("sha256").GetString() ?? throw new InvalidDataException("fixture hash missing");
+            mismatchManifest = Encoding.UTF8.GetBytes(manifestText.Replace(hash, new string('0', 64)));
+            int port = ReservePort();
+            BaseUrl = $"http://127.0.0.1:{port}/";
+            listener.Prefixes.Add(BaseUrl);
+            listener.Start();
+            loop = Task.Run(ServeAsync);
+        }
+
+        public string BaseUrl { get; }
+        public volatile FixtureMode Mode;
+
+        private async Task ServeAsync()
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                HttpListenerContext context;
+                try { context = await listener.GetContextAsync().ConfigureAwait(false); }
+                catch when (stop.IsCancellationRequested) { return; }
+                try
+                {
+                    string path = context.Request.Url?.AbsolutePath ?? "/";
+                    if (Mode == FixtureMode.Timeout && path.EndsWith("shipping-defaults-manifest.json", StringComparison.Ordinal))
+                    {
+                        await Task.Delay(1000).ConfigureAwait(false);
+                    }
+                    byte[] payload;
+                    if (path.EndsWith("shipping-defaults-manifest.json", StringComparison.Ordinal))
+                    {
+                        payload = Mode == FixtureMode.MalformedManifest ? Encoding.UTF8.GetBytes("{")
+                            : Mode == FixtureMode.HashMismatch ? mismatchManifest : manifest;
+                    }
+                    else if (path.EndsWith("shipping-defaults.json", StringComparison.Ordinal)) payload = defaults;
+                    else if (path.EndsWith("release", StringComparison.Ordinal))
+                    {
+                        payload = Encoding.UTF8.GetBytes("{\"tag_name\":\"v0.6.1\",\"assets\":[{\"name\":\"BAR_Controller_Support_v0.6.1_Widget_Companion.zip\",\"browser_download_url\":\"" + BaseUrl + "package.zip\",\"digest\":\"sha256:" + new string('a', 64) + "\"}]}");
+                    }
+                    else { context.Response.StatusCode = 404; context.Response.Close(); continue; }
+                    context.Response.ContentType = "application/json";
+                    context.Response.ContentLength64 = payload.Length;
+                    await context.Response.OutputStream.WriteAsync(payload, 0, payload.Length).ConfigureAwait(false);
+                    context.Response.Close();
+                }
+                catch { try { context.Response.Abort(); } catch { } }
+            }
+        }
+
+        public void Dispose()
+        {
+            stop.Cancel();
+            listener.Stop();
+            listener.Close();
+            try { loop.GetAwaiter().GetResult(); } catch { }
+            stop.Dispose();
+        }
+
+        private static int ReservePort()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            return port;
+        }
+    }
+}
