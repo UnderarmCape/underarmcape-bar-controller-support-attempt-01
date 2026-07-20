@@ -1,6 +1,7 @@
 local root = (arg and arg[1]) or "."
 local virtualFiles = {}
 local currentContext = {}
+local mouseX, mouseY = 0, 0
 
 local function readFile(path)
 	local file = assert(io.open(path, "rb"))
@@ -26,15 +27,26 @@ gl = setmetatable({
 }, { __index = function() return function() end end })
 Spring = {
 	GetViewGeometry = function() return 1920, 1080 end,
-	GetMouseState = function() return 0, 0 end,
+	GetMouseState = function() return mouseX, mouseY end,
 	GetModKeyState = function() return false, false, false, false end,
 	GetGameFrame = function() return 1 end,
 	CreateDir = function() end,
 	Echo = function() end,
 }
 widgetHandler = { AddAction = function() end, RemoveAction = function() end }
+KEYSYMS = { BACKSPACE = 8, TAB = 9, RETURN = 13, ESCAPE = 27, SPACE = 32, DELETE = 127,
+	UP = 273, DOWN = 274, RIGHT = 275, LEFT = 276, HOME = 278, END = 279, PAGEUP = 280, PAGEDOWN = 281, F1 = 282 }
 VFS = {
 	RAW_FIRST = 1,
+	Include = function(path)
+		if path == "LuaUI/Include/controller_ui_editor_workspace.lua" then
+			return dofile(root .. "/luaui/Include/controller_ui_editor_workspace.lua")
+		end
+		if path == "LuaUI/Include/controller_glyphs.lua" then
+			return dofile(root .. "/luaui/Include/controller_glyphs.lua")
+		end
+		return nil
+	end,
 	LoadFile = function(path)
 		if virtualFiles[path] ~= nil then return virtualFiles[path] end
 		if path == "controller-ui/shipping-defaults.json" then return readFile(root .. "/controller-ui/shipping-defaults.json") end
@@ -169,11 +181,24 @@ assertEqual(audit.bindingCount, 41, "binding audit count")
 
 api.OpenEditor()
 widget:DrawScreen()
+assertEqual(widgetHandler.textOwner, widget, "editor owns keyboard input before gameplay actions")
+assertTrue(widget:KeyPress(string.byte("f"), { ctrl = true }, false, "f"), "search shortcut captured")
+widget:TextInput("Global scale")
+widget:KeyPress(KEYSYMS.RETURN, {}, false, "return")
+widget:DrawScreen()
 local beforeHold = api.Get("global", "scale")
-assertTrue(widget:MousePress(1828, 722, 1), "plus press captured")
+assertTrue(widget:KeyPress(KEYSYMS.RIGHT, {}, false, "right"), "keyboard adjustment captured")
 widget:Update(0.45)
-widget:MouseRelease()
+widget:KeyRelease(KEYSYMS.RIGHT, {}, "right")
 assertTrue(api.Get("global", "scale") >= beforeHold + 0.099, "hold repeat advanced value")
+mouseX, mouseY = 1800, 420
+assertTrue(widget:MouseWheel(false), "mouse wheel consumed over inspector")
+for _ = 1, 12 do assertTrue(widget:KeyPress(KEYSYMS.TAB, {}, false, "tab"), "tab focus captured") end
+assertTrue(widget:KeyPress(KEYSYMS.F1, {}, false, "f1"), "context help captured")
+widget:DrawScreen()
+assertTrue(widget:KeyPress(KEYSYMS.ESCAPE, {}, false, "escape"), "modal escape captured")
+api.CloseEditor()
+assertTrue(widgetHandler.textOwner == nil, "editor releases keyboard ownership")
 
 for index = 1, 500 do
 	api.Set("hints", "x", (index % 100) / 100)
