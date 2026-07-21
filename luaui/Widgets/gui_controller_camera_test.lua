@@ -6363,6 +6363,39 @@ function ControllerCameraTestConfirmNativeReclaim()
 	return false
 end
 
+function ControllerCameraTestConfirmNativeActiveCommand(cmdID)
+	cmdID = tonumber(cmdID)
+	if not cmdID then return false end
+	local target = ControllerCameraTestGetReticleTargetInfo()
+	if cmdID == ((CMD and CMD.RECLAIM) or 90) and target.targetType == "unit" then
+		local targetID, unitDefID = ControllerCameraTestGetReticleOwnedTarget()
+		if targetID and ControllerCameraTestBeginNativeReclaim("single", targetID, unitDefID) then
+			return ControllerCameraTestConfirmNativeReclaim()
+		end
+		return false
+	end
+
+	local params
+	if cmdID ~= ((CMD and CMD.MOVE) or 10) and cmdID >= 0
+			and target.targetType == "unit" and target.targetID then
+		params = { target.targetID }
+	elseif cmdID ~= ((CMD and CMD.MOVE) or 10) and cmdID >= 0
+			and target.targetType == "feature" and target.targetID then
+		params = { ControllerCameraTestFeatureCommandID(target.targetID) }
+	elseif target.hasWorld and target.x and target.z then
+		params = { target.x, target.y or 0, target.z }
+	else
+		return false
+	end
+
+	local issued = ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params,
+		"Native command " .. tostring(cmdID), target.targetType)
+	if issued and not ControllerCameraTestIsQueueModifierActive() then
+		pcall(Spring.SetActiveCommand, nil)
+	end
+	return issued == true
+end
+
 function ControllerCameraTestUpdateNativeDisassembleInput(dt)
 	local state = ControllerCameraTestDisassemble
 	local lbDown = ControllerCameraTestActionDown("pitchModifier")
@@ -6427,6 +6460,13 @@ function ControllerCameraTestUpdateNativeDisassembleInput(dt)
 		return true
 	end
 	if not lbDown and ControllerCameraTestActionPressed("select") then
+		local activeCommandID = ControllerCameraTestGetNativeActiveCommandID()
+		if activeCommandID then
+			if not ControllerCameraTestConfirmNativeActiveCommand(activeCommandID) then
+				latchSelectionDebugMessage("Native command target unavailable")
+			end
+			return true
+		end
 		attemptReticleSelection()
 		return true
 	end

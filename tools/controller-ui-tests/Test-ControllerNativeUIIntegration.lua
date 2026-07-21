@@ -25,6 +25,8 @@ expect(contains(camera, 'ControllerCameraTestIssueNativeDisassembleMove()'), "X 
 expect(contains(camera, 'ControllerCameraTestIssueNativeDisassembleStop()'), "LB+B native Stop")
 expect(contains(camera, 'ControllerCameraTestBeginNativeReclaim("same"'), "same-type reclaim binding")
 expect(contains(camera, 'ControllerCameraTestBeginNativeReclaim("single"'), "single reclaim binding")
+expect(contains(camera, 'ControllerCameraTestConfirmNativeActiveCommand(activeCommandID)'), "A confirms actual native command")
+expect(contains(camera, 'ControllerCameraTestFeatureCommandID(target.targetID)'), "native feature command encoding")
 expect(contains(camera, 'pcall(spSelectUnitArray, {})'), "B clears engine selection")
 expect(contains(camera, 'and not ControllerCameraTestUsesNativeBARUI() then'), "legacy rendering guarded")
 expect(contains(camera, 'WG.ordermenu.controllerGetCommands'), "native tactical descriptors")
