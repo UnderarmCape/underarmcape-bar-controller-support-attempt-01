@@ -50,7 +50,7 @@ try {
         New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
         Copy-Item -LiteralPath $source -Destination $destination
     }
-    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'LICENSE') -Destination (Join-Path $stage 'LICENSE')
+    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'LICENSE.md') -Destination (Join-Path $stage 'LICENSE.md')
     $releaseRoot = Join-Path $RepositoryRoot 'tools\release\bar-controller-support-v0.8.0-native-test'
     foreach ($name in @('Install_v0.8.0_NATIVE_TEST.ps1', 'Restore_v0.8.0_NATIVE_TEST.ps1', 'README_EXPERIMENTAL.md', 'manifest.json')) {
         Copy-Item -LiteralPath (Join-Path $releaseRoot $name) -Destination (Join-Path $stage $name)

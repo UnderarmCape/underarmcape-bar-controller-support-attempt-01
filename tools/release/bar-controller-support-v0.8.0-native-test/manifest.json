@@ -14,7 +14,7 @@
     "Restore_v0.8.0_NATIVE_TEST.ps1",
     "README_EXPERIMENTAL.md",
     "payload-sha256.json",
-    "LICENSE"
+    "LICENSE.md"
   ],
   "nativeOverrideManifest": "native-overrides/native-override-manifest.json",
   "nativeOverrides": [
