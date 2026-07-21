@@ -22,7 +22,7 @@ internal static class Program
     {
         "hints", "bindingsButton", "radials", "buildRadial", "tacticalRadial", "selectionRadial", "visibleSelectionRadial", "factoryRadial",
         "pregame", "reticle", "notifications", "instructional", "hotSlots", "selectedStatus", "queueStatus",
-        "placementStatus", "companionStatus", "debug", "editorLauncher", "editor",
+        "placementStatus", "companionStatus", "debug", "gameplay", "editorLauncher", "editor",
     };
     private static readonly HashSet<string> KnownActions = new(StringComparer.Ordinal)
     {

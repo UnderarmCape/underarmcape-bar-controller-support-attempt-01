@@ -6,14 +6,14 @@ local widget = widget ---@type Widget
 function widget:GetInfo()
 	return {
 		name = "Controller UI Layout",
-		desc = "Resolution-aware controller UI settings, live hints, and layout editor",
+		desc = "Optional controller UI authoring workspace (disabled during normal gameplay)",
 		author = "Kailil / Codex",
 		date = "2026-07-19",
 		license = "GNU GPL, v2 or later",
 		-- BAR dispatches interactive call-ins from lower layers first. Keep the
 		-- authoring modal alongside native modal windows such as Options.
 		layer = -99991,
-		enabled = true,
+		enabled = false,
 		handler = true,
 	}
 end
@@ -148,7 +148,7 @@ local DEFAULTS = {
 		placementStatus = { enabled = true, x = 0.5, y = 0.405, scale = 1, opacity = 1, fontScale = 1, anchor = "center" },
 		companionStatus = { enabled = true, x = 0.5, y = 0.73, scale = 1, opacity = 1, fontScale = 1, anchor = "center" },
 		debug = { enabled = true },
-		editorLauncher = { enabled = true, x = 0.79, y = 1044 / 1080, scale = 1, opacity = 0.9,
+		editorLauncher = { enabled = false, x = 0.79, y = 1044 / 1080, scale = 1, opacity = 0.9,
 			fontScale = 1, width = 116 / 1920, height = 28 / 1080, padding = 7, backgroundOpacity = 0.88, anchor = "bottomleft" },
 		editor = { enabled = true, x = 0.55, y = 0.14, width = 0.42, height = 0.76, scale = 1, opacity = 1 },
 	},
@@ -185,6 +185,8 @@ local revision = 1
 local viewX, viewY = 1, 1
 local automaticScale = 1
 local migratedLegacyLauncher = false
+local ownsSettingsAPI = false
+local ownsHintRegistry = false
 
 local editor = {
 	open = false, tab = 1, row = 1, dragging = false, resizing = false,
@@ -440,7 +442,8 @@ end
 local radialComponentScopes = { "buildRadial", "factoryRadial", "tacticalRadial", "selectionRadial", "visibleSelectionRadial" }
 local radialRoleLabels = {
 	categoryLabel = "Category labels", centerTitle = "Center title", centerDescription = "Center description",
-	metalCost = "Metal cost", energyCost = "Energy cost", metadata = "Metadata", footer = "Footer instructions",
+	metalCost = "Metal cost", energyCost = "Energy cost", healthStat = "Health", availabilityText = "Availability",
+	metadata = "Metadata", footer = "Footer instructions",
 	pageIndicator = "Page indicator", slotNumber = "Slot / hotkey number", unavailableText = "Unavailable text",
 }
 local radialRoleProperties = {
@@ -478,6 +481,17 @@ local radialRoleProperties = {
 		{ "ShadowEnabled", "Text shadow", "bool" }, { "OutlineEnabled", "Text outline", "bool" },
 		{ "Alignment", "Alignment", "enum", nil, nil, nil, { "Left", "Center", "Right" } },
 	},
+	healthStat = {
+		{ "Size", "Font size", "number", 6, 32, 1 }, { "ColorR", "Color / HSV and swatches", "color" },
+		{ "IconSize", "Health icon size", "number", 4, 32, 1 }, { "IconSpacing", "Icon-to-text spacing", "number", 0, 20, 1 },
+		{ "ShadowEnabled", "Text shadow", "bool" }, { "OutlineEnabled", "Text outline", "bool" },
+		{ "Alignment", "Alignment", "enum", nil, nil, nil, { "Left", "Center", "Right" } },
+	},
+	availabilityText = {
+		{ "Size", "Font size", "number", 6, 30, 1 }, { "ColorR", "Color / HSV and swatches", "color" },
+		{ "LineSpacing", "Line spacing", "number", 0, 20, 1 }, { "ShadowEnabled", "Text shadow", "bool" },
+		{ "OutlineEnabled", "Text outline", "bool" },
+	},
 	metadata = {
 		{ "Size", "Font size", "number", 6, 30, 1 }, { "ColorR", "Color / HSV and swatches", "color" },
 		{ "LineSpacing", "Line spacing", "number", 0, 20, 1 }, { "Alignment", "Alignment", "enum", nil, nil, nil, { "Left", "Center", "Right" } },
@@ -496,6 +510,7 @@ local function addRadialStyleProperties(scope, prefix)
 		{ "segmentSpacing", "Layout / Segment spacing", "number", 0.75, 1.25, 0.01 }, { "segmentAnglePadding", "Layout / Segment angle padding", "number", 0, 8, 0.25 },
 		{ "centerPanelScale", "Layout / Center-panel size", "number", 0.7, 1.4, 0.02 }, { "safeScreenMargin", "Layout / Safe-screen margin", "number", 0, 80, 1 },
 		{ "resourceSpacing", "Resource costs / Spacing", "number", 0, 40, 1 },
+		{ "resourceRowSpacing", "Resource costs / Row spacing", "number", 0, 30, 1 },
 		{ "resourceLayout", "Resource costs / Layout", "enum", nil, nil, nil, { "Row", "Column" } },
 		{ "resourceAlignment", "Resource costs / Alignment", "enum", nil, nil, nil, { "Left", "Center", "Right" } },
 	}) do addProperty("Radials", scope, property[1], prefix .. " / " .. property[2], property[3], property[4], property[5], property[6], "Basic", property[7]) end
@@ -2814,7 +2829,7 @@ function widget:Initialize()
 	extra.hintContextState = behavior and behavior.NewHintContextState() or nil
 	syncActionOrganizationEditor(); extra.syncThemeColorEditor(false)
 	if not history.dirty then history.lastSaved, history.lastSavedAuthorData = deepCopy(settings), deepCopy(authorData) end
-	WG.ControllerUISettings = {
+	local authoringAPI = {
 		SCHEMA_VERSION = SCHEMA_VERSION, REFERENCE_WIDTH = REFERENCE_WIDTH, REFERENCE_HEIGHT = REFERENCE_HEIGHT,
 		Get = function(scope, key) local target = getScope(scope); return target and target[key] end,
 		Set = setValue, GetComponent = function(name) return settings.components[name] end,
@@ -2851,14 +2866,18 @@ function widget:Initialize()
 			migratedLegacyLauncher = true; touch(); return true
 		end,
 	}
-	extra.installHintRegistry()
+	WG.ControllerUIAuthoring = authoringAPI
+	if not WG.ControllerUISettings then WG.ControllerUISettings, ownsSettingsAPI = authoringAPI, true end
+	if not WG.ControllerHintRegistry then extra.installHintRegistry(); ownsHintRegistry = true end
 	if widgetHandler and widgetHandler.AddAction then widgetHandler:AddAction("bar_controller_ui", toggleEditor, nil, "t") end
 end
 
 function widget:Shutdown()
 	setEditorOpen(false)
 	if widgetHandler and widgetHandler.RemoveAction then widgetHandler:RemoveAction("bar_controller_ui") end
-	WG.ControllerUISettings = nil; WG.ControllerHintRegistry = nil
+	if ownsSettingsAPI then WG.ControllerUISettings = nil end
+	if ownsHintRegistry then WG.ControllerHintRegistry = nil end
+	WG.ControllerUIAuthoring = nil
 end
 
 function widget:ViewResize(vsx, vsy)
@@ -2955,7 +2974,8 @@ function widget:Update(dt)
 end
 
 function widget:DrawScreen()
-	drawHints(); drawHoldProgress(); drawEditorLauncher(); drawCanvasAuthoring(); extra.drawEditor(); glColor(1, 1, 1, 1)
+	if not editor.open then return end
+	drawCanvasAuthoring(); extra.drawEditor(); glColor(1, 1, 1, 1)
 end
 
 function widget:LegacyMousePress(x, y, button)

@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 
 internal static class UpdateService
 {
-    private const string CurrentVersion = "0.6.1";
+    private const string CurrentVersion = "0.7.0";
     private const string Repository = "UnderarmCape/underarmcape-bar-controller-support-attempt-01";
     private const string DefaultsBranch = "controller-ui-live-defaults";
     private const string DefaultsFileName = "shipping-defaults.json";
@@ -46,7 +46,7 @@ internal static class UpdateService
     {
         "hints", "bindingsButton", "radials", "buildRadial", "tacticalRadial", "selectionRadial", "visibleSelectionRadial", "factoryRadial",
         "pregame", "reticle", "notifications", "instructional", "hotSlots", "selectedStatus", "queueStatus",
-        "placementStatus", "companionStatus", "debug", "editorLauncher", "editor",
+        "placementStatus", "companionStatus", "debug", "gameplay", "editorLauncher", "editor",
     };
     private static readonly HashSet<string> KnownActions = new HashSet<string>(StringComparer.Ordinal)
     {

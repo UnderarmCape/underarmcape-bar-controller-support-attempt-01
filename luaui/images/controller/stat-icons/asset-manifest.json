@@ -1,0 +1,10 @@
+{
+  "kind": "bar-controller-stat-icons",
+  "version": "0.7.0",
+  "license": "CC-BY-NC-ND",
+  "assets": [
+    { "file": "metal.png", "source": "LuaUI/Images/metal.png", "sha256": "4705c3f79f01b9a98e9a16d0c8767c3201f5e23fbfaa5465809cb984a9e36af8" },
+    { "file": "energy.png", "source": "LuaUI/Images/energy.png", "sha256": "b0eaff850a160340ff6bc31f514a10cd9d9d42871a122aea32031362a89aad67" },
+    { "file": "health.png", "source": "LuaUI/Images/info_health.png", "sha256": "31e5283993f78e1d4271c0eb3a0ff527922007d07c12f06255e42befb8226708" }
+  ]
+}

@@ -356,6 +356,12 @@ local roleDefaults = {
 	energyCost = { size = 11, colorR = 1, colorG = 0.86, colorB = 0.12, opacity = 1,
 		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.78,
 		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0, iconSize = 10, iconSpacing = 3 },
+	healthStat = { size = 11, colorR = 0.34, colorG = 1, colorB = 0.48, opacity = 1,
+		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.78,
+		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0, iconSize = 10, iconSpacing = 3 },
+	availabilityText = { size = 9, colorR = 1, colorG = 0.62, colorB = 0.24, opacity = 0.92,
+		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.78,
+		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0, lineSpacing = 2 },
 	metadata = { size = 10, colorR = 0.78, colorG = 0.86, colorB = 0.92, opacity = 0.82,
 		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.68,
 		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0, lineSpacing = 3 },
@@ -374,15 +380,16 @@ local roleDefaults = {
 }
 
 local function upperFirst(value) return string.upper(string.sub(value, 1, 1)) .. string.sub(value, 2) end
-for _, roleName in ipairs({ "categoryLabel", "centerTitle", "centerDescription", "metalCost", "energyCost",
-	"metadata", "footer", "pageIndicator", "slotNumber", "unavailableText" }) do
+for _, roleName in ipairs({ "categoryLabel", "centerTitle", "centerDescription", "metalCost", "energyCost", "healthStat",
+	"availabilityText", "metadata", "footer", "pageIndicator", "slotNumber", "unavailableText" }) do
 	RadialStyle.ROLES[#RadialStyle.ROLES + 1] = roleName
 	for property, value in pairs(roleDefaults[roleName]) do
 		RadialStyle.DEFAULTS[roleName .. upperFirst(property)] = value
 	end
 end
 for property, value in pairs({ radiusScale = 1, innerRadiusScale = 1, segmentSpacing = 1, segmentAnglePadding = 0,
-	centerPanelScale = 1, safeScreenMargin = 0, resourceSpacing = 12, resourceLayout = "Row", resourceAlignment = "Center",
+	centerPanelScale = 1, safeScreenMargin = 0, resourceSpacing = 12, resourceRowSpacing = 6,
+	resourceLayout = "Row", resourceAlignment = "Center",
 	selectedBackgroundR = 0.27, selectedBackgroundG = 0.70, selectedBackgroundB = 0.84, selectedBackgroundOpacity = 0.85,
 	selectedBorderR = 0.34, selectedBorderG = 0.82, selectedBorderB = 0.92, selectedBorderOpacity = 1,
 	selectedLabelR = 1, selectedLabelG = 1, selectedLabelB = 1, selectedLabelOpacity = 1,
@@ -510,7 +517,7 @@ local function drawWrappedRole(roleName, value, role, x, y, scale, opacity, meas
 end
 
 local function drawResources(model, typography, cx, y, scale, opacity, measured)
-	if model.metalCost == nil and model.energyCost == nil then return 0 end
+	if model.metalCost == nil and model.energyCost == nil and model.healthStat == nil then return 0 end
 	local metal, energy = typography.metalCost, typography.energyCost
 	local metalText, energyText = model.metalCost ~= nil and tostring(model.metalCost) or nil, model.energyCost ~= nil and tostring(model.energyCost) or nil
 	local gap = (tonumber(typography.resourceSpacing) or 12) * scale; local layout = typography.resourceLayout or "Row"
@@ -518,17 +525,33 @@ local function drawResources(model, typography, cx, y, scale, opacity, measured)
 	local energyWidth = energyText and ((energy.iconSize + energy.iconSpacing) * scale + textWidth(energyText, energy.size * scale)) or 0
 	local total = metalWidth + energyWidth + ((metalText and energyText) and gap or 0); local left = cx - total * 0.5
 	if typography.resourceAlignment == "Left" then left = left - gap * 1.5 elseif typography.resourceAlignment == "Right" then left = left + gap * 1.5 end
+	local textures = {
+		metalCost = "LuaUI/Images/controller/stat-icons/metal.png",
+		energyCost = "LuaUI/Images/controller/stat-icons/energy.png",
+		healthStat = "LuaUI/Images/controller/stat-icons/health.png",
+	}
 	local function resource(roleName, role, text, x, rowY)
 		if not text then return end
-		local icon = roleName == "metalCost" and "M" or "E"; local iconSize = (tonumber(role.iconSize) or 10) * scale
+		local iconSize = (tonumber(role.iconSize) or 10) * scale
 		local roleX = x + iconSize + (tonumber(role.iconSpacing) or 3) * scale
-		drawRoleText(roleName, text, role, roleX, rowY, scale, opacity, measured)
-		local result = measured[roleName]; color(result.color); gl.Text(icon, x, rowY, iconSize, role.outlineEnabled ~= false and "o" or "")
+		local tokenRole = {}; for key, value in pairs(role) do tokenRole[key] = value end; tokenRole.alignment = "Left"
+		drawRoleText(roleName, text, tokenRole, roleX, rowY, scale, opacity, measured)
+		local result = measured[roleName]; color(result.color)
+		gl.Texture(textures[roleName]); gl.TexRect(x, rowY - 1 * scale, x + iconSize, rowY + iconSize - 1 * scale); gl.Texture(false)
 		result.iconSize, result.iconSpacing, result.layout, result.alignment = iconSize, (tonumber(role.iconSpacing) or 3) * scale, layout, typography.resourceAlignment
 	end
 	if layout == "Column" then resource("metalCost", metal, metalText, cx - metalWidth * 0.5, y); resource("energyCost", energy, energyText, cx - energyWidth * 0.5, y - max(metal.size, energy.size) * scale - gap)
 	else resource("metalCost", metal, metalText, left, y); resource("energyCost", energy, energyText, left + metalWidth + (metalText and energyText and gap or 0), y) end
-	return layout == "Column" and max(metal.size, energy.size) * scale * 2 + gap or max(metal.size, energy.size) * scale
+	local firstRowHeight = layout == "Column" and max(metal.size, energy.size) * scale * 2 + gap or max(metal.size, energy.size) * scale
+	if model.healthStat ~= nil then
+		local health, text = typography.healthStat, tostring(model.healthStat)
+		local iconSize = (tonumber(health.iconSize) or 10) * scale
+		local width = iconSize + (tonumber(health.iconSpacing) or 3) * scale + textWidth(text, health.size * scale)
+		resource("healthStat", health, text, cx - width * 0.5,
+			y - firstRowHeight - (tonumber(typography.resourceRowSpacing) or 6) * scale)
+		return firstRowHeight + max(health.size, health.iconSize) * scale + (tonumber(typography.resourceRowSpacing) or 6) * scale
+	end
+	return firstRowHeight
 end
 
 local function entryAngle(index, count, typography)
@@ -588,14 +611,18 @@ local function drawBuildRadial(args, cx, cy, radius, accent, values)
 	if description ~= "" then drawWrappedRole("centerDescription", description, typography.centerDescription, cx, descriptionY,
 		centerScale, opacity, roles, panelRadius * typography.centerDescription.maxWidth) end
 	local resourceY = descriptionY - ((roles.centerDescription and roles.centerDescription.lineCount or 0) * (roles.centerDescription and roles.centerDescription.lineSpacing or 0)) - typography.centerDescription.spacingAfter * centerScale
-	drawResources(model, typography, cx, resourceY, centerScale, opacity, roles)
+	local resourcesHeight = drawResources(model, typography, cx, resourceY, centerScale, opacity, roles)
+	local availabilityY = resourceY - resourcesHeight - 4 * centerScale
+	if model.availabilityText and model.availabilityText ~= "" then
+		drawWrappedRole("availabilityText", model.availabilityText, typography.availabilityText, cx, availabilityY,
+			centerScale, opacity, roles, panelRadius * 1.5)
+	end
 	local metadata = model.metadata or {}; if #metadata == 0 then for index = 2, #details do metadata[#metadata + 1] = details[index] end end
 	for index = 1, min(4, #metadata) do drawRoleText("metadata", metadata[index], typography.metadata, cx,
-		resourceY - 16 * centerScale - (index - 1) * (typography.metadata.size + typography.metadata.lineSpacing) * centerScale, centerScale, opacity, roles) end
+		availabilityY - (model.availabilityText and 13 or 0) * centerScale - (index - 1) * (typography.metadata.size + typography.metadata.lineSpacing) * centerScale, centerScale, opacity, roles) end
 	if values.pageStatusVisible then
 		drawRoleText("categoryLabel", string.upper(model.categoryLabel or "BUILD"), typography.categoryLabel, cx, cy + radius * 0.65, values.fontScale, opacity, roles)
-		drawRoleText("footer", model.footer or model.subtitle or "LS choose  A confirm", typography.footer, cx, cy - radius * 0.65, values.fontScale, opacity, roles)
-		if model.pageLabel then drawRoleText("pageIndicator", model.pageLabel, typography.pageIndicator, cx, cy - radius * 0.77, values.fontScale, opacity, roles) end
+		if model.pageLabel then drawRoleText("pageIndicator", model.pageLabel, typography.pageIndicator, cx, cy - radius * 0.68, values.fontScale, opacity, roles) end
 	end
 	return { iconSize = iconSize, panelRadius = panelRadius, roles = roles }
 end

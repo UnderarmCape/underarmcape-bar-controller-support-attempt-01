@@ -1,6 +1,6 @@
-# BAR Controller Companion v0.6.1 development
+# BAR Controller Companion v0.7.0 development
 
-The source projects report v0.6.1 for the radial typography and color-authoring release. Public packaging is produced only by the frozen-runtime v0.6.1 release workflow.
+The source projects report v0.7.0 for the Disassemble Mode and streamlined-runtime release. Public packaging is produced only by the frozen-runtime v0.7.0 release workflow.
 
 ## v0.6 defaults and update commands
 

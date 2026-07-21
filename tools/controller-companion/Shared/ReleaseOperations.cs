@@ -9,16 +9,17 @@ using System.Text.RegularExpressions;
 internal static class ReleaseOperations
 {
     public const string ExpectedPackageName = "BAR Controller Companion";
-    public const string InstallerFileName = "BAR_Controller_Companion_Installer_v0.6.1.exe";
-    public const string RestoreFileName = "BAR_Controller_Companion_Restore_v0.6.1.exe";
+    public const string InstallerFileName = "BAR_Controller_Companion_Installer_v0.7.0.exe";
+    public const string RestoreFileName = "BAR_Controller_Companion_Restore_v0.7.0.exe";
     public const string StateFileName = "install-state.json";
     private const string CameraSettingLine = "CamSpringLockCardinalDirections = 0";
     private static readonly string[] RequiredWidgetNames =
     {
         "Controller Camera Test",
         "Controller Bindings UI",
-        "Controller UI Layout",
+        "Controller UI Runtime",
     };
+    private static readonly string[] DisabledWidgetNames = { "Controller UI Layout" };
     private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
     {
         PropertyNameCaseInsensitive = true,
@@ -213,13 +214,15 @@ internal static class ReleaseOperations
         string content = File.Exists(configPath)
             ? File.ReadAllText(configPath)
             : "return {\n\tallowUserWidgets = true,\n\tdata = {},\n\torder = {\n\t},\n}\n";
-        string updated = PatchWidgetOrder(content, RequiredWidgetNames);
+        string updated = MigrateControllerUIRuntimeData(content);
+        updated = PatchWidgetOrder(updated, RequiredWidgetNames, DisabledWidgetNames);
         File.WriteAllText(configPath, updated, new UTF8Encoding(false));
 
         foreach (string widgetName in RequiredWidgetNames)
         {
             Status("Enabled " + widgetName);
         }
+        Status("Disabled Controller UI Layout during normal gameplay (authoring data preserved).");
     }
 
     public static bool EnsureCameraSetting(
@@ -471,7 +474,7 @@ internal static class ReleaseOperations
                 : "[BAR Controller Companion] " + message);
     }
 
-    private static string PatchWidgetOrder(string content, IEnumerable<string> widgetNames)
+    private static string PatchWidgetOrder(string content, IEnumerable<string> widgetNames, IEnumerable<string> disabledWidgetNames)
     {
         Match orderMatch = Regex.Match(content, @"(?m)^[ \t]*order[ \t]*=[ \t]*\{");
         if (!orderMatch.Success)
@@ -485,8 +488,10 @@ internal static class ReleaseOperations
         string newline = content.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         string indent = DetectOrderIndent(body) ?? "\t\t";
 
-        foreach (string widgetName in widgetNames)
+        foreach (var pair in widgetNames.Select(name => (Name: name, Order: 1))
+            .Concat(disabledWidgetNames.Select(name => (Name: name, Order: 0))))
         {
+            string widgetName = pair.Name;
             string pattern =
                 @"(?m)^(?<indent>[ \t]*)\[""" + Regex.Escape(widgetName)
                 + @"""\][ \t]*=[ \t]*-?\d+[ \t]*,?[ \t]*(?=\r?$)";
@@ -495,11 +500,11 @@ internal static class ReleaseOperations
                 body = Regex.Replace(
                     body,
                     pattern,
-                    match => match.Groups["indent"].Value + "[\"" + widgetName + "\"] = 1,");
+                    match => match.Groups["indent"].Value + "[\"" + widgetName + "\"] = " + pair.Order + ",");
             }
             else
             {
-                string entry = indent + "[\"" + widgetName + "\"] = 1,";
+                string entry = indent + "[\"" + widgetName + "\"] = " + pair.Order + ",";
                 Match closingIndent = Regex.Match(body, @"(?<tail>\r?\n[ \t]*)\z");
                 if (closingIndent.Success)
                 {
@@ -521,6 +526,35 @@ internal static class ReleaseOperations
         return content.Substring(0, openingBrace + 1)
             + body
             + content.Substring(closingBrace);
+    }
+
+    private static string MigrateControllerUIRuntimeData(string content)
+    {
+        if (Regex.IsMatch(content, @"(?m)^[ \t]*\[\""Controller UI Runtime\""\][ \t]*=[ \t]*\{"))
+        {
+            return content;
+        }
+        Match dataMatch = Regex.Match(content, @"(?m)^[ \t]*data[ \t]*=[ \t]*\{");
+        if (!dataMatch.Success)
+        {
+            throw new InvalidDataException("BYAR.lua does not contain a data table.");
+        }
+        int dataOpen = content.IndexOf('{', dataMatch.Index);
+        int dataClose = FindMatchingBrace(content, dataOpen);
+        string dataBody = content.Substring(dataOpen + 1, dataClose - dataOpen - 1);
+        Match layoutMatch = Regex.Match(dataBody, @"(?m)^(?<indent>[ \t]*)\[\""Controller UI Layout\""\][ \t]*=[ \t]*\{");
+        if (!layoutMatch.Success)
+        {
+            return content;
+        }
+        int absoluteEntryStart = dataOpen + 1 + layoutMatch.Index;
+        int layoutOpen = content.IndexOf('{', absoluteEntryStart);
+        int layoutClose = FindMatchingBrace(content, layoutOpen);
+        string value = content.Substring(layoutOpen, layoutClose - layoutOpen + 1);
+        string newline = content.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        string indent = layoutMatch.Groups["indent"].Value;
+        string insertion = newline + indent + "[\"Controller UI Runtime\"] = " + value + ",";
+        return content.Substring(0, dataClose) + insertion + content.Substring(dataClose);
     }
 
     private static int FindMatchingBrace(string content, int openingBrace)

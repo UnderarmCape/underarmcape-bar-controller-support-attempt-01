@@ -53,7 +53,7 @@ internal static class Program
 
         CameraSettingResult cameraSetting =
             CameraSettings.EnsureCardinalDirectionLockDisabled(settingsPath);
-        Console.WriteLine("BAR Controller Bridge v0.6.1");
+        Console.WriteLine("BAR Controller Bridge v0.7.0");
         Console.WriteLine("Camera setting: " + GetCameraStatus(cameraSetting.Status));
         if (verbose)
         {

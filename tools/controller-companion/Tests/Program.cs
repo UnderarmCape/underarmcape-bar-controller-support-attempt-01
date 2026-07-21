@@ -69,7 +69,7 @@ internal static class Program
             string statusPath = Path.Combine(testRoot, "program-data", "update-status.json");
             using JsonDocument status = JsonDocument.Parse(File.ReadAllText(statusPath));
             Assert(status.RootElement.GetProperty("ReleaseAvailable").GetBoolean(), "newer release reported, not applied");
-            Assert(status.RootElement.GetProperty("LatestRelease").GetString() == "0.6.2", "release version parsed");
+            Assert(status.RootElement.GetProperty("LatestRelease").GetString() == "0.7.1", "release version parsed");
 
             Assert(UpdateService.RunCommand(new[] { "reload", "--bar-data", barData }) == 0, "reload marker");
             using JsonDocument reload = JsonDocument.Parse(File.ReadAllText(Path.Combine(cacheDirectory, "reload-request.json")));
@@ -191,7 +191,7 @@ internal static class Program
                     }
                     else if (path.EndsWith("release", StringComparison.Ordinal))
                     {
-                        payload = Encoding.UTF8.GetBytes("{\"tag_name\":\"v0.6.2\",\"assets\":[{\"name\":\"BAR_Controller_Support_v0.6.2_Widget_Companion.zip\",\"browser_download_url\":\"" + BaseUrl + "package.zip\",\"digest\":\"sha256:" + new string('a', 64) + "\"}]}");
+                        payload = Encoding.UTF8.GetBytes("{\"tag_name\":\"v0.7.1\",\"assets\":[{\"name\":\"BAR_Controller_Support_v0.7.1_Widget_Companion.zip\",\"browser_download_url\":\"" + BaseUrl + "package.zip\",\"digest\":\"sha256:" + new string('a', 64) + "\"}]}");
                     }
                     else { context.Response.StatusCode = 404; context.Response.Close(); continue; }
                     context.Response.ContentType = "application/json";
