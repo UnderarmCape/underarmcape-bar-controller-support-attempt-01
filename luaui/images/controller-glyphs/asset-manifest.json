@@ -1,11 +1,27 @@
 {
   "kind": "bar-controller-original-glyph-atlas",
-  "version": 1,
-  "generatedAt": "2026-07-20T00:00:00Z",
-  "generator": "tools/dev-scripts/Generate_Controller_Glyph_Atlas.ps1",
-  "atlas": "controller_glyph_atlas.png",
+  "version": 2,
+  "generatedAt": "2026-07-22T00:00:00Z",
+  "generator": "tools/dev-scripts/Generate_Controller_Glyph_Atlases_v0.8.ps1",
+  "atlases": {
+    "legacy": {
+      "file": "controller_glyph_atlas.png",
+      "sha256": "7c3746ac097ddb71d6415208eb1f35cf73a6a20d3e16b82fe468d8fd2c85a10a"
+    },
+    "Xbox": {
+      "file": "controller_glyph_atlas_xbox.png",
+      "sha256": "a547a2aa8f7fb9b10d90b6732e34fd5870a6bc1f5823f24756eea352732209b2"
+    },
+    "PlayStation": {
+      "file": "controller_glyph_atlas_playstation.png",
+      "sha256": "e03db44ba7e696ed87813a8d23d804ba00581bc3dcbaf111750ca428ca41294d"
+    }
+  },
   "dimensions": { "width": 512, "height": 320, "cell": 64, "columns": 8, "rows": 5 },
-  "source": "Original geometric artwork created for BAR Controller Companion; no third-party controller artwork used.",
+  "source": "Original deterministic geometric artwork created for BAR Controller Companion after visual study of a user-supplied Xbox/PlayStation reference archive; no archive files are redistributed.",
+  "referenceArchiveSha256": "b1e0ddec4c649b404390fc2e486ec796ecbaf0e21781e5cb8a5489873d9397c4",
+  "referenceRights": "Unverified; local experimental reference use only. Verify provenance before a public release.",
+  "dpadPolicy": "Zero-based atlas cells 12 through 16 (D-pad neutral/up/down/left/right) are copied pixel-for-pixel from the v0.7.0 legacy atlas.",
   "licenses": ["GPL-2.0-or-later", "CC0-1.0"],
   "glyphs": [
     "A", "B", "X", "Y", "LB", "RB", "LT", "RT",

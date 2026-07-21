@@ -3,7 +3,12 @@
 --------------------------------------------------------------------------------
 
 local Glyphs = {
-	texture = "LuaUI/Images/controller-glyphs/controller_glyph_atlas.png",
+	texture = "LuaUI/Images/controller-glyphs/controller_glyph_atlas_xbox.png",
+	textures = {
+		Xbox = "LuaUI/Images/controller-glyphs/controller_glyph_atlas_xbox.png",
+		PlayStation = "LuaUI/Images/controller-glyphs/controller_glyph_atlas_playstation.png",
+	},
+	style = "Xbox",
 	atlasWidth = 512, atlasHeight = 320, cell = 64, columns = 8, rows = 5,
 }
 
@@ -72,6 +77,42 @@ local aliases = {
 }
 
 local resolveCache = {}
+
+function Glyphs.DetectFamily(name)
+	local normalized = string.lower(tostring(name or ""))
+	if normalized:find("playstation", 1, true) or normalized:find("dualsense", 1, true)
+			or normalized:find("dualshock", 1, true) or normalized:find("sony", 1, true)
+			or normalized == "wireless controller" then
+		return "PlayStation"
+	end
+	if normalized:find("xbox", 1, true) or normalized:find("xinput", 1, true)
+			or normalized:find("microsoft", 1, true) then
+		return "Xbox"
+	end
+	return "Unknown"
+end
+
+function Glyphs.SetStyle(preference, detectedFamily)
+	local style = preference
+	if style == nil or style == "Auto" then
+		style = detectedFamily == "PlayStation" and "PlayStation" or "Xbox"
+	end
+	if style ~= "PlayStation" then style = "Xbox" end
+	if Glyphs.style == style and Glyphs.texture == Glyphs.textures[style] then return style end
+	Glyphs.style = style
+	Glyphs.texture = Glyphs.textures[style]
+	local faceLabels = style == "PlayStation"
+		and { A = "Cross button", B = "Circle button", X = "Square button", Y = "Triangle button",
+			LB = "L1", RB = "R1", LT = "L2", RT = "R2" }
+		or { A = "A button", B = "B button", X = "X button", Y = "Y button",
+			LB = "Left bumper", RB = "Right bumper", LT = "Left trigger", RT = "Right trigger" }
+	for id, label in pairs(faceLabels) do Glyphs.definitions[id].label = label end
+	return style
+end
+
+function Glyphs.GetStyle()
+	return Glyphs.style
+end
 
 function Glyphs.Normalize(token)
 	return string.lower(tostring(token or "")):gsub("[%s_%-/]", "")
