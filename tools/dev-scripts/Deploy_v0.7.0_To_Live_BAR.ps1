@@ -524,8 +524,11 @@ Assert-RuntimeStopped
 
 $manifest.deployedFiles = $deployedRecords
 $manifest.postDeploymentHashes = $deployedRecords
-$manifest.runtimeSupportFiles = @($deployedRecords | Where-Object { $_.destination -like '*\LuaUI\Include\controller_*'
-    -or $_.destination -like '*\LuaUI\Images\controller-glyphs\*' -or $_.destination -like '*\LuaUI\Images\controller\stat-icons\*' })
+$manifest.runtimeSupportFiles = @($deployedRecords | Where-Object {
+    ($_.destination -like '*\LuaUI\Include\controller_*') -or
+    ($_.destination -like '*\LuaUI\Images\controller-glyphs\*') -or
+    ($_.destination -like '*\LuaUI\Images\controller\stat-icons\*')
+})
 $manifest.widgetConfigChanged = $widgetConfigChanged
 $manifest.widgetConfigPreSha256 = $widgetConfigBefore
 $manifest.widgetConfigPostSha256 = $widgetConfigAfter
