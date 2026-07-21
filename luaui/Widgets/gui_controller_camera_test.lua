@@ -12683,8 +12683,9 @@ function ControllerCameraTestDrawTacticalRadial()
 		end
 		ControllerUISharedRenderers.DrawRadial({
 			bounds = { x1 = cx - radius * 1.45, y1 = cy - radius * 1.45, x2 = cx + radius * 1.45, y2 = cy + radius * 1.45 },
-			model = { style = "tactical", title = category.label, categoryLabel = category.label,
-				subtitle = "LS choose  A/X confirm  B/Y close", detail = "D-pad: Up Utility  |  Down Tactical Actions",
+			model = { style = "tactical", title = category.label, categoryLabel = category.label, selectedTitle = true,
+				description = "Choose a tactical command for the current selection.", footer = "LS choose  A/X confirm  B/Y close",
+				detail = "D-pad: Up Utility  |  Down Tactical Actions",
 				entries = entries, categoryChips = chips, selectedIndex = menu.selectedIndex, accent = categoryColor,
 				fill = TacticalCategories.FillColors[category.key] },
 			theme = { backgroundR = 0.02, backgroundG = 0.03, backgroundB = 0.04,
@@ -12935,7 +12936,7 @@ function ControllerCameraTestDrawFilterRadial()
 		local radius = 130 * ControllerCameraTestGetControllerUIScale("selectionRadial", true)
 		ControllerUISharedRenderers.DrawRadial({
 			bounds = { x1 = cx - radius * 1.55, y1 = cy - radius * 1.55, x2 = cx + radius * 1.55, y2 = cy + radius * 1.55 },
-			model = { style = "selection", title = "SELECT FILTER", subtitle = "Release X to set", entries = {
+			model = { style = "selection", title = "SELECT FILTER", description = "Choose the unit role included by the selection brush.", footer = "Release X to set", entries = {
 				{ label = labels[1], color = { 0.25, 0.75, 1.0 } }, { label = labels[2], color = { 0.65, 0.45, 1.0 } },
 				{ label = labels[3], color = { 1.0, 0.35, 0.2 } }, { label = labels[4], color = { 1.0, 0.85, 0.25 } },
 			}, selectedIndex = selectedIndex, accent = { 0.25, 0.75, 1.0 } },
@@ -13030,24 +13031,25 @@ end
 function ControllerCameraTestDrawVisibleSelectionRadial()
 	local radial = ControllerCameraTestVisibleSelection.radial
 	if not radial.open or not ControllerUISharedRenderers
-			or not ControllerCameraTestControllerUIVisible("selectionRadial", true) then return end
+			or not ControllerCameraTestControllerUIVisible("visibleSelectionRadial", true) then return end
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
-	cx, cy = ControllerCameraTestGetControllerUIPosition("selectionRadial", cx, cy)
+	cx, cy = ControllerCameraTestGetControllerUIPosition("visibleSelectionRadial", cx, cy)
 	local labels = { "Last Selected", "Air", "Combat", "Builders" }
 	local selected = radial.highlightedFilter or ControllerCameraTestSettings.visibleSelectionFilter or "Combat"
 	local selectedIndex = 3
 	for index, label in ipairs(labels) do if selected == label then selectedIndex = index end end
-	local radius = 130 * ControllerCameraTestGetControllerUIScale("selectionRadial", true)
+	local radius = 130 * ControllerCameraTestGetControllerUIScale("visibleSelectionRadial", true)
 	ControllerUISharedRenderers.DrawRadial({
 		bounds = { x1 = cx - radius * 1.55, y1 = cy - radius * 1.55, x2 = cx + radius * 1.55, y2 = cy + radius * 1.55 },
-		model = { style = "selection", title = "VISIBLE FILTER", subtitle = "Release LT to confirm / previous selection set", entries = {
+		model = { style = "selection", title = "VISIBLE FILTER", categoryLabel = "VISIBLE SELECTION",
+			description = "Choose visible units, or restore the previous selection.", footer = "Release LT to confirm", entries = {
 			{ label = labels[1], color = { 0.25, 0.75, 1.0 } }, { label = labels[2], color = { 0.65, 0.45, 1.0 } },
 			{ label = labels[3], color = { 1.0, 0.35, 0.2 } }, { label = labels[4], color = { 1.0, 0.85, 0.25 } },
 		}, selectedIndex = selectedIndex, accent = { 0.25, 0.75, 1.0 } },
 		theme = { backgroundR = 0.02, backgroundG = 0.03, backgroundB = 0.04, accentR = 0.25, accentG = 0.75, accentB = 1.0 },
-		opacity = ControllerCameraTestGetControllerUIOpacity("selectionRadial"),
-		settings = ControllerCameraTestGetRadialRendererSettings("selectionRadial"),
+		opacity = ControllerCameraTestGetControllerUIOpacity("visibleSelectionRadial"),
+		settings = ControllerCameraTestGetRadialRendererSettings("visibleSelectionRadial"),
 	})
 end
 
@@ -13605,16 +13607,8 @@ function ControllerCameraTestBuildRadialUnitInfo(option)
 
 	local metalCost = unitDef and unitDef.metalCost or option.metalCost
 	local energyCost = unitDef and unitDef.energyCost or option.energyCost
-	local costText = "Cost"
-	if type(metalCost) == "number" then
-		costText = costText .. "  " .. ControllerCameraTestFormatRadialStatNumber(metalCost) .. " M"
-	end
-	if type(energyCost) == "number" then
-		costText = costText .. " / " .. ControllerCameraTestFormatRadialStatNumber(energyCost) .. " E"
-	end
-	if costText ~= "Cost" then
-		info.stats[#info.stats + 1] = costText
-	end
+	info.metalCost = type(metalCost) == "number" and ControllerCameraTestFormatRadialStatNumber(metalCost) or nil
+	info.energyCost = type(energyCost) == "number" and ControllerCameraTestFormatRadialStatNumber(energyCost) or nil
 
 	if unitDef then
 		if type(unitDef.health) == "number" then
@@ -13715,13 +13709,11 @@ function ControllerCameraTestDrawBuildRadial()
 			local progress = isFactoryContext and option.cmdID and menu.factoryQueueProgress and menu.factoryQueueProgress[option.cmdID]
 			local queueCount = isFactoryContext and option.cmdID and menu.factoryQueueCounts and menu.factoryQueueCounts[option.cmdID] or 0
 			entries[index] = { label = option.shortLabel or option.name or "Build", texture = option.iconTexture,
-				disabled = not affordable, progress = progress, badge = queueCount, indexLabel = index }
+				disabled = not affordable, unavailableText = not affordable and "UNAVAILABLE" or nil,
+				progress = progress, badge = queueCount, indexLabel = index }
 		end
 		local current = visibleOptions[selectedIndex]
-		local details = {}
 		local info = current and ControllerCameraTestBuildRadialUnitInfo(current)
-		if info and info.description and info.description ~= "" then details[#details + 1] = info.description end
-		if info then for index = 1, math.min(3, #(info.stats or {})) do details[#details + 1] = info.stats[index] end end
 		local renderSettings = ControllerCameraTestGetRadialRendererSettings(componentName)
 		renderSettings.iconScale = renderSettings.iconScale * (BuildRadialTuning.iconScale or 1)
 		renderSettings.fontScale = renderSettings.fontScale * (BuildRadialTuning.textScale or 1)
@@ -13729,11 +13721,12 @@ function ControllerCameraTestDrawBuildRadial()
 		renderSettings.itemSpacing = renderSettings.itemSpacing * (BuildRadialTuning.itemSpacing or 1)
 		ControllerUISharedRenderers.DrawRadial({
 			bounds = { x1 = cx - radius * 1.45, y1 = cy - radius * 1.45, x2 = cx + radius * 1.45, y2 = cy + radius * 1.45 },
-			model = { style = "build", title = current and (current.name or current.shortLabel) or (isFactoryContext and "Factory" or "Build"),
-				subtitle = isFactoryContext and "A/X adjust queue  B/Y close" or "A place  X quick-place  B/Y close",
+			model = { style = "build", title = info and info.title or (current and (current.name or current.shortLabel)) or (isFactoryContext and "Factory" or "Build"), selectedTitle = isFactoryContext,
+				description = info and info.description or "", metalCost = info and info.metalCost, energyCost = info and info.energyCost,
+				metadata = info and info.stats or {}, footer = isFactoryContext and "A/X adjust queue  B/Y close" or "A place  X quick-place  B/Y close",
 				categoryLabel = menu.radialCategoryName or (isFactoryContext and "Factory" or "Build"),
 				pageLabel = "PAGE " .. tostring(menu.radialPage or 1) .. "/" .. tostring(menu.radialPageCount or 1),
-				entries = entries, selectedIndex = selectedIndex, accent = pageColor.accent, fill = pageColor.fill, details = details },
+				entries = entries, selectedIndex = selectedIndex, accent = pageColor.accent, fill = pageColor.fill },
 			theme = { backgroundR = pageColor.fill[1], backgroundG = pageColor.fill[2], backgroundB = pageColor.fill[3],
 				accentR = pageColor.accent[1], accentG = pageColor.accent[2], accentB = pageColor.accent[3] },
 			opacity = ControllerCameraTestGetControllerUIOpacity(componentName),
@@ -14239,7 +14232,7 @@ function ControllerCameraTestGetControllerUIOpacity(componentName)
 	if shared and type(shared.GetEffectiveOpacity) == "function" then
 		local opacity = tonumber(shared.GetEffectiveOpacity(componentName)) or 1
 		local radialComponent = componentName == "buildRadial" or componentName == "factoryRadial"
-			or componentName == "tacticalRadial" or componentName == "selectionRadial"
+			or componentName == "tacticalRadial" or componentName == "selectionRadial" or componentName == "visibleSelectionRadial"
 		if radialComponent and type(shared.GetComponent) == "function" then
 			local radial = shared.GetComponent("radials"); opacity = opacity * (radial and tonumber(radial.opacity) or 1)
 		end
@@ -14269,7 +14262,7 @@ function ControllerCameraTestGetControllerUIFontScale(componentName)
 	if not shared or type(shared.GetEffectiveFontScale) ~= "function" then return 1 end
 	local scale = tonumber(shared.GetEffectiveFontScale(componentName)) or 1
 	local radialComponent = componentName == "buildRadial" or componentName == "factoryRadial"
-		or componentName == "tacticalRadial" or componentName == "selectionRadial" or componentName == "radials"
+		or componentName == "tacticalRadial" or componentName == "selectionRadial" or componentName == "visibleSelectionRadial" or componentName == "radials"
 	if radialComponent and type(shared.GetComponent) == "function" then
 		local radial = shared.GetComponent("radials")
 		scale = scale * (radial and tonumber(radial.fontScale) or 1)
@@ -14287,6 +14280,11 @@ end
 function ControllerCameraTestGetRadialRendererSettings(componentName)
 	local shared = WG and WG.ControllerUISettings
 	local radial = shared and type(shared.GetComponent) == "function" and shared.GetComponent("radials") or nil
+	local component = shared and type(shared.GetComponent) == "function" and shared.GetComponent(componentName) or nil
+	local typography = shared and type(shared.GetResolvedRadialStyle) == "function" and shared.GetResolvedRadialStyle(componentName) or nil
+	if not typography and ControllerUISharedRenderers and ControllerUISharedRenderers.RadialStyle then
+		typography = ControllerUISharedRenderers.RadialStyle.Resolve(radial, component)
+	end
 	return {
 		iconScale = ControllerCameraTestGetControllerUIIconScale(componentName),
 		fontScale = ControllerCameraTestGetControllerUIFontScale(componentName),
@@ -14296,6 +14294,7 @@ function ControllerCameraTestGetRadialRendererSettings(componentName)
 		itemSpacing = radial and tonumber(radial.itemSpacing) or 1,
 		legacyThemeOpacity = radial and tonumber(radial.legacyThemeOpacity) or 1,
 		pageStatusVisible = not radial or radial.pageStatusVisible ~= false,
+		typography = typography,
 	}
 end
 

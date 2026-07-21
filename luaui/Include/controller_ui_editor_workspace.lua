@@ -377,15 +377,19 @@ function Workspace.PropertyItems(rows, collapsed, filterMode, labels)
 	local items, offset, previous = {}, 0, nil
 	for index, row in ipairs(rows or {}) do
 		local level = row[8] or "Basic"
-		local group = tostring(row[1]) .. (filterMode == "All" and (":" .. level) or "")
+		local semanticGroup = tostring(row[3] or ""):match("^[^/]+ / ([^/]+)")
+		local group = tostring(row[1]) .. (semanticGroup and (":" .. semanticGroup) or (filterMode == "All" and (":" .. level) or ""))
 		if group ~= previous then
-			items[#items + 1] = { kind = "group", id = group, label = groupTitle(row[1], level, filterMode, labels), offset = offset, height = 30 }
+			local title = semanticGroup and ((labels and labels[row[1]] or tostring(row[1])) .. " / " .. semanticGroup)
+				or groupTitle(row[1], level, filterMode, labels)
+			items[#items + 1] = { kind = "group", id = group, label = title, offset = offset, height = 30 }
 			offset, previous = offset + 30, group
 		end
 		if not collapsed[group] then
+			local propertyHeight = row[4] == "color" and 238 or 54
 			items[#items + 1] = { kind = "property", id = tostring(row[1]) .. "." .. tostring(row[2]), row = row,
-				rowIndex = index, offset = offset, height = 54, group = group }
-			offset = offset + 54
+				rowIndex = index, offset = offset, height = propertyHeight, group = group }
+			offset = offset + propertyHeight
 		end
 	end
 	return items, offset
@@ -671,12 +675,95 @@ local function valueText(spec, row)
 	return tostring(value or "")
 end
 
+local function drawGradient(bounds, steps, sample)
+	steps = max(2, steps or 18)
+	for index = 0, steps - 1 do
+		local left = bounds.x1 + (bounds.x2 - bounds.x1) * index / steps
+		local right = bounds.x1 + (bounds.x2 - bounds.x1) * (index + 1) / steps
+		rect({ x1 = left, y1 = bounds.y1, x2 = right + 1, y2 = bounds.y2 }, sample(index / max(1, steps - 1)))
+	end
+end
+
+local function drawColorControl(state, spec, item, bounds, colors)
+	local row = item.row; local value = spec.getColor and spec.getColor(row) or { r = 1, g = 1, b = 1, a = 1, h = 0, s = 0, v = 1, hex = "#FFFFFF" }
+	local editor = { x1 = bounds.x1 + 8, y1 = bounds.y1 + 8, x2 = bounds.x2 - 8, y2 = bounds.y2 - 38 }
+	local preview = { x1 = editor.x1, y1 = editor.y2 - 22, x2 = editor.x1 + 42, y2 = editor.y2 }
+	rect(preview, { value.r, value.g, value.b, value.a }); outline(preview, colors.border, 1)
+	label(tostring(value.hex or "#FFFFFF"), preview.x2 + 7, preview.y1 + 6, 9, colors.text)
+	local actionX = max(editor.x1 + 132, editor.x2 - 132)
+	for _, buttonDef in ipairs({ { "Copy", "color-copy" }, { "Paste", "color-paste" }, { "Fav", "color-favorite" } }) do
+		local b = { x1 = actionX, y1 = preview.y1, x2 = actionX + 40, y2 = preview.y2 }
+		button(state, b, buttonDef[2] .. ":" .. item.id, buttonDef[1], { type = buttonDef[2], row = row, rowIndex = item.rowIndex }, colors,
+			buttonDef[1] == "Fav" and "Save or remove this favorite color" or buttonDef[1] .. " exact RGBA color")
+		actionX = b.x2 + 3
+	end
+
+	local sliderTop = preview.y1 - 7; local sliderHeight, sliderGap = 16, 5
+	local channels = {
+		{ id = "h", label = "H", value = (value.h or 0) / 360, sample = function(t) local r, g, b = spec.hsvToRgb(t * 360, 1, 1); return { r, g, b, 1 } end },
+		{ id = "s", label = "S", value = value.s or 0, sample = function(t) local r, g, b = spec.hsvToRgb(value.h or 0, t, value.v or 1); return { r, g, b, 1 } end },
+		{ id = "v", label = "V", value = value.v or 0, sample = function(t) local r, g, b = spec.hsvToRgb(value.h or 0, value.s or 0, t); return { r, g, b, 1 } end },
+		{ id = "a", label = "A", value = value.a or 1, sample = function(t) return { value.r, value.g, value.b, t } end },
+	}
+	for index, channel in ipairs(channels) do
+		local y2 = sliderTop - (index - 1) * (sliderHeight + sliderGap); local field = { x1 = editor.x2 - 38, y1 = y2 - sliderHeight, x2 = editor.x2, y2 = y2 }
+		local control = { x1 = editor.x1 + 22, y1 = y2 - sliderHeight, x2 = field.x1 - 4, y2 = y2 }
+		label(channel.label, editor.x1 + 2, control.y1 + 4, 9, colors.muted)
+		if channel.id == "a" then
+			local checker = 6; for checkerIndex = 0, math.ceil((control.x2 - control.x1) / checker) - 1 do
+				local x1 = control.x1 + checkerIndex * checker; rect({ x1 = x1, y1 = control.y1, x2 = min(control.x2, x1 + checker), y2 = control.y2 }, checkerIndex % 2 == 0 and { 0.25, 0.25, 0.25, 1 } or { 0.55, 0.55, 0.55, 1 })
+			end
+		end
+		drawGradient(control, channel.id == "h" and 24 or 18, channel.sample); outline(control,
+			spec.colorWheelEditingId == item.id .. ":" .. channel.id and colors.focus or colors.border,
+			spec.colorWheelEditingId == item.id .. ":" .. channel.id and 2 or 1)
+		local markerX = control.x1 + clamp(channel.value, 0, 1) * (control.x2 - control.x1)
+		rect({ x1 = markerX - 1, y1 = control.y1 - 2, x2 = markerX + 2, y2 = control.y2 + 2 }, colors.text)
+		addHit(state, { x1 = control.x1, y1 = control.y1, x2 = control.x2, y2 = control.y2,
+			id = "color-slider:" .. item.id .. ":" .. channel.id,
+			action = { type = "color-slider", row = row, rowIndex = item.rowIndex, channel = channel.id, control = control },
+			tooltip = "Drag " .. channel.label .. "; focused wheel edits only this channel", accessibleLabel = channel.label .. " color slider" }, false)
+		rect(field, colors.input); outline(field, spec.editingColorId == item.id .. ":" .. channel.id and colors.focus or colors.border, spec.editingColorId == item.id .. ":" .. channel.id and 2 or 1)
+		local numeric = channel.id == "h" and math.floor((value.h or 0) + 0.5) or math.floor((channel.value or 0) * 100 + 0.5)
+		local numericText = spec.editingColorId == item.id .. ":" .. channel.id and tostring(spec.editingText or "") or tostring(numeric)
+		label(numericText, (field.x1 + field.x2) * 0.5, field.y1 + 4, 8, colors.text, "oc")
+		addHit(state, { x1 = field.x1, y1 = field.y1, x2 = field.x2, y2 = field.y2,
+			id = "color-number:" .. item.id .. ":" .. channel.id,
+			action = { type = "color-number-entry", row = row, rowIndex = item.rowIndex, channel = channel.id },
+			tooltip = "Enter exact " .. channel.label .. (channel.id == "h" and " degrees" or " percent"), accessibleLabel = "Exact " .. channel.label .. " color value" }, false)
+	end
+
+	local presets = spec.colorPresets or {}; local columns, gap = 10, 4
+	local swatchSize = min(19, max(13, (editor.x2 - editor.x1 - (columns - 1) * gap) / columns))
+	local swatchTop = sliderTop - #channels * (sliderHeight + sliderGap) - 3
+	local bestIndex, bestDistance
+	for index, preset in ipairs(presets) do
+		local distance = math.abs(value.r - preset[2]) + math.abs(value.g - preset[3]) + math.abs(value.b - preset[4]) + math.abs(value.a - (preset[5] or 1))
+		if not bestDistance or distance < bestDistance then bestDistance, bestIndex = distance, index end
+	end
+	for index, preset in ipairs(presets) do
+		local column, line = (index - 1) % columns, math.floor((index - 1) / columns)
+		local x1 = editor.x1 + column * (swatchSize + gap); local y2 = swatchTop - line * (swatchSize + gap)
+		local swatch = { x1 = x1, y1 = y2 - swatchSize, x2 = x1 + swatchSize, y2 = y2 }
+		rect(swatch, { preset[2], preset[3], preset[4], preset[5] or 1 }); outline(swatch, index == bestIndex and colors.focus or colors.border, index == bestIndex and 2 or 1)
+		local focusID = "color-swatch:" .. item.id .. ":" .. tostring(index)
+		local action = { type = "color-swatch", row = row, rowIndex = item.rowIndex, preset = preset, presetIndex = index }
+		addHit(state, { x1 = swatch.x1, y1 = swatch.y1, x2 = swatch.x2, y2 = swatch.y2, id = focusID, action = action,
+			tooltip = tostring(preset[1]), accessibleLabel = "Apply " .. tostring(preset[1]) .. " color" }, false)
+		addFocus(state, { id = focusID, action = action, pane = "inspector", virtualBounds = { top = item.offset + item.height, bottom = item.offset },
+			row = row, rowIndex = item.rowIndex, accessibleLabel = "Apply " .. tostring(preset[1]) .. " color" })
+		focusOutline(state, swatch, focusID, colors.focus)
+	end
+end
+
 local function drawPropertyControl(state, spec, item, bounds, colors)
 	local row, kind = item.row, item.row[4]
 	local control = { x1 = bounds.x1 + max(150, (bounds.x2 - bounds.x1) * 0.48), y1 = bounds.y1 + 8,
 		x2 = bounds.x2 - 8, y2 = bounds.y2 - 8 }
 	local action = { type = "property-control", row = row, rowIndex = item.rowIndex, kind = kind, control = control }
-	if kind == "bool" then
+	if kind == "color" then
+		drawColorControl(state, spec, item, bounds, colors)
+	elseif kind == "bool" then
 		rect(control, spec.getValue(row) and colors.selected or colors.input)
 		outline(control, colors.border, 1)
 		label(valueText(spec, row), (control.x1 + control.x2) * 0.5, control.y1 + 10, 10, spec.getValue(row) and colors.accent or colors.muted, "oc")

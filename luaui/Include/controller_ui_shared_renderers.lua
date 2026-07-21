@@ -330,143 +330,347 @@ function Renderers.DrawHints(args)
 			rowHeight = rowHeight, columnGap = columnGap, padding = padding, opacity = opacity } }
 end
 
+--------------------------------------------------------------------------------
+-- Semantic radial typography. Settings remain flat for backwards-compatible
+-- persistence, while the resolved renderer contract is role-oriented.
+--------------------------------------------------------------------------------
+
+local RadialStyle = { DEFAULTS = {}, ROLES = {}, COLOR_PRESETS = {} }
+Renderers.RadialStyle = RadialStyle
+
+local roleDefaults = {
+	categoryLabel = { size = 18, colorR = 0.34, colorG = 0.82, colorB = 0.92, opacity = 0.95,
+		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.78,
+		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0, letterSpacing = 0.5 },
+	centerTitle = { size = 18, colorR = 0.82, colorG = 0.94, colorB = 1, opacity = 1,
+		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.82,
+		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0, emphasis = 1,
+		maxWidth = 1.55, wrapMode = "Truncate", spacingAfter = 7 },
+	centerDescription = { size = 10, colorR = 0.78, colorG = 0.84, colorB = 0.88, opacity = 0.96,
+		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.72,
+		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0, lineSpacing = 3,
+		maxWidth = 1.55, wrapEnabled = true, maxLines = 2, spacingBefore = 0, spacingAfter = 5 },
+	metalCost = { size = 11, colorR = 0.58, colorG = 0.82, colorB = 1, opacity = 1,
+		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.78,
+		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0, iconSize = 10, iconSpacing = 3 },
+	energyCost = { size = 11, colorR = 1, colorG = 0.86, colorB = 0.12, opacity = 1,
+		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.78,
+		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0, iconSize = 10, iconSpacing = 3 },
+	metadata = { size = 10, colorR = 0.78, colorG = 0.86, colorB = 0.92, opacity = 0.82,
+		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.68,
+		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0, lineSpacing = 3 },
+	footer = { size = 13, colorR = 0.72, colorG = 0.78, colorB = 0.82, opacity = 0.80,
+		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.68,
+		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0 },
+	pageIndicator = { size = 10, colorR = 0.46, colorG = 0.88, colorB = 1, opacity = 0.88,
+		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.68,
+		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0 },
+	slotNumber = { size = 12, colorR = 1, colorG = 0.84, colorB = 0, opacity = 1,
+		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.82,
+		outlineEnabled = true, alignment = "Left", offsetX = 0, offsetY = 0 },
+	unavailableText = { size = 9, colorR = 0.72, colorG = 0.40, colorB = 0.40, opacity = 0.78,
+		shadowEnabled = true, shadowColorR = 0, shadowColorG = 0, shadowColorB = 0, shadowOpacity = 0.72,
+		outlineEnabled = true, alignment = "Center", offsetX = 0, offsetY = 0 },
+}
+
+local function upperFirst(value) return string.upper(string.sub(value, 1, 1)) .. string.sub(value, 2) end
+for _, roleName in ipairs({ "categoryLabel", "centerTitle", "centerDescription", "metalCost", "energyCost",
+	"metadata", "footer", "pageIndicator", "slotNumber", "unavailableText" }) do
+	RadialStyle.ROLES[#RadialStyle.ROLES + 1] = roleName
+	for property, value in pairs(roleDefaults[roleName]) do
+		RadialStyle.DEFAULTS[roleName .. upperFirst(property)] = value
+	end
+end
+for property, value in pairs({ radiusScale = 1, innerRadiusScale = 1, segmentSpacing = 1, segmentAnglePadding = 0,
+	centerPanelScale = 1, safeScreenMargin = 0, resourceSpacing = 12, resourceLayout = "Row", resourceAlignment = "Center",
+	selectedBackgroundR = 0.27, selectedBackgroundG = 0.70, selectedBackgroundB = 0.84, selectedBackgroundOpacity = 0.85,
+	selectedBorderR = 0.34, selectedBorderG = 0.82, selectedBorderB = 0.92, selectedBorderOpacity = 1,
+	selectedLabelR = 1, selectedLabelG = 1, selectedLabelB = 1, selectedLabelOpacity = 1,
+	selectedTitleR = 1, selectedTitleG = 1, selectedTitleB = 1, selectedTitleOpacity = 1,
+	selectedIconOpacity = 1, unavailableIconOpacity = 0.75,
+}) do RadialStyle.DEFAULTS[property] = value end
+
+RadialStyle.COLOR_PRESETS = {
+	{ "White", 1, 1, 1, 1 }, { "Light Gray", 0.82, 0.84, 0.86, 1 }, { "Medium Gray", 0.52, 0.55, 0.58, 1 },
+	{ "Dark Gray", 0.22, 0.24, 0.27, 1 }, { "Black", 0, 0, 0, 1 }, { "Red", 0.94, 0.18, 0.18, 1 },
+	{ "Orange", 1, 0.48, 0.08, 1 }, { "Yellow", 1, 0.86, 0.12, 1 }, { "Green", 0.20, 0.86, 0.35, 1 },
+	{ "Cyan", 0.10, 0.88, 0.92, 1 }, { "Blue", 0.18, 0.48, 1, 1 }, { "Purple", 0.62, 0.30, 0.92, 1 },
+	{ "Pink", 1, 0.36, 0.68, 1 }, { "BAR Accent", 0.34, 0.82, 0.92, 1 }, { "Metal", 0.58, 0.82, 1, 1 },
+	{ "Energy", 1, 0.86, 0.12, 1 }, { "Warning", 1, 0.30, 0.18, 1 }, { "Success", 0.28, 0.88, 0.48, 1 },
+	{ "Disabled", 0.48, 0.46, 0.46, 0.78 }, { "Selected", 1, 1, 1, 1 },
+}
+
+function RadialStyle.HSVToRGB(h, s, v)
+	h, s, v = ((tonumber(h) or 0) % 360) / 60, clamp(s, 0, 1), clamp(v, 0, 1)
+	local sector, fraction = floor(h), h - floor(h)
+	local p, q, t = v * (1 - s), v * (1 - s * fraction), v * (1 - s * (1 - fraction))
+	if sector == 0 then return v, t, p elseif sector == 1 then return q, v, p elseif sector == 2 then return p, v, t
+	elseif sector == 3 then return p, q, v elseif sector == 4 then return t, p, v end
+	return v, p, q
+end
+
+function RadialStyle.RGBToHSV(r, g, b)
+	r, g, b = clamp(r, 0, 1), clamp(g, 0, 1), clamp(b, 0, 1)
+	local high, low = max(r, g, b), min(r, g, b); local delta = high - low; local h = 0
+	if delta > 0 then
+		if high == r then h = 60 * (((g - b) / delta) % 6)
+		elseif high == g then h = 60 * (((b - r) / delta) + 2)
+		else h = 60 * (((r - g) / delta) + 4) end
+	end
+	return h, high == 0 and 0 or delta / high, high
+end
+
+function RadialStyle.ColorHex(r, g, b, a)
+	local value = string.format("#%02X%02X%02X", floor(clamp(r, 0, 1) * 255 + 0.5), floor(clamp(g, 0, 1) * 255 + 0.5), floor(clamp(b, 0, 1) * 255 + 0.5))
+	if a ~= nil and abs(clamp(a, 0, 1) - 1) > 0.0001 then value = value .. string.format("%02X", floor(clamp(a, 0, 1) * 255 + 0.5)) end
+	return value
+end
+
+function RadialStyle.ParseHexColor(value)
+	value = tostring(value or ""):gsub("#", "")
+	if #value ~= 6 and #value ~= 8 then return nil end
+	local number = tonumber(value, 16); if not number then return nil end
+	if #value == 6 then return floor(number / 65536) % 256 / 255, floor(number / 256) % 256 / 255, number % 256 / 255, 1 end
+	return floor(number / 16777216) % 256 / 255, floor(number / 65536) % 256 / 255,
+		floor(number / 256) % 256 / 255, number % 256 / 255
+end
+
+function RadialStyle.Resolve(globalSettings, componentSettings)
+	globalSettings, componentSettings = globalSettings or {}, componentSettings or {}
+	local flat = {}; for key, value in pairs(RadialStyle.DEFAULTS) do flat[key] = value end
+	for key in pairs(RadialStyle.DEFAULTS) do if globalSettings[key] ~= nil then flat[key] = globalSettings[key] end end
+	local overridden = componentSettings.typographyOverride == true
+	if overridden then for key in pairs(RadialStyle.DEFAULTS) do if componentSettings[key] ~= nil then flat[key] = componentSettings[key] end end end
+	local resolved = { __resolvedRadialStyle = true, overridden = overridden, flat = flat }
+	for _, roleName in ipairs(RadialStyle.ROLES) do
+		local role = {}
+		for property in pairs(roleDefaults[roleName]) do role[property] = flat[roleName .. upperFirst(property)] end
+		resolved[roleName] = role
+	end
+	for key in pairs(RadialStyle.DEFAULTS) do if not resolved[key] then resolved[key] = flat[key] end end
+	return resolved
+end
+
 local function radialSettings(args)
 	local settings, model = args.settings or {}, args.model or {}
+	local typography = settings.typography
+	if not (type(typography) == "table" and typography.__resolvedRadialStyle) then typography = RadialStyle.Resolve(settings, nil) end
 	return {
 		iconScale = tonumber(settings.iconScale) or tonumber(model.iconScale) or 1,
 		fontScale = tonumber(settings.fontScale) or tonumber(model.fontScale) or 1,
 		centerTextScale = tonumber(settings.centerTextScale) or 1,
 		selectedScale = tonumber(settings.selectedScale) or 1.06,
 		selectedBorderThickness = tonumber(settings.selectedBorderThickness) or 3,
-		itemSpacing = tonumber(settings.itemSpacing) or tonumber(model.itemSpacing) or 1,
+		itemSpacing = (tonumber(settings.itemSpacing) or tonumber(model.itemSpacing) or 1) * (tonumber(typography.segmentSpacing) or 1),
 		legacyThemeOpacity = tonumber(settings.legacyThemeOpacity) or 1,
 		pageStatusVisible = settings.pageStatusVisible ~= false,
+		typography = typography,
 	}
+end
+
+local function roleFlags(alignment, outlined)
+	local flags = outlined and "o" or ""
+	if alignment == "Right" then return "r" .. flags elseif alignment == "Center" then return "c" .. flags end
+	return flags
+end
+
+local function roleColor(role, opacity, override)
+	if override then return { override[1], override[2], override[3], (override[4] or 1) * opacity } end
+	return { role.colorR or 1, role.colorG or 1, role.colorB or 1, (role.opacity or 1) * opacity }
+end
+
+local function drawRoleText(roleName, value, role, x, y, scale, opacity, measured, overrideColor)
+	value = tostring(value or ""); local size = max(1, (tonumber(role.size) or 10) * scale * (tonumber(role.emphasis) or 1))
+	x, y = x + (tonumber(role.offsetX) or 0) * scale, y + (tonumber(role.offsetY) or 0) * scale
+	local flags = roleFlags(role.alignment, role.outlineEnabled ~= false)
+	if role.shadowEnabled ~= false and (role.shadowOpacity or 0) > 0 then
+		color({ role.shadowColorR or 0, role.shadowColorG or 0, role.shadowColorB or 0, (role.shadowOpacity or 0.75) * opacity })
+		gl.Text(value, x + max(1, scale), y - max(1, scale), size, flags)
+	end
+	local finalColor = roleColor(role, opacity, overrideColor); color(finalColor)
+	local spacing = (tonumber(role.letterSpacing) or 0) * scale
+	if spacing ~= 0 and #value > 1 then
+		local total = textWidth(value, size) + (#value - 1) * spacing; local start = x
+		if role.alignment == "Center" then start = x - total * 0.5 elseif role.alignment == "Right" then start = x - total end
+		for character in value:gmatch(".") do gl.Text(character, start, y, size, role.outlineEnabled ~= false and "o" or ""); start = start + textWidth(character, size) + spacing end
+	else gl.Text(value, x, y, size, flags) end
+	measured[roleName] = measured[roleName] or {}; local result = measured[roleName]
+	result.size, result.color, result.opacity, result.x, result.y, result.text = size, finalColor, finalColor[4], x, y, value
+	result.width = textWidth(value, size) + max(0, #value - 1) * spacing
+	return size
+end
+
+local function drawWrappedRole(roleName, value, role, x, y, scale, opacity, measured, width)
+	local size = max(1, (tonumber(role.size) or 10) * scale); local maxLines = max(1, floor(tonumber(role.maxLines) or 2))
+	local lines = role.wrapEnabled == false and { truncate(value, size, width) } or wrap(value, size, width, maxLines)
+	local advance = size + (tonumber(role.lineSpacing) or 0) * scale
+	for index, line in ipairs(lines) do drawRoleText(roleName, line, role, x, y - (index - 1) * advance, scale, opacity, measured) end
+	local result = measured[roleName]; result.lines, result.lineCount, result.lineSpacing, result.maxWidth = lines, #lines, advance, width
+	return #lines * advance
+end
+
+local function drawResources(model, typography, cx, y, scale, opacity, measured)
+	if model.metalCost == nil and model.energyCost == nil then return 0 end
+	local metal, energy = typography.metalCost, typography.energyCost
+	local metalText, energyText = model.metalCost ~= nil and tostring(model.metalCost) or nil, model.energyCost ~= nil and tostring(model.energyCost) or nil
+	local gap = (tonumber(typography.resourceSpacing) or 12) * scale; local layout = typography.resourceLayout or "Row"
+	local metalWidth = metalText and ((metal.iconSize + metal.iconSpacing) * scale + textWidth(metalText, metal.size * scale)) or 0
+	local energyWidth = energyText and ((energy.iconSize + energy.iconSpacing) * scale + textWidth(energyText, energy.size * scale)) or 0
+	local total = metalWidth + energyWidth + ((metalText and energyText) and gap or 0); local left = cx - total * 0.5
+	if typography.resourceAlignment == "Left" then left = left - gap * 1.5 elseif typography.resourceAlignment == "Right" then left = left + gap * 1.5 end
+	local function resource(roleName, role, text, x, rowY)
+		if not text then return end
+		local icon = roleName == "metalCost" and "M" or "E"; local iconSize = (tonumber(role.iconSize) or 10) * scale
+		local roleX = x + iconSize + (tonumber(role.iconSpacing) or 3) * scale
+		drawRoleText(roleName, text, role, roleX, rowY, scale, opacity, measured)
+		local result = measured[roleName]; color(result.color); gl.Text(icon, x, rowY, iconSize, role.outlineEnabled ~= false and "o" or "")
+		result.iconSize, result.iconSpacing, result.layout, result.alignment = iconSize, (tonumber(role.iconSpacing) or 3) * scale, layout, typography.resourceAlignment
+	end
+	if layout == "Column" then resource("metalCost", metal, metalText, cx - metalWidth * 0.5, y); resource("energyCost", energy, energyText, cx - energyWidth * 0.5, y - max(metal.size, energy.size) * scale - gap)
+	else resource("metalCost", metal, metalText, left, y); resource("energyCost", energy, energyText, left + metalWidth + (metalText and energyText and gap or 0), y) end
+	return layout == "Column" and max(metal.size, energy.size) * scale * 2 + gap or max(metal.size, energy.size) * scale
+end
+
+local function entryAngle(index, count, typography)
+	local angle = ((index - 1) * pi * 2 / max(1, count)) - pi * 0.5
+	local padding = (tonumber(typography.segmentAnglePadding) or 0) * pi / 180
+	return angle + ((index % 2 == 0) and padding or -padding)
 end
 
 local function drawBuildRadial(args, cx, cy, radius, accent, values)
 	local model, theme, entries, opacity = args.model or {}, args.theme or {}, args.model.entries or {}, args.opacity or 1
-	local n = max(1, #entries); local iconSize = min(500, max(56, radius * 0.27 * values.iconScale))
+	local typography, roles = values.typography, {}; local n = max(1, #entries)
+	local iconSize = min(500, max(56, radius * 0.27 * values.iconScale))
 	local fill = model.fill or { theme.backgroundR or 0.02, theme.backgroundG or 0.03, theme.backgroundB or 0.04 }
 	color({ fill[1], fill[2], fill[3], 0.58 * opacity * values.legacyThemeOpacity }); circle(cx, cy, radius * 1.3, 40)
 	ring(cx, cy, radius, { accent[1], accent[2], accent[3], 0.3 * opacity }, 2, 36)
 	for index, entry in ipairs(entries) do
-		local angle = ((index - 1) * pi * 2 / n) - pi * 0.5
+		local angle = entryAngle(index, n, typography)
 		local x, y = cx + radius * values.itemSpacing * cos(angle), cy - radius * values.itemSpacing * sin(angle)
 		local selected = index == (model.selectedIndex or 1); local size = iconSize * (selected and values.selectedScale or 1)
-		if selected then color({ accent[1], accent[2], accent[3], 0.85 * opacity })
-		elseif entry.disabled then color({ 0.32, 0.12, 0.12, 0.42 * opacity })
-		else color({ 0.12, 0.18, 0.23, 0.42 * opacity }) end
+		local selectedFill = { typography.selectedBackgroundR, typography.selectedBackgroundG, typography.selectedBackgroundB, typography.selectedBackgroundOpacity * opacity }
+		if selected then color(selectedFill) elseif entry.disabled then color({ 0.32, 0.12, 0.12, 0.42 * opacity }) else color({ 0.12, 0.18, 0.23, 0.42 * opacity }) end
 		gl.Rect(x - size * 0.5 - 2, y - size * 0.5 - 2, x + size * 0.5 + 2, y + size * 0.5 + 2)
-		outline(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5,
-			selected and { accent[1], accent[2], accent[3], opacity } or entry.disabled and { 0.68, 0.22, 0.22, 0.55 * opacity } or { 0.8, 0.8, 0.8, 0.9 * opacity },
-			selected and values.selectedBorderThickness or 1)
+		local border = selected and { typography.selectedBorderR, typography.selectedBorderG, typography.selectedBorderB, typography.selectedBorderOpacity * opacity }
+			or entry.disabled and { 0.68, 0.22, 0.22, 0.55 * opacity } or { 0.8, 0.8, 0.8, 0.9 * opacity }
+		outline(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5, border, selected and values.selectedBorderThickness or 1)
 		if entry.texture then
 			gl.Texture(entry.texture)
+			local iconOpacity = entry.disabled and typography.unavailableIconOpacity or selected and typography.selectedIconOpacity or 1
 			if entry.progress and entry.progress >= 0 and entry.progress <= 1 and gl.Scissor then
 				color({ 0.2, 0.2, 0.2, 0.5 * opacity }); gl.TexRect(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5)
-				if entry.progress > 0 then
-					gl.Scissor(x - size * 0.5, y - size * 0.5, size, size * entry.progress)
-					color({ 1, 1, 1, (entry.disabled and 0.75 or 1) * opacity }); gl.TexRect(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5); gl.Scissor(false)
-				end
-			else color({ 1, 1, 1, (entry.disabled and 0.75 or 1) * opacity }); gl.TexRect(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5) end
+				if entry.progress > 0 then gl.Scissor(x - size * 0.5, y - size * 0.5, size, size * entry.progress); color({ 1, 1, 1, iconOpacity * opacity }); gl.TexRect(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5); gl.Scissor(false) end
+			else color({ 1, 1, 1, iconOpacity * opacity }); gl.TexRect(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5) end
 			gl.Texture(false)
-		else color({ 1, 1, 1, opacity }); gl.Text(entry.label or "Build", x, y - 6, 12 * values.fontScale, "oc") end
-		color({ 1, 0.84, 0, opacity }); gl.Text(tostring(entry.indexLabel or index), x - size * 0.5 + 6, y + size * 0.5 - 16, 12 * values.fontScale, "o")
+		else
+			local labelColor = selected and { typography.selectedLabelR, typography.selectedLabelG, typography.selectedLabelB, typography.selectedLabelOpacity } or nil
+			drawRoleText(entry.disabled and "unavailableText" or "metadata", entry.label or "Build", entry.disabled and typography.unavailableText or typography.metadata,
+				x, y - 6, values.fontScale, opacity, roles, labelColor)
+		end
+		drawRoleText("slotNumber", entry.indexLabel or index, typography.slotNumber, x - size * 0.5 + 6, y + size * 0.5 - 16, values.fontScale, opacity, roles)
+		if entry.disabled and entry.unavailableText then drawRoleText("unavailableText", entry.unavailableText, typography.unavailableText, x, y - size * 0.5 + 4, values.fontScale, opacity, roles) end
 		if (entry.badge or 0) > 0 then
-			local badge = "x" .. tostring(entry.badge); local badgeW = max(28, #badge * 8 + 10)
-			local bx2, by2 = x + size * 0.5 + 3, y + size * 0.5 + 3
-			color({ 0.04, 0.08, 0.12, 0.88 * opacity }); gl.Rect(bx2 - badgeW, by2 - 20, bx2, by2)
-			outline(bx2 - badgeW, by2 - 20, bx2, by2, { accent[1], accent[2], accent[3], 0.7 * opacity }, 1)
-			color({ 1, 0.95, 0.8, opacity }); gl.Text(badge, bx2 - badgeW * 0.5, by2 - 16, 11 * values.fontScale, "oc")
+			local badge = "x" .. tostring(entry.badge); local badgeW = max(28, #badge * 8 + 10); local bx2, by2 = x + size * 0.5 + 3, y + size * 0.5 + 3
+			color({ 0.04, 0.08, 0.12, 0.88 * opacity }); gl.Rect(bx2 - badgeW, by2 - 20, bx2, by2); outline(bx2 - badgeW, by2 - 20, bx2, by2, { accent[1], accent[2], accent[3], 0.7 * opacity }, 1)
+			drawRoleText("metadata", badge, typography.metadata, bx2 - badgeW * 0.5, by2 - 16, values.fontScale, opacity, roles)
 		end
 	end
-	local panelRadius = max(radius * 0.39, min(radius * 0.56, radius - iconSize * 0.6))
-	color({ 0.015, 0.04, 0.065, 0.88 * opacity }); circle(cx, cy, panelRadius, 40)
-	ring(cx, cy, panelRadius, { accent[1], accent[2], accent[3], 0.78 * opacity }, 1.5, 40)
-	local titleSize = 18 * values.fontScale * values.centerTextScale
-	color({ 0.82, 0.94, 1, opacity }); gl.Text(model.title or "Build", cx, cy + panelRadius * 0.60, titleSize, "oc")
-	local details = model.details or {}
-	for index = 1, min(5, #details) do
-		local line = truncate(details[index], 10 * values.fontScale * values.centerTextScale, panelRadius * 1.55)
-		color(index == 1 and { 0.78, 0.84, 0.88, 0.96 * opacity } or { 0.9, 0.94, 0.98, 0.96 * opacity })
-		gl.Text(line, cx, cy + panelRadius * 0.28 - (index - 1) * 14 * values.fontScale, 10 * values.fontScale * values.centerTextScale, "oc")
-	end
+	local panelRadius = max(radius * 0.39, min(radius * 0.56, radius - iconSize * 0.6)) * typography.innerRadiusScale * typography.centerPanelScale
+	color({ 0.015, 0.04, 0.065, 0.88 * opacity }); circle(cx, cy, panelRadius, 40); ring(cx, cy, panelRadius, { accent[1], accent[2], accent[3], 0.78 * opacity }, 1.5, 40)
+	local centerScale = values.fontScale * values.centerTextScale
+	local selectedTitleColor = { typography.selectedTitleR, typography.selectedTitleG, typography.selectedTitleB, typography.selectedTitleOpacity }
+	local titleText = model.title or "Build"; local titleWidth = panelRadius * typography.centerTitle.maxWidth
+	if typography.centerTitle.wrapMode == "Wrap" then drawWrappedRole("centerTitle", titleText, typography.centerTitle, cx, cy + panelRadius * 0.60, centerScale, opacity, roles, titleWidth)
+	else drawRoleText("centerTitle", truncate(titleText, typography.centerTitle.size * centerScale, titleWidth), typography.centerTitle, cx, cy + panelRadius * 0.60, centerScale, opacity, roles,
+		model.selectedTitle == true and selectedTitleColor or nil) end
+	local details = model.details or {}; local description = model.description or details[1] or ""
+	local descriptionY = cy + panelRadius * 0.28 - (typography.centerTitle.spacingAfter + typography.centerDescription.spacingBefore) * centerScale
+	if description ~= "" then drawWrappedRole("centerDescription", description, typography.centerDescription, cx, descriptionY,
+		centerScale, opacity, roles, panelRadius * typography.centerDescription.maxWidth) end
+	local resourceY = descriptionY - ((roles.centerDescription and roles.centerDescription.lineCount or 0) * (roles.centerDescription and roles.centerDescription.lineSpacing or 0)) - typography.centerDescription.spacingAfter * centerScale
+	drawResources(model, typography, cx, resourceY, centerScale, opacity, roles)
+	local metadata = model.metadata or {}; if #metadata == 0 then for index = 2, #details do metadata[#metadata + 1] = details[index] end end
+	for index = 1, min(4, #metadata) do drawRoleText("metadata", metadata[index], typography.metadata, cx,
+		resourceY - 16 * centerScale - (index - 1) * (typography.metadata.size + typography.metadata.lineSpacing) * centerScale, centerScale, opacity, roles) end
 	if values.pageStatusVisible then
-		color({ accent[1], accent[2], accent[3], 0.95 * opacity }); gl.Text(string.upper(model.categoryLabel or "BUILD"), cx, cy + radius * 0.65, 18 * values.fontScale, "oc")
-		color({ 0.8, 0.8, 0.8, 0.8 * opacity }); gl.Text(model.pageLabel or model.subtitle or "LS choose  A confirm", cx, cy - radius * 0.65, 13 * values.fontScale, "oc")
+		drawRoleText("categoryLabel", string.upper(model.categoryLabel or "BUILD"), typography.categoryLabel, cx, cy + radius * 0.65, values.fontScale, opacity, roles)
+		drawRoleText("footer", model.footer or model.subtitle or "LS choose  A confirm", typography.footer, cx, cy - radius * 0.65, values.fontScale, opacity, roles)
+		if model.pageLabel then drawRoleText("pageIndicator", model.pageLabel, typography.pageIndicator, cx, cy - radius * 0.77, values.fontScale, opacity, roles) end
 	end
-	return { iconSize = iconSize, panelRadius = panelRadius }
+	return { iconSize = iconSize, panelRadius = panelRadius, roles = roles }
 end
 
 local function drawTacticalRadial(args, cx, cy, radius, accent, values)
-	local model, entries, opacity = args.model or {}, args.model.entries or {}, args.opacity or 1
+	local model, entries, opacity = args.model or {}, args.model.entries or {}, args.opacity or 1; local typography, roles = values.typography, {}
 	local fill = model.fill or { 0.02, 0.03, 0.04, 0.46 }; local n = max(1, #entries)
-	color({ fill[1], fill[2], fill[3], (fill[4] or 0.46) * opacity * values.legacyThemeOpacity }); circle(cx, cy, radius * 1.28, 42)
-	ring(cx, cy, radius, { accent[1], accent[2], accent[3], 0.74 * opacity }, 2.5, 44)
+	color({ fill[1], fill[2], fill[3], (fill[4] or 0.46) * opacity * values.legacyThemeOpacity }); circle(cx, cy, radius * 1.28, 42); ring(cx, cy, radius, { accent[1], accent[2], accent[3], 0.74 * opacity }, 2.5, 44)
 	for _, chip in ipairs(model.categoryChips or {}) do
-		local y = cy + (chip.direction == "up" and radius * 0.52 or chip.direction == "down" and -radius * 0.52 or 0)
-		local selected = chip.selected; local chipColor = chip.color or accent; local width = max(120, #tostring(chip.label or "") * 11 + 24)
-		color(selected and { chipColor[1] * 0.15, chipColor[2] * 0.15, chipColor[3] * 0.15, 0.88 * opacity } or { 0.04, 0.05, 0.06, 0.48 * opacity })
-		gl.Rect(cx - width * 0.5, y - 17, cx + width * 0.5, y + 17)
-		outline(cx - width * 0.5, y - 17, cx + width * 0.5, y + 17, { chipColor[1], chipColor[2], chipColor[3], (selected and 0.95 or 0.54) * opacity }, selected and 2 or 1)
-		color(selected and { 1, 1, 1, opacity } or { 0.72, 0.72, 0.72, 0.68 * opacity }); gl.Text(chip.label or "", cx, y - 6, (selected and 18 or 14) * values.fontScale, "oc")
+		local y = cy + (chip.direction == "up" and radius * 0.52 or chip.direction == "down" and -radius * 0.52 or 0); local selected, chipColor = chip.selected, chip.color or accent
+		local width = max(120, #tostring(chip.label or "") * 11 + 24); color(selected and { chipColor[1] * 0.15, chipColor[2] * 0.15, chipColor[3] * 0.15, 0.88 * opacity } or { 0.04, 0.05, 0.06, 0.48 * opacity })
+		gl.Rect(cx - width * 0.5, y - 17, cx + width * 0.5, y + 17); outline(cx - width * 0.5, y - 17, cx + width * 0.5, y + 17, { chipColor[1], chipColor[2], chipColor[3], (selected and 0.95 or 0.54) * opacity }, selected and 2 or 1)
+		drawRoleText("categoryLabel", chip.label or "", typography.categoryLabel, cx, y - 6, values.fontScale * (selected and 1 or 0.78), opacity, roles,
+			selected and { typography.selectedLabelR, typography.selectedLabelG, typography.selectedLabelB, typography.selectedLabelOpacity } or nil)
 	end
 	local itemW, itemH = min(260, max(130, radius * 0.54)), max(38, 54 * values.iconScale)
 	for index, entry in ipairs(entries) do
-		local angle = ((index - 1) * pi * 2 / n) - pi * 0.5
-		local x, y = cx + radius * values.itemSpacing * cos(angle), cy - radius * values.itemSpacing * sin(angle)
+		local angle = entryAngle(index, n, typography); local x, y = cx + radius * values.itemSpacing * cos(angle), cy - radius * values.itemSpacing * sin(angle)
 		local selected = index == (model.selectedIndex or 1); local w, h = itemW * (selected and values.selectedScale or 1), itemH * (selected and values.selectedScale or 1)
-		color(selected and { accent[1] * 0.8, accent[2] * 0.8, accent[3] * 0.8, 0.82 * opacity } or { fill[1] * 0.5, fill[2] * 0.5, fill[3] * 0.5, 0.85 * opacity })
-		gl.Rect(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5)
-		outline(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5, { accent[1], accent[2], accent[3], (selected and 1 or 0.64) * opacity }, selected and values.selectedBorderThickness or 1)
-		color(selected and { 1, 1, 1, opacity } or { accent[1], accent[2], accent[3], 0.9 * opacity }); gl.Text(entry.label or "Command", x, y - 6, (selected and 20 or 16) * values.fontScale, "oc")
+		color(selected and { typography.selectedBackgroundR, typography.selectedBackgroundG, typography.selectedBackgroundB, typography.selectedBackgroundOpacity * opacity } or { fill[1] * 0.5, fill[2] * 0.5, fill[3] * 0.5, 0.85 * opacity })
+		gl.Rect(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5); outline(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5,
+			selected and { typography.selectedBorderR, typography.selectedBorderG, typography.selectedBorderB, typography.selectedBorderOpacity * opacity } or { accent[1], accent[2], accent[3], 0.64 * opacity }, selected and values.selectedBorderThickness or 1)
+		drawRoleText(entry.disabled and "unavailableText" or "metadata", entry.label or "Command", entry.disabled and typography.unavailableText or typography.metadata, x, y - 6,
+			values.fontScale * (selected and 1.18 or 1), opacity, roles, selected and { typography.selectedLabelR, typography.selectedLabelG, typography.selectedLabelB, typography.selectedLabelOpacity } or nil)
 	end
-	color({ fill[1] * 0.7, fill[2] * 0.7, fill[3] * 0.7, 0.88 * opacity }); circle(cx, cy, radius * 0.42, 30)
-	ring(cx, cy, radius * 0.42, { accent[1] * 0.5, accent[2] * 0.5, accent[3] * 0.5, 0.64 * opacity }, 1.5, 30)
-	color({ accent[1], accent[2], accent[3], opacity }); gl.Text(model.categoryLabel or model.title or "Tactical", cx, cy + 36, 18 * values.fontScale * values.centerTextScale, "oc")
-	local selected = entries[model.selectedIndex or 1]
-	color({ 1, 1, 1, opacity }); gl.Text(selected and selected.label or model.title or "Tactical", cx, cy + 10, 22 * values.fontScale * values.centerTextScale, "oc")
-	color({ 1, 1, 1, 0.85 * opacity }); gl.Text(model.subtitle or "LS choose  A/X confirm  B/Y close", cx, cy - 18, 14 * values.fontScale * values.centerTextScale, "oc")
-	if model.detail then color({ 1, 1, 1, 0.7 * opacity }); gl.Text(model.detail, cx, cy - 38, 13 * values.fontScale * values.centerTextScale, "oc") end
-	return { itemWidth = itemW, itemHeight = itemH, panelRadius = radius * 0.42 }
+	local panelRadius = radius * 0.42 * typography.innerRadiusScale * typography.centerPanelScale
+	color({ fill[1] * 0.7, fill[2] * 0.7, fill[3] * 0.7, 0.88 * opacity }); circle(cx, cy, panelRadius, 30); ring(cx, cy, panelRadius, { accent[1] * 0.5, accent[2] * 0.5, accent[3] * 0.5, 0.64 * opacity }, 1.5, 30)
+	local centerScale = values.fontScale * values.centerTextScale; local selected = entries[model.selectedIndex or 1]
+	drawRoleText("categoryLabel", model.categoryLabel or model.title or "Tactical", typography.categoryLabel, cx, cy + 36, centerScale, opacity, roles)
+	local titleText = selected and selected.label or model.title or "Tactical"; local titleWidth = panelRadius * typography.centerTitle.maxWidth
+	if typography.centerTitle.wrapMode == "Wrap" then drawWrappedRole("centerTitle", titleText, typography.centerTitle, cx, cy + 10, centerScale, opacity, roles, titleWidth)
+	else drawRoleText("centerTitle", truncate(titleText, typography.centerTitle.size * centerScale, titleWidth), typography.centerTitle, cx, cy + 10, centerScale, opacity, roles,
+		model.selectedTitle == true and { typography.selectedTitleR, typography.selectedTitleG, typography.selectedTitleB, typography.selectedTitleOpacity } or nil) end
+	drawWrappedRole("centerDescription", model.description or model.subtitle or "LS choose  A/X confirm  B/Y close", typography.centerDescription, cx,
+		cy - 18 - typography.centerDescription.spacingBefore * centerScale, centerScale, opacity, roles, panelRadius * typography.centerDescription.maxWidth)
+	if model.detail then drawRoleText("metadata", model.detail, typography.metadata, cx, cy - 42, centerScale, opacity, roles) end
+	if model.footer then drawRoleText("footer", model.footer, typography.footer, cx, cy - radius * 0.65, values.fontScale, opacity, roles) end
+	return { itemWidth = itemW, itemHeight = itemH, panelRadius = panelRadius, roles = roles }
 end
 
 local function drawSelectionRadial(args, cx, cy, radius, accent, values)
-	local model, entries, opacity = args.model or {}, args.model.entries or {}, args.opacity or 1
-	color({ 0, 0, 0, 0.6 * opacity }); circle(cx, cy, radius * 1.5, 32)
-	ring(cx, cy, radius, { accent[1], accent[2], accent[3], 0.75 * opacity }, 2.5, 44)
-	color({ 0.08, 0.10, 0.13, 0.8 * opacity }); circle(cx, cy, radius * 0.48, 30)
-	color({ 1, 1, 1, opacity }); gl.Text(model.title or "SELECT FILTER", cx, cy + 8, 12 * values.fontScale * values.centerTextScale, "oc")
-	color({ 0.8, 0.8, 0.8, 0.8 * opacity }); gl.Text(model.subtitle or "Release X to set", cx, cy - 8, 9 * values.fontScale * values.centerTextScale, "oc")
+	local model, entries, opacity = args.model or {}, args.model.entries or {}, args.opacity or 1; local typography, roles = values.typography, {}
+	color({ 0, 0, 0, 0.6 * opacity }); circle(cx, cy, radius * 1.5, 32); ring(cx, cy, radius, { accent[1], accent[2], accent[3], 0.75 * opacity }, 2.5, 44)
+	local panelRadius = radius * 0.48 * typography.innerRadiusScale * typography.centerPanelScale
+	color({ 0.08, 0.10, 0.13, 0.8 * opacity }); circle(cx, cy, panelRadius, 30)
+	local centerScale = values.fontScale * values.centerTextScale
+	local titleText = model.title or "SELECT FILTER"; local titleWidth = panelRadius * typography.centerTitle.maxWidth
+	if typography.centerTitle.wrapMode == "Wrap" then drawWrappedRole("centerTitle", titleText, typography.centerTitle, cx, cy + 8, centerScale, opacity, roles, titleWidth)
+	else drawRoleText("centerTitle", truncate(titleText, typography.centerTitle.size * centerScale, titleWidth), typography.centerTitle, cx, cy + 8, centerScale, opacity, roles) end
+	drawWrappedRole("centerDescription", model.description or model.subtitle or "Release X to set", typography.centerDescription, cx,
+		cy - 10 - typography.centerDescription.spacingBefore * centerScale, centerScale, opacity, roles, panelRadius * typography.centerDescription.maxWidth)
 	for index, entry in ipairs(entries) do
-		local angle = ((index - 1) * pi * 2 / max(1, #entries)) - pi * 0.5
-		local x, y = cx + radius * values.itemSpacing * cos(angle), cy - radius * values.itemSpacing * sin(angle)
-		local vertical = index == 1 or index == 3; local w, h = vertical and 170 or 110, vertical and 38 or 30
-		local entryColor = entry.color or accent; local selected = index == (model.selectedIndex or 1)
-		color(selected and { entryColor[1], entryColor[2], entryColor[3], 0.85 * opacity } or { entryColor[1] * 0.15, entryColor[2] * 0.15, entryColor[3] * 0.15, 0.58 * opacity })
-		gl.Rect(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5)
-		outline(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5, { entryColor[1], entryColor[2], entryColor[3], (selected and 0.95 or 0.55) * opacity }, selected and values.selectedBorderThickness or 1)
-		color(selected and { 1, 1, 1, opacity } or { entryColor[1] * 0.4 + 0.6, entryColor[2] * 0.4 + 0.6, entryColor[3] * 0.4 + 0.6, 0.8 * opacity })
-		gl.Text(entry.label or "Filter", x, y - (vertical and 6 or 5), (vertical and 15 or 12) * values.fontScale, "oc")
+		local angle = entryAngle(index, #entries, typography); local x, y = cx + radius * values.itemSpacing * cos(angle), cy - radius * values.itemSpacing * sin(angle)
+		local vertical = index == 1 or index == 3; local w, h = vertical and 170 or 110, vertical and 38 or 30; local entryColor = entry.color or accent; local selected = index == (model.selectedIndex or 1)
+		color(selected and { typography.selectedBackgroundR, typography.selectedBackgroundG, typography.selectedBackgroundB, typography.selectedBackgroundOpacity * opacity } or { entryColor[1] * 0.15, entryColor[2] * 0.15, entryColor[3] * 0.15, 0.58 * opacity })
+		gl.Rect(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5); outline(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5,
+			selected and { typography.selectedBorderR, typography.selectedBorderG, typography.selectedBorderB, typography.selectedBorderOpacity * opacity } or { entryColor[1], entryColor[2], entryColor[3], 0.55 * opacity }, selected and values.selectedBorderThickness or 1)
+		drawRoleText(entry.disabled and "unavailableText" or "metadata", entry.label or "Filter", entry.disabled and typography.unavailableText or typography.metadata, x, y - (vertical and 6 or 5),
+			values.fontScale * (vertical and 1.05 or 0.92), opacity, roles, selected and { typography.selectedLabelR, typography.selectedLabelG, typography.selectedLabelB, typography.selectedLabelOpacity } or nil)
 	end
-	return { panelRadius = radius * 0.48 }
+	if model.categoryLabel then drawRoleText("categoryLabel", model.categoryLabel, typography.categoryLabel, cx, cy + radius * 0.67, values.fontScale, opacity, roles) end
+	if model.footer then drawRoleText("footer", model.footer, typography.footer, cx, cy - radius * 0.67, values.fontScale, opacity, roles) end
+	return { panelRadius = panelRadius, roles = roles }
 end
 
 function Renderers.DrawRadial(args)
-	args = args or {}; local model, theme = args.model or {}, args.theme or {}
-	local bounds = args.bounds or { x1 = 0, y1 = 0, x2 = 800, y2 = 800 }
+	args = args or {}; local model, theme = args.model or {}, args.theme or {}; local bounds = args.bounds or { x1 = 0, y1 = 0, x2 = 800, y2 = 800 }
+	local values = radialSettings(args); local margin = (tonumber(values.typography.safeScreenMargin) or 0)
 	local cx, cy = (bounds.x1 + bounds.x2) * 0.5, (bounds.y1 + bounds.y2) * 0.5
-	local radius = min(bounds.x2 - bounds.x1, bounds.y2 - bounds.y1) * (model.radiusRatio or 0.34)
-	local accent = model.accent or { theme.accentR or 0.34, theme.accentG or 0.82, theme.accentB or 0.92 }
-	local values = radialSettings(args); local style = model.style or "build"
-	local measured
-	if style == "tactical" then measured = drawTacticalRadial(args, cx, cy, radius, accent, values)
-	elseif style == "selection" then measured = drawSelectionRadial(args, cx, cy, radius, accent, values)
+	local radius = max(10, min(bounds.x2 - bounds.x1, bounds.y2 - bounds.y1) * (model.radiusRatio or 0.34) * values.typography.radiusScale - margin)
+	local accent = model.accent or { theme.accentR or 0.34, theme.accentG or 0.82, theme.accentB or 0.92 }; local style = model.style or "build"; local measured
+	if style == "tactical" then measured = drawTacticalRadial(args, cx, cy, radius, accent, values) elseif style == "selection" then measured = drawSelectionRadial(args, cx, cy, radius, accent, values)
 	else measured = drawBuildRadial(args, cx, cy, radius, accent, values) end
-	gl.Color(1, 1, 1, 1); gl.LineWidth(1); gl.Texture(false)
-	measured = measured or {}; measured.cx, measured.cy, measured.radius, measured.count, measured.style = cx, cy, radius, #(model.entries or {}), style
-	measured.parameters = values
+	gl.Color(1, 1, 1, 1); gl.LineWidth(1); gl.Texture(false); measured = measured or {}
+	measured.cx, measured.cy, measured.radius, measured.count, measured.style = cx, cy, radius, #(model.entries or {}), style; measured.parameters = values
 	return measured
 end
 

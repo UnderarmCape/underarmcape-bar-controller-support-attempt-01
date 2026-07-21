@@ -129,6 +129,7 @@ local DEFAULTS = {
 		tacticalRadial = { enabled = true, x = 0.5, y = 0.5, scale = 1, opacity = 1, fontScale = 1, iconScale = 1, anchor = "center" },
 		selectionRadial = { enabled = true, x = 0.5, y = 0.5, scale = 1, opacity = 1, fontScale = 1, iconScale = 1, anchor = "center" },
 		factoryRadial = { enabled = true, x = 0.5, y = 0.5, scale = 1, opacity = 1, fontScale = 1, iconScale = 1, anchor = "center" },
+		visibleSelectionRadial = { enabled = true, x = 0.5, y = 0.5, scale = 1, opacity = 1, fontScale = 1, iconScale = 1, anchor = "center" },
 		pregame = { enabled = true, x = 0.5, y = 0.5, scale = 1, opacity = 1, fontScale = 1, anchor = "center" },
 		reticle = { enabled = true, x = 0.5, y = 0.5, scale = 1, opacity = 1, anchor = "center" },
 		notifications = { enabled = true, x = 0.5, y = 0.35, scale = 1, opacity = 1, fontScale = 1, anchor = "center" },
@@ -152,6 +153,16 @@ local DEFAULTS = {
 		editor = { enabled = true, x = 0.55, y = 0.14, width = 0.42, height = 0.76, scale = 1, opacity = 1 },
 	},
 }
+
+-- Keep the persisted schema flat so schema-1/2/3 personal documents merge
+-- without loss. The shared renderer resolves these keys into semantic roles.
+local radialStyleAPI = extra.SharedRenderers and extra.SharedRenderers.RadialStyle
+local radialTypographyDefaults = radialStyleAPI and radialStyleAPI.DEFAULTS or {}
+for key, value in pairs(radialTypographyDefaults) do DEFAULTS.components.radials[key] = deepCopy(value) end
+for _, componentName in ipairs({ "buildRadial", "factoryRadial", "tacticalRadial", "selectionRadial", "visibleSelectionRadial" }) do
+	DEFAULTS.components[componentName].typographyOverride = false
+	for key, value in pairs(radialTypographyDefaults) do DEFAULTS.components[componentName][key] = deepCopy(value) end
+end
 
 local settings = deepCopy(DEFAULTS)
 local shippingBaseline = deepCopy(DEFAULTS)
@@ -244,6 +255,7 @@ local definitions = {
 		{ "tacticalRadial", "scale", "Tactical radial scale", "number", 0.50, 2.00, 0.05 },
 		{ "selectionRadial", "scale", "Selection radial scale", "number", 0.50, 2.00, 0.05 },
 		{ "factoryRadial", "scale", "Factory radial scale", "number", 0.50, 2.00, 0.05 },
+		{ "visibleSelectionRadial", "scale", "Visible-selection radial scale", "number", 0.50, 2.00, 0.05 },
 	},
 	["Other UI"] = {
 		{ "reticle", "scale", "Reticle scale", "number", 0.50, 2.00, 0.05 },
@@ -420,8 +432,93 @@ addProperty("Radials", "radials", "itemSpacing", "Radial item spacing", "number"
 addProperty("Radials", "radials", "legacyThemeOpacity", "Legacy color layering", "number", 0.2, 1, 0.05, "Advanced")
 addProperty("Radials", "radials", "pageStatusVisible", "Page and status labels", "bool", nil, nil, nil, "Advanced")
 for _, item in ipairs({ { "buildRadial", "Build radial" }, { "factoryRadial", "Factory radial" },
-	{ "tacticalRadial", "Tactical radial" }, { "selectionRadial", "Selection radial" } }) do
+	{ "tacticalRadial", "Tactical radial" }, { "selectionRadial", "Selection radial" },
+	{ "visibleSelectionRadial", "Visible selection filter radial" } }) do
 	addComponentProperties("Radials", item[1], item[2])
+end
+
+local radialComponentScopes = { "buildRadial", "factoryRadial", "tacticalRadial", "selectionRadial", "visibleSelectionRadial" }
+local radialRoleLabels = {
+	categoryLabel = "Category labels", centerTitle = "Center title", centerDescription = "Center description",
+	metalCost = "Metal cost", energyCost = "Energy cost", metadata = "Metadata", footer = "Footer instructions",
+	pageIndicator = "Page indicator", slotNumber = "Slot / hotkey number", unavailableText = "Unavailable text",
+}
+local radialRoleProperties = {
+	categoryLabel = {
+		{ "Size", "Font size", "number", 7, 42, 1 }, { "ColorR", "Color / HSV and swatches", "color" },
+		{ "ShadowEnabled", "Text shadow", "bool" }, { "ShadowColorR", "Shadow color", "color" }, { "OutlineEnabled", "Text outline", "bool" },
+		{ "Alignment", "Alignment", "enum", nil, nil, nil, { "Left", "Center", "Right" } },
+		{ "OffsetX", "Horizontal offset", "number", -80, 80, 1 }, { "OffsetY", "Vertical offset", "number", -80, 80, 1 },
+		{ "LetterSpacing", "Letter spacing", "number", -1, 8, 0.25 },
+	},
+	centerTitle = {
+		{ "Size", "Font size", "number", 7, 42, 1 }, { "ColorR", "Color / HSV and swatches", "color" },
+		{ "Emphasis", "Weight / emphasis", "number", 0.75, 1.5, 0.05 }, { "ShadowEnabled", "Text shadow", "bool" },
+		{ "ShadowColorR", "Shadow color", "color" }, { "OutlineEnabled", "Text outline", "bool" },
+		{ "MaxWidth", "Maximum width", "number", 0.6, 2, 0.05 }, { "WrapMode", "Overflow mode", "enum", nil, nil, nil, { "Truncate", "Wrap" } },
+		{ "SpacingAfter", "Title-to-body spacing", "number", 0, 30, 1 }, { "OffsetY", "Vertical offset", "number", -80, 80, 1 },
+	},
+	centerDescription = {
+		{ "Size", "Font size", "number", 6, 32, 1 }, { "ColorR", "Color / HSV and swatches", "color" },
+		{ "LineSpacing", "Line spacing", "number", 0, 20, 1 }, { "MaxWidth", "Maximum width", "number", 0.5, 2, 0.05 },
+		{ "WrapEnabled", "Wrap text", "bool" }, { "MaxLines", "Maximum lines", "number", 1, 8, 1 },
+		{ "SpacingBefore", "Spacing before description", "number", 0, 30, 1 }, { "SpacingAfter", "Spacing after description", "number", 0, 30, 1 },
+		{ "ShadowEnabled", "Text shadow", "bool" }, { "ShadowColorR", "Shadow color", "color" }, { "OutlineEnabled", "Text outline", "bool" },
+		{ "OffsetY", "Vertical offset", "number", -80, 80, 1 },
+	},
+	metalCost = {
+		{ "Size", "Font size", "number", 6, 32, 1 }, { "ColorR", "Color / HSV and swatches", "color" },
+		{ "IconSize", "Resource icon size", "number", 4, 32, 1 }, { "IconSpacing", "Icon-to-text spacing", "number", 0, 20, 1 },
+		{ "ShadowEnabled", "Text shadow", "bool" }, { "OutlineEnabled", "Text outline", "bool" },
+		{ "Alignment", "Alignment", "enum", nil, nil, nil, { "Left", "Center", "Right" } },
+	},
+	energyCost = {
+		{ "Size", "Font size", "number", 6, 32, 1 }, { "ColorR", "Color / HSV and swatches", "color" },
+		{ "IconSize", "Resource icon size", "number", 4, 32, 1 }, { "IconSpacing", "Icon-to-text spacing", "number", 0, 20, 1 },
+		{ "ShadowEnabled", "Text shadow", "bool" }, { "OutlineEnabled", "Text outline", "bool" },
+		{ "Alignment", "Alignment", "enum", nil, nil, nil, { "Left", "Center", "Right" } },
+	},
+	metadata = {
+		{ "Size", "Font size", "number", 6, 30, 1 }, { "ColorR", "Color / HSV and swatches", "color" },
+		{ "LineSpacing", "Line spacing", "number", 0, 20, 1 }, { "Alignment", "Alignment", "enum", nil, nil, nil, { "Left", "Center", "Right" } },
+		{ "ShadowEnabled", "Text shadow", "bool" }, { "OutlineEnabled", "Text outline", "bool" },
+	},
+	footer = { { "Size", "Font size", "number", 6, 30, 1 }, { "ColorR", "Color / HSV and swatches", "color" }, { "ShadowEnabled", "Text shadow", "bool" } },
+	pageIndicator = { { "Size", "Font size", "number", 6, 30, 1 }, { "ColorR", "Color / HSV and swatches", "color" }, { "ShadowEnabled", "Text shadow", "bool" } },
+	slotNumber = { { "Size", "Font size", "number", 6, 30, 1 }, { "ColorR", "Color / HSV and swatches", "color" }, { "ShadowEnabled", "Text shadow", "bool" } },
+	unavailableText = { { "Size", "Font size", "number", 6, 30, 1 }, { "ColorR", "Color / HSV and swatches", "color" }, { "ShadowEnabled", "Text shadow", "bool" } },
+}
+
+local function addRadialStyleProperties(scope, prefix)
+	if scope ~= "radials" then addProperty("Radials", scope, "typographyOverride", prefix .. " / Use custom typography", "bool") end
+	for _, property in ipairs({
+		{ "radiusScale", "Layout / Radius", "number", 0.6, 1.4, 0.02 }, { "innerRadiusScale", "Layout / Inner radius", "number", 0.6, 1.5, 0.02 },
+		{ "segmentSpacing", "Layout / Segment spacing", "number", 0.75, 1.25, 0.01 }, { "segmentAnglePadding", "Layout / Segment angle padding", "number", 0, 8, 0.25 },
+		{ "centerPanelScale", "Layout / Center-panel size", "number", 0.7, 1.4, 0.02 }, { "safeScreenMargin", "Layout / Safe-screen margin", "number", 0, 80, 1 },
+		{ "resourceSpacing", "Resource costs / Spacing", "number", 0, 40, 1 },
+		{ "resourceLayout", "Resource costs / Layout", "enum", nil, nil, nil, { "Row", "Column" } },
+		{ "resourceAlignment", "Resource costs / Alignment", "enum", nil, nil, nil, { "Left", "Center", "Right" } },
+	}) do addProperty("Radials", scope, property[1], prefix .. " / " .. property[2], property[3], property[4], property[5], property[6], "Basic", property[7]) end
+	for _, roleName in ipairs(radialStyleAPI and radialStyleAPI.ROLES or {}) do
+		for _, property in ipairs(radialRoleProperties[roleName]) do
+			local options = type(property[7]) == "table" and property[7] or nil
+			addProperty("Radials", scope, roleName .. property[1], prefix .. " / " .. radialRoleLabels[roleName] .. " / " .. property[2],
+				property[3], property[4], property[5], property[6], property[3] == "color" and "Basic" or "Advanced", options)
+		end
+	end
+	for _, property in ipairs({
+		{ "selectedBackgroundR", "Selected state / Background", "color" }, { "selectedBorderR", "Selected state / Border", "color" },
+		{ "selectedLabelR", "Selected state / Segment label", "color" }, { "selectedTitleR", "Selected state / Center title", "color" },
+		{ "selectedIconOpacity", "Selected state / Icon opacity", "number", 0.1, 1, 0.05 },
+		{ "unavailableIconOpacity", "Selected state / Unavailable icon opacity", "number", 0.1, 1, 0.05 },
+	}) do addProperty("Radials", scope, property[1], prefix .. " / " .. property[2], property[3], property[4], property[5], property[6], "Advanced") end
+end
+
+addRadialStyleProperties("radials", "All radials")
+for _, scope in ipairs(radialComponentScopes) do
+	local label = scope == "buildRadial" and "Build" or scope == "factoryRadial" and "Factory" or scope == "tacticalRadial" and "Tactical"
+		or scope == "selectionRadial" and "Selection" or "Visible selection filter"
+	addRadialStyleProperties(scope, label)
 end
 for _, item in ipairs({ { "selectedStatus", "Selected status" }, { "queueStatus", "Queue indicator" },
 	{ "placementStatus", "Placement status" } }) do addComponentProperties("Status", item[1], item[2]) end
@@ -436,6 +533,8 @@ addProperty("Other", "debug", "enabled", "Developer debug panel allowed", "bool"
 addProperty("Theme", "theme", "preset", "Theme preset", "enum", nil, nil, nil, "Basic", {
 	"BAR Default", "Minimal", "Compact", "Large Accessibility", "Transparent", "High Contrast", "Custom", "Ocean", "Soft", "Colorblind",
 })
+for _, item in ipairs({ { "backgroundR", "Background color" }, { "foregroundR", "Foreground color" }, { "accentR", "Accent color" },
+	{ "mutedR", "Muted color" }, { "dangerR", "Danger color" } }) do addProperty("Theme", "theme", item[1], item[2] .. " / HSV and swatches", "color") end
 addProperty("Theme", "theme", "advancedColorEditor", "Advanced color editor", "bool")
 addProperty("Theme", "theme", "colorTarget", "Color target", "enum", nil, nil, nil, "Advanced",
 	{ "Background", "Foreground", "Accent", "Muted", "Danger" })
@@ -693,6 +792,7 @@ end
 local COLOR_PREFIXES = { Background = "background", Foreground = "foreground", Accent = "accent", Muted = "muted", Danger = "danger" }
 
 function extra.rgbToHsv(r, g, b)
+	if radialStyleAPI and radialStyleAPI.RGBToHSV then return radialStyleAPI.RGBToHSV(r, g, b) end
 	local maximum, minimum = math.max(r, g, b), math.min(r, g, b)
 	local delta, hue = maximum - minimum, 0
 	if delta > 0 then
@@ -704,6 +804,7 @@ function extra.rgbToHsv(r, g, b)
 end
 
 function extra.hsvToRgb(h, s, v)
+	if radialStyleAPI and radialStyleAPI.HSVToRGB then return radialStyleAPI.HSVToRGB(h, s, v) end
 	h, s, v = (tonumber(h) or 0) % 360, clamp(s, 0, 1), clamp(v, 0, 1)
 	local chroma = v * s; local x = chroma * (1 - math.abs(((h / 60) % 2) - 1)); local m = v - chroma
 	local r, g, b
@@ -714,6 +815,7 @@ function extra.hsvToRgb(h, s, v)
 end
 
 function extra.colorHex(r, g, b)
+	if radialStyleAPI and radialStyleAPI.ColorHex then return radialStyleAPI.ColorHex(r, g, b) end
 	return string.format("#%02X%02X%02X", math.floor(clamp(r, 0, 1) * 255 + 0.5),
 		math.floor(clamp(g, 0, 1) * 255 + 0.5), math.floor(clamp(b, 0, 1) * 255 + 0.5))
 end
@@ -754,12 +856,88 @@ local function getScope(scope)
 	return settings.components[scope], shippingBaseline.components[scope] or DEFAULTS.components[scope]
 end
 
+local function isRadialComponentScope(scope)
+	for _, candidate in ipairs(radialComponentScopes) do if scope == candidate then return true end end
+	return false
+end
+
+local function isRadialStyleKey(key) return radialTypographyDefaults[key] ~= nil end
+
+local radialStyleCache = { revision = -1, values = {} }
+local setValue
+function extra.getResolvedRadialStyle(componentName)
+	if not radialStyleAPI then return nil end
+	if radialStyleCache.revision ~= revision then radialStyleCache.revision, radialStyleCache.values = revision, {} end
+	componentName = tostring(componentName or "buildRadial")
+	if not radialStyleCache.values[componentName] then
+		radialStyleCache.values[componentName] = radialStyleAPI.Resolve(settings.components.radials, settings.components[componentName])
+	end
+	return radialStyleCache.values[componentName]
+end
+
+function extra.getColorState(row)
+	local target = getScope(row[1]); local prefix = string.sub(row[2], 1, -2)
+	local opacityKey = string.gsub(prefix, "Color$", "") .. "Opacity"
+	if isRadialComponentScope(row[1]) and target and target.typographyOverride ~= true then target = settings.components.radials end
+	local r, g, b = tonumber(target and target[prefix .. "R"]) or 1, tonumber(target and target[prefix .. "G"]) or 1,
+		tonumber(target and target[prefix .. "B"]) or 1
+	local alpha = target and target[opacityKey]; if alpha == nil then alpha = 1 end
+	local h, s, v = extra.rgbToHsv(r, g, b)
+	return { r = r, g = g, b = b, a = tonumber(alpha) or 1, h = h, s = s, v = v,
+		hex = radialStyleAPI and radialStyleAPI.ColorHex and radialStyleAPI.ColorHex(r, g, b, alpha) or extra.colorHex(r, g, b) }
+end
+
+function extra.applyColor(row, r, g, b, alpha, remember)
+	local prefix = string.sub(row[2], 1, -2); local target = getScope(row[1])
+	local opacityKey = string.gsub(prefix, "Color$", "") .. "Opacity"
+	if isRadialComponentScope(row[1]) and target and target.typographyOverride ~= true then
+		editor.status = "Enable 'Use custom typography' before changing " .. tostring(row[1]); return false
+	end
+	setValue(row[1], prefix .. "R", clamp(r, 0, 1)); setValue(row[1], prefix .. "G", clamp(g, 0, 1)); setValue(row[1], prefix .. "B", clamp(b, 0, 1))
+	local _, defaultsForScope = getScope(row[1]); if defaultsForScope[opacityKey] ~= nil then setValue(row[1], opacityKey, clamp(alpha, 0, 1)) end
+	if remember then extra.rememberColor(radialStyleAPI and radialStyleAPI.ColorHex(r, g, b, alpha) or extra.colorHex(r, g, b)) end
+	return true
+end
+
+function extra.adjustColor(row, channel, normalized, remember)
+	local value = extra.getColorState(row); normalized = clamp(normalized, 0, 1)
+	if channel == "h" then value.h = normalized * 360 elseif channel == "s" then value.s = normalized
+	elseif channel == "v" then value.v = normalized else value.a = normalized end
+	value.r, value.g, value.b = extra.hsvToRgb(value.h, value.s, value.v)
+	return extra.applyColor(row, value.r, value.g, value.b, value.a, remember)
+end
+
+function extra.applyColorPreset(row, preset)
+	if not row or not preset then return false end
+	local ownMutation = beginMutation("Apply " .. tostring(preset[1]) .. " to " .. propertyID(row[1], row[2]))
+	local changed = extra.applyColor(row, preset[2], preset[3], preset[4], preset[5] or 1, true)
+	if ownMutation then endMutation() end; if changed then editor.status = "Applied " .. tostring(preset[1]) end
+	return changed
+end
+
+function extra.getColorEditorPresets()
+	local result, seen = {}, {}
+	for _, preset in ipairs(radialStyleAPI and radialStyleAPI.COLOR_PRESETS or {}) do result[#result + 1] = preset; seen[radialStyleAPI.ColorHex(preset[2], preset[3], preset[4], preset[5])] = true end
+	local function append(name, hex)
+		if #result >= 30 or seen[hex] or not radialStyleAPI or not radialStyleAPI.ParseHexColor then return end
+		local r, g, b, a = radialStyleAPI.ParseHexColor(hex); if r then result[#result + 1] = { name .. " " .. hex, r, g, b, a }; seen[hex] = true end
+	end
+	local favorites = {}; for hex in pairs(authorData.favoriteColors or {}) do favorites[#favorites + 1] = hex end; table.sort(favorites)
+	for _, hex in ipairs(favorites) do append("Favorite", hex) end
+	for _, hex in ipairs(authorData.recentColors or {}) do append("Recent", hex) end
+	return result
+end
+
 local authoringPropertyHook
 local themePropertyHook
 
-local function setValue(scope, key, value)
+setValue = function(scope, key, value)
 	local target, defaultsForScope = getScope(scope)
 	if not target or defaultsForScope[key] == nil then return nil end
+	if isRadialComponentScope(scope) and isRadialStyleKey(key) and target.typographyOverride ~= true then
+		editor.status = "Enable 'Use custom typography' before changing " .. tostring(scope)
+		return settings.components.radials[key]
+	end
 	if scope == "gameplay" then
 		local api = WG and WG.BARControllerSupport
 		if not api or type(api.SetSetting) ~= "function" then editor.status = "Gameplay settings API unavailable"; return target[key] end
@@ -1864,7 +2042,8 @@ local canvasComponents = {
 	{ "hints", "Button Hints", 570, 150 }, { "bindingsButton", "Bindings", 110, 28 },
 	{ "editorLauncher", "UI Layout", 116, 28 }, { "buildRadial", "Build Radial", 420, 420 },
 	{ "factoryRadial", "Factory Radial", 420, 420 }, { "tacticalRadial", "Tactical Radial", 390, 390 },
-	{ "selectionRadial", "Selection Radial", 290, 290 }, { "hotSlots", "Unit Hot Slots", 500, 84 },
+	{ "selectionRadial", "Selection Radial", 290, 290 }, { "visibleSelectionRadial", "Visible Selection Filter", 290, 290 },
+	{ "hotSlots", "Unit Hot Slots", 500, 84 },
 	{ "selectedStatus", "Selected Status", 294, 104 }, { "queueStatus", "Queue Status", 260, 42 },
 	{ "placementStatus", "Placement Status", 300, 52 }, { "notifications", "Notifications", 360, 64 },
 	{ "pregame", "Pregame", 440, 90 }, { "instructional", "Instructional", 560, 90 },
@@ -1873,7 +2052,9 @@ local canvasComponents = {
 
 local previewContexts = { "Normal Gameplay", "Nothing Selected", "Single Unit", "Multiple Units", "Builder Selected",
 	"Factory Selected", "Transport Selected", "Mouse Mode", "Build Menu", "Build Placement", "Placement Rotation", "Placement Queue",
-	"Build Radial", "Tactical Radial", "Selection Radial", "Visible Selection Filter Radial", "Factory Radial", "Unit Hot Slots", "Empty Hot Slots",
+	"Build Radial - Economy Item", "Build Radial - Combat Item", "Factory Radial - Queued Unit", "Factory Radial - Expensive Unit",
+	"Tactical Radial", "Selection Radial", "Visible Selection Filter Radial", "Long Description Stress Test", "Resource Cost Color Test",
+	"Global-versus-Override Test", "Unit Hot Slots", "Empty Hot Slots",
 	"Populated Hot Slots", "Selected Hot Slot", "Long Binding Stress Test", "Multi-column Hint Stress Test",
 	"Maximum Wrapping Stress Test", "Long Chord Stress Test" }
 
@@ -1881,7 +2062,8 @@ function extra.previewKind()
 	local selected = editor.selectedComponent
 	if selected == "hints" then return "hints" end
 	if selected == "hotSlots" then return "hotSlots" end
-	if selected == "buildRadial" or selected == "factoryRadial" or selected == "tacticalRadial" or selected == "selectionRadial" then return "radials" end
+	if selected == "buildRadial" or selected == "factoryRadial" or selected == "tacticalRadial" or selected == "selectionRadial"
+		or selected == "visibleSelectionRadial" then return "radials" end
 	return nil
 end
 
@@ -1900,8 +2082,9 @@ function extra.previewMenuEntries()
 		category("Building", { "Build Menu", "Build Placement", "Placement Rotation", "Placement Queue" })
 		category("Stress Tests", { "Long Binding Stress Test", "Multi-column Hint Stress Test", "Maximum Wrapping Stress Test", "Long Chord Stress Test" })
 	elseif kind == "radials" then
-		category("Radials", { "Build Radial", "Tactical Radial", "Selection Radial", "Visible Selection Filter Radial", "Factory Radial" })
-		category("Stress Tests", { "Long Chord Stress Test" })
+		category("Build and factory", { "Build Radial - Economy Item", "Build Radial - Combat Item", "Factory Radial - Queued Unit", "Factory Radial - Expensive Unit" })
+		category("Other radials", { "Tactical Radial", "Selection Radial", "Visible Selection Filter Radial" })
+		category("Typography tests", { "Long Description Stress Test", "Resource Cost Color Test", "Global-versus-Override Test" })
 	elseif kind == "hotSlots" then
 		category("Groups", { "Unit Hot Slots", "Empty Hot Slots", "Populated Hot Slots", "Selected Hot Slot" })
 	end
@@ -2289,7 +2472,8 @@ extra.editorScopeLabels = {
 	gameplay = "Controller input",
 	authoring = "Authoring", bindingsButton = "Bindings launcher", editorLauncher = "Layout launcher",
 	radials = "All radials", buildRadial = "Build radial", tacticalRadial = "Tactical radial",
-	selectionRadial = "Selection radial", factoryRadial = "Factory radial", selectedStatus = "Selected status",
+	selectionRadial = "Selection radial", visibleSelectionRadial = "Visible selection filter radial",
+	factoryRadial = "Factory radial", selectedStatus = "Selected status",
 	queueStatus = "Queue status", placementStatus = "Placement status", notifications = "Notifications",
 	pregame = "Pregame", instructional = "Instructional", companionStatus = "Companion status", reticle = "Reticle",
 }
@@ -2310,10 +2494,18 @@ function extra.selectedPreviewDefinition()
 end
 
 function extra.workspaceGetValue(row)
-	local scope = getScope(row[1]); return scope and scope[row[2]]
+	local scope = getScope(row[1]); if not scope then return nil end
+	if isRadialComponentScope(row[1]) and isRadialStyleKey(row[2]) and scope.typographyOverride ~= true then
+		return settings.components.radials[row[2]]
+	end
+	return scope[row[2]]
 end
 
 function extra.workspaceGetSource(row)
+	local scope = getScope(row[1])
+	if isRadialComponentScope(row[1]) and isRadialStyleKey(row[2]) and scope and scope.typographyOverride ~= true then
+		return "inherited from All Radials"
+	end
 	return layerSources[rowID(row)] or "preview"
 end
 
@@ -2351,18 +2543,30 @@ function extra.drawWorkspacePreview(shape, colors)
 		local labels = style == "selection" and (context == "Visible Selection Filter Radial"
 			and { "Last Selected", "Air", "Combat", "Builders" } or { "All Mobile", "Air", "Combat", "Builders" })
 			or { "Economy", "Energy", "Defense", "Factory", "Assist", "Repair", "Reclaim", "Orders" }
-		for index, label in ipairs(labels) do entries[index] = { label = label } end
-		local component = settings.components[editor.selectedComponent] or {}
+		for index, label in ipairs(labels) do entries[index] = { label = label, disabled = index == 6,
+			unavailableText = index == 6 and "Unavailable" or nil, badge = index == 4 and 3 or nil, indexLabel = tostring(index % 10) } end
+		local componentName = context == "Visible Selection Filter Radial" and "visibleSelectionRadial"
+			or string.find(context, "Factory", 1, true) and "factoryRadial" or string.find(context, "Tactical", 1, true) and "tacticalRadial"
+			or string.find(context, "Selection", 1, true) and "selectionRadial" or editor.selectedComponent
+		if componentName == "radials" or not settings.components[componentName] then componentName = "buildRadial" end
+		local component = settings.components[componentName] or {}
+		local description = context == "Long Description Stress Test"
+			and "Long-range support unit with a deliberately extensive production description that demonstrates wrapping and maximum-line limits."
+			or style == "selection" and "Choose which visible units become the active selection." or "Produces energy and supports nearby construction."
 		extra.SharedRenderers.DrawRadial({ bounds = shape, theme = settings.theme,
-			model = { style = style, title = context, categoryLabel = style == "tactical" and "TACTICAL" or "BUILD",
-				subtitle = "Production radial geometry", pageLabel = "PAGE 1/2", entries = entries, selectedIndex = 3 },
+			model = { style = style, title = string.find(context, "Combat", 1, true) and "Armada Stout" or string.find(context, "Factory", 1, true) and "Queued Constructor" or "Advanced Solar Collector",
+				selectedTitle = string.find(context, "Factory", 1, true) ~= nil,
+				categoryLabel = string.find(context, "Combat", 1, true) and "COMBAT" or style == "tactical" and "TACTICAL" or style == "selection" and "SELECTION" or "ECONOMY",
+				description = description, metalCost = context == "Resource Cost Color Test" and "12,345" or "370",
+				energyCost = context == "Resource Cost Color Test" and "67,890" or "4,200", metadata = { "Build time 28.4s", "Health 1,850", "DPS 142" },
+				footer = "LS choose  A confirm  B close", pageLabel = "PAGE 1/2", entries = entries, selectedIndex = 3 },
 			settings = { iconScale = (component.iconScale or 1) * (settings.components.radials.iconScale or 1),
-				fontScale = effectiveFontScale(editor.selectedComponent), centerTextScale = settings.components.radials.centerTextScale,
+				fontScale = effectiveFontScale(componentName), centerTextScale = settings.components.radials.centerTextScale,
 				selectedScale = settings.components.radials.selectedScale,
 				selectedBorderThickness = settings.components.radials.selectedBorderThickness,
 				itemSpacing = settings.components.radials.itemSpacing, legacyThemeOpacity = settings.components.radials.legacyThemeOpacity,
-				pageStatusVisible = settings.components.radials.pageStatusVisible },
-			opacity = effectiveOpacity(editor.selectedComponent) })
+				pageStatusVisible = settings.components.radials.pageStatusVisible, typography = extra.getResolvedRadialStyle(componentName) },
+			opacity = effectiveOpacity(componentName) })
 	elseif kind == "hotSlots" then
 		local slots = {}
 		for index = 1, 10 do slots[index] = { label = tostring(index % 10), count = context == "Empty Hot Slots" and 0 or index * 3,
@@ -2393,6 +2597,9 @@ function extra.drawEditor()
 		previewDetail = "Drag the selection bounds in the live game view; resize handles appear where supported.",
 		scopeLabels = extra.editorScopeLabels,
 		getValue = extra.workspaceGetValue, getSource = extra.workspaceGetSource,
+		getColor = extra.getColorState, hsvToRgb = extra.hsvToRgb,
+		colorPresets = extra.getColorEditorPresets(), colorWheelEditingId = editor.colorWheelEditId,
+		editingColorId = editor.activeText == "colorValue" and editor.colorText and rowID(editor.colorText.row) .. ":" .. editor.colorText.channel or nil,
 		editingId = editor.activeText == "propertyValue" and editor.textRow and rowID(editor.textRow) or nil,
 		wheelEditingId = editor.wheelEditId,
 		editingText = editor.textBuffer, composition = editor.composition,
@@ -2613,6 +2820,7 @@ function widget:Initialize()
 		Set = setValue, GetComponent = function(name) return settings.components[name] end,
 		GetGlobal = function() return settings.global end, GetEffectiveScale = effectiveScale,
 		GetEffectiveOpacity = effectiveOpacity, GetEffectiveFontScale = effectiveFontScale,
+		GetResolvedRadialStyle = extra.getResolvedRadialStyle,
 		GetComponentBounds = componentBounds, GetComponentCenter = getComponentCenter, GetColor = getThemeColor,
 		GetRevision = function() return revision end,
 		GetPropertySource = function(scope, key) return layerSources[propertyID(scope, key)] or "fallback" end,
@@ -2683,7 +2891,12 @@ function widget:Update(dt)
 		editor.held.elapsed = editor.held.elapsed + dt
 		if editor.held.elapsed >= editor.held.nextRepeat then
 			local heldFor = editor.held.elapsed
-			adjustRow(editor.held.delta, heldFor > 2.0 and 10 or heldFor > 1.0 and 4 or 1)
+			local multiplier = heldFor > 2.0 and 10 or heldFor > 1.0 and 4 or 1
+			if editor.held.colorChannel and editor.held.row then
+				local state = extra.getColorState(editor.held.row); local channel = editor.held.colorChannel
+				local current = channel == "h" and state.h / 360 or channel == "s" and state.s or channel == "v" and state.v or state.a
+				extra.adjustColor(editor.held.row, channel, current + editor.held.delta * (channel == "h" and (1 / 360) or 0.01) * multiplier, false)
+			else adjustRow(editor.held.delta, multiplier) end
 			editor.held.nextRepeat = editor.held.nextRepeat + (heldFor > 2.0 and 0.035 or heldFor > 1.0 and 0.055 or 0.085)
 		end
 	end
@@ -2756,7 +2969,7 @@ function widget:LegacyMousePress(x, y, button)
 		if tab == "General" then resetComponent("global")
 		elseif tab == "Button Hints" then resetComponent("hints")
 		elseif tab == "Bindings Button" then resetComponent("bindingsButton")
-		elseif tab == "Radials" then for _, name in ipairs({ "radials", "buildRadial", "tacticalRadial", "selectionRadial", "factoryRadial" }) do resetComponent(name) end
+		elseif tab == "Radials" then for _, name in ipairs({ "radials", "buildRadial", "tacticalRadial", "selectionRadial", "visibleSelectionRadial", "factoryRadial" }) do resetComponent(name) end
 		elseif tab == "Other UI" then for _, name in ipairs({ "reticle", "notifications", "pregame", "instructional" }) do resetComponent(name) end
 		end
 		return true
@@ -2846,7 +3059,7 @@ end
 
 local componentTabs = {
 	hints = "Hints", hotSlots = "Hot Slots", bindingsButton = "Launchers", editorLauncher = "Launchers",
-	buildRadial = "Radials", factoryRadial = "Radials", tacticalRadial = "Radials", selectionRadial = "Radials",
+	buildRadial = "Radials", factoryRadial = "Radials", tacticalRadial = "Radials", selectionRadial = "Radials", visibleSelectionRadial = "Radials",
 	selectedStatus = "Status", queueStatus = "Status", placementStatus = "Status",
 	reticle = "Other", notifications = "Other", pregame = "Other", instructional = "Other", companionStatus = "Other",
 }
@@ -2887,13 +3100,18 @@ function extra.resetProperty(row)
 	if not row then return false end
 	local _, defaultsForScope = getScope(row[1])
 	if not defaultsForScope then return false end
-	setValue(row[1], row[2], deepCopy(defaultsForScope[row[2]]))
+	if row[4] == "color" then
+		local prefix = string.sub(row[2], 1, -2)
+		for _, key in ipairs({ prefix .. "R", prefix .. "G", prefix .. "B", string.gsub(prefix, "Color$", "") .. "Opacity" }) do
+			if defaultsForScope[key] ~= nil then setValue(row[1], key, deepCopy(defaultsForScope[key])) end
+		end
+	else setValue(row[1], row[2], deepCopy(defaultsForScope[row[2]])) end
 	editor.status = "Reset " .. rowID(row)
 	return true
 end
 
 function extra.selectNavigationItem(item)
-	editor.wheelEditId, editor.wheelEditRow = nil, nil
+	editor.wheelEditId, editor.wheelEditRow, editor.colorWheelEditId = nil, nil, nil
 	editor.navigationSelection = item.id
 	if item.tab then
 		for index, name in ipairs(tabs) do if name == item.tab then editor.tab = index; break end end
@@ -3003,6 +3221,31 @@ function extra.handleWorkspaceAction(action, x, y, button)
 		if button == 3 then extra.EditorWorkspace.OpenPropertyMenu(extra.workspace, action.row, settings.authoring.developerAuthoring,
 			authorData.savedValues[rowID(action.row)] ~= nil) end
 	elseif kind == "property-control" then extra.beginPropertyControl(action, x)
+	elseif kind == "color-slider" then
+		editor.row = action.rowIndex or editor.row
+		local ratio = clamp((x - action.control.x1) / math.max(1, action.control.x2 - action.control.x1), 0, 1)
+		beginMutation("Adjust color " .. rowID(action.row)); extra.adjustColor(action.row, action.channel, ratio, false)
+		editor.propertyDrag = { kind = "color", row = action.row, channel = action.channel, control = action.control }
+		editor.colorWheelEditId = rowID(action.row) .. ":" .. action.channel
+		if extra.input then extra.EditorInput.Capture(extra.input, "color-slider", { row = action.row, channel = action.channel }, button, x, y) end
+	elseif kind == "color-swatch" then extra.applyColorPreset(action.row, action.preset)
+	elseif kind == "color-number-entry" then
+		editor.row = action.rowIndex or editor.row; local value = extra.getColorState(action.row)
+		local numeric = action.channel == "h" and value.h or (action.channel == "s" and value.s or action.channel == "v" and value.v or value.a) * 100
+		editor.activeText, editor.colorText, editor.selectAll, editor.composition = "colorValue", { row = action.row, channel = action.channel }, true, ""
+		editor.textBuffer, editor.textOriginal, editor.textNumeric = tostring(math.floor(numeric * 100 + 0.5) / 100), tostring(numeric), true; claimEditorInput()
+	elseif kind == "color-copy" then
+		local value = extra.getColorState(action.row); if Spring and type(Spring.SetClipboard) == "function" then Spring.SetClipboard(value.hex) end
+		editor.status = "Copied " .. tostring(value.hex)
+	elseif kind == "color-paste" then
+		local clipboard = Spring and type(Spring.GetClipboard) == "function" and Spring.GetClipboard() or ""
+		local r, g, b, a = radialStyleAPI and radialStyleAPI.ParseHexColor and radialStyleAPI.ParseHexColor(clipboard)
+		if r then local ownMutation = beginMutation("Paste color " .. rowID(action.row)); extra.applyColor(action.row, r, g, b, a, true); if ownMutation then endMutation() end
+			editor.status = "Pasted color" else editor.status = "Clipboard does not contain #RRGGBB or #RRGGBBAA" end
+	elseif kind == "color-favorite" then
+		local value = extra.getColorState(action.row); local ownMutation = beginMutation("Favorite color " .. tostring(value.hex))
+		authorData.favoriteColors[value.hex] = authorData.favoriteColors[value.hex] and nil or true
+		if ownMutation then endMutation() end; history.dirty = true; editor.status = authorData.favoriteColors[value.hex] and "Favorite saved" or "Favorite removed"
 	elseif kind == "property-slider" then extra.beginPropertyControl({ row = action.row, rowIndex = action.rowIndex,
 		kind = "number", control = action.control }, x)
 		editor.wheelEditId, editor.wheelEditRow = rowID(action.row), action.row
@@ -3062,14 +3305,15 @@ function widget:MousePress(x, y, button)
 			if hit then
 				local actionType = hit.action and hit.action.type
 				local valueClick = actionType == "property-slider" or actionType == "property-step"
-					or actionType == "property-number-entry"
-				if button == 1 and not valueClick then editor.wheelEditId, editor.wheelEditRow = nil, nil end
-				if hit.action and hit.action.row then
+					or actionType == "property-number-entry" or actionType == "color-slider" or actionType == "color-number-entry"
+				if button == 1 and not valueClick then editor.wheelEditId, editor.wheelEditRow, editor.colorWheelEditId = nil, nil, nil end
+				if actionType == "color-swatch" and hit.id then extra.EditorWorkspace.SetFocus(extra.workspace, hit.id)
+				elseif hit.action and hit.action.row then
 					extra.EditorWorkspace.SetFocus(extra.workspace, "property:" .. rowID(hit.action.row))
 				elseif hit.id then extra.EditorWorkspace.SetFocus(extra.workspace, hit.id) end
 				return extra.handleWorkspaceAction(hit.action, x, y, button)
 			end
-			if button == 1 then editor.wheelEditId, editor.wheelEditRow = nil, nil end
+			if button == 1 then editor.wheelEditId, editor.wheelEditRow, editor.colorWheelEditId = nil, nil, nil end
 			return true
 		end
 		if button == 1 and pointInside(editor.close, x, y) then setEditorOpen(false); return true end
@@ -3155,9 +3399,13 @@ function widget:MouseMove(x, y)
 	elseif editor.propertyDrag then
 		local drag, row = editor.propertyDrag, editor.propertyDrag.row
 		local ratio = clamp((x - drag.control.x1) / math.max(1, drag.control.x2 - drag.control.x1), 0, 1)
-		local value = row[5] + (row[6] - row[5]) * ratio
-		if row[7] and row[7] > 0 then value = math.floor(value / row[7] + 0.5) * row[7] end
-		setValue(row[1], row[2], clamp(value, row[5], row[6])); return true
+		if drag.kind == "color" then extra.adjustColor(row, drag.channel, ratio, false)
+		else
+			local value = row[5] + (row[6] - row[5]) * ratio
+			if row[7] and row[7] > 0 then value = math.floor(value / row[7] + 0.5) * row[7] end
+			setValue(row[1], row[2], clamp(value, row[5], row[6]))
+		end
+		return true
 	elseif editor.resizeComponent then
 		local item = settings.components[editor.resizeComponent]
 		local scale = math.max(0.01, effectiveScale(editor.resizeComponent))
@@ -3190,6 +3438,9 @@ function widget:MouseRelease(x, y, button)
 	if extra.workspace then extra.EditorWorkspace.EndPointer(extra.workspace) end
 	if extra.input then extra.EditorInput.Release(extra.input, button) end
 	editor.dragComponent, editor.resizeComponent, editor.dragging, editor.resizing, editor.held = nil, nil, false, false, nil
+	if editor.propertyDrag and editor.propertyDrag.kind == "color" then
+		local value = extra.getColorState(editor.propertyDrag.row); extra.rememberColor(value.hex)
+	end
 	editor.propertyDrag = nil
 	editor.guides = {}; endMutation(); return true
 end
@@ -3201,6 +3452,13 @@ function widget:MouseWheel(up, value)
 		local alt, ctrl, _, shift = Spring.GetModKeyState()
 		local hit = extra.EditorWorkspace.FindHit(extra.workspace, x, y)
 		local action = hit and hit.action
+		if action and action.type == "color-slider" and editor.colorWheelEditId == rowID(action.row) .. ":" .. action.channel then
+			editor.row = action.rowIndex or editor.row; local valueState = extra.getColorState(action.row)
+			local current = action.channel == "h" and valueState.h / 360 or action.channel == "s" and valueState.s or action.channel == "v" and valueState.v or valueState.a
+			local step = (action.channel == "h" and (1 / 360) or 0.01) * (shift and 10 or ctrl and 0.1 or 1)
+			local ownMutation = beginMutation("Adjust color " .. rowID(action.row)); extra.adjustColor(action.row, action.channel, current + (up and step or -step), true)
+			if ownMutation then endMutation() end; return true
+		end
 		if editor.wheelEditRow and action and action.row and rowID(action.row) == editor.wheelEditId then
 			editor.row = action.rowIndex or editor.row
 			local multiplier = shift and 10 or ctrl and 0.1 or 1
@@ -3235,6 +3493,7 @@ function extra.activeTextValue()
 	if editor.activeText == "componentSearch" then return extra.workspace and extra.workspace.componentSearch or "" end
 	if editor.activeText == "propertySearch" then return editor.search or "" end
 	if editor.activeText == "propertyValue" and editor.textRow then return tostring(editor.textBuffer or "") end
+	if editor.activeText == "colorValue" and editor.colorText then return tostring(editor.textBuffer or "") end
 	return ""
 end
 
@@ -3243,6 +3502,7 @@ function extra.setActiveTextValue(value)
 	if editor.activeText == "componentSearch" and extra.workspace then extra.workspace.componentSearch = value
 	elseif editor.activeText == "propertySearch" then editor.search, editor.row = value, 1
 	elseif editor.activeText == "propertyValue" and editor.textRow then editor.textBuffer = value end
+	if editor.activeText == "colorValue" and editor.colorText then editor.textBuffer = value end
 end
 
 function extra.finishTextField(focusResult, commit)
@@ -3253,6 +3513,16 @@ function extra.finishTextField(focusResult, commit)
 			else editor.status = "Invalid numeric value; edit cancelled" end
 		end
 		editor.textRow = nil
+	end
+	if editor.activeText == "colorValue" and editor.colorText then
+		if commit then
+			local value = tonumber(editor.textBuffer); local channel = editor.colorText.channel
+			if value then
+				local ownMutation = beginMutation("Exact color " .. channel); extra.adjustColor(editor.colorText.row, channel,
+					channel == "h" and clamp(value, 0, 360) / 360 or clamp(value, 0, 100) / 100, true); if ownMutation then endMutation() end
+			else editor.status = "Invalid color value; edit cancelled" end
+		end
+		editor.colorText = nil
 	end
 	editor.activeText, editor.searchActive, editor.selectAll = nil, false, false
 	editor.textBuffer, editor.textOriginal, editor.textNumeric, editor.composition = "", "", false, ""
@@ -3301,6 +3571,8 @@ function extra.activateFocusedControl()
 		if action.row[4] == "bool" then beginMutation("Toggle " .. rowID(action.row)); adjustRow(1); endMutation()
 		elseif action.row[4] == "enum" then
 			local target = getScope(action.row[1]); extra.EditorWorkspace.OpenEnumMenu(extra.workspace, action.row, action.row[9], target and target[action.row[2]])
+		elseif action.row[4] == "color" then
+			editor.colorWheelEditId = rowID(action.row) .. ":h"; editor.status = "Hue focused; Left/Right and wheel adjust"
 		elseif action.row[4] == "text" or action.row[4] == "number" then
 			if action.row[4] == "number" then editor.wheelEditId, editor.wheelEditRow = rowID(action.row), action.row end
 			editor.textRow = action.row; extra.focusTextField("propertyValue", action.row[4] == "number")
@@ -3314,6 +3586,15 @@ function extra.adjustFocusedControl(delta, multiplier, isRepeat, key)
 	local item = extra.workspace and extra.EditorWorkspace.Focused(extra.workspace) or nil
 	if not item or not item.row then return true end
 	editor.row = item.rowIndex or editor.row
+	if item.action and item.action.type == "color-swatch" then extra.EditorWorkspace.MoveFocus(extra.workspace, delta); return true end
+	if item.row[4] == "color" then
+		local channel = editor.colorWheelEditId and string.match(editor.colorWheelEditId, ":([hsva])$") or "h"
+		local state = extra.getColorState(item.row); local current = channel == "h" and state.h / 360 or channel == "s" and state.s or channel == "v" and state.v or state.a
+		local step = (channel == "h" and (1 / 360) or 0.01) * (multiplier or 1)
+		if not isRepeat and not editor.held then beginMutation("Adjust color " .. rowID(item.row)); editor.held = { delta = delta, elapsed = 0, nextRepeat = 0.38, keyboard = true, key = key, row = item.row, colorChannel = channel } end
+		extra.adjustColor(item.row, channel, current + delta * step, false); editor.colorWheelEditId = rowID(item.row) .. ":" .. channel
+		return true
+	end
 	if not isRepeat and not editor.held then
 		beginMutation("Adjust " .. rowID(item.row)); adjustRow(delta, multiplier)
 		editor.held = { delta = delta, elapsed = 0, nextRepeat = 0.38, keyboard = true, key = key, row = item.row }
@@ -3327,7 +3608,7 @@ function widget:KeyPress(key, mods, isRepeat, label)
 	mods = mods or {}
 	if extra.workspace and extra.workspace.modal then
 		if KEYSYMS and key == KEYSYMS.ESCAPE then extra.EditorWorkspace.CloseModal(extra.workspace); extra.workspace.showHelp = false
-			editor.wheelEditId, editor.wheelEditRow = nil, nil; return true end
+			editor.wheelEditId, editor.wheelEditRow, editor.colorWheelEditId = nil, nil, nil; return true end
 		if KEYSYMS and (key == KEYSYMS.UP or key == KEYSYMS.LEFT) then extra.EditorWorkspace.MoveFocus(extra.workspace, -1); return true end
 		if KEYSYMS and (key == KEYSYMS.DOWN or key == KEYSYMS.RIGHT) then extra.EditorWorkspace.MoveFocus(extra.workspace, 1); return true end
 		if KEYSYMS and key == KEYSYMS.HOME then extra.EditorWorkspace.FocusBoundary(extra.workspace, false); return true end
@@ -3346,8 +3627,8 @@ function widget:KeyPress(key, mods, isRepeat, label)
 	if shortcutMatches(settings.authoring.shortcutPublish, key, mods, label) then if not isRepeat then writePublishRequest() end; return true end
 	if shortcutMatches(settings.authoring.shortcutSearch, key, mods, label) then extra.focusTextField("propertySearch"); if extra.workspace then extra.EditorWorkspace.SetFocus(extra.workspace, "inspector:search") end; return true end
 	if editor.activeText then return extra.handleTextFieldKey(key, mods, label) end
-	if KEYSYMS and key == KEYSYMS.ESCAPE and editor.wheelEditId then
-		editor.wheelEditId, editor.wheelEditRow = nil, nil; editor.status = "Wheel value editing exited"; return true
+	if KEYSYMS and key == KEYSYMS.ESCAPE and (editor.wheelEditId or editor.colorWheelEditId) then
+		editor.wheelEditId, editor.wheelEditRow, editor.colorWheelEditId = nil, nil, nil; editor.status = "Wheel value editing exited"; return true
 	end
 	if (KEYSYMS and KEYSYMS.F1 and key == KEYSYMS.F1) or string.lower(tostring(label or "")) == "f1" then
 		if extra.workspace then extra.workspace.showHelp = not extra.workspace.showHelp end; return true
@@ -3366,6 +3647,8 @@ function widget:KeyPress(key, mods, isRepeat, label)
 		if KEYSYMS and (key == KEYSYMS.HOME or key == KEYSYMS.END) then
 			local item = extra.EditorWorkspace.Focused(extra.workspace)
 			if item and item.row and item.row[4] == "number" then setValue(item.row[1], item.row[2], key == KEYSYMS.HOME and item.row[5] or item.row[6])
+			elseif item and item.row and item.row[4] == "color" then
+				local channel = editor.colorWheelEditId and string.match(editor.colorWheelEditId, ":([hsva])$") or "h"; extra.adjustColor(item.row, channel, key == KEYSYMS.HOME and 0 or 1, true)
 			else extra.EditorWorkspace.FocusBoundary(extra.workspace, key == KEYSYMS.END) end
 			return true
 		end
@@ -3400,7 +3683,10 @@ end
 function widget:KeyRelease(key)
 	if not editor.open then return false end
 	if extra.input then extra.EditorInput.KeyUp(extra.input, key) end
-	if editor.held and editor.held.keyboard and (editor.held.key == nil or editor.held.key == key) then editor.held = nil; endMutation() end
+	if editor.held and editor.held.keyboard and (editor.held.key == nil or editor.held.key == key) then
+		if editor.held.colorChannel and editor.held.row then extra.rememberColor(extra.getColorState(editor.held.row).hex) end
+		editor.held = nil; endMutation()
+	end
 	return true
 end
 
