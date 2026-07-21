@@ -20,7 +20,7 @@ internal static class Program
     private static string? LastPublishedCommit;
     private static readonly HashSet<string> KnownComponents = new(StringComparer.Ordinal)
     {
-        "hints", "bindingsButton", "radials", "buildRadial", "tacticalRadial", "selectionRadial", "factoryRadial",
+        "hints", "bindingsButton", "radials", "buildRadial", "tacticalRadial", "selectionRadial", "visibleSelectionRadial", "factoryRadial",
         "pregame", "reticle", "notifications", "instructional", "hotSlots", "selectedStatus", "queueStatus",
         "placementStatus", "companionStatus", "debug", "editorLauncher", "editor",
     };

@@ -1,6 +1,6 @@
-# BAR Controller Companion v0.6.0 development
+# BAR Controller Companion v0.6.1 development
 
-No v0.6.0 package or release has been published from this branch. The v0.5.1 installation instructions below continue to describe the frozen public package; the source projects now report 0.6.0 for future staging.
+The source projects report v0.6.1 for the radial typography and color-authoring release. Public packaging is produced only by the frozen-runtime v0.6.1 release workflow.
 
 ## v0.6 defaults and update commands
 

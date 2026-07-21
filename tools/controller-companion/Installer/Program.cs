@@ -34,7 +34,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        Console.Title = "BAR Controller Companion Installer v0.6.0";
+        Console.Title = "BAR Controller Companion Installer v0.6.1";
         if (!TryParseArguments(args, out InstallerOptions options))
         {
             PrintUsage();
@@ -147,7 +147,7 @@ internal static class Program
             ReleaseOperations.Status("Checking the official GitHub repository for a newer package...");
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "BAR-Controller-Companion-Installer/0.6.0");
+                "BAR-Controller-Companion-Installer/0.6.1");
             string releaseJson = client.GetStringAsync(
                 "https://api.github.com/repos/" + OfficialRepository + "/releases/latest")
                 .GetAwaiter()
@@ -385,7 +385,7 @@ internal static class Program
     private static void PrintUsage()
     {
         Console.Error.WriteLine(
-            "Usage: BAR_Controller_Companion_Installer_v0.6.0.exe "
+            "Usage: BAR_Controller_Companion_Installer_v0.6.1.exe "
             + "[--check-updates] [--no-pause] [--package-root path] "
             + "[--bar-data path] [--install-root path] [--shortcut path]");
     }
