@@ -51,6 +51,31 @@ function Write-JsonAtomic([string]$Path, [object]$Value) {
     else { Move-Item -LiteralPath $temporary -Destination $Path }
 }
 
+function Set-NativeBuildMenuMode([string]$ConfigPath, [string]$SafetyBackupPath) {
+    $content = [IO.File]::ReadAllText($ConfigPath)
+    $updated = $content
+    $orders = [ordered]@{ 'Build menu' = 165; 'Grid menu' = 0 }
+    foreach ($name in $orders.Keys) {
+        $pattern = '(?m)^(?<prefix>[ \t]*(?:\["' + [regex]::Escape($name) + '"\]|' + [regex]::Escape($name) + ')[ \t]*=[ \t]*)-?\d+(?<suffix>[ \t]*,[ \t]*\r?$)'
+        if (-not [regex]::IsMatch($updated, $pattern)) { throw "BYAR.lua has no numeric order entry for $name." }
+        $replacement = '${prefix}' + [string]$orders[$name] + '${suffix}'
+        $updated = [regex]::Replace($updated, $pattern, $replacement)
+    }
+    if ($updated -eq $content) { return $false }
+    $temporary = $ConfigPath + '.native-test.tmp'
+    [IO.File]::WriteAllText($temporary, $updated, (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::Replace($temporary, $ConfigPath, $SafetyBackupPath)
+    return $true
+}
+
+function Assert-NativeBuildMenuEntries([string]$ConfigPath) {
+    $content = [IO.File]::ReadAllText($ConfigPath)
+    foreach ($name in @('Build menu', 'Grid menu')) {
+        $pattern = '(?m)^[ \t]*(?:\["' + [regex]::Escape($name) + '"\]|' + [regex]::Escape($name) + ')[ \t]*=[ \t]*-?\d+[ \t]*,[ \t]*\r?$'
+        if (-not [regex]::IsMatch($content, $pattern)) { throw "BYAR.lua has no numeric order entry for $name." }
+    }
+}
+
 function Stop-RuntimesSafely {
     $all = @(Get-CimInstance Win32_Process | Where-Object {
         $_.Name -match '^(?i)(BARControllerBridge|BARControllerLauncher|BARControllerCompanionInstaller|BARControllerCompanionRestore|BARControllerUIDefaultsPublisher|spring|spring-headless|Beyond-All-Reason|BAR)\.exe$'
@@ -106,6 +131,9 @@ if (Test-Path -LiteralPath (Join-Path $RepositoryRoot '.git')) {
 
 Stop-RuntimesSafely
 $infolog = Join-Path $BarDataPath 'infolog.txt'
+$widgetConfigPath = Join-Path $BarDataPath 'LuaUI\Config\BYAR.lua'
+if (-not (Test-Path -LiteralPath $widgetConfigPath -PathType Leaf)) { throw 'BAR widget configuration is missing.' }
+Assert-NativeBuildMenuEntries $widgetConfigPath
 $buildMatches = (Test-Path -LiteralPath $infolog) -and ([IO.File]::ReadAllText($infolog).Contains($ExpectedBuild))
 if (-not $buildMatches -and -not $AllowUnknownBase) {
     throw "Live BAR build identity does not contain '$ExpectedBuild'. Rebase first, or use -AllowUnknownBase only for an audited development override."
@@ -183,7 +211,15 @@ foreach ($path in @((Join-Path $BarDataPath 'LuaUI\Config\BYAR.lua'), (Join-Path
         Copy-Item -LiteralPath $path -Destination $backup -Force
         $hash = Get-Sha256 $path
         if ((Get-Sha256 $backup) -ne $hash) { throw "Preserved-file backup hash mismatch: $path" }
-        $preserved.Add([pscustomobject]@{ destination = $path; backup = $backup; sha256 = $hash })
+        $preserved.Add([pscustomobject]@{ destination = $path; backup = $backup; sha256 = $hash; postSha256 = $hash })
+    }
+}
+
+$widgetConfigChanged = Set-NativeBuildMenuMode -ConfigPath $widgetConfigPath -SafetyBackupPath (Join-Path $backupRoot 'BYAR.replace-safety.lua')
+$widgetConfigPostHash = Get-Sha256 $widgetConfigPath
+foreach ($record in $preserved) {
+    if ([IO.Path]::GetFullPath([string]$record.destination).Equals([IO.Path]::GetFullPath($widgetConfigPath), [StringComparison]::OrdinalIgnoreCase)) {
+        $record.postSha256 = $widgetConfigPostHash
     }
 }
 
@@ -193,6 +229,8 @@ $manifest = [ordered]@{
     repositoryRoot = $RepositoryRoot; sourceCommit = $sourceCommit
     barDataPath = $BarDataPath; companionInstallPath = $CompanionInstallPath; backupRoot = $backupRoot
     expectedBarBuild = $ExpectedBuild; buildIdentityMatched = $buildMatches; explicitUnknownBaseOverride = [bool]$AllowUnknownBase
+    widgetConfigChanged = $widgetConfigChanged; widgetConfigPostSha256 = $widgetConfigPostHash
+    nativeBuildMenuOrder = 165; disabledGridMenuOrder = 0
     deployedFiles = $records; preservedFiles = $preserved
 }
 $manifestPath = Join-Path $backupRoot 'deployment-manifest.json'

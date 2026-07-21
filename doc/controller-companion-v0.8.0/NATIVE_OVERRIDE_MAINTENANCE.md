@@ -17,7 +17,7 @@ Run `tools/dev-scripts/Deploy_v0.8.0_Native_Test.ps1`. If a loose target exists,
 
 `-AllowUnknownBase` is an explicit development escape hatch, not an update mechanism. Inspect and rebase first. The deployment always backs up an existing unknown file when that switch is deliberately used.
 
-The timestamped deployment manifest records whether each live file existed, its pre/post hash, and its exact backup. It also backs up `LuaUI/Config/BYAR.lua` and `springsettings.cfg`. BAR is never launched or force-killed.
+The timestamped deployment manifest records whether each live file existed, its pre/post hash, and its exact backup. It also backs up `LuaUI/Config/BYAR.lua` and `springsettings.cfg`. For this experiment it records and applies `Build menu = 165` and `Grid menu = 0`, preventing duplicate build panels while ensuring the patched API loads. Rollback restores the user's exact former menu choice. BAR is never launched or force-killed.
 
 ## Expected BAR-update failure modes
 

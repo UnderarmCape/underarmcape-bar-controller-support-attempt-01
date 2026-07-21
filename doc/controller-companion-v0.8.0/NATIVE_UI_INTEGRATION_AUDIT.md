@@ -65,6 +65,8 @@ Lua can activate a native command (`Spring.SetActiveCommand`) but Recoil exposes
 
 `gui_buildmenu.lua` owns build icons, costs, restrictions, pages, tooltips, active-command state and selection. It already exposes highlight functions. The controller extension adds focus and navigation over the current native cells and calls the same active-command operation as mouse. A stable controller-active flag enlarges spacing only after hysteresis; standard mouse/keyboard layout values are retained when inactive.
 
+The inspected live profile had `Grid menu = 165` and `Build menu = 0`. This experiment deliberately selects the patched native Build Menu (`Build menu = 165`, `Grid menu = 0`) during deployment so its API is guaranteed to initialize and only one build panel handles input. The exact prior `BYAR.lua` is backed up and restored. Grid Menu remains an audited future adapter candidate rather than a second simultaneous path.
+
 ## Candidate systems not overridden
 
 `gui_selectionbox.lua`, `gui_selectedunits_gl4.lua`, `gui_commands_fx.lua`, `select_api.lua`, `ordermenu_firestate.lua`, `user_firestate_commands.lua`, `gui_gridmenu.lua`, `unit_area_reclaim_enemy.lua`, `api_shared_state.lua`, and `unit_stateprefs.lua` remain unmodified. They were audited to establish ownership and are reached through engine/native state. Keeping the override set small reduces BAR-update risk.

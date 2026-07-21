@@ -48,9 +48,15 @@ foreach ($record in @($manifest.deployedFiles)) {
     }
 }
 foreach ($record in @($manifest.preservedFiles)) {
-    [void](Assert-Allowed ([string]$record.destination))
+    $destination = Assert-Allowed ([string]$record.destination)
     if (-not (Test-Path -LiteralPath $record.backup -PathType Leaf) -or (Get-Sha256 $record.backup) -ne [string]$record.sha256) {
         throw "Preserved configuration backup is invalid: $($record.backup)"
+    }
+    if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
+        if (-not $AllowModifiedInstalledFiles) { throw "Preserved live file is missing after deployment: $destination" }
+    }
+    elseif ($record.postSha256 -and (Get-Sha256 $destination) -ne [string]$record.postSha256 -and -not $AllowModifiedInstalledFiles) {
+        throw "Preserved live file changed after deployment: $destination"
     }
 }
 
