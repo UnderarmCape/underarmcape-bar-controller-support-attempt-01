@@ -133,5 +133,3 @@ $resultPath = Join-Path $BackupRoot 'rollback-result.json'
 Write-Output ('ROLLBACK_COMPLETE=' + $BackupRoot)
 Write-Output 'BAR was not launched. Widgets, Lua support modules, controller glyph assets, defaults, and runtime files were restored or moved to rollback artifacts from the deployment manifest.'
 Write-Output 'Old recursively scanned widget backups were restored exactly; move them out of LuaUI\Widgets before starting BAR if the rollback is only for runtime binaries.'
-
-

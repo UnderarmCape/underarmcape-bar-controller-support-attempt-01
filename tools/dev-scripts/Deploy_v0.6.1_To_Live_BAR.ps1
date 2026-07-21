@@ -478,4 +478,3 @@ Write-JsonAtomic -Path $manifestPath -Value $manifest
 Write-Step "Deployment succeeded for $branch at $commit."
 Write-Output ('Backup root: ' + $backupRoot)
 Write-Output ('Rollback: powershell -NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $RepositoryRoot 'tools\dev-scripts\Rollback_v0.6.1_Live_BAR.ps1') + '" -BackupRoot "' + $backupRoot + '"')
-
