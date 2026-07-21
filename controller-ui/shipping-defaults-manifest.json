@@ -12,7 +12,7 @@
   "minimumModVersion": "0.7.0",
   "maximumModVersion": "0.7.x",
   "sourceBranch": "controller-ui-live-defaults",
-  "sourceCommit": "unpublished-local",
+  "sourceCommit": "30fb93d6e3c25438a980ccc40ff21f710e3be842",
   "changeSummary": "Added the streamlined runtime, Disassemble Mode timings and hints, stat icon roles, deficit messaging, and disabled the normal-gameplay authoring launcher.",
   "releaseChannel": "stable"
 }
