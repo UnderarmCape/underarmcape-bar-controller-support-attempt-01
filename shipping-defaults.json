@@ -1,9 +1,9 @@
 {
   "kind": "bar-controller-ui-defaults",
   "schemaVersion": 3,
-  "defaultsVersion": "0.6.0-3",
-  "generatedAt": "2026-07-20T00:00:00Z",
-  "compatibleModVersion": "0.6.0",
+  "defaultsVersion": "0.6.1-1",
+  "generatedAt": "2026-07-21T00:00:00Z",
+  "compatibleModVersion": "0.6.1",
   "settings": {
     "global": {
       "enabled": true,
@@ -85,6 +85,9 @@
         "textOpacity": 1.0,
         "borderOpacity": 0.0,
         "fadeDuration": 0.18,
+        "contextEnterDebounce": 0.14,
+        "contextExitGrace": 0.12,
+        "confirmedModalImmediate": true,
         "compact": false,
         "anchor": "bottomleft",
         "mode": "Contextual",
@@ -174,13 +177,70 @@
         "height": 0.0259259259,
         "backgroundOpacity": 0.85
       },
-      "radials": { "enabled": true, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "iconScale": 1.0,
+      "radials": {
+        "enabled": true, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "iconScale": 1.0,
         "centerTextScale": 1.0, "selectedScale": 1.06, "selectedBorderThickness": 3.0,
-        "itemSpacing": 1.0, "legacyThemeOpacity": 1.0, "pageStatusVisible": true },
-      "buildRadial": { "enabled": true, "x": 0.5, "y": 0.5, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "iconScale": 1.0, "anchor": "center" },
-      "tacticalRadial": { "enabled": true, "x": 0.5, "y": 0.5, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "iconScale": 1.0, "anchor": "center" },
-      "selectionRadial": { "enabled": true, "x": 0.5, "y": 0.5, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "iconScale": 1.0, "anchor": "center" },
-      "factoryRadial": { "enabled": true, "x": 0.5, "y": 0.5, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "iconScale": 1.0, "anchor": "center" },
+        "itemSpacing": 1.0, "legacyThemeOpacity": 1.0, "pageStatusVisible": true,
+        "radiusScale": 1.0, "innerRadiusScale": 1.0, "segmentSpacing": 1.0, "segmentAnglePadding": 0.0,
+        "centerPanelScale": 1.0, "safeScreenMargin": 0.0,
+        "resourceSpacing": 12.0, "resourceLayout": "Row", "resourceAlignment": "Center",
+
+        "categoryLabelSize": 18.0, "categoryLabelColorR": 0.34, "categoryLabelColorG": 0.82, "categoryLabelColorB": 0.92, "categoryLabelOpacity": 0.95,
+        "categoryLabelShadowEnabled": true, "categoryLabelShadowColorR": 0.0, "categoryLabelShadowColorG": 0.0, "categoryLabelShadowColorB": 0.0, "categoryLabelShadowOpacity": 0.78,
+        "categoryLabelOutlineEnabled": true, "categoryLabelAlignment": "Center", "categoryLabelOffsetX": 0.0, "categoryLabelOffsetY": 0.0, "categoryLabelLetterSpacing": 0.5,
+
+        "centerTitleSize": 18.0, "centerTitleColorR": 0.82, "centerTitleColorG": 0.94, "centerTitleColorB": 1.0, "centerTitleOpacity": 1.0,
+        "centerTitleShadowEnabled": true, "centerTitleShadowColorR": 0.0, "centerTitleShadowColorG": 0.0, "centerTitleShadowColorB": 0.0, "centerTitleShadowOpacity": 0.82,
+        "centerTitleOutlineEnabled": true, "centerTitleAlignment": "Center", "centerTitleOffsetX": 0.0, "centerTitleOffsetY": 0.0,
+        "centerTitleEmphasis": 1.0, "centerTitleMaxWidth": 1.55, "centerTitleWrapMode": "Truncate", "centerTitleSpacingAfter": 7.0,
+
+        "centerDescriptionSize": 10.0, "centerDescriptionColorR": 0.78, "centerDescriptionColorG": 0.84, "centerDescriptionColorB": 0.88, "centerDescriptionOpacity": 0.96,
+        "centerDescriptionShadowEnabled": true, "centerDescriptionShadowColorR": 0.0, "centerDescriptionShadowColorG": 0.0, "centerDescriptionShadowColorB": 0.0, "centerDescriptionShadowOpacity": 0.72,
+        "centerDescriptionOutlineEnabled": true, "centerDescriptionAlignment": "Center", "centerDescriptionOffsetX": 0.0, "centerDescriptionOffsetY": 0.0,
+        "centerDescriptionLineSpacing": 3.0, "centerDescriptionMaxWidth": 1.55, "centerDescriptionWrapEnabled": true, "centerDescriptionMaxLines": 2.0,
+        "centerDescriptionSpacingBefore": 0.0, "centerDescriptionSpacingAfter": 5.0,
+
+        "metalCostSize": 11.0, "metalCostColorR": 0.58, "metalCostColorG": 0.82, "metalCostColorB": 1.0, "metalCostOpacity": 1.0,
+        "metalCostShadowEnabled": true, "metalCostShadowColorR": 0.0, "metalCostShadowColorG": 0.0, "metalCostShadowColorB": 0.0, "metalCostShadowOpacity": 0.78,
+        "metalCostOutlineEnabled": true, "metalCostAlignment": "Center", "metalCostOffsetX": 0.0, "metalCostOffsetY": 0.0,
+        "metalCostIconSize": 10.0, "metalCostIconSpacing": 3.0,
+
+        "energyCostSize": 11.0, "energyCostColorR": 1.0, "energyCostColorG": 0.86, "energyCostColorB": 0.12, "energyCostOpacity": 1.0,
+        "energyCostShadowEnabled": true, "energyCostShadowColorR": 0.0, "energyCostShadowColorG": 0.0, "energyCostShadowColorB": 0.0, "energyCostShadowOpacity": 0.78,
+        "energyCostOutlineEnabled": true, "energyCostAlignment": "Center", "energyCostOffsetX": 0.0, "energyCostOffsetY": 0.0,
+        "energyCostIconSize": 10.0, "energyCostIconSpacing": 3.0,
+
+        "metadataSize": 10.0, "metadataColorR": 0.78, "metadataColorG": 0.86, "metadataColorB": 0.92, "metadataOpacity": 0.82,
+        "metadataShadowEnabled": true, "metadataShadowColorR": 0.0, "metadataShadowColorG": 0.0, "metadataShadowColorB": 0.0, "metadataShadowOpacity": 0.68,
+        "metadataOutlineEnabled": true, "metadataAlignment": "Center", "metadataOffsetX": 0.0, "metadataOffsetY": 0.0, "metadataLineSpacing": 3.0,
+
+        "footerSize": 13.0, "footerColorR": 0.72, "footerColorG": 0.78, "footerColorB": 0.82, "footerOpacity": 0.8,
+        "footerShadowEnabled": true, "footerShadowColorR": 0.0, "footerShadowColorG": 0.0, "footerShadowColorB": 0.0, "footerShadowOpacity": 0.68,
+        "footerOutlineEnabled": true, "footerAlignment": "Center", "footerOffsetX": 0.0, "footerOffsetY": 0.0,
+
+        "pageIndicatorSize": 10.0, "pageIndicatorColorR": 0.46, "pageIndicatorColorG": 0.88, "pageIndicatorColorB": 1.0, "pageIndicatorOpacity": 0.88,
+        "pageIndicatorShadowEnabled": true, "pageIndicatorShadowColorR": 0.0, "pageIndicatorShadowColorG": 0.0, "pageIndicatorShadowColorB": 0.0, "pageIndicatorShadowOpacity": 0.68,
+        "pageIndicatorOutlineEnabled": true, "pageIndicatorAlignment": "Center", "pageIndicatorOffsetX": 0.0, "pageIndicatorOffsetY": 0.0,
+
+        "slotNumberSize": 12.0, "slotNumberColorR": 1.0, "slotNumberColorG": 0.84, "slotNumberColorB": 0.0, "slotNumberOpacity": 1.0,
+        "slotNumberShadowEnabled": true, "slotNumberShadowColorR": 0.0, "slotNumberShadowColorG": 0.0, "slotNumberShadowColorB": 0.0, "slotNumberShadowOpacity": 0.82,
+        "slotNumberOutlineEnabled": true, "slotNumberAlignment": "Left", "slotNumberOffsetX": 0.0, "slotNumberOffsetY": 0.0,
+
+        "unavailableTextSize": 9.0, "unavailableTextColorR": 0.72, "unavailableTextColorG": 0.4, "unavailableTextColorB": 0.4, "unavailableTextOpacity": 0.78,
+        "unavailableTextShadowEnabled": true, "unavailableTextShadowColorR": 0.0, "unavailableTextShadowColorG": 0.0, "unavailableTextShadowColorB": 0.0, "unavailableTextShadowOpacity": 0.72,
+        "unavailableTextOutlineEnabled": true, "unavailableTextAlignment": "Center", "unavailableTextOffsetX": 0.0, "unavailableTextOffsetY": 0.0,
+
+        "selectedBackgroundR": 0.27, "selectedBackgroundG": 0.7, "selectedBackgroundB": 0.84, "selectedBackgroundOpacity": 0.85,
+        "selectedBorderR": 0.34, "selectedBorderG": 0.82, "selectedBorderB": 0.92, "selectedBorderOpacity": 1.0,
+        "selectedLabelR": 1.0, "selectedLabelG": 1.0, "selectedLabelB": 1.0, "selectedLabelOpacity": 1.0,
+        "selectedTitleR": 1.0, "selectedTitleG": 1.0, "selectedTitleB": 1.0, "selectedTitleOpacity": 1.0,
+        "selectedIconOpacity": 1.0, "unavailableIconOpacity": 0.75
+      },
+      "buildRadial": { "enabled": true, "x": 0.5, "y": 0.5, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "iconScale": 1.0, "anchor": "center", "typographyOverride": false },
+      "tacticalRadial": { "enabled": true, "x": 0.5, "y": 0.5, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "iconScale": 1.0, "anchor": "center", "typographyOverride": false },
+      "selectionRadial": { "enabled": true, "x": 0.5, "y": 0.5, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "iconScale": 1.0, "anchor": "center", "typographyOverride": false },
+      "visibleSelectionRadial": { "enabled": true, "x": 0.5, "y": 0.5, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "iconScale": 1.0, "anchor": "center", "typographyOverride": false },
+      "factoryRadial": { "enabled": true, "x": 0.5, "y": 0.5, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "iconScale": 1.0, "anchor": "center", "typographyOverride": false },
       "pregame": { "enabled": true, "x": 0.5, "y": 0.5, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "anchor": "center" },
       "reticle": { "enabled": true, "x": 0.5, "y": 0.5, "scale": 1.0, "opacity": 1.0, "anchor": "center" },
       "notifications": { "enabled": true, "x": 0.5, "y": 0.35, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "anchor": "center" },
