@@ -274,22 +274,34 @@ function Runtime.New()
 		when = function(c) return not c.bindingsOpen and not c.disassembleToggleCharge end, group = "Mouse Mode" })
 
 	local function disassemble(c) return c.disassembleMode and not c.disassembleAreaMarking and not c.disassembleAreaReclaim and not c.disassembleToggleCharge end
+	local function nativeDisassemble(c) return disassemble(c) and c.nativeBarUI end
+	local function legacyDisassemble(c) return disassemble(c) and not c.nativeBarUI end
+	local function nativeReclaim(c) return c.disassembleAreaReclaim and c.nativeBarUI and not c.disassembleToggleCharge end
+	local function legacyReclaim(c) return c.disassembleAreaReclaim and not c.nativeBarUI and not c.disassembleToggleCharge end
 	add({ id = "disassemble-exit", inputs = { "LB", "RB" }, label = "Exit Disassemble Mode", hold = true, when = disassemble, priority = 1, group = "Commands" })
-	add({ id = "disassemble-mark", inputs = { "A" }, label = "Mark Target", when = disassemble, priority = 2, group = "Selection" })
-	add({ id = "disassemble-mark-area", inputs = { "A" }, label = "Mark Targets in Area", hold = true, when = disassemble, priority = 3, group = "Selection" })
-	add({ id = "disassemble-additive", inputs = { "RT", "A" }, label = "Add / Remove Target", when = disassemble, priority = 3, group = "Selection",
+	add({ id = "disassemble-native-select", inputs = { "A" }, label = "Select Unit", when = nativeDisassemble, priority = 2, group = "Selection" })
+	add({ id = "disassemble-native-toggle", inputs = { "RT", "A" }, label = "Add / Remove Selection", when = nativeDisassemble, priority = 3, group = "Selection",
+		labelResolver = function(c) return c.hoverSelectionToggleAction or "Add / Remove Selection" end })
+	add({ id = "disassemble-native-move", inputs = { "X" }, label = "Move", when = nativeDisassemble, priority = 4, group = "Commands" })
+	add({ id = "disassemble-native-cancel", inputs = { "B" }, label = "Clear Selection / Cancel Target", when = nativeDisassemble, priority = 5, group = "Commands" })
+	add({ id = "disassemble-mark", inputs = { "A" }, label = "Mark Target", when = legacyDisassemble, priority = 2, group = "Selection" })
+	add({ id = "disassemble-mark-area", inputs = { "A" }, label = "Mark Targets in Area", hold = true, when = legacyDisassemble, priority = 3, group = "Selection" })
+	add({ id = "disassemble-additive", inputs = { "RT", "A" }, label = "Add / Remove Target", when = legacyDisassemble, priority = 3, group = "Selection",
 		labelResolver = function(c) return c.disassembleTargetToggleAction or "Add / Remove Target" end })
 	add({ id = "disassemble-reclaim", inputs = { "LB", "A" }, label = "Reclaim Target", when = disassemble, priority = 4, group = "Commands" })
-	add({ id = "disassemble-reclaim-area", inputs = { "LB", "A" }, label = "Start Area Reclaim", hold = true, when = disassemble, priority = 5, group = "Commands" })
-	add({ id = "disassemble-stop", inputs = { "LB", "B" }, label = "Stop Reclaimers", when = disassemble, priority = 5, group = "Commands" })
+	add({ id = "disassemble-reclaim-area", inputs = { "LB", "A" }, label = "Same-Type Area Reclaim", hold = true, when = disassemble, priority = 5, group = "Commands" })
+	add({ id = "disassemble-stop", inputs = { "LB", "B" }, label = "Stop Selected", when = disassemble, priority = 6, group = "Commands" })
 	add({ id = "disassemble-area-radius", inputs = { "rightStick" }, label = "Adjust Marking Radius", when = context("disassembleAreaMarking"), priority = 1, group = "Selection" })
 	add({ id = "disassemble-area-release", inputs = { "A" }, label = "Release to Mark Area", when = context("disassembleAreaMarking"), priority = 2, group = "Selection" })
 	add({ id = "disassemble-area-add", inputs = { "RT" }, label = "Add to Existing Targets", when = context("disassembleAreaMarking"), priority = 3, group = "Selection" })
 	bind("cancel", "Cancel", context("disassembleAreaMarking"), 4, { id = "disassemble-area-cancel" })
 	add({ id = "disassemble-reclaim-radius", inputs = { "rightStick" }, label = "Choose Same-Type Radius", when = context("disassembleAreaReclaim"), priority = 1, group = "Commands" })
-	add({ id = "disassemble-reclaim-confirm", inputs = { "A", "X" }, label = "Confirm Reclaim", when = context("disassembleAreaReclaim"), priority = 2, group = "Commands" })
-	bind("cancel", "Cancel Area Reclaim", context("disassembleAreaReclaim"), 3, { id = "disassemble-reclaim-cancel" })
-	add({ id = "disassemble-reclaim-stop", inputs = { "LB", "B" }, label = "Stop", when = context("disassembleAreaReclaim"), priority = 4, group = "Commands" })
+	add({ id = "disassemble-native-reclaim-confirm", inputs = { "A" }, label = "Release to Confirm Reclaim", when = nativeReclaim, priority = 2, group = "Commands" })
+	add({ id = "disassemble-native-reclaim-move", inputs = { "X" }, label = "Cancel Reclaim + Move", when = nativeReclaim, priority = 3, group = "Commands" })
+	bind("cancel", "Cancel Area Reclaim", nativeReclaim, 4, { id = "disassemble-native-reclaim-cancel" })
+	add({ id = "disassemble-reclaim-confirm", inputs = { "A", "X" }, label = "Confirm Reclaim", when = legacyReclaim, priority = 2, group = "Commands" })
+	bind("cancel", "Cancel Area Reclaim", legacyReclaim, 3, { id = "disassemble-reclaim-cancel" })
+	add({ id = "disassemble-reclaim-stop", inputs = { "LB", "B" }, label = "Stop Selected", when = context("disassembleAreaReclaim"), priority = 5, group = "Commands" })
 
 	function self:ResolveInputs(def, api)
 		if def.chordActions and type(api.GetBinding) == "function" then
@@ -322,7 +334,8 @@ function Runtime.New()
 			"dgunMode", "hasSelection", "hasBuilder", "hasFactory", "commandLayer", "controlGroupLayer", "pitchLayer",
 			"lbTacticalLayer", "selectionRevision", "selectedCount", "hasTransport", "hasWorldTarget", "hoverTargetType",
 			"smartTargetType", "visibleSelectionFilter", "selectionProfile", "hoverSelectionToggleAction", "selectionToggleModifier", "disassembleTargetToggleAction",
-			"disassembleMode", "disassembleToggleCharge", "disassembleAreaMarking", "disassembleAreaReclaim", "markedCount" }
+			"disassembleMode", "disassembleToggleCharge", "disassembleAreaMarking", "disassembleAreaReclaim", "markedCount",
+			"nativeBarUI", "nativeCommandActive", "controllerGlyphStyle", "controllerGlyphFamily" }
 		local values = {}; for i, key in ipairs(keys) do values[i] = tostring(context[key]) end; return table.concat(values, "|")
 	end
 	function self:Update(dt)
@@ -331,6 +344,9 @@ function Runtime.New()
 		if self.pollElapsed < 0.04 then return end; self.pollElapsed = 0
 		local api = WG and WG.BARControllerSupport; if not api or type(api.GetContextSnapshot) ~= "function" then return end
 		local context = api.GetContextSnapshot(); if type(context) ~= "table" then return end
+		if self.glyphs and type(self.glyphs.SetStyle) == "function" then
+			self.glyphs.SetStyle(context.controllerGlyphStyle, context.controllerGlyphFamily)
+		end
 		local signature = self:ContextSignature(context); local bindingRevision = type(api.GetBindingRevision) == "function" and api.GetBindingRevision() or 0
 		local committed, changed = context, signature ~= self.contextSignature
 		local behavior = self.renderers and self.renderers.SelectionBehavior

@@ -477,6 +477,14 @@ ControllerCameraTestDisassemble = ControllerCameraTestDisassemble or {
 	areaReclaim = { active = false, anchorUnitID = nil, unitDefID = nil, x = nil, y = nil, z = nil, radius = 120, candidates = {} },
 	lbA = { pressActive = false, startedAt = 0, targetID = nil, unitDefID = nil, holdFired = false },
 }
+ControllerCameraTestNativeUI = ControllerCameraTestNativeUI or {
+	tacticalFocus = 1,
+	buildFocus = nil,
+	controllerStable = false,
+	pendingControllerState = false,
+	pendingSince = 0,
+	lastCompatibilityWarning = nil,
+}
 ControllerCameraTestLBHotkeys = ControllerCameraTestLBHotkeys or {
 	A = { pending = false, lastPressTime = 0, pressCount = 0 },
 	B = { pending = false, lastPressTime = 0, pressCount = 0 },
@@ -677,7 +685,9 @@ function ControllerCameraTestGetDefaultSettings()
 		xHoldSeconds = 0.14,
 		aHoldSeconds = 0.38,
 		areaReclaimHoldSeconds = 0.45,
-		disassembleToggleHoldSeconds = 1.0,
+		disassembleToggleHoldSeconds = 0.33,
+		nativeBarUIIntegration = "Native Experimental",
+		controllerGlyphStyle = "Auto",
 		disassembleUnusedTimeoutSeconds = 20.0,
 		lbTapMaxSeconds = 0.20,
 		lbTacticalHoldSeconds = 0.20,
@@ -807,7 +817,7 @@ function ControllerCameraTestClampSetting(name, value)
 		xHoldSeconds = { 0.05, 2.0 },
 		aHoldSeconds = { 0.05, 2.0 },
 		areaReclaimHoldSeconds = { 0.10, 2.0 },
-		disassembleToggleHoldSeconds = { 0.50, 3.0 },
+		disassembleToggleHoldSeconds = { 0.15, 1.50 },
 		disassembleUnusedTimeoutSeconds = { 5.0, 120.0 },
 		lbTapMaxSeconds = { 0.08, 0.50 },
 		lbTacticalHoldSeconds = { 0.08, 0.50 },
@@ -856,7 +866,7 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.xHoldSeconds = ControllerCameraTestClampSetting("xHoldSeconds", settings.xHoldSeconds or 0.14)
 	settings.aHoldSeconds = ControllerCameraTestClampSetting("aHoldSeconds", settings.aHoldSeconds or 0.38)
 	settings.areaReclaimHoldSeconds = ControllerCameraTestClampSetting("areaReclaimHoldSeconds", settings.areaReclaimHoldSeconds or 0.45)
-	settings.disassembleToggleHoldSeconds = ControllerCameraTestClampSetting("disassembleToggleHoldSeconds", settings.disassembleToggleHoldSeconds or 1.0)
+	settings.disassembleToggleHoldSeconds = ControllerCameraTestClampSetting("disassembleToggleHoldSeconds", settings.disassembleToggleHoldSeconds or defaults.disassembleToggleHoldSeconds)
 	settings.disassembleUnusedTimeoutSeconds = ControllerCameraTestClampSetting("disassembleUnusedTimeoutSeconds", settings.disassembleUnusedTimeoutSeconds or 20.0)
 	settings.lbTapMaxSeconds = ControllerCameraTestClampSetting("lbTapMaxSeconds", settings.lbTapMaxSeconds or defaults.lbTapMaxSeconds)
 	settings.lbTacticalHoldSeconds = ControllerCameraTestClampSetting("lbTacticalHoldSeconds", settings.lbTacticalHoldSeconds or defaults.lbTacticalHoldSeconds)
@@ -884,9 +894,34 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.hideCompactStatusWhenRadialOpen = settings.hideCompactStatusWhenRadialOpen ~= false
 	settings.placementPopupEnabled = settings.placementPopupEnabled ~= false
 	settings.preferNativeBlueprint = settings.preferNativeBlueprint ~= false
+	if settings.nativeBarUIIntegration ~= "Legacy Controller UI" then
+		settings.nativeBarUIIntegration = "Native Experimental"
+	end
+	if settings.controllerGlyphStyle ~= "Xbox" and settings.controllerGlyphStyle ~= "PlayStation" then
+		settings.controllerGlyphStyle = "Auto"
+	end
 	settings.debugPanelVisible = settings.debugPanelVisible == true
 	settings.helpOverlayVisible = settings.helpOverlayVisible == true
 	ControllerCameraTestAreaSelect.radius = settings.areaSelectRadius
+end
+
+function ControllerCameraTestUsesNativeBARUI()
+	return ControllerCameraTestSettings
+		and ControllerCameraTestSettings.nativeBarUIIntegration ~= "Legacy Controller UI"
+end
+
+function ControllerCameraTestGetControllerGlyphFamily()
+	local normalized = string.lower(tostring(controllerName or ""))
+	if normalized:find("playstation", 1, true) or normalized:find("dualsense", 1, true)
+			or normalized:find("dualshock", 1, true) or normalized:find("sony", 1, true)
+			or normalized == "wireless controller" then
+		return "PlayStation"
+	end
+	if normalized:find("xbox", 1, true) or normalized:find("xinput", 1, true)
+			or normalized:find("microsoft", 1, true) then
+		return "Xbox"
+	end
+	return "Unknown"
 end
 
 function ControllerCameraTestSettingDefinitions()
@@ -904,7 +939,7 @@ function ControllerCameraTestSettingDefinitions()
 		{ key = "xHoldSeconds", label = "X hold seconds", step = 0.02, decimals = 2 },
 		{ key = "aHoldSeconds", label = "A hold seconds", step = 0.02, decimals = 2 },
 		{ key = "areaReclaimHoldSeconds", label = "Area reclaim hold seconds", step = 0.02, decimals = 2 },
-		{ key = "disassembleToggleHoldSeconds", label = "Disassemble toggle hold seconds", step = 0.05, decimals = 2 },
+		{ key = "disassembleToggleHoldSeconds", label = "Disassemble toggle hold seconds", step = 0.01, decimals = 2 },
 		{ key = "disassembleUnusedTimeoutSeconds", label = "Disassemble unused timeout", step = 1, decimals = 0 },
 		{ key = "controlGroupAssignHoldSeconds", label = "Group hold seconds", step = 0.02, decimals = 2 },
 		{ key = "radialScale", label = "Radial scale", step = 0.05, decimals = 2 },
@@ -2118,6 +2153,30 @@ local function attemptReticleSelection()
 		return
 	end
 
+	if ControllerCameraTestUsesNativeBARUI() and WG.smartselect
+			and type(WG.smartselect.controllerSelectUnit) == "function" then
+		local toggle = ControllerCameraTestIsQueueModifierActive()
+		local action = "selected"
+		if toggle then
+			local existing = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+			action = "added"
+			for i = 1, #existing do
+				if existing[i] == unitID then action = "removed"; break end
+			end
+		end
+		local okSelect, result = pcall(WG.smartselect.controllerSelectUnit, unitID, toggle and "toggle" or "replace")
+		if not okSelect or type(result) ~= "table" then
+			lastSelectionResult = "native helper unavailable"
+			latchSelectionDebugMessage("Native SmartSelect failed")
+			return
+		end
+		lastReticleSelectedUnitID = tostring(unitID)
+		lastSelectionResult = (toggle and "RT+A " or "A ") .. action
+		latchSelectionDebugMessage(lastSelectionResult .. " unit " .. tostring(unitID)
+			.. " (" .. tostring(#result) .. " total)")
+		return
+	end
+
 	-- RT+A toggles exactly one valid friendly unit or structure while retaining
 	-- every other selected unit. Removing the last item intentionally produces
 	-- an empty selection.
@@ -2462,6 +2521,9 @@ function ControllerCameraTestGetSettingsDefinitions()
 		aHoldSeconds = { 0.05, 2.0, 0.01, "number", 2 },
 		lbTapMaxSeconds = { 0.08, 0.50, 0.01, "number", 2 },
 		lbTacticalHoldSeconds = { 0.08, 0.50, 0.01, "number", 2 },
+		disassembleToggleHoldSeconds = { 0.15, 1.50, 0.01, "number", 2 },
+		nativeBarUIIntegration = { 0, 0, 0, "enum", 0 },
+		controllerGlyphStyle = { 0, 0, 0, "enum", 0 },
 		visibleSelectionFilter = { 0, 0, 0, "enum", 0 },
 		controlGroupAssignHoldSeconds = { 0.05, 2.5, 0.01, "number", 2 },
 		singlePathSpacing = { 16, 1024, 8, "number", 0 },
@@ -2527,7 +2589,13 @@ function ControllerCameraTestSetSetting(key, value)
 			ControllerCameraTestSettings[key] = not not value
 		end
 	elseif type(current) == "string" then
-		if key == "visibleSelectionFilter" and ControllerSelectionBehavior
+		if key == "nativeBarUIIntegration"
+				and (value == "Native Experimental" or value == "Legacy Controller UI") then
+			ControllerCameraTestSettings[key] = value
+		elseif key == "controllerGlyphStyle"
+				and (value == "Auto" or value == "Xbox" or value == "PlayStation") then
+			ControllerCameraTestSettings[key] = value
+		elseif key == "visibleSelectionFilter" and ControllerSelectionBehavior
 				and ControllerSelectionBehavior.IsValidFilter(value) then
 			ControllerCameraTestSettings[key] = value
 		end
@@ -2565,7 +2633,9 @@ function ControllerCameraTestGetContextSnapshot()
 	end
 	local hoverOwnedTarget = ControllerCameraTestGetReticleOwnedTarget and ControllerCameraTestGetReticleOwnedTarget() or nil
 	local markedCount = 0
-	for _ in pairs(ControllerCameraTestDisassemble.markedTargets or {}) do markedCount = markedCount + 1 end
+	if not ControllerCameraTestUsesNativeBARUI() then
+		for _ in pairs(ControllerCameraTestDisassemble.markedTargets or {}) do markedCount = markedCount + 1 end
+	end
 	return {
 		controllerActive = controllerMode == true,
 		pregame = Spring.GetGameFrame() <= 0,
@@ -2584,6 +2654,11 @@ function ControllerCameraTestGetContextSnapshot()
 		disassembleAreaMarking = ControllerCameraTestDisassemble.markArea.active == true,
 		disassembleAreaReclaim = ControllerCameraTestDisassemble.areaReclaim.active == true,
 		disassembleMarkedCount = markedCount,
+		nativeBarUI = ControllerCameraTestUsesNativeBARUI(),
+		nativeCommandActive = ControllerCameraTestGetNativeActiveCommandID and
+			ControllerCameraTestGetNativeActiveCommandID() ~= nil or false,
+		controllerGlyphStyle = ControllerCameraTestSettings.controllerGlyphStyle,
+		controllerGlyphFamily = ControllerCameraTestGetControllerGlyphFamily(),
 		hoverFriendlyTarget = hoverOwnedTarget ~= nil,
 		disassembleTargetToggleAction = hoverOwnedTarget and
 			(ControllerCameraTestDisassemble.markedTargets[hoverOwnedTarget] and "Remove Target" or "Add Target") or nil,
@@ -2716,6 +2791,11 @@ function ControllerCameraTestGetSettingsUICategories()
 			{ key = "aHoldSeconds", label = "A hold seconds", step = 0.01, decimals = 2 },
 			{ key = "lbTapMaxSeconds", label = "LB tap maximum", step = 0.01, decimals = 2 },
 			{ key = "lbTacticalHoldSeconds", label = "LB tactical hold", step = 0.01, decimals = 2 },
+			{ key = "disassembleToggleHoldSeconds", label = "Disassemble Toggle Hold Duration", step = 0.01, decimals = 2 },
+			{ key = "nativeBarUIIntegration", label = "Native BAR UI Integration", type = "enum",
+				options = { "Native Experimental", "Legacy Controller UI" } },
+			{ key = "controllerGlyphStyle", label = "Controller Glyph Style", type = "enum",
+				options = { "Auto", "Xbox", "PlayStation" } },
 			{ key = "controlGroupAssignHoldSeconds", label = "Group assign hold", step = 0.01, decimals = 2 },
 			{ key = "singlePathSpacing", label = "Path waypoint spacing", step = 8, decimals = 0 },
 			{ key = "singlePathInterval", label = "Path issue interval", step = 0.01, decimals = 2 },
@@ -6197,6 +6277,162 @@ function ControllerCameraTestPruneMarkedTargets()
 	end
 end
 
+function ControllerCameraTestGetNativeActiveCommandID()
+	if type(Spring.GetActiveCommand) ~= "function" then return nil end
+	local ok, _, cmdID = pcall(Spring.GetActiveCommand)
+	return ok and tonumber(cmdID) or nil
+end
+
+function ControllerCameraTestCancelNativeTargeting()
+	local hadTargeting = false
+	if WG.smartareareclaim and type(WG.smartareareclaim.controllerGetState) == "function" then
+		local ok, active = pcall(WG.smartareareclaim.controllerGetState)
+		hadTargeting = ok and active == true
+		if hadTargeting and type(WG.smartareareclaim.controllerCancel) == "function" then
+			pcall(WG.smartareareclaim.controllerCancel)
+		end
+	end
+	if ControllerCameraTestGetNativeActiveCommandID() ~= nil then
+		hadTargeting = true
+		pcall(Spring.SetActiveCommand, nil)
+	end
+	ControllerCameraTestDisassemble.areaReclaim.active = false
+	ControllerCameraTestDisassemble.areaReclaim.candidates = {}
+	return hadTargeting
+end
+
+function ControllerCameraTestIssueNativeDisassembleMove()
+	ControllerCameraTestCancelNativeTargeting()
+	if not reticleHasWorldTarget or not reticleWorldX or not reticleWorldZ then
+		latchSelectionDebugMessage("Move failed: no ground under reticle")
+		return false
+	end
+	local ok = ControllerCameraTestIssueOrderToSelectedUnits((CMD and CMD.MOVE) or 10,
+		{ reticleWorldX, reticleWorldY or 0, reticleWorldZ }, "Move", "ground", {})
+	if ok then ControllerCameraTestShowHotkeyFeedback("MOVE", "utility") end
+	return ok == true
+end
+
+function ControllerCameraTestIssueNativeDisassembleStop()
+	ControllerCameraTestCancelNativeTargeting()
+	local stopID = (CMD and CMD.STOP) or 0
+	local accepted = false
+	if WG.ordermenu and type(WG.ordermenu.controllerActivate) == "function" then
+		local ok, result = pcall(WG.ordermenu.controllerActivate, stopID, 1)
+		accepted = ok and result == true
+	end
+	if not accepted then
+		local selected = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+		if #selected > 0 and type(spGiveOrderToUnitArray) == "function" then
+			local ok, result = pcall(spGiveOrderToUnitArray, selected, stopID, {}, {})
+			accepted = ok and result ~= false
+		end
+	end
+	if accepted then ControllerCameraTestShowHotkeyFeedback("STOP", "utility") end
+	return accepted
+end
+
+function ControllerCameraTestBeginNativeReclaim(mode, targetID, unitDefID)
+	if not targetID or not ControllerCameraTestIsSafeSelectableUnit(targetID) then return false end
+	local x, y, z = spGetUnitPosition(targetID)
+	if not x or not z or not WG.smartareareclaim
+			or type(WG.smartareareclaim.controllerBegin) ~= "function" then
+		return false
+	end
+	local radius = mode == "same" and 120 or nil
+	local ok, result = pcall(WG.smartareareclaim.controllerBegin, mode, targetID, x, y, z, radius)
+	if not ok or result ~= true then return false end
+	local state = ControllerCameraTestDisassemble
+	state.areaReclaim = { active = mode == "same", anchorUnitID = targetID, unitDefID = unitDefID,
+		x = x, y = y or 0, z = z, radius = radius or 0, candidates = {} }
+	state.lastResult = "native " .. tostring(mode) .. " reclaim active"
+	return true
+end
+
+function ControllerCameraTestConfirmNativeReclaim()
+	if not WG.smartareareclaim or type(WG.smartareareclaim.controllerConfirm) ~= "function" then
+		return false
+	end
+	local ok, result = pcall(WG.smartareareclaim.controllerConfirm, ControllerCameraTestIsQueueModifierActive())
+	ControllerCameraTestDisassemble.areaReclaim.active = false
+	if ok and result == true then
+		ControllerCameraTestDisassemble.successfulActivity = true
+		ControllerCameraTestShowHotkeyFeedback("RECLAIM", "reclaim")
+		return true
+	end
+	return false
+end
+
+function ControllerCameraTestUpdateNativeDisassembleInput(dt)
+	local state = ControllerCameraTestDisassemble
+	local lbDown = ControllerCameraTestActionDown("pitchModifier")
+
+	if lbDown and ControllerCameraTestActionPressed("cancel") then
+		ControllerCameraTestIssueNativeDisassembleStop()
+		return true
+	end
+	if ControllerCameraTestActionPressed("smartAction") then
+		ControllerCameraTestIssueNativeDisassembleMove()
+		return true
+	end
+	if ControllerCameraTestActionPressed("cancel") then
+		if ControllerCameraTestCancelNativeTargeting() then
+			state.lastResult = "native targeting cancelled"
+			ControllerCameraTestShowHotkeyFeedback("TARGET CANCELLED", "utility")
+		else
+			pcall(spSelectUnitArray, {})
+			state.lastResult = "native selection cleared"
+			ControllerCameraTestShowHotkeyFeedback("SELECTION CLEARED", "utility")
+		end
+		return true
+	end
+
+	if state.areaReclaim.active then
+		local area = state.areaReclaim
+		if reticleHasWorldTarget and reticleWorldX and reticleWorldZ then
+			local dx, dz = reticleWorldX - area.x, reticleWorldZ - area.z
+			area.radius = clamp(math.sqrt(dx * dx + dz * dz), 16, 1200)
+			if WG.smartareareclaim and type(WG.smartareareclaim.controllerUpdate) == "function" then
+				pcall(WG.smartareareclaim.controllerUpdate, area.anchorUnitID,
+					area.x, area.y, area.z, area.radius)
+			end
+		end
+		if ControllerCameraTestActionReleased("select") then
+			state.lbA.pressActive, state.lbA.holdFired = false, false
+			ControllerCameraTestConfirmNativeReclaim()
+		end
+		return true
+	end
+
+	if lbDown and ControllerCameraTestActionPressed("select") then
+		local targetID, unitDefID = ControllerCameraTestGetReticleOwnedTarget()
+		state.lbA = { pressActive = targetID ~= nil, startedAt = debugEventTime,
+			targetID = targetID, unitDefID = unitDefID, holdFired = false }
+		return true
+	end
+	if state.lbA.pressActive and lbDown and ControllerCameraTestActionDown("select") then
+		local threshold = ControllerCameraTestSettings.areaReclaimHoldSeconds or 0.45
+		if not state.lbA.holdFired and debugEventTime - state.lbA.startedAt >= threshold then
+			state.lbA.holdFired = ControllerCameraTestBeginNativeReclaim("same",
+				state.lbA.targetID, state.lbA.unitDefID)
+		end
+		return true
+	end
+	if state.lbA.pressActive and ControllerCameraTestActionReleased("select") then
+		if not state.lbA.holdFired and ControllerCameraTestBeginNativeReclaim("single",
+				state.lbA.targetID, state.lbA.unitDefID) then
+			ControllerCameraTestConfirmNativeReclaim()
+		end
+		state.lbA.pressActive, state.lbA.holdFired = false, false
+		return true
+	end
+	if not lbDown and ControllerCameraTestActionPressed("select") then
+		attemptReticleSelection()
+		return true
+	end
+	return true
+end
+
 function ControllerCameraTestSelectionsContainSameUnits(first, second)
 	local a, b = ControllerCameraTestSafeSelectionSnapshot(first), ControllerCameraTestSafeSelectionSnapshot(second)
 	return ControllerCameraTestSelectionsEqual(a, b)
@@ -6204,6 +6440,14 @@ end
 
 function ControllerCameraTestValidateReclaimers(keepActualSelection)
 	local state, valid = ControllerCameraTestDisassemble, {}
+	if ControllerCameraTestUsesNativeBARUI() then
+		local selected = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+		for _, unitID in ipairs(selected) do
+			if ControllerCameraTestUnitHasReclaimCapability(unitID) then valid[#valid + 1] = unitID end
+		end
+		state.reclaimers = valid
+		return #valid > 0
+	end
 	for _, unitID in ipairs(state.reclaimers or {}) do
 		if ControllerCameraTestUnitHasReclaimCapability(unitID) then valid[#valid + 1] = unitID end
 	end
@@ -6226,6 +6470,7 @@ end
 
 function ControllerCameraTestCancelDisassembleSubstates(reason)
 	local state = ControllerCameraTestDisassemble
+	if ControllerCameraTestUsesNativeBARUI() then ControllerCameraTestCancelNativeTargeting() end
 	state.markArea.pressActive, state.markArea.active = false, false
 	state.markArea.typeFilter = nil
 	state.areaReclaim.active, state.areaReclaim.anchorUnitID = false, nil
@@ -6246,6 +6491,15 @@ function ControllerCameraTestEnterDisassembleMode()
 		state.lastResult = "no reclaim-capable selection"
 		ControllerCameraTestShowHotkeyFeedback("SELECT RECLAIM-CAPABLE UNITS", "utility")
 		return false
+	end
+	if ControllerCameraTestUsesNativeBARUI() then
+		state.active, state.reclaimers, state.markedTargets, state.highlightedTargets = true, reclaimers, {}, {}
+		state.activatedAt, state.successfulActivity, state.lastValidationAt = debugEventTime, false, debugEventTime
+		ControllerCameraTestCancelDisassembleSubstates("native mode entered")
+		state.active, state.reclaimers = true, reclaimers
+		state.lastResult = "native enabled with " .. tostring(#reclaimers) .. " reclaimers"
+		ControllerCameraTestShowHotkeyFeedback("NATIVE DISASSEMBLE ENABLED", "reclaim")
+		return true
 	end
 	state.active, state.reclaimers, state.markedTargets, state.highlightedTargets = true, reclaimers, {}, {}
 	state.activatedAt, state.successfulActivity, state.lastValidationAt = debugEventTime, false, debugEventTime
@@ -6420,6 +6674,9 @@ end
 function ControllerCameraTestUpdateDisassembleModeInput(dt)
 	local state = ControllerCameraTestDisassemble
 	if not state.active then return false end
+	if ControllerCameraTestUsesNativeBARUI() then
+		return ControllerCameraTestUpdateNativeDisassembleInput(dt)
+	end
 	if ControllerCameraTestUpdateAreaReclaimTargeting() then return true end
 
 	if ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestActionPressed("cancel") then
@@ -6487,6 +6744,13 @@ end
 function ControllerCameraTestUpdateDisassembleLifecycle()
 	local state = ControllerCameraTestDisassemble
 	if not state.active then return end
+	if ControllerCameraTestUsesNativeBARUI() then
+		if debugEventTime - (state.lastValidationAt or -10) >= 0.25 then
+			state.lastValidationAt = debugEventTime
+			ControllerCameraTestValidateReclaimers(false)
+		end
+		return
+	end
 	if debugEventTime - (state.lastValidationAt or -10) >= 0.25 then
 		state.lastValidationAt = debugEventTime
 		if not ControllerCameraTestValidateReclaimers(true) then return end
@@ -8623,6 +8887,27 @@ end
 
 function ControllerCameraTestToggleTacticalMenu()
 	local menu = ControllerCameraTestTacticalMenu
+	if ControllerCameraTestUsesNativeBARUI() then
+		menu.open = not menu.open
+		local commands = {}
+		if menu.open and WG.ordermenu and type(WG.ordermenu.controllerGetCommands) == "function" then
+			local ok, result = pcall(WG.ordermenu.controllerGetCommands)
+			if ok and type(result) == "table" then commands = result end
+		end
+		if menu.open and #commands == 0 then menu.open = false end
+		ControllerCameraTestNativeUI.tacticalFocus = math.max(1,
+			math.min(#commands, ControllerCameraTestNativeUI.tacticalFocus or 1))
+		local focused = commands[ControllerCameraTestNativeUI.tacticalFocus]
+		if WG.ordermenu and type(WG.ordermenu.controllerSetFocus) == "function" then
+			pcall(WG.ordermenu.controllerSetFocus, menu.open and focused and focused.id or nil)
+		end
+		menu.cachedCommands = commands
+		menu.selectedIndex = ControllerCameraTestNativeUI.tacticalFocus
+		menu.highlightedName = focused and (focused.name or focused.action) or "none"
+		menu.lastAction = menu.open and "native order panel opened" or "native order panel closed"
+		latchSelectionDebugMessage(menu.lastAction)
+		return menu.open
+	end
 	menu.open = not menu.open
 	if menu.open then
 		ControllerCameraTestMemoryDebug.tacticalOpenCount = (ControllerCameraTestMemoryDebug.tacticalOpenCount or 0) + 1
@@ -9062,6 +9347,50 @@ function ControllerCameraTestHandleTacticalMenuInput()
 	local menu = ControllerCameraTestTacticalMenu
 	if not menu.open then
 		return false
+	end
+	if ControllerCameraTestUsesNativeBARUI() then
+		local commands = {}
+		if WG.ordermenu and type(WG.ordermenu.controllerGetCommands) == "function" then
+			local ok, result = pcall(WG.ordermenu.controllerGetCommands)
+			if ok and type(result) == "table" then commands = result end
+		end
+		if #commands == 0 then
+			menu.open = false
+			return true
+		end
+		local focus = math.max(1, math.min(#commands, ControllerCameraTestNativeUI.tacticalFocus or 1))
+		if ControllerCameraTestActionPressed("tacticalCancel") or ControllerCameraTestActionPressed("tacticalClose") then
+			menu.open = false
+			if WG.ordermenu and type(WG.ordermenu.controllerSetFocus) == "function" then
+				pcall(WG.ordermenu.controllerSetFocus, nil)
+			end
+			return true
+		elseif WasButtonPressed("dpadUp") or WasButtonPressed("dpadLeft") then
+			focus = ((focus - 2) % #commands) + 1
+		elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadRight") then
+			focus = (focus % #commands) + 1
+		elseif ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("radialQuick") then
+			local direction = ControllerCameraTestActionPressed("radialQuick") and -1 or 1
+			local focused = commands[focus]
+			local ok, activated = false, false
+			if focused and WG.ordermenu and type(WG.ordermenu.controllerActivate) == "function" then
+				ok, activated = pcall(WG.ordermenu.controllerActivate, focused.id, direction)
+			end
+			menu.lastResult = ok and activated and "native command activated" or "native command unavailable"
+			menu.open = false
+			if WG.ordermenu and type(WG.ordermenu.controllerSetFocus) == "function" then
+				pcall(WG.ordermenu.controllerSetFocus, nil)
+			end
+			return true
+		end
+		ControllerCameraTestNativeUI.tacticalFocus = focus
+		menu.selectedIndex = focus
+		menu.cachedCommands = commands
+		menu.highlightedName = commands[focus] and (commands[focus].name or commands[focus].action) or "none"
+		if WG.ordermenu and type(WG.ordermenu.controllerSetFocus) == "function" then
+			pcall(WG.ordermenu.controllerSetFocus, commands[focus] and commands[focus].id or nil)
+		end
+		return true
 	end
 
 	ControllerCameraTestMaybeRefreshTacticalCommandCache()
@@ -9652,6 +9981,29 @@ end
 --------------------------------------------------------------------------------
 function ControllerCameraTestOpenBuildMenu()
 	local menu = ControllerCameraTestBuildMenu
+	if ControllerCameraTestUsesNativeBARUI() then
+		local items = {}
+		if WG.buildmenu and type(WG.buildmenu.controllerGetItems) == "function" then
+			local ok, result = pcall(WG.buildmenu.controllerGetItems)
+			if ok and type(result) == "table" then items = result end
+		end
+		if #items == 0 then
+			menu.open, menu.lastAction = false, "native build menu has no options"
+			latchSelectionDebugMessage(menu.lastAction)
+			return false
+		end
+		menu.open, menu.lastAction, menu.optionCount = true, "native build menu opened", #items
+		ControllerCameraTestNativeUI.buildFocus = items[1].unitDefID
+		if WG.buildmenu and type(WG.buildmenu.controllerSetInputActive) == "function" then
+			pcall(WG.buildmenu.controllerSetInputActive, true)
+		end
+		if WG.buildmenu and type(WG.buildmenu.controllerSetFocus) == "function" then
+			pcall(WG.buildmenu.controllerSetFocus, ControllerCameraTestNativeUI.buildFocus)
+		end
+		activeButtonLayoutSummary = "Native Build Menu: D-pad navigate | A activate | X dequeue | B/Y close"
+		latchSelectionDebugMessage(menu.lastAction .. ": " .. tostring(#items) .. " options")
+		return true
+	end
 	local count = ControllerCameraTestGatherBuildOptions()
 	if count <= 0 then
 		menu.open = false
@@ -9685,6 +10037,13 @@ end
 function ControllerCameraTestCloseBuildMenu(reason)
 	local menu = ControllerCameraTestBuildMenu
 	menu.open = false
+	if ControllerCameraTestUsesNativeBARUI() and WG.buildmenu then
+		if type(WG.buildmenu.controllerSetFocus) == "function" then pcall(WG.buildmenu.controllerSetFocus, nil) end
+		if type(WG.buildmenu.controllerSetInputActive) == "function" then
+			pcall(WG.buildmenu.controllerSetInputActive, ControllerCameraTestNativeUI.controllerStable)
+		end
+		ControllerCameraTestNativeUI.buildFocus = nil
+	end
 	menu.lastAction = reason or "closed"
 	activeButtonLayoutSummary = commandLayerActive
 		and XboxController.commandLayoutSummary
@@ -10548,6 +10907,34 @@ function ControllerCameraTestHandleBuildMenuInput()
 	if ControllerCameraTestBuildPlacement.active then
 		return false
 	end
+	if ControllerCameraTestUsesNativeBARUI() then
+		if ControllerCameraTestActionPressed("radialCancel") or ControllerCameraTestActionPressed("radialClose") then
+			ControllerCameraTestCloseBuildMenu("native panel closed")
+			return true
+		end
+		local dx, dy = 0, 0
+		if WasButtonPressed("dpadLeft") then dx = -1
+		elseif WasButtonPressed("dpadRight") then dx = 1
+		elseif WasButtonPressed("dpadUp") then dy = -1
+		elseif WasButtonPressed("dpadDown") then dy = 1 end
+		if (dx ~= 0 or dy ~= 0) and WG.buildmenu and type(WG.buildmenu.controllerMoveFocus) == "function" then
+			local ok, unitDefID, item = pcall(WG.buildmenu.controllerMoveFocus, dx, dy)
+			if ok then
+				ControllerCameraTestNativeUI.buildFocus = unitDefID
+				menu.highlightedName = type(item) == "table" and item.name or tostring(unitDefID or "none")
+			end
+		elseif ControllerCameraTestActionPressed("radialSelect") or ControllerCameraTestActionPressed("radialQuick") then
+			local button = ControllerCameraTestActionPressed("radialQuick") and 3 or 1
+			local ok, activated = false, false
+			if WG.buildmenu and type(WG.buildmenu.controllerActivate) == "function" then
+				ok, activated = pcall(WG.buildmenu.controllerActivate,
+					ControllerCameraTestNativeUI.buildFocus, button)
+			end
+			menu.lastAction = ok and activated and "native build command activated" or "native build unavailable"
+			if button == 1 and ok and activated then ControllerCameraTestCloseBuildMenu("native command activated") end
+		end
+		return true
+	end
 
 	if ControllerCameraTestHandleQueueRemovalInput() then
 		return true
@@ -10777,7 +11164,16 @@ function ControllerCameraTestSelectAreaUnits()
 	local filteredUnits = ControllerCameraTestFilterAreaSelection(units, includeBuildings)
 	area.filterMode = includeBuildings and "include buildings" or "units-first"
 	area.lastCount = #filteredUnits
-	if ControllerCameraTestSelectUnits(filteredUnits, "Area select") then
+	local selected = false
+	if ControllerCameraTestUsesNativeBARUI() and WG.smartselect
+			and type(WG.smartselect.controllerApplyUnits) == "function" then
+		local ok, result = pcall(WG.smartselect.controllerApplyUnits, filteredUnits,
+			ControllerCameraTestIsQueueModifierActive() and "toggle" or "replace", true)
+		selected = ok and type(result) == "table" and #result > 0
+	else
+		selected = ControllerCameraTestSelectUnits(filteredUnits, "Area select")
+	end
+	if selected then
 		area.lastResult = "selected " .. tostring(#filteredUnits) .. " (" .. tostring(area.filterMode) .. ")"
 	else
 		area.lastResult = "no units selected"
@@ -12857,10 +13253,12 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 		if controllerMode and reticleVisible and type(spWarpMouse) == "function" and Spring.GetGameFrame() > 0 and not controllerMouseModeActive then spWarpMouse(screenCenterX, screenCenterY) end
 		return
 	end
-	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestBuildMenu.open then
+	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestBuildMenu.open
+			and not ControllerCameraTestUsesNativeBARUI() then
 		ControllerCameraTestUpdateRadialStickSelection()
 	end
-	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestTacticalMenu.open then
+	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestTacticalMenu.open
+			and not ControllerCameraTestUsesNativeBARUI() then
 		ControllerCameraTestUpdateTacticalStickSelection()
 	end
 	if not pregameCameraModifierActive then
@@ -12898,8 +13296,25 @@ function ControllerCameraTestUpdateBuildMenuCompact()
 	end
 end
 
+function ControllerCameraTestUpdateNativeInputMode()
+	local state = ControllerCameraTestNativeUI
+	local desired = controllerMode == true and ControllerCameraTestUsesNativeBARUI()
+	if state.pendingControllerState ~= desired then
+		state.pendingControllerState = desired
+		state.pendingSince = debugEventTime
+	end
+	local delay = desired and 0.15 or 0.35
+	if state.controllerStable ~= desired and debugEventTime - (state.pendingSince or 0) >= delay then
+		state.controllerStable = desired
+		if WG.buildmenu and type(WG.buildmenu.controllerSetInputActive) == "function" then
+			pcall(WG.buildmenu.controllerSetInputActive, desired)
+		end
+	end
+end
+
 function widget:Update(dt)
 	ControllerCameraTestUpdateControllerFrame(dt)
+	ControllerCameraTestUpdateNativeInputMode()
 	ControllerCameraTestUpdateBuildMenuCompact()
 end
 
@@ -15564,6 +15979,11 @@ function widget:SetConfigData(data)
 				if key == "stickDeadzone" and val == 3000 then
 					val = 5000
 				end
+				-- v0.7 shipped the Disassemble chord at exactly one second.  Preserve
+				-- custom values, but migrate that old default to the v0.8 test default.
+				if key == "disassembleToggleHoldSeconds" and tonumber(val) == 1.0 then
+					val = 0.33
+				end
 				ControllerCameraTestSettings[key] = val
 			end
 		end
@@ -15706,7 +16126,7 @@ function widget:DrawWorld()
 	end
 
 	local disassemble = ControllerCameraTestDisassemble
-	if disassemble and disassemble.active then
+	if disassemble and disassemble.active and not ControllerCameraTestUsesNativeBARUI() then
 		ControllerCameraTestPruneMarkedTargets()
 		gl.LineWidth(2.6)
 		for unitID in pairs(disassemble.markedTargets or {}) do
