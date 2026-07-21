@@ -1,9 +1,9 @@
 {
   "kind": "bar-controller-ui-defaults",
   "schemaVersion": 3,
-  "defaultsVersion": "0.6.1-1",
+  "defaultsVersion": "0.7.0-1",
   "generatedAt": "2026-07-21T00:00:00Z",
-  "compatibleModVersion": "0.6.1",
+  "compatibleModVersion": "0.7.0",
   "settings": {
     "global": {
       "enabled": true,
@@ -183,7 +183,7 @@
         "itemSpacing": 1.0, "legacyThemeOpacity": 1.0, "pageStatusVisible": true,
         "radiusScale": 1.0, "innerRadiusScale": 1.0, "segmentSpacing": 1.0, "segmentAnglePadding": 0.0,
         "centerPanelScale": 1.0, "safeScreenMargin": 0.0,
-        "resourceSpacing": 12.0, "resourceLayout": "Row", "resourceAlignment": "Center",
+        "resourceSpacing": 12.0, "resourceRowSpacing": 6.0, "resourceLayout": "Row", "resourceAlignment": "Center",
 
         "categoryLabelSize": 18.0, "categoryLabelColorR": 0.34, "categoryLabelColorG": 0.82, "categoryLabelColorB": 0.92, "categoryLabelOpacity": 0.95,
         "categoryLabelShadowEnabled": true, "categoryLabelShadowColorR": 0.0, "categoryLabelShadowColorG": 0.0, "categoryLabelShadowColorB": 0.0, "categoryLabelShadowOpacity": 0.78,
@@ -209,6 +209,15 @@
         "energyCostShadowEnabled": true, "energyCostShadowColorR": 0.0, "energyCostShadowColorG": 0.0, "energyCostShadowColorB": 0.0, "energyCostShadowOpacity": 0.78,
         "energyCostOutlineEnabled": true, "energyCostAlignment": "Center", "energyCostOffsetX": 0.0, "energyCostOffsetY": 0.0,
         "energyCostIconSize": 10.0, "energyCostIconSpacing": 3.0,
+
+        "healthStatSize": 11.0, "healthStatColorR": 0.34, "healthStatColorG": 1.0, "healthStatColorB": 0.48, "healthStatOpacity": 1.0,
+        "healthStatShadowEnabled": true, "healthStatShadowColorR": 0.0, "healthStatShadowColorG": 0.0, "healthStatShadowColorB": 0.0, "healthStatShadowOpacity": 0.78,
+        "healthStatOutlineEnabled": true, "healthStatAlignment": "Center", "healthStatOffsetX": 0.0, "healthStatOffsetY": 0.0,
+        "healthStatIconSize": 10.0, "healthStatIconSpacing": 3.0,
+
+        "availabilityTextSize": 9.0, "availabilityTextColorR": 1.0, "availabilityTextColorG": 0.62, "availabilityTextColorB": 0.24, "availabilityTextOpacity": 0.92,
+        "availabilityTextShadowEnabled": true, "availabilityTextShadowColorR": 0.0, "availabilityTextShadowColorG": 0.0, "availabilityTextShadowColorB": 0.0, "availabilityTextShadowOpacity": 0.78,
+        "availabilityTextOutlineEnabled": true, "availabilityTextAlignment": "Center", "availabilityTextOffsetX": 0.0, "availabilityTextOffsetY": 0.0, "availabilityTextLineSpacing": 2.0,
 
         "metadataSize": 10.0, "metadataColorR": 0.78, "metadataColorG": 0.86, "metadataColorB": 0.92, "metadataOpacity": 0.82,
         "metadataShadowEnabled": true, "metadataShadowColorR": 0.0, "metadataShadowColorG": 0.0, "metadataShadowColorB": 0.0, "metadataShadowOpacity": 0.68,
@@ -294,8 +303,9 @@
       "placementStatus": { "enabled": true, "x": 0.5, "y": 0.405, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "anchor": "center" },
       "companionStatus": { "enabled": true, "x": 0.5, "y": 0.73, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "anchor": "center" },
       "debug": { "enabled": true },
+      "gameplay": { "disassembleToggleHoldSeconds": 1.0, "disassembleUnusedTimeoutSeconds": 20.0, "areaReclaimHoldSeconds": 0.45, "areaMarkHoldSeconds": 0.38 },
       "editorLauncher": {
-        "enabled": true,
+        "enabled": false,
         "x": 0.79,
         "y": 0.9666666667,
         "scale": 1.0,
@@ -323,7 +333,7 @@
       { "id": "Groups / Hot Slots", "label": "Groups / Hot Slots", "order": 90, "visible": true },
       { "id": "Mouse Mode", "label": "Mouse Mode", "order": 100, "visible": true },
       { "id": "Pregame", "label": "Pregame", "order": 110, "visible": true },
-      { "id": "Editor", "label": "Editor", "order": 120, "visible": true },
+      { "id": "Editor", "label": "Editor", "order": 120, "visible": false },
       { "id": "System", "label": "System", "order": 130, "visible": true },
       { "id": "Advanced", "label": "Advanced", "order": 140, "visible": true }
     ],
