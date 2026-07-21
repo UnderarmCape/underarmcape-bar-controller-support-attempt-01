@@ -92,6 +92,8 @@ local DEFAULTS = {
 			iconScale = 1, rowSpacing = 5, columnSpacing = 18, iconTextSpacing = 8,
 			padding = 12, maxWidth = 0.52, columns = 2, backgroundOpacity = 0,
 			textOpacity = 1, borderOpacity = 0, fadeDuration = 0.18,
+			contextEnterDebounce = 0.14, contextExitGrace = 0.12,
+			confirmedModalImmediate = true,
 			compact = false, anchor = "bottomleft", mode = "Contextual", overflow = "Wrap",
 			presentation = "Glyph + Action Text", showChip = true,
 			showActionText = true, showRowBackground = false, showCategoryHeaders = false,
@@ -277,6 +279,13 @@ addProperty("Hints", "hints", "presentation", "Visual presentation", "enum", nil
 addProperty("Hints", "hints", "overflow", "Long-label strategy", "enum", nil, nil, nil, "Basic", { "Wrap", "Clip", "Marquee", "Ping Pong" })
 addProperty("Hints", "hints", "expanded", "Always expanded", "bool")
 addProperty("Hints", "hints", "maxItems", "Collapsed item limit", "number", 3, 40, 1)
+addProperty("Hints", "hints", "contextEnterDebounce", "Context enter debounce", "number", 0, 0.50, 0.01, "Advanced")
+addProperty("Hints", "hints", "contextExitGrace", "Context exit grace", "number", 0, 0.50, 0.01, "Advanced")
+addProperty("Hints", "hints", "confirmedModalImmediate", "Confirmed modal transition", "bool", nil, nil, nil, "Advanced")
+addProperty("Hints", "gameplay", "lbTapMaxSeconds", "Input / LB tap maximum", "number", 0.08, 0.50, 0.01, "Advanced")
+addProperty("Hints", "gameplay", "lbTacticalHoldSeconds", "Input / LB tactical hold", "number", 0.08, 0.50, 0.01, "Advanced")
+addProperty("Hints", "gameplay", "visibleSelectionFilter", "Input / quick LB filter", "enum", nil, nil, nil, "Advanced",
+	{ "Combat", "Builders", "Air", "Last Selected" })
 for _, row in ipairs({
 	{ "showChip", "Show button chip layer", "bool" }, { "showActionText", "Show action-text layer", "bool" },
 	{ "showRowBackground", "Show row backgrounds", "bool" }, { "showCategoryHeaders", "Show category headings", "bool" },
@@ -462,6 +471,8 @@ local ranges = {
 	rowSpacing = { 0, 24 }, columnSpacing = { 0, 60 }, iconTextSpacing = { 0, 30 }, padding = { 2, 40 },
 	maxWidth = { 0.20, 0.95 }, columns = { 0, 4 }, backgroundOpacity = { 0, 1 },
 	textOpacity = { 0.10, 1 }, borderOpacity = { 0, 1 }, fadeDuration = { 0, 1 }, safeMargin = { 0, 100 },
+	contextEnterDebounce = { 0, 0.50 }, contextExitGrace = { 0, 0.50 },
+	lbTapMaxSeconds = { 0.08, 0.50 }, lbTacticalHoldSeconds = { 0.08, 0.50 },
 	maxItems = { 3, 40 }, slotSize = { 24, 84 }, slotGap = { 0, 24 }, slotCount = { 1, 10 },
 	slotWidth = { 24, 120 }, slotHeight = { 24, 100 }, panelPadding = { 0, 32 }, rows = { 1, 5 },
 	selectedBorderThickness = { 1, 6 }, emptyOpacity = { 0, 1 }, autoCollapseDelay = { 0.5, 10 },
@@ -730,6 +741,15 @@ function extra.favoriteCurrentColor(enabled)
 end
 
 local function getScope(scope)
+	if scope == "gameplay" then
+		extra.gameplaySettings = extra.gameplaySettings or {}
+		extra.gameplayDefaults = extra.gameplayDefaults or { lbTapMaxSeconds = 0.20, lbTacticalHoldSeconds = 0.20, visibleSelectionFilter = "Combat" }
+		local api = WG and WG.BARControllerSupport
+		if api and type(api.GetSetting) == "function" then
+			for key in pairs(extra.gameplayDefaults) do extra.gameplaySettings[key] = api.GetSetting(key) end
+		end
+		return extra.gameplaySettings, extra.gameplayDefaults
+	end
 	if scope == "global" or scope == "theme" or scope == "authoring" then return settings[scope], shippingBaseline[scope] or DEFAULTS[scope] end
 	return settings.components[scope], shippingBaseline.components[scope] or DEFAULTS.components[scope]
 end
@@ -740,6 +760,14 @@ local themePropertyHook
 local function setValue(scope, key, value)
 	local target, defaultsForScope = getScope(scope)
 	if not target or defaultsForScope[key] == nil then return nil end
+	if scope == "gameplay" then
+		local api = WG and WG.BARControllerSupport
+		if not api or type(api.SetSetting) ~= "function" then editor.status = "Gameplay settings API unavailable"; return target[key] end
+		local validated = validateValue(key, value, defaultsForScope[key])
+		target[key] = api.SetSetting(key, validated)
+		editor.status = "Changed gameplay " .. tostring(key)
+		return target[key]
+	end
 	if isEnforced(scope, key) then editor.status = propertyID(scope, key) .. " is enforced by remote policy"; return target[key] end
 	local validated = validateValue(key, value, defaultsForScope[key])
 	if deepEqual(target[key], validated) then return target[key] end
@@ -758,6 +786,17 @@ local function setValue(scope, key, value)
 end
 
 local function resetComponent(scope)
+	if scope == "gameplay" then
+		local target, gameplayDefaults = getScope(scope)
+		local api = WG and WG.BARControllerSupport
+		if not target or not api then editor.status = "Gameplay settings API unavailable"; return end
+		for key, fallback in pairs(gameplayDefaults) do
+			if type(api.ResetSetting) == "function" then target[key] = api.ResetSetting(key)
+			elseif type(api.SetSetting) == "function" then target[key] = api.SetSetting(key, fallback) end
+		end
+		editor.status = "Reset controller input settings"
+		return
+	end
 	local ownMutation = beginMutation("Reset " .. tostring(scope))
 	local target = getScope(scope)
 	local previous = target and deepCopy(target) or nil
@@ -887,6 +926,7 @@ local hintAnimationTime = 0
 local activeHintContextLabel = "Normal Gameplay"
 local hintHits = {}
 local hintMoreHit = nil
+extra.hintContextState = nil
 
 local DEFAULT_HINT_CATEGORIES = {
 	{ id = "Selection", order = 10 }, { id = "Commands", order = 20 }, { id = "Camera", order = 30 },
@@ -937,20 +977,25 @@ local function isFactoryBuild(c) return isBuild(c) and c.factoryRadialOpen end
 local function isConstructorBuild(c) return isBuild(c) and not c.factoryRadialOpen end
 local function isTactical(c) return c.tacticalRadialOpen and not c.bindingsOpen and not c.layoutEditorOpen end
 local function isSelectionRadial(c) return c.selectionRadialOpen and not c.bindingsOpen and not c.layoutEditorOpen end
+local function isVisibleSelectionRadial(c) return c.visibleSelectionRadialOpen and not c.bindingsOpen and not c.layoutEditorOpen end
 local function isDgun(c) return c.dgunMode and not c.bindingsOpen and not c.layoutEditorOpen end
 local function isStaged(c) return c.stagedTactical and not c.bindingsOpen and not c.layoutEditorOpen end
 local function isAreaSelection(c) return c.areaSelection and not c.selectionRadialOpen and not c.bindingsOpen and not c.layoutEditorOpen end
 local function isLongStress(c) return c.longBindingStress == true end
 local function isCommandLayer(c) return c.commandLayer and not c.bindingsOpen and not c.layoutEditorOpen end
+local function isLBTacticalLayer(c) return c.lbTacticalLayer and c.hasSelection and not c.visibleSelectionRadialOpen
+	and not c.bindingsOpen and not c.layoutEditorOpen end
 local function hasModalGameplayContext(c)
-	return c.buildPlacement or c.buildMenuOpen or c.tacticalRadialOpen or c.selectionRadialOpen
+	return c.buildPlacement or c.buildMenuOpen or c.tacticalRadialOpen or c.selectionRadialOpen or c.visibleSelectionRadialOpen
 		or c.dgunMode or c.stagedTactical or c.areaSelection or c.pregame or c.mouseMode
 end
 local function isGroupLayer(c) return c.controlGroupLayer and not c.commandLayer and not hasModalGameplayContext(c) and not c.bindingsOpen and not c.layoutEditorOpen end
-local function isPitchLayer(c) return c.pitchLayer and not c.commandLayer and not c.controlGroupLayer and not hasModalGameplayContext(c) and not c.bindingsOpen and not c.layoutEditorOpen end
+local function isPitchLayer(c) return c.pitchLayer and not c.lbTacticalLayer and not c.commandLayer and not c.controlGroupLayer
+	and not hasModalGameplayContext(c) and not c.bindingsOpen and not c.layoutEditorOpen end
 local function isNormal(c)
 	return not c.pregame and not c.mouseMode and not c.bindingsOpen and not c.layoutEditorOpen
 		and not c.buildPlacement and not c.buildMenuOpen and not c.tacticalRadialOpen and not c.selectionRadialOpen
+		and not c.visibleSelectionRadialOpen and not c.lbTacticalLayer
 		and not c.dgunMode and not c.stagedTactical and not c.areaSelection
 		and not c.commandLayer
 		and not c.controlGroupLayer and not c.pitchLayer and not c.longBindingStress
@@ -1008,6 +1053,11 @@ bind("radialSelect", "Choose Selection Filter", isSelectionRadial, 1)
 bind("radialCancel", "Cancel Selection", isSelectionRadial, 2)
 bind("radialPrevPage", "Previous Filter", isSelectionRadial, 3)
 bind("radialNextPage", "Next Filter", isSelectionRadial, 4)
+addHint({ id = "visible-filter-choose", inputs = { "leftStick" }, label = "Choose Filter",
+	when = isVisibleSelectionRadial, priority = 1, group = "Selection" })
+addHint({ id = "visible-filter-confirm", inputs = { "LT" }, label = "Release to Confirm",
+	when = isVisibleSelectionRadial, priority = 2, group = "Selection" })
+bind("cancel", "Cancel", isVisibleSelectionRadial, 3, { id = "visible-filter-cancel", group = "Selection" })
 addHint({ id = "dgun-fire", inputs = { "RT" }, label = "Fire DGUN", when = isDgun, priority = 1, group = "Commands" })
 bind("cancel", "Exit DGUN", isDgun, 2)
 addHint({ id = "dgun-aim", inputs = { "rightStick" }, label = "Aim", when = isDgun, priority = 3, group = "Commands" })
@@ -1030,15 +1080,40 @@ bind("groupClear", "Clear Group", isGroupLayer, 5)
 bind("idlePrev", "Previous Idle Unit Type", isPitchLayer, 1)
 bind("idleNext", "Next Idle Unit Type", isPitchLayer, 2)
 bind("pitchModifier", "Camera Pitch Modifier", isPitchLayer, 3)
+addHint({ id = "lb-tactical-stop", action = "cancel", chordActions = { "pitchModifier", "cancel" },
+	label = "Stop", when = isLBTacticalLayer, priority = 1, group = "Tactical" })
+addHint({ id = "lb-tactical-primary", action = "select", chordActions = { "pitchModifier", "select" },
+	label = "Tactical Primary", labelResolver = function(c)
+		if c.selectionProfile == "builder" then return "Repair Area" end
+		if c.selectionProfile == "air_transport" then return "Unload Unit / Hold for Area" end
+		if c.selectionProfile == "factory" then return "Fight" end
+		return "Attack / Fight"
+	end, when = isLBTacticalLayer, priority = 2, group = "Tactical" })
+addHint({ id = "lb-tactical-smart", action = "smartAction", chordActions = { "pitchModifier", "smartAction" },
+	label = "Tactical Smart", labelResolver = function(c)
+		if c.selectionProfile == "builder" then return "Reclaim Area" end
+		if c.selectionProfile == "air_transport" then return "Load Unit / Hold for Area" end
+		if c.selectionProfile == "factory" then return "Fight" end
+		return "Attack"
+	end, when = isLBTacticalLayer, priority = 3, group = "Tactical" })
+addHint({ id = "lb-tactical-utility", action = "insertNextCommandModifier",
+	chordActions = { "pitchModifier", "insertNextCommandModifier" }, label = "Patrol",
+	when = function(c) return isLBTacticalLayer(c) and c.selectionProfile ~= "air_transport" end,
+	priority = 4, group = "Tactical" })
+addHint({ id = "lb-tactical-wait", action = "cancel", chordActions = { "pitchModifier", "cancel" },
+	label = "Wait", hold = true, when = isLBTacticalLayer, priority = 5, group = "Tactical" })
 bind("select", "Select Unit", isNormal, 1)
-bind("select", "Selection Radial", isNormal, 2, { hold = true, id = "normal-select-hold" })
 bind("smartAction", "Smart Action", function(c) return isNormal(c) and not c.hasTransport end, 3)
 bind("smartAction", "Load / Move Transport", function(c) return isNormal(c) and c.hasTransport end, 3, { id = "normal-transport-smart" })
 bind("smartAction", "Draw Move / Build Path", function(c) return isNormal(c) and c.hasSelection end, 4, { hold = true, id = "normal-smart-hold" })
 bind("cancel", "Clear Selection", function(c) return isNormal(c) and c.hasSelection end, 5)
 bind("buildRadial", "Build / Factory Radial", function(c) return isNormal(c) and (c.hasBuilder or c.hasFactory) end, 6)
 bind("commandLayer", "Tactical Command Layer", function(c) return isNormal(c) and c.hasSelection end, 7)
-bind("pitchModifier", "Camera Pitch", isNormal, 8)
+addHint({ id = "normal-visible-select", action = "pitchModifier", label = "Select Visible Combat",
+	labelResolver = function(c)
+		local behavior = extra.SharedRenderers and extra.SharedRenderers.SelectionBehavior
+		return behavior and behavior.FilterShortLabel(c.visibleSelectionFilter) or "Select Visible Combat"
+	end, when = isNormal, priority = 8, group = "Selection" })
 bind("idlePrev", "Previous Idle Unit", isNormal, 9)
 bind("idleNext", "Next Idle Unit", isNormal, 10)
 bind("controlGroupModifier", "Control Groups", isNormal, 11)
@@ -1060,15 +1135,27 @@ addHint({ id = "stress-long-action", inputs = { "rightStick", "dpadLeft", "dpadR
 
 local function contextSignature(context)
 	local keys = { "pregame", "mouseMode", "bindingsOpen", "layoutEditorOpen", "buildMenuOpen", "buildPlacement",
-		"factoryRadialOpen", "tacticalRadialOpen", "selectionRadialOpen", "areaSelection", "stagedTactical", "dgunMode",
+		"factoryRadialOpen", "tacticalRadialOpen", "selectionRadialOpen", "visibleSelectionRadialOpen", "areaSelection", "stagedTactical", "dgunMode",
 		"selectedCount", "hasBuilder", "hasFactory", "hasTransport", "hasWorldTarget", "hoverTargetType", "smartTargetType",
-		"commandLayer", "controlGroupLayer", "pitchLayer" }
+		"commandLayer", "controlGroupLayer", "pitchLayer", "lbTacticalLayer", "visibleSelectionFilter", "selectionProfile", "selectionRevision" }
 	local parts = {}
 	for i, key in ipairs(keys) do parts[i] = tostring(context[key]) end
 	return table.concat(parts, "|")
 end
 
+function extra.isConfirmedHintModal(context)
+	return settings.components.hints.confirmedModalImmediate ~= false and (context.buildMenuOpen or context.buildPlacement
+		or context.tacticalRadialOpen or context.selectionRadialOpen or context.visibleSelectionRadialOpen
+		or context.stagedTactical or context.dgunMode or context.bindingsOpen or context.layoutEditorOpen
+		or context.lbTacticalLayer)
+end
+
 local function resolveInputs(def, api)
+	if type(def.chordActions) == "table" and type(api.GetBinding) == "function" then
+		local inputs = {}
+		for _, action in ipairs(def.chordActions) do inputs[#inputs + 1] = api.GetBinding(action) end
+		return inputs
+	end
 	if def.action and type(api.GetBinding) == "function" then return { api.GetBinding(def.action) } end
 	if def.shortcut and type(api.GetShortcutBinding) == "function" then return api.GetShortcutBinding(def.shortcut) end
 	return def.inputs
@@ -1079,6 +1166,7 @@ function extra.normalLayerContext(context)
 	base.pregame, base.mouseMode, base.bindingsOpen, base.layoutEditorOpen = false, false, false, false
 	base.buildPlacement, base.buildMenuOpen, base.factoryRadialOpen = false, false, false
 	base.tacticalRadialOpen, base.selectionRadialOpen = false, false
+	base.visibleSelectionRadialOpen, base.lbTacticalLayer = false, false
 	base.dgunMode, base.stagedTactical, base.areaSelection = false, false, false
 	base.commandLayer, base.controlGroupLayer, base.pitchLayer = false, false, false
 	return base
@@ -1117,6 +1205,8 @@ local function rebuildHints(context, api)
 		or (context.mouseMode and "Mouse Mode") or (context.buildPlacement and "Build Placement")
 		or (context.factoryRadialOpen and "Factory Radial") or (context.buildMenuOpen and "Build Radial")
 		or (context.tacticalRadialOpen and "Tactical Radial") or (context.selectionRadialOpen and "Selection Radial")
+		or (context.visibleSelectionRadialOpen and "Visible Selection Filter Radial")
+		or (context.lbTacticalLayer and "LB Tactical Layer")
 		or (context.controlGroupLayer and "Groups / Hot Slots") or (context.commandLayer and "Commands")
 		or "Normal Gameplay")
 	local mode = settings.components.hints.mode or "Contextual"
@@ -1144,8 +1234,9 @@ local function rebuildHints(context, api)
 				local order = tonumber(authorData.actionOrder[actionID]) or profileOrder or def.priority or 100
 				local shortLabel = authorData.shortLabels[actionID]
 					or (type(profile.defaultShortLabels) == "table" and profile.defaultShortLabels[actionID]) or def.compactLabel
+				local label = type(def.labelResolver) == "function" and def.labelResolver(context) or def.label
 				visibleHints[#visibleHints + 1] = {
-					id = def.id, action = actionID, inputs = inputs, label = def.label, compactLabel = shortLabel,
+					id = def.id, action = actionID, inputs = inputs, label = label, compactLabel = shortLabel,
 					hold = def.hold, priority = order, group = category, layer = layer,
 				}
 			end
@@ -1782,7 +1873,7 @@ local canvasComponents = {
 
 local previewContexts = { "Normal Gameplay", "Nothing Selected", "Single Unit", "Multiple Units", "Builder Selected",
 	"Factory Selected", "Transport Selected", "Mouse Mode", "Build Menu", "Build Placement", "Placement Rotation", "Placement Queue",
-	"Build Radial", "Tactical Radial", "Selection Radial", "Factory Radial", "Unit Hot Slots", "Empty Hot Slots",
+	"Build Radial", "Tactical Radial", "Selection Radial", "Visible Selection Filter Radial", "Factory Radial", "Unit Hot Slots", "Empty Hot Slots",
 	"Populated Hot Slots", "Selected Hot Slot", "Long Binding Stress Test", "Multi-column Hint Stress Test",
 	"Maximum Wrapping Stress Test", "Long Chord Stress Test" }
 
@@ -1809,7 +1900,7 @@ function extra.previewMenuEntries()
 		category("Building", { "Build Menu", "Build Placement", "Placement Rotation", "Placement Queue" })
 		category("Stress Tests", { "Long Binding Stress Test", "Multi-column Hint Stress Test", "Maximum Wrapping Stress Test", "Long Chord Stress Test" })
 	elseif kind == "radials" then
-		category("Radials", { "Build Radial", "Tactical Radial", "Selection Radial", "Factory Radial" })
+		category("Radials", { "Build Radial", "Tactical Radial", "Selection Radial", "Visible Selection Filter Radial", "Factory Radial" })
 		category("Stress Tests", { "Long Chord Stress Test" })
 	elseif kind == "hotSlots" then
 		category("Groups", { "Unit Hot Slots", "Empty Hot Slots", "Populated Hot Slots", "Selected Hot Slot" })
@@ -1940,6 +2031,7 @@ local function previewContext(base, mode)
 	elseif mode == "Build Placement" then result.buildPlacement, result.hasBuilder, result.hasSelection = true, true, true
 	elseif mode == "Tactical Radial" then result.tacticalRadialOpen, result.hasSelection = true, true
 	elseif mode == "Selection Radial" then result.selectionRadialOpen, result.areaSelection = true, true
+	elseif mode == "Visible Selection Filter Radial" then result.visibleSelectionRadialOpen, result.visibleSelectionFilter = true, "Combat"
 	elseif mode == "Unit Hot Slots" then result.controlGroupLayer, result.hasSelection = true, true
 	elseif mode == "Pregame" then result.pregame = true
 	elseif mode == "Mouse Mode" then result.mouseMode = true
@@ -2194,6 +2286,7 @@ extra.editorNavigation = {
 
 extra.editorScopeLabels = {
 	global = "Global interface", hints = "Controller hints", hotSlots = "Hot slots", theme = "Theme",
+	gameplay = "Controller input",
 	authoring = "Authoring", bindingsButton = "Bindings launcher", editorLauncher = "Layout launcher",
 	radials = "All radials", buildRadial = "Build radial", tacticalRadial = "Tactical radial",
 	selectionRadial = "Selection radial", factoryRadial = "Factory radial", selectedStatus = "Selected status",
@@ -2232,7 +2325,11 @@ function extra.drawWorkspacePreview(shape, colors)
 	if not extra.SharedRenderers then return end
 	local kind, context = extra.previewKind(), editor.previewContext or "Normal Gameplay"
 	if kind == "hints" then
-		local model = {
+		local model = context == "Visible Selection Filter Radial" and {
+			{ inputs = { "leftStick" }, label = "Choose Filter", compactLabel = "Choose", group = "Selection" },
+			{ inputs = { "LT" }, label = "Release to Confirm", compactLabel = "Confirm", group = "Selection" },
+			{ inputs = { "B" }, label = "Cancel", compactLabel = "Cancel", group = "Selection" },
+		} or {
 			{ inputs = { "A" }, label = "Select", compactLabel = "Select", group = "Selection" },
 			{ inputs = { "B" }, label = "Cancel", compactLabel = "Cancel", group = "System" },
 			{ inputs = { "LB", "RB" }, label = "Change category", compactLabel = "Category", group = "Navigation" },
@@ -2251,7 +2348,8 @@ function extra.drawWorkspacePreview(shape, colors)
 		local entries = {}
 		local style = string.find(context, "Tactical", 1, true) and "tactical"
 			or string.find(context, "Selection", 1, true) and "selection" or "build"
-		local labels = style == "selection" and { "All Mobile", "Air", "Combat", "Builders" }
+		local labels = style == "selection" and (context == "Visible Selection Filter Radial"
+			and { "Last Selected", "Air", "Combat", "Builders" } or { "All Mobile", "Air", "Combat", "Builders" })
 			or { "Economy", "Energy", "Defense", "Factory", "Assist", "Repair", "Reclaim", "Orders" }
 		for index, label in ipairs(labels) do entries[index] = { label = label } end
 		local component = settings.components[editor.selectedComponent] or {}
@@ -2496,7 +2594,7 @@ extra.installHintRegistry = function()
 		SetActionShortLabel = setActionShortLabel, SetCategoryVisible = setCategoryVisible,
 		ResetOrganization = resetHintOrganization,
 		GetAuditReport = function() return getHintAudit(support()) end,
-		Invalidate = function() lastContextSignature = "" end,
+		Invalidate = function() lastContextSignature = ""; extra.hintContextState = nil end,
 	}
 end
 
@@ -2505,6 +2603,8 @@ function widget:Initialize()
 	local recoveredPreview = history.dirty and deepCopy(settings) or nil
 	loadShippingDocuments()
 	resolveSettings(recoveredPreview)
+	local behavior = extra.SharedRenderers and extra.SharedRenderers.SelectionBehavior
+	extra.hintContextState = behavior and behavior.NewHintContextState() or nil
 	syncActionOrganizationEditor(); extra.syncThemeColorEditor(false)
 	if not history.dirty then history.lastSaved, history.lastSavedAuthorData = deepCopy(settings), deepCopy(authorData) end
 	WG.ControllerUISettings = {
@@ -2617,17 +2717,27 @@ function widget:Update(dt)
 	end
 
 	hintRefreshElapsed = hintRefreshElapsed + dt
-	if hintRefreshElapsed < 0.12 or not api or type(api.GetContextSnapshot) ~= "function" then return end
+	local behavior = extra.SharedRenderers and extra.SharedRenderers.SelectionBehavior
+	local pollSeconds = behavior and behavior.HINT_CONTEXT_POLL_SECONDS or 0.04
+	if hintRefreshElapsed < pollSeconds or not api or type(api.GetContextSnapshot) ~= "function" then return end
 	hintRefreshElapsed = 0
 	-- Production hints always use the real gameplay snapshot. Synthetic editor
 	-- contexts are rendered only inside the preview pane.
 	local context = api.GetContextSnapshot()
 	if type(context) ~= "table" then return end
-	local signature = contextSignature(context) .. "|" .. tostring(hintRevision) .. "|" .. tostring(revision)
+	local signature = contextSignature(context)
 	local bindingRevision = type(api.GetBindingRevision) == "function" and api.GetBindingRevision() or 0
-	if signature ~= lastContextSignature or bindingRevision ~= lastBindingRevision then
-		lastContextSignature, lastBindingRevision = signature, bindingRevision
-		rebuildHints(context, api)
+	local committed, contextChanged = context, signature ~= lastContextSignature
+	if behavior then
+		extra.hintContextState = extra.hintContextState or behavior.NewHintContextState()
+		committed, contextChanged = behavior.AdvanceHintContext(extra.hintContextState, context, signature, hintAnimationTime,
+			extra.isConfirmedHintModal(context), settings.components.hints.contextEnterDebounce,
+			settings.components.hints.contextExitGrace)
+	end
+	local modelRevision = tostring(hintRevision) .. "|" .. tostring(revision)
+	if contextChanged or bindingRevision ~= lastBindingRevision or modelRevision ~= tostring(extra.hintModelRevision or "") then
+		lastContextSignature, lastBindingRevision, extra.hintModelRevision = contextSignature(committed), bindingRevision, modelRevision
+		rebuildHints(committed, api)
 	end
 end
 

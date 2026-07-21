@@ -35,6 +35,7 @@ do
 	local ok, module = pcall(VFS.Include, "LuaUI/Include/controller_ui_shared_renderers.lua")
 	if ok and type(module) == "table" then ControllerUISharedRenderers = module end
 end
+ControllerSelectionBehavior = ControllerUISharedRenderers and ControllerUISharedRenderers.SelectionBehavior or nil
 
 function serializeTable(t)
 	if type(t) ~= "table" then return tostring(t) end
@@ -445,6 +446,16 @@ ControllerCameraTestCycleDebug = ControllerCameraTestCycleDebug or {
 	lbPressActive = false,
 	lbHadPitchMotion = false,
 }
+ControllerCameraTestLBCycle = ControllerCameraTestLBCycle
+	or (ControllerSelectionBehavior and ControllerSelectionBehavior.NewLBCycle())
+	or { active = false, pressedAt = 0, heldSeconds = 0, tactical = false, consumed = false, consumeReason = "none" }
+ControllerCameraTestVisibleSelection = ControllerCameraTestVisibleSelection or {
+	currentSelection = {},
+	previousSelection = {},
+	selectionRevision = 0,
+	suppressNextSnapshot = false,
+	radial = { open = false, highlightedFilter = nil, originalFilter = "Combat", lastResult = "closed" },
+}
 ControllerCameraTestLBHotkeys = ControllerCameraTestLBHotkeys or {
 	A = { pending = false, lastPressTime = 0, pressCount = 0 },
 	B = { pending = false, lastPressTime = 0, pressCount = 0 },
@@ -644,6 +655,9 @@ function ControllerCameraTestGetDefaultSettings()
 		reticleSize = 16,
 		xHoldSeconds = 0.14,
 		aHoldSeconds = 0.38,
+		lbTapMaxSeconds = 0.20,
+		lbTacticalHoldSeconds = 0.20,
+		visibleSelectionFilter = "Combat",
 		controlGroupAssignHoldSeconds = 0.35,
 		radialScale = 1,
 		cameraSmoothing = 0.06,
@@ -768,6 +782,8 @@ function ControllerCameraTestClampSetting(name, value)
 		reticleSize = { 4, 100 },
 		xHoldSeconds = { 0.05, 2.0 },
 		aHoldSeconds = { 0.05, 2.0 },
+		lbTapMaxSeconds = { 0.08, 0.50 },
+		lbTacticalHoldSeconds = { 0.08, 0.50 },
 		controlGroupAssignHoldSeconds = { 0.05, 2.5 },
 		radialScale = { 0.5, 3.0 },
 		cameraSmoothing = { 0.0, 1.0 },
@@ -812,6 +828,11 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.reticleSize = ControllerCameraTestClampSetting("reticleSize", settings.reticleSize or 16)
 	settings.xHoldSeconds = ControllerCameraTestClampSetting("xHoldSeconds", settings.xHoldSeconds or 0.14)
 	settings.aHoldSeconds = ControllerCameraTestClampSetting("aHoldSeconds", settings.aHoldSeconds or 0.38)
+	settings.lbTapMaxSeconds = ControllerCameraTestClampSetting("lbTapMaxSeconds", settings.lbTapMaxSeconds or defaults.lbTapMaxSeconds)
+	settings.lbTacticalHoldSeconds = ControllerCameraTestClampSetting("lbTacticalHoldSeconds", settings.lbTacticalHoldSeconds or defaults.lbTacticalHoldSeconds)
+	if not ControllerSelectionBehavior or not ControllerSelectionBehavior.IsValidFilter(settings.visibleSelectionFilter) then
+		settings.visibleSelectionFilter = defaults.visibleSelectionFilter
+	end
 	settings.controlGroupAssignHoldSeconds = ControllerCameraTestClampSetting("controlGroupAssignHoldSeconds", settings.controlGroupAssignHoldSeconds or 0.35)
 	settings.radialScale = ControllerCameraTestClampSetting("radialScale", settings.radialScale or 1)
 	settings.cameraSmoothing = ControllerCameraTestClampSetting("cameraSmoothing", settings.cameraSmoothing or defaults.cameraSmoothing)
@@ -2313,6 +2334,7 @@ end
 
 function ControllerCameraTestSetBindingUIOpen(open)
 	ControllerCameraTestExternalBindingUI.open = not not open
+	if open and ControllerCameraTestCancelVisibleSelectionRadial then ControllerCameraTestCancelVisibleSelectionRadial("binding UI opened") end
 	ControllerCameraTestExternalBindingUI.lastAction = ControllerCameraTestExternalBindingUI.open and "external binding UI open" or "external binding UI closed"
 end
 
@@ -2329,6 +2351,7 @@ end
 
 function ControllerCameraTestSetLayoutEditorOpen(open)
 	ControllerCameraTestExternalBindingUI.layoutEditorOpen = not not open
+	if open and ControllerCameraTestCancelVisibleSelectionRadial then ControllerCameraTestCancelVisibleSelectionRadial("layout editor opened") end
 	-- The Controller Debug panel is deliberately session-only and never follows
 	-- editor persistence. Every editor open/close transition starts hidden.
 	ControllerCameraTestSettings.debugPanelVisible = false
@@ -2343,6 +2366,7 @@ function ControllerCameraTestCanUseLBHotkeys()
 	if ControllerCameraTestDgunMode.active then return false end
 	if ControllerCameraTestAreaSelect.active or ControllerCameraTestAreaSelect.pressActive then return false end
 	if ControllerCameraTestDragCommand.active or ControllerCameraTestDragCommand.pressActive then return false end
+	if ControllerCameraTestVisibleSelection.radial.open then return false end
 	if ControllerCameraTestTacticalMenu.stagedOption ~= nil then return false end
 	if Spring.IsChatOpened and Spring.IsChatOpened() then return false end
 	return true
@@ -2397,6 +2421,9 @@ function ControllerCameraTestGetSettingsDefinitions()
 		triggerDeadzone = { 0, 20000, 250, "number", 0 },
 		xHoldSeconds = { 0.05, 2.0, 0.01, "number", 2 },
 		aHoldSeconds = { 0.05, 2.0, 0.01, "number", 2 },
+		lbTapMaxSeconds = { 0.08, 0.50, 0.01, "number", 2 },
+		lbTacticalHoldSeconds = { 0.08, 0.50, 0.01, "number", 2 },
+		visibleSelectionFilter = { 0, 0, 0, "enum", 0 },
 		controlGroupAssignHoldSeconds = { 0.05, 2.5, 0.01, "number", 2 },
 		singlePathSpacing = { 16, 1024, 8, "number", 0 },
 		singlePathInterval = { 0.02, 1.0, 0.01, "number", 2 },
@@ -2439,6 +2466,7 @@ function ControllerCameraTestGetSettingsDefinitions()
 						default = defaults[item.key],
 						value = ControllerCameraTestSettings[item.key],
 					}
+					if item.type == "enum" then def.options = item.options end
 					table.insert(defs, def)
 				end
 			end
@@ -2458,6 +2486,11 @@ function ControllerCameraTestSetSetting(key, value)
 			ControllerCameraTestSettings[key] = (value == "true" or value == "ON")
 		else
 			ControllerCameraTestSettings[key] = not not value
+		end
+	elseif type(current) == "string" then
+		if key == "visibleSelectionFilter" and ControllerSelectionBehavior
+				and ControllerSelectionBehavior.IsValidFilter(value) then
+			ControllerCameraTestSettings[key] = value
 		end
 	else
 		local num = tonumber(value)
@@ -2500,7 +2533,8 @@ function ControllerCameraTestGetContextSnapshot()
 		factoryRadialOpen = ControllerCameraTestBuildMenu.open == true and hasFactory,
 		tacticalRadialOpen = ControllerCameraTestTacticalMenu.open == true,
 		selectionRadialOpen = ControllerCameraTestAreaSelect.filterRadialOpen == true,
-		areaSelection = ControllerCameraTestAreaSelect.active == true or ControllerCameraTestAreaSelect.pressActive == true,
+		visibleSelectionRadialOpen = ControllerCameraTestVisibleSelection.radial.open == true,
+		areaSelection = ControllerCameraTestAreaSelect.active == true,
 		stagedTactical = type(ControllerCameraTestTacticalMenu.stagedOption) == "table",
 		dgunMode = ControllerCameraTestDgunMode.active == true,
 		selectedCount = #selected,
@@ -2514,7 +2548,12 @@ function ControllerCameraTestGetContextSnapshot()
 		smartTargetType = ControllerCameraTestCommandDebug.smartExactTargetType,
 		commandLayer = commandLayerActive == true,
 		controlGroupLayer = ControllerCameraTestActionDown("controlGroupModifier"),
-		pitchLayer = lbCameraModifierActive == true,
+		pitchLayer = ControllerCameraTestLBCycle.tactical == true,
+		lbTacticalLayer = ControllerCameraTestLBCycle.tactical == true and ControllerCameraTestVisibleSelection.radial.open ~= true,
+		lbTapPending = ControllerCameraTestLBCycle.active == true and ControllerCameraTestLBCycle.tactical ~= true,
+		selectionProfile = ControllerCameraTestGetSelectionProfile(),
+		visibleSelectionFilter = ControllerCameraTestSettings.visibleSelectionFilter or "Combat",
+		selectionRevision = ControllerCameraTestVisibleSelection.selectionRevision or 0,
 		backStartHoldProgress = backStartChordActive and math.min(1, backStartHoldTime / BACK_START_EDITOR_HOLD_SECONDS) or 0,
 	}
 end
@@ -2620,6 +2659,8 @@ function ControllerCameraTestGetSettingsUICategories()
 			{ key = "triggerDeadzone", label = "Trigger deadzone", step = 250, decimals = 0 },
 			{ key = "xHoldSeconds", label = "X hold seconds", step = 0.01, decimals = 2 },
 			{ key = "aHoldSeconds", label = "A hold seconds", step = 0.01, decimals = 2 },
+			{ key = "lbTapMaxSeconds", label = "LB tap maximum", step = 0.01, decimals = 2 },
+			{ key = "lbTacticalHoldSeconds", label = "LB tactical hold", step = 0.01, decimals = 2 },
 			{ key = "controlGroupAssignHoldSeconds", label = "Group assign hold", step = 0.01, decimals = 2 },
 			{ key = "singlePathSpacing", label = "Path waypoint spacing", step = 8, decimals = 0 },
 			{ key = "singlePathInterval", label = "Path issue interval", step = 0.01, decimals = 2 },
@@ -2640,6 +2681,8 @@ function ControllerCameraTestGetSettingsUICategories()
 		{ key = "Selection", items = {
 			{ key = "areaSelectRadius", label = "Area select radius", step = 40, decimals = 0 },
 			{ key = "smartAssistScale", label = "Smart X Assist Radius Scale", step = 0.05, decimals = 2 },
+			{ key = "visibleSelectionFilter", label = "Quick LB visible filter", type = "enum",
+				options = { "Combat", "Builders", "Air", "Last Selected" } },
 		} },
 		{ key = "Placement", items = {
 			{ key = "placementPopupEnabled", label = "Placement popup", type = "bool" },
@@ -2688,6 +2731,11 @@ function ControllerCameraTestAdjustSettingFromUI(settingKey, delta, step)
 	local current = ControllerCameraTestSettings[settingKey]
 	if type(current) == "boolean" then
 		ControllerCameraTestSettings[settingKey] = not current
+	elseif settingKey == "visibleSelectionFilter" and ControllerSelectionBehavior then
+		local options = { "Combat", "Builders", "Air", "Last Selected" }
+		local index = 1
+		for i, value in ipairs(options) do if value == current then index = i; break end end
+		ControllerCameraTestSettings[settingKey] = options[((index - 1 + delta) % #options) + 1]
 	else
 		ControllerCameraTestSettings[settingKey] = ControllerCameraTestClampSetting(settingKey, (tonumber(current) or 0) + ((step or 1) * delta))
 	end
@@ -5740,6 +5788,78 @@ function ControllerCameraTestIsCombatUnitDef(unitDef)
 	return type(unitDef.weapons) == "table" and #unitDef.weapons > 0
 end
 
+function ControllerCameraTestIsBuilderUnitDef(unitDef)
+	return type(unitDef) == "table" and (unitDef.isBuilder or unitDef.canBuild
+		or (type(unitDef.buildOptions) == "table" and #unitDef.buildOptions > 0)) == true
+end
+
+function ControllerCameraTestHasCombatRole(unitDef)
+	local group = type(unitDef) == "table" and unitDef.customParams and unitDef.customParams.unitgroup
+	return group == "weapon" or group == "explo" or group == "weaponaa" or group == "weaponsub"
+		or group == "aa" or group == "emp" or group == "sub" or group == "nuke" or group == "antinuke"
+end
+
+function ControllerCameraTestIsSafeSelectableUnit(unitID)
+	if not ControllerCameraTestIsOwnedUnit(unitID) then return false end
+	if type(Spring.GetUnitIsDead) == "function" then
+		local ok, dead = pcall(Spring.GetUnitIsDead, unitID)
+		if not ok or dead then return false end
+	end
+	local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
+	return unitDef ~= nil
+end
+
+function ControllerCameraTestSafeSelectionSnapshot(units)
+	local result, seen = {}, {}
+	for _, unitID in ipairs(type(units) == "table" and units or {}) do
+		if not seen[unitID] and ControllerCameraTestIsSafeSelectableUnit(unitID) then
+			seen[unitID], result[#result + 1] = true, unitID
+		end
+	end
+	table.sort(result)
+	return result
+end
+
+function ControllerCameraTestSelectionsEqual(a, b)
+	if type(a) ~= "table" or type(b) ~= "table" or #a ~= #b then return false end
+	for index = 1, #a do if a[index] ~= b[index] then return false end end
+	return true
+end
+
+function ControllerCameraTestRecordSelectionSnapshot(units)
+	local history = ControllerCameraTestVisibleSelection
+	local safe = ControllerCameraTestSafeSelectionSnapshot(units)
+	if history.suppressNextSnapshot then
+		history.suppressNextSnapshot = false
+		history.currentSelection = safe
+		history.selectionRevision = (history.selectionRevision or 0) + 1
+		return
+	end
+	if ControllerCameraTestSelectionsEqual(safe, history.currentSelection or {}) then return end
+	if #(history.currentSelection or {}) > 0 then
+		history.previousSelection = ControllerCameraTestSafeSelectionSnapshot(history.currentSelection)
+	end
+	history.currentSelection = safe
+	history.selectionRevision = (history.selectionRevision or 0) + 1
+end
+
+function ControllerCameraTestSelectSnapshot(units, label, skipPrevious)
+	local safe = ControllerCameraTestSafeSelectionSnapshot(units)
+	if #safe == 0 or type(spSelectUnitArray) ~= "function" then return false end
+	local history = ControllerCameraTestVisibleSelection
+	local current = ControllerCameraTestSafeSelectionSnapshot(type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+	if not skipPrevious and #current > 0 and not ControllerCameraTestSelectionsEqual(current, safe) then
+		history.previousSelection = current
+	end
+	history.suppressNextSnapshot = true
+	local ok = pcall(spSelectUnitArray, safe, false)
+	if not ok then history.suppressNextSnapshot = false; return false end
+	history.currentSelection = safe
+	history.selectionRevision = (history.selectionRevision or 0) + 1
+	ControllerCameraTestCycleDebug.lastResult = tostring(label or "Selection") .. ": " .. #safe
+	return true
+end
+
 function ControllerCameraTestGetVisibleAlliedUnits()
 	if type(Spring.GetVisibleUnits) ~= "function" then
 		return {}
@@ -5760,63 +5880,44 @@ function ControllerCameraTestGetVisibleAlliedUnits()
 	return alliedUnits
 end
 
-function ControllerCameraTestSelectCombatUnitsOnScreen()
+function ControllerCameraTestApplyVisibleSelectionFilter(filter)
+	filter = ControllerSelectionBehavior and ControllerSelectionBehavior.IsValidFilter(filter) and filter or "Combat"
+	if not ControllerSelectionBehavior then return false end
+	local history = ControllerCameraTestVisibleSelection
+	if filter == "Last Selected" then
+		local previous = ControllerCameraTestSafeSelectionSnapshot(history.previousSelection)
+		if #previous == 0 then return false end
+		local current = ControllerCameraTestSafeSelectionSnapshot(type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+		if #current > 0 and not ControllerCameraTestSelectionsEqual(current, previous) then history.previousSelection = current end
+		return ControllerCameraTestSelectSnapshot(previous, "Restored last selection", true)
+	end
 	if type(Spring.GetVisibleUnits) ~= "function" then
-		ControllerCameraTestCycleDebug.lastResult = "LB select failed: API unavailable"
-		latchSelectionDebugMessage("LB select failed: API unavailable")
+		ControllerCameraTestCycleDebug.lastResult = "LB visible selection unavailable"
 		return false
 	end
 
 	local ok, visibleUnits = pcall(Spring.GetVisibleUnits)
 	if not ok or type(visibleUnits) ~= "table" then
-		ControllerCameraTestCycleDebug.lastResult = "LB select failed: visibleUnits error"
-		latchSelectionDebugMessage("LB select failed: visibleUnits error")
+		ControllerCameraTestCycleDebug.lastResult = "LB visible selection query failed"
 		return false
 	end
 
-	local combatUnits = {}
-	local ownedUnits = {}
+	local unitsToSelect = ControllerSelectionBehavior.FilterVisibleUnits(visibleUnits, filter, function(unitID)
+		local safe = ControllerCameraTestIsSafeSelectableUnit(unitID)
+		local unitDef = nil
+		if safe then local ignored; ignored, unitDef = ControllerCameraTestGetUnitDef(unitID) end
+		local mobile = unitDef and ControllerCameraTestIsMobileUnitDef(unitDef) or false
+		local builder = mobile and ControllerCameraTestIsBuilderUnitDef(unitDef) or false
+		return { safe = safe and unitDef ~= nil, mobile = mobile, builder = builder,
+			air = unitDef and unitDef.canFly == true, combat = unitDef and ControllerCameraTestIsCombatUnitDef(unitDef),
+			combatRole = unitDef and ControllerCameraTestHasCombatRole(unitDef) }
+	end)
+	if #unitsToSelect == 0 then ControllerCameraTestCycleDebug.lastResult = "LB " .. filter .. " selection: 0"; return false end
+	return ControllerCameraTestSelectSnapshot(unitsToSelect, "LB selected visible " .. string.lower(filter))
+end
 
-	for _, unitID in ipairs(visibleUnits) do
-		if ControllerCameraTestIsOwnedUnit(unitID) then
-			table.insert(ownedUnits, unitID)
-			local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
-			if unitDef then
-				local isMobile = ControllerCameraTestIsMobileUnitDef(unitDef)
-				local isCombat = ControllerCameraTestIsCombatUnitDef(unitDef)
-				if isMobile and isCombat then
-					table.insert(combatUnits, unitID)
-				end
-			end
-		end
-	end
-
-	local unitsToSelect = {}
-	local debugMsg = ""
-
-	if #combatUnits > 0 then
-		unitsToSelect = combatUnits
-		debugMsg = "LB selected combat units on screen: " .. #combatUnits
-	elseif #ownedUnits > 0 then
-		unitsToSelect = ownedUnits
-		debugMsg = "LB selected owned units on screen: " .. #ownedUnits
-	end
-
-	if #unitsToSelect > 0 then
-		if type(spSelectUnitArray) == "function" then
-			local selOk = pcall(spSelectUnitArray, unitsToSelect, false)
-			if selOk then
-				ControllerCameraTestCycleDebug.lastResult = debugMsg
-				latchSelectionDebugMessage(debugMsg)
-				return true
-			end
-		end
-	end
-
-	local noMsg = "LB selected owned units on screen: 0"
-	ControllerCameraTestCycleDebug.lastResult = noMsg
-	latchSelectionDebugMessage(noMsg)
-	return false
+function ControllerCameraTestSelectCombatUnitsOnScreen()
+	return ControllerCameraTestApplyVisibleSelectionFilter("Combat")
 end
 
 function ControllerCameraTestSelectUnits(units, label)
@@ -10348,7 +10449,8 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 end
 
 function ControllerCameraTestHandleNormalAInput(dt)
-	if ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestCanUseLBHotkeys() then
+	if ControllerCameraTestActionDown("pitchModifier")
+			and (ControllerCameraTestCanUseLBHotkeys() or ControllerCameraTestVisibleSelection.radial.open) then
 		return false
 	end
 
@@ -10651,39 +10753,90 @@ function ControllerCameraTestHandleCommandLayerInput(dt)
 	end
 end
 
-function ControllerCameraTestUpdateLBTapState()
-	local area = ControllerCameraTestAreaSelect
-	if area and (commandLayerActive
-		or ControllerCameraTestBuildMenu.open
-		or ControllerCameraTestBuildPlacement.active
-		or ControllerCameraTestTacticalMenu.open
-		or ControllerCameraTestSettingsUI.open
-		or ControllerCameraTestIsGameplayInputBlocked()
-		or ControllerCameraTestActionDown("pitchModifier")
-		or (ControllerCameraTestDragCommand and ControllerCameraTestDragCommand.active))
-	then
-		area.lastTapTime = -10
-		area.lastTapUnitID = nil
-		area.lastTapUnitDefID = nil
-	end
+function ControllerCameraTestConsumeLBCycle(reason)
+	if ControllerSelectionBehavior then ControllerSelectionBehavior.ConsumeLB(ControllerCameraTestLBCycle, reason) end
+	ControllerCameraTestCycleDebug.lbHadPitchMotion = true
+end
 
-	if commandLayerActive
-		or ControllerCameraTestBuildMenu.open
-		or ControllerCameraTestBuildPlacement.active
-		or ControllerCameraTestAreaSelect.active
-	then
-		ControllerCameraTestCycleDebug.lbPressActive = false
-		ControllerCameraTestCycleDebug.lbHadPitchMotion = false
+function ControllerCameraTestCancelVisibleSelectionRadial(reason)
+	local radial = ControllerCameraTestVisibleSelection.radial
+	if not radial.open then return false end
+	radial.open, radial.highlightedFilter, radial.lastResult = false, nil, "cancelled: " .. tostring(reason or "cancel")
+	ControllerCameraTestConsumeLBCycle("filter radial cancelled")
+	return true
+end
+
+function ControllerCameraTestOpenVisibleSelectionRadial()
+	local radial = ControllerCameraTestVisibleSelection.radial
+	if radial.open or not ControllerCameraTestLBCycle.active then return false end
+	radial.open, radial.highlightedFilter = true, nil
+	radial.originalFilter = ControllerCameraTestSettings.visibleSelectionFilter or "Combat"
+	radial.lastResult = "open"
+	ControllerCameraTestConsumeLBCycle("filter radial opened")
+	return true
+end
+
+function ControllerCameraTestUpdateVisibleSelectionRadial()
+	local radial = ControllerCameraTestVisibleSelection.radial
+	if not radial.open then return false end
+	if not ControllerCameraTestActionDown("pitchModifier") then
+		ControllerCameraTestCancelVisibleSelectionRadial("modifier released first")
+		return true
+	end
+	if ControllerCameraTestActionPressed("cancel") then
+		ControllerCameraTestCancelVisibleSelectionRadial("cancel action")
+		return true
+	end
+	if ControllerSelectionBehavior then
+		radial.highlightedFilter = ControllerSelectionBehavior.FilterFromStick(normalizedLeftX, -normalizedLeftY)
+	end
+	if ControllerCameraTestBindingReleased("LT") then
+		local selected = radial.highlightedFilter or radial.originalFilter
+		if ControllerSelectionBehavior and ControllerSelectionBehavior.IsValidFilter(selected) then
+			ControllerCameraTestSettings.visibleSelectionFilter = selected
+		end
+		radial.open, radial.highlightedFilter, radial.lastResult = false, nil, "confirmed: " .. tostring(selected)
+		ControllerCameraTestConsumeLBCycle("filter radial confirmed")
+		ControllerCameraTestShowHotkeyFeedback(string.upper(tostring(selected)), "utility")
+	end
+	return true
+end
+
+function ControllerCameraTestUpdateLBTapState()
+	local area, cycle = ControllerCameraTestAreaSelect, ControllerCameraTestLBCycle
+	local blocked = Spring.GetGameFrame() <= 0 or controllerMouseModeActive or commandLayerActive
+		or ControllerCameraTestBuildMenu.open or ControllerCameraTestBuildPlacement.active
+		or ControllerCameraTestTacticalMenu.open or ControllerCameraTestSettingsUI.open
+		or ControllerCameraTestIsGameplayInputBlocked() or ControllerCameraTestAreaSelect.active
+		or (ControllerCameraTestDragCommand and ControllerCameraTestDragCommand.active)
+	if area and (blocked or ControllerCameraTestActionDown("pitchModifier")) then
+		area.lastTapTime, area.lastTapUnitID, area.lastTapUnitDefID = -10, nil, nil
+	end
+	if blocked then
+		ControllerCameraTestCancelVisibleSelectionRadial("game state interruption")
+		if ControllerSelectionBehavior then ControllerSelectionBehavior.ResetLB(cycle, "game state interruption") end
+		ControllerCameraTestCycleDebug.lbPressActive, ControllerCameraTestCycleDebug.lbHadPitchMotion = false, false
 		return
 	end
 
-	if ControllerCameraTestActionPressed("pitchModifier") then
-		ControllerCameraTestCycleDebug.lbPressActive = true
-		ControllerCameraTestCycleDebug.lbHadPitchMotion = false
+	local lbDown = ControllerCameraTestActionDown("pitchModifier")
+	if ControllerCameraTestActionPressed("pitchModifier") and ControllerCameraTestCanUseLBHotkeys() then
+		if ControllerSelectionBehavior then ControllerSelectionBehavior.PressLB(cycle, debugEventTime) end
 	end
-	if ControllerCameraTestActionDown("pitchModifier") and math.abs(normalizedRightY) > 0.2 then
-		ControllerCameraTestCycleDebug.lbHadPitchMotion = true
+	if cycle.active and lbDown and ControllerSelectionBehavior then
+		ControllerSelectionBehavior.UpdateLB(cycle, debugEventTime, ControllerCameraTestSettings.lbTacticalHoldSeconds)
+		if math.abs(normalizedRightY) > 0.2 then ControllerCameraTestConsumeLBCycle("camera pitch motion") end
+		if ControllerCameraTestBindingPressed("LT") then ControllerCameraTestOpenVisibleSelectionRadial() end
+		ControllerCameraTestUpdateVisibleSelectionRadial()
 	end
+	if ControllerCameraTestActionReleased("pitchModifier") and cycle.active then
+		ControllerCameraTestCancelVisibleSelectionRadial("modifier released first")
+		local shouldTap = ControllerSelectionBehavior and ControllerSelectionBehavior.ReleaseLB(cycle, debugEventTime,
+			ControllerCameraTestSettings.lbTapMaxSeconds, ControllerCameraTestSettings.lbTacticalHoldSeconds)
+		if shouldTap then ControllerCameraTestApplyVisibleSelectionFilter(ControllerCameraTestSettings.visibleSelectionFilter) end
+	end
+	ControllerCameraTestCycleDebug.lbPressActive = cycle.active == true
+	ControllerCameraTestCycleDebug.lbHadPitchMotion = cycle.consumed == true or cycle.tactical == true
 end
 
 function ControllerCameraTestResetLBHotkeys()
@@ -10702,6 +10855,11 @@ end
 
 function ControllerCameraTestUpdateLBFaceButtonDispatcher(dt)
 	if not ControllerCameraTestLBHotkeys then return end
+	if ControllerCameraTestLBCycle.consumed
+			and string.find(tostring(ControllerCameraTestLBCycle.consumeReason), "filter radial", 1, true) == 1 then
+		ControllerCameraTestResetLBHotkeys()
+		return
+	end
 
 	if not ControllerCameraTestCanUseLBHotkeys() then
 		ControllerCameraTestResetLBHotkeys()
@@ -10709,10 +10867,14 @@ function ControllerCameraTestUpdateLBFaceButtonDispatcher(dt)
 	end
 
 	local lbHeld = ControllerCameraTestActionDown("pitchModifier")
-	local buttons = { "A", "B", "X", "Y" }
+	local buttons = {
+		{ key = "A", action = "select" }, { key = "B", action = "cancel" },
+		{ key = "X", action = "smartAction" }, { key = "Y", action = "insertNextCommandModifier" },
+	}
 	local now = debugEventTime
 
-	for _, btn in ipairs(buttons) do
+	for _, mapping in ipairs(buttons) do
+		local btn, action = mapping.key, mapping.action
 		local state = ControllerCameraTestLBHotkeys[btn]
 		if not state then
 			ControllerCameraTestLBHotkeys[btn] = { pending = false, lastPressTime = 0, pressCount = 0, holdFired = false, releasedRegistered = false }
@@ -10722,12 +10884,13 @@ function ControllerCameraTestUpdateLBFaceButtonDispatcher(dt)
 			if state.releasedRegistered == nil then state.releasedRegistered = false end
 		end
 
-		local isDown = lbHeld and IsButtonDown(btn)
-		local pressed = lbHeld and WasButtonPressed(btn)
-		local released = WasButtonReleased(btn) or (not isDown and state.lastPressTime > 0 and not state.releasedRegistered)
+		local isDown = lbHeld and ControllerCameraTestActionDown(action)
+		local pressed = lbHeld and ControllerCameraTestActionPressed(action)
+		local released = ControllerCameraTestActionReleased(action) or (not isDown and state.lastPressTime > 0 and not state.releasedRegistered)
 
 		if pressed then
-			ControllerCameraTestCycleDebug.lbHadPitchMotion = true
+			ControllerCameraTestConsumeLBCycle("tactical chord " .. action)
+			ControllerCameraTestLBCycle.tactical = true
 			state.holdFired = false
 			state.releasedRegistered = false
 
@@ -11177,18 +11340,11 @@ function ControllerCameraTestHandleNormalUtilityInput()
 	elseif ControllerCameraTestHandleQueueRemovalInput() then
 		return true
 	elseif ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestActionPressed("idlePrev") then
-		ControllerCameraTestCycleDebug.lbHadPitchMotion = true
+		ControllerCameraTestConsumeLBCycle("idle type previous")
 		ControllerCameraTestCycleIdleUnitType(-1)
 	elseif ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestActionPressed("idleNext") then
-		ControllerCameraTestCycleDebug.lbHadPitchMotion = true
+		ControllerCameraTestConsumeLBCycle("idle type next")
 		ControllerCameraTestCycleIdleUnitType(1)
-	elseif ControllerCameraTestActionReleased("pitchModifier") and ControllerCameraTestCycleDebug.lbPressActive then
-		if not ControllerCameraTestCycleDebug.lbHadPitchMotion then
-			ControllerCameraTestSelectCombatUnitsOnScreen()
-			ControllerCameraTestLayerDebug.normalUtilityAction = "LB tap combat units screen select"
-		end
-		ControllerCameraTestCycleDebug.lbPressActive = false
-		ControllerCameraTestCycleDebug.lbHadPitchMotion = false
 	elseif WasButtonPressed("dpadUp") then
 		ControllerCameraTestHandleBookmarkButton("up")
 	elseif ControllerCameraTestActionPressed("selectCommander") then
@@ -11523,6 +11679,8 @@ function widget:Initialize()
 	end
 	ControllerCameraTestEnsureBindings()
 	ControllerCameraTestInstallWGAPI()
+	ControllerCameraTestVisibleSelection.currentSelection = ControllerCameraTestSafeSelectionSnapshot(
+		type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
 	updateScreenCenter(spGetViewGeometry())
 	ensureDebugPanelInitialized()
 	ControllerCameraTestShowHotkeyFeedback("HOTKEY UI READY", "utility")
@@ -11996,7 +12154,8 @@ function ControllerCameraTestUpdateSmoothedCameraInputs(dt, menuOpen, areaActive
 	local smooth = ControllerCameraTestInputSmoothing
 	local dgun = ControllerCameraTestDgunMode
 	local area = ControllerCameraTestAreaSelect
-	local filterRadialOpen = area and area.active and area.filterRadialOpen
+	local filterRadialOpen = (area and area.active and area.filterRadialOpen)
+		or (ControllerCameraTestVisibleSelection.radial and ControllerCameraTestVisibleSelection.radial.open)
 
 	if dgun and dgun.active then
 		smooth.panX, smooth.panY, smooth.rotateX, smooth.pitchY, smooth.zoomY = 0, 0, 0, 0, 0
@@ -12868,6 +13027,30 @@ function ControllerCameraTestDrawFilterRadial()
 	gl.LineWidth(1)
 end
 
+function ControllerCameraTestDrawVisibleSelectionRadial()
+	local radial = ControllerCameraTestVisibleSelection.radial
+	if not radial.open or not ControllerUISharedRenderers
+			or not ControllerCameraTestControllerUIVisible("selectionRadial", true) then return end
+	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
+	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
+	cx, cy = ControllerCameraTestGetControllerUIPosition("selectionRadial", cx, cy)
+	local labels = { "Last Selected", "Air", "Combat", "Builders" }
+	local selected = radial.highlightedFilter or ControllerCameraTestSettings.visibleSelectionFilter or "Combat"
+	local selectedIndex = 3
+	for index, label in ipairs(labels) do if selected == label then selectedIndex = index end end
+	local radius = 130 * ControllerCameraTestGetControllerUIScale("selectionRadial", true)
+	ControllerUISharedRenderers.DrawRadial({
+		bounds = { x1 = cx - radius * 1.55, y1 = cy - radius * 1.55, x2 = cx + radius * 1.55, y2 = cy + radius * 1.55 },
+		model = { style = "selection", title = "VISIBLE FILTER", subtitle = "Release LT to confirm / previous selection set", entries = {
+			{ label = labels[1], color = { 0.25, 0.75, 1.0 } }, { label = labels[2], color = { 0.65, 0.45, 1.0 } },
+			{ label = labels[3], color = { 1.0, 0.35, 0.2 } }, { label = labels[4], color = { 1.0, 0.85, 0.25 } },
+		}, selectedIndex = selectedIndex, accent = { 0.25, 0.75, 1.0 } },
+		theme = { backgroundR = 0.02, backgroundG = 0.03, backgroundB = 0.04, accentR = 0.25, accentG = 0.75, accentB = 1.0 },
+		opacity = ControllerCameraTestGetControllerUIOpacity("selectionRadial"),
+		settings = ControllerCameraTestGetRadialRendererSettings("selectionRadial"),
+	})
+end
+
 function ControllerCameraTestDrawPlacementPatternPopup()
 	local popup = ControllerCameraTestPlacementPopup
 	if not ControllerCameraTestControllerUIVisible("placementStatus", false) or not popup or (popup.expireTime or 0) <= debugEventTime then
@@ -12942,7 +13125,8 @@ function ControllerCameraTestBuildCompactSelectedStatus()
 		return nil
 	end
 	if ControllerCameraTestSettings.hideCompactStatusWhenRadialOpen
-		and (ControllerCameraTestBuildMenu.open or ControllerCameraTestTacticalMenu.open)
+		and (ControllerCameraTestBuildMenu.open or ControllerCameraTestTacticalMenu.open
+			or ControllerCameraTestAreaSelect.filterRadialOpen or ControllerCameraTestVisibleSelection.radial.open)
 	then
 		status.lastResult = "hidden: radial open"
 		return nil
@@ -13837,6 +14021,7 @@ function ControllerCameraTestFormatSettingsUIValue(item)
 	if item.type == "bool" then
 		return ControllerCameraTestSettings[item.key] and "ON" or "OFF"
 	end
+	if item.type == "enum" then return tostring(ControllerCameraTestSettings[item.key] or "Combat") end
 	local value = tonumber(ControllerCameraTestSettings[item.key]) or 0
 	if item.decimals == 0 then
 		return string.format("%.0f", value)
@@ -14159,6 +14344,7 @@ function widget:DrawScreen()
 		ControllerCameraTestDrawPlacementPatternPopup()
 		ControllerCameraTestDrawAreaCommandCenterLabel()
 		ControllerCameraTestDrawFilterRadial()
+		ControllerCameraTestDrawVisibleSelectionRadial()
 	end
 	ControllerCameraTestDrawCompactSelectedStatusPanel()
 	if not ControllerCameraTestSettingsUI.open then
@@ -14947,14 +15133,22 @@ end
 
 function widget:UnitDestroyed(unitID)
 	ControllerCameraTestRemoveUnitFromControlGroups(unitID)
+	ControllerCameraTestVisibleSelection.currentSelection = ControllerCameraTestSafeSelectionSnapshot(ControllerCameraTestVisibleSelection.currentSelection)
+	ControllerCameraTestVisibleSelection.previousSelection = ControllerCameraTestSafeSelectionSnapshot(ControllerCameraTestVisibleSelection.previousSelection)
 end
 
 function widget:UnitTaken(unitID)
 	ControllerCameraTestRemoveUnitFromControlGroups(unitID)
+	ControllerCameraTestVisibleSelection.currentSelection = ControllerCameraTestSafeSelectionSnapshot(ControllerCameraTestVisibleSelection.currentSelection)
+	ControllerCameraTestVisibleSelection.previousSelection = ControllerCameraTestSafeSelectionSnapshot(ControllerCameraTestVisibleSelection.previousSelection)
 end
 
 function widget:UnitGiven(unitID, unitDefID, unitTeam)
 	ControllerCameraTestAutoAddFinishedUnitToGroups(unitID, unitDefID, unitTeam)
+end
+
+function widget:SelectionChanged(selectedUnits)
+	ControllerCameraTestRecordSelectionSnapshot(selectedUnits)
 end
 
 --------------------------------------------------------------------------------

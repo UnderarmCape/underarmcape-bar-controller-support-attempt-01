@@ -11,6 +11,11 @@ A complete controller UI customization and authoring milestone with a standalone
 - Live production previews for hints, radials, and hot slots through the same shared renderers used in game.
 - Original controller glyph atlas with corrected square D-pad destination geometry.
 - Clean glyph-and-text hint defaults: no chip fill, no giant panel, readable glyph/text shadows, and no TAP labels.
+- Stabilized contextual hints with a 0.14 s enter debounce, 0.12 s exit grace, and immediate confirmed-radial transitions.
+- Quick LB tap selects visible combat units by default; holding LB for 0.20 s commits a modifier-only tactical cycle and never selects on release.
+- LB + LT opens a persistent visible-selection filter radial: Last Selected (up), Builders (left), Air (right), and Combat (down).
+- LB tactical chords and their hints resolve the live modifier and face-action bindings; attempted chords consume the LB cycle.
+- Last Selected keeps a safe previous-selection snapshot and drops dead, invalid, transferred, or non-owned units before restore.
 - Two hold treatments: bold configurable HOLD and an outlined hold-glyph treatment.
 - Optional independent text/glyph glow and per-label text backgrounds.
 - Reliable Wrap, Clip, Marquee, and Ping Pong long-text modes.
@@ -23,7 +28,7 @@ A complete controller UI customization and authoring milestone with a standalone
 
 Download and extract the v0.6.0 ZIP, run `BAR_Controller_Companion_Installer_v0.6.0.exe`, and launch BAR from the normal patched shortcut. SmartScreen may warn because the executables are unsigned. No custom Recoil engine is installed or required.
 
-Upgrading from v0.5.1 preserves valid bindings and personal controller UI state. Restore with `BAR_Controller_Companion_Restore_v0.6.0.exe`.
+Upgrading from v0.5.1 preserves valid bindings, the visible-selection filter, and personal controller UI state. Restore with `BAR_Controller_Companion_Restore_v0.6.0.exe`.
 
 ## Known limitations
 
@@ -34,4 +39,3 @@ Upgrading from v0.5.1 preserves valid bindings and personal controller UI state.
 ## Integrity
 
 Use the published `.sha256` sidecar for the final ZIP. The extracted package also contains `payload-sha256.json` for every internal payload.
-

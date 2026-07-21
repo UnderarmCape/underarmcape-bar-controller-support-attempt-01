@@ -1,8 +1,8 @@
 {
   "kind": "bar-controller-ui-defaults",
   "schemaVersion": 3,
-  "defaultsVersion": "0.6.0-3",
-  "generatedAt": "2026-07-20T00:00:00Z",
+  "defaultsVersion": "0.6.0-4",
+  "generatedAt": "2026-07-21T00:00:00Z",
   "compatibleModVersion": "0.6.0",
   "settings": {
     "global": {
@@ -85,6 +85,9 @@
         "textOpacity": 1.0,
         "borderOpacity": 0.0,
         "fadeDuration": 0.18,
+        "contextEnterDebounce": 0.14,
+        "contextExitGrace": 0.12,
+        "confirmedModalImmediate": true,
         "compact": false,
         "anchor": "bottomleft",
         "mode": "Contextual",

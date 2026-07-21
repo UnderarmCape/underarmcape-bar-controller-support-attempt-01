@@ -108,8 +108,8 @@ loadstring = loadstring or load
 local Json = dofile(root .. "/common/luaUtilities/json.lua")
 local defaults = Json.decode(read(root .. "/controller-ui/shipping-defaults.json"))
 local manifest = Json.decode(read(root .. "/controller-ui/shipping-defaults-manifest.json"))
-assertEqual(defaults.defaultsVersion, "0.6.0-3", "shipping defaults revision")
-assertEqual(manifest.revision, 3, "shipping manifest revision")
+assertEqual(defaults.defaultsVersion, "0.6.0-4", "shipping defaults revision")
+assertEqual(manifest.revision, 4, "shipping manifest revision")
 assertEqual(#defaults.enforcedPaths, 0, "shipping defaults do not enforce personal appearance")
 local shippedHints = defaults.settings.components.hints
 assertEqual(shippedHints.backgroundOpacity, 0, "default giant hint panel disabled")
@@ -117,6 +117,9 @@ assertTrue(not shippedHints.glyphBackgroundEnabled and not shippedHints.glyphBor
 assertTrue(shippedHints.textShadowEnabled and shippedHints.glyphShadowEnabled, "default readable shadows enabled")
 assertTrue(not shippedHints.textGlowEnabled and not shippedHints.glyphGlowEnabled, "default glow remains optional")
 assertEqual(shippedHints.holdStyle, "Bold HOLD", "default strong hold treatment")
+assertEqual(shippedHints.contextEnterDebounce, 0.14, "ordinary hint context debounce")
+assertEqual(shippedHints.contextExitGrace, 0.12, "hint context exit grace")
+assertTrue(shippedHints.confirmedModalImmediate, "confirmed modal hint transitions are immediate")
 assertTrue(shippedHints.showTapHold == nil and shippedHints.shadowEnabled == nil and shippedHints.marqueeEnabled == nil,
 	"obsolete/no-op hint fields removed from shipping defaults")
 
@@ -135,4 +138,4 @@ assertTrue(camera:find('model = { style = "tactical"') and camera:find('model = 
 	and camera:find('model = { style = "build"'), "all production radial owners select polished shared styles")
 assertTrue(camera:find('ControllerUISharedRenderers%.DrawHotSlots'), "production hot slots use shared renderer")
 
-print("Controller UI v0.6.0 release-quality tests passed: polished shared models, complete hint effects, deterministic motion, focus-gated wheel editing, session-only debug, D-pad-ready glyph path, and revision-3 defaults.")
+print("Controller UI v0.6.0 release-quality tests passed: polished shared models, stabilized hints, deterministic motion, focus-gated wheel editing, session-only debug, D-pad-ready glyph path, and revision-4 defaults.")

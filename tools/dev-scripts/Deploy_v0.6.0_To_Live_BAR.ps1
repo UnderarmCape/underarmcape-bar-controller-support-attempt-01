@@ -275,6 +275,7 @@ Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'to
 Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerUISharedRenderers.lua'), $RepositoryRoot) -Label 'Controller UI production/shared preview renderer harness'
 Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerGlyphs.lua'), $RepositoryRoot) -Label 'Controller glyph resolution/asset harness'
 Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerUIReleaseQuality.lua'), $RepositoryRoot) -Label 'Controller UI v0.6.0 release-quality harness'
+Invoke-NativeChecked -FilePath 'lua' -Arguments @((Join-Path $RepositoryRoot 'tools\controller-ui-tests\Test-ControllerLBHintState.lua'), $RepositoryRoot) -Label 'Controller LB/hint-state focused harness'
 Invoke-NativeChecked -FilePath 'dotnet' -Arguments @('run', '--project', (Join-Path $RepositoryRoot 'tools\controller-companion\Tests\BARControllerCompanionUpdateTests.csproj'), '-c', 'Release', '--no-build', '--no-restore') -Label 'Companion update/defaults tests'
 $publisherProject = Join-Path $RepositoryRoot 'tools\controller-ui-publisher\BARControllerUIDefaultsPublisher.csproj'
 $sourceDefaults = Join-Path $RepositoryRoot 'controller-ui\shipping-defaults.json'

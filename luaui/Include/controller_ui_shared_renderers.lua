@@ -520,4 +520,128 @@ function Renderers.DrawHotSlots(args)
 			gap = gap, rows = rows, columns = columns, opacity = opacity } }
 end
 
+--------------------------------------------------------------------------------
+-- Shared controller selection/input state. These helpers are deliberately pure
+-- so the live widgets and the release harness exercise identical transitions.
+--------------------------------------------------------------------------------
+
+Renderers.SelectionBehavior = {
+	LB_TAP_MAX_SECONDS = 0.20,
+	LB_TACTICAL_HOLD_SECONDS = 0.20,
+	HINT_CONTEXT_ENTER_DEBOUNCE_SECONDS = 0.14,
+	HINT_CONTEXT_EXIT_GRACE_SECONDS = 0.12,
+	HINT_CONTEXT_POLL_SECONDS = 0.04,
+	FILTER_DEADZONE = 0.50,
+	FILTERS = { "Last Selected", "Builders", "Air", "Combat" },
+}
+
+local SelectionBehavior = Renderers.SelectionBehavior
+
+function SelectionBehavior.IsValidFilter(value)
+	for _, filter in ipairs(SelectionBehavior.FILTERS) do
+		if value == filter then return true end
+	end
+	return false
+end
+
+function SelectionBehavior.FilterShortLabel(value)
+	if value == "Last Selected" then return "Restore Last Selection" end
+	return "Select Visible " .. tostring(SelectionBehavior.IsValidFilter(value) and value or "Combat")
+end
+
+function SelectionBehavior.FilterFromStick(x, y, deadzone)
+	x, y = tonumber(x) or 0, tonumber(y) or 0
+	if ((x * x) + (y * y)) ^ 0.5 < (tonumber(deadzone) or SelectionBehavior.FILTER_DEADZONE) then return nil end
+	if abs(y) > abs(x) then return y > 0 and "Last Selected" or "Combat" end
+	return x < 0 and "Builders" or "Air"
+end
+
+function SelectionBehavior.FilterVisibleUnits(units, filter, classify)
+	local selected = {}
+	if type(classify) ~= "function" then return selected end
+	for _, unitID in ipairs(type(units) == "table" and units or {}) do
+		local facts = classify(unitID)
+		if type(facts) == "table" and facts.safe then
+			local matches = filter == "Builders" and facts.builder
+				or filter == "Air" and facts.mobile and facts.air
+				or filter == "Combat" and facts.mobile and facts.combat and (not facts.builder or facts.combatRole)
+			if matches then selected[#selected + 1] = unitID end
+		end
+	end
+	table.sort(selected)
+	return selected
+end
+
+function SelectionBehavior.NewLBCycle()
+	return { active = false, pressedAt = 0, heldSeconds = 0, tactical = false, consumed = false, consumeReason = "none" }
+end
+
+function SelectionBehavior.PressLB(state, now)
+	state = state or SelectionBehavior.NewLBCycle()
+	state.active, state.pressedAt, state.heldSeconds = true, tonumber(now) or 0, 0
+	state.tactical, state.consumed, state.consumeReason = false, false, "none"
+	return state
+end
+
+function SelectionBehavior.UpdateLB(state, now, holdSeconds)
+	if not state or not state.active then return false end
+	state.heldSeconds = max(0, (tonumber(now) or 0) - (tonumber(state.pressedAt) or 0))
+	if state.heldSeconds >= (tonumber(holdSeconds) or SelectionBehavior.LB_TACTICAL_HOLD_SECONDS) then
+		state.tactical = true
+	end
+	return state.tactical
+end
+
+function SelectionBehavior.ConsumeLB(state, reason)
+	if not state or not state.active then return false end
+	state.consumed, state.consumeReason = true, tostring(reason or "chord")
+	return true
+end
+
+function SelectionBehavior.ReleaseLB(state, now, tapMaxSeconds, holdSeconds)
+	if not state or not state.active then return false end
+	SelectionBehavior.UpdateLB(state, now, holdSeconds)
+	local shouldTap = not state.consumed and not state.tactical
+		and state.heldSeconds <= (tonumber(tapMaxSeconds) or SelectionBehavior.LB_TAP_MAX_SECONDS)
+	state.active, state.tactical, state.consumed = false, false, false
+	state.pressedAt, state.heldSeconds, state.consumeReason = 0, 0, "none"
+	return shouldTap
+end
+
+function SelectionBehavior.ResetLB(state, reason)
+	if not state then return end
+	state.active, state.tactical, state.consumed = false, false, false
+	state.pressedAt, state.heldSeconds, state.consumeReason = 0, 0, tostring(reason or "reset")
+end
+
+function SelectionBehavior.NewHintContextState()
+	return { committed = nil, committedSignature = nil, committedModal = false,
+		candidate = nil, candidateSignature = nil, candidateSince = 0 }
+end
+
+function SelectionBehavior.AdvanceHintContext(state, context, signature, now, confirmedModal, enterSeconds, exitSeconds)
+	state = state or SelectionBehavior.NewHintContextState()
+	now, signature = tonumber(now) or 0, tostring(signature or "")
+	if state.committed == nil or confirmedModal == true then
+		local changed = state.committedSignature ~= signature
+		state.committed, state.committedSignature, state.committedModal = context, signature, confirmedModal == true
+		state.candidate, state.candidateSignature, state.candidateSince = nil, nil, now
+		return state.committed, changed
+	end
+	if signature == state.committedSignature then
+		state.candidate, state.candidateSignature, state.candidateSince = nil, nil, now
+		return state.committed, false
+	end
+	if state.candidateSignature ~= signature then
+		state.candidate, state.candidateSignature, state.candidateSince = context, signature, now
+		return state.committed, false
+	end
+	local waitSeconds = state.committedModal and (tonumber(exitSeconds) or SelectionBehavior.HINT_CONTEXT_EXIT_GRACE_SECONDS)
+		or (tonumber(enterSeconds) or SelectionBehavior.HINT_CONTEXT_ENTER_DEBOUNCE_SECONDS)
+	if now - state.candidateSince < waitSeconds then return state.committed, false end
+	state.committed, state.committedSignature, state.committedModal = state.candidate, signature, false
+	state.candidate, state.candidateSignature, state.candidateSince = nil, nil, now
+	return state.committed, true
+end
+
 return Renderers

@@ -1,13 +1,14 @@
 # Controller UI Authoring property-wiring audit
 
-Audit baseline: `1058ae73a0`. Release defaults: schema 3, revision `0.6.0-3`. “Working” means the property reaches a production draw/layout/state path; “repaired” means it was disconnected or generic at the baseline and is now asserted by a release test.
+Audit baseline: `1058ae73a0`. Release defaults: schema 3, revision `0.6.0-4`. “Working” means the property reaches a production draw/layout/state path; “repaired” means it was disconnected or generic at the baseline and is now asserted by a release test.
 
 ## Property matrix
 
 | Family | Properties | Classification and production effect |
 |---|---|---|
 | General | `enabled`, `resolutionAware`, `scale`, `opacity`, `fontScale`, `safeMargin` | Working. Gate all controller UI and feed effective layout, alpha, typography, and safe bounds. |
-| Hints: layout | `enabled`, `x`, `y`, `scale`, `iconScale`, `fontScale`, `rowSpacing`, `columnSpacing`, `iconTextSpacing`, `padding`, `maxWidth`, `columns`, `backgroundOpacity`, `textOpacity`, `borderOpacity`, `borderThickness`, `fadeDuration`, `compact` | Working/repaired. Every value feeds measured production bounds or final draw alpha. Revision 3 defaults panel fill and border to zero. |
+| Hints: layout/state | `enabled`, `x`, `y`, `scale`, `iconScale`, `fontScale`, `rowSpacing`, `columnSpacing`, `iconTextSpacing`, `padding`, `maxWidth`, `columns`, `backgroundOpacity`, `textOpacity`, `borderOpacity`, `borderThickness`, `fadeDuration`, `compact`, `contextEnterDebounce`, `contextExitGrace`, `confirmedModalImmediate` | Working/repaired. Every value feeds measured production bounds, final draw alpha, or the candidate/committed hint-context state machine. Revision 4 defaults panel fill and border to zero. |
+| Controller input | `lbTapMaxSeconds`, `lbTacticalHoldSeconds`, `visibleSelectionFilter` | Working. Advanced Hints/Input rows proxy the gameplay widget API; changes immediately update the persisted controller settings used by LB tap/hold and the filter radial. |
 | Hints: content | `mode`, `presentation`, `overflow`, `expanded`, `maxItems`, `showChip`, `showActionText`, `showRowBackground`, `showCategoryHeaders`, `showContextHeader`, `showSeparators`, `wrapLines`, `chordLayout`, `priorityHiding` | Working/repaired. Filtering is performed before the shared model; presentation/layout is performed by the shared renderer. |
 | Hints: motion | `marqueeSpeed`, `marqueeDelay`, `marqueeGap` | Repaired. `Marquee` loops with a configurable gap; `Ping Pong` pauses at each end and reverses; both activate only on overflow and are clipped. |
 | Hints: glyph | `glyphColorMode`, `glyphSpacing`, `glyphOpacity`, `glyphBackgroundEnabled`, `glyphBackgroundOpacity`, `glyphBorderEnabled`, `glyphBorderOpacity` | Repaired. Final atlas passes receive color, spacing, alpha, optional fill, and optional border. Defaults have no fill/border. |
@@ -48,9 +49,9 @@ No exposed release property is accepted as a silent no-op. Unsupported Mouse Mod
 
 ## Automated evidence
 
-- `Test-ControllerUIReleaseQuality.lua`: effect layers, label background, motion timing, all polished radial styles, hot-slot layout parameters, revision-3 defaults, debug persistence exclusion, and wheel focus source assertions.
+- `Test-ControllerUIReleaseQuality.lua`: effect layers, label background, motion timing, all polished radial styles, hot-slot layout parameters, revision-4 defaults, debug persistence exclusion, and wheel focus source assertions.
+- `Test-ControllerLBHintState.lua`: 25 focused LB cycle, filter, Last Selected, live-binding, radial, persistence, preservation, and hint stabilization behaviors.
 - `Test-ControllerUISharedRenderers.lua`: shared production/preview calls and measured model parameters.
 - `Test-ControllerGlyphs.lua`: live sequences, no-TAP behavior, both hold paths, long chords, and square D-pad destination geometry.
 - `Test-ControllerUIModalInput.lua`: hover/wheel browse, explicit value focus/edit, blur, real Controller Debug toggle, modal ownership, and keyboard input.
 - Existing authoring/workspace/gameplay and companion suites cover precedence, personal overrides, undo/recovery, focus, publisher/default validation, and retained controller behavior.
-

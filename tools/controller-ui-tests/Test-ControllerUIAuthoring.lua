@@ -74,6 +74,7 @@ local actions = {
 }
 local bindingDefinitions = {}
 for _, action in ipairs(actions) do bindingDefinitions[#bindingDefinitions + 1] = { action = action, label = action, group = "test" } end
+local gameplaySettings = { lbTapMaxSeconds = 0.20, lbTacticalHoldSeconds = 0.20, visibleSelectionFilter = "Combat" }
 WG.BARControllerSupport = {
 	GetBinding = function() return "A" end,
 	GetBindingRevision = function() return 1 end,
@@ -83,6 +84,13 @@ WG.BARControllerSupport = {
 	GetBackStartHoldProgress = function() return 0 end,
 	IsInputPressed = function() return false end,
 	SetLayoutEditorOpen = function() end,
+	GetSetting = function(key) return gameplaySettings[key] end,
+	SetSetting = function(key, value) gameplaySettings[key] = value; return value end,
+	ResetSetting = function(key)
+		local defaults = { lbTapMaxSeconds = 0.20, lbTacticalHoldSeconds = 0.20, visibleSelectionFilter = "Combat" }
+		gameplaySettings[key] = defaults[key]
+		return gameplaySettings[key]
+	end,
 }
 
 dofile(root .. "/luaui/Widgets/gui_controller_ui_layout.lua")
@@ -101,6 +109,11 @@ assertEqual(api.Get("hints", "mode"), "Minimal", "personal precedence")
 assertEqual(api.GetPropertySource("hints", "mode"), "personal", "personal source")
 assertEqual(api.Get("hints", "glyphColorMode"), "Color-friendly", "schema-2 migration receives glyph default")
 assertEqual(api.Get("hints", "glyphSpacing"), 4, "glyph spacing default remains schema-3 compatible")
+assertEqual(api.Set("gameplay", "visibleSelectionFilter", "Builders"), "Builders", "authoring visible filter is wired")
+assertEqual(api.Set("gameplay", "lbTapMaxSeconds", 0.18), 0.18, "authoring LB tap timing is wired")
+api.ResetComponent("gameplay")
+assertEqual(api.Get("gameplay", "visibleSelectionFilter"), "Combat", "authoring visible filter reset is wired")
+assertEqual(api.Get("gameplay", "lbTapMaxSeconds"), 0.20, "authoring LB tap timing reset is wired")
 
 currentContext = { buildPlacement = true, hasSelection = true, hasBuilder = true }
 api.Set("hints", "mode", "Contextual")

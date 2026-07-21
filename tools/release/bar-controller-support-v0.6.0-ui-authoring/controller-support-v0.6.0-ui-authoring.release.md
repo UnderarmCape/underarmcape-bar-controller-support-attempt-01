@@ -10,6 +10,8 @@ A complete controller UI customization and authoring milestone with a standalone
 - Shared live production previews for hints, radials, and hot slots.
 - Original controller glyphs with corrected D-pad proportions.
 - Clean shadowed glyph-and-text hints, no TAP labels, strong hold styles, optional glow, label backgrounds, wrapping, marquee, and ping-pong.
+- Stable debounced hint contexts with immediate confirmed radials and live-binding LB tactical chords.
+- Quick LB tap visible-unit selection (Combat by default), modifier-only LB hold, and a persistent LB + LT filter radial with safe Last Selected restore.
 - Hot-slot customization, favorites, themes, presets, saved values, undo, recovery, and search.
 - Developer shipping-default workflow, startup defaults synchronization, and update checking.
 - Elevated-terrain placement correction, Build-First fresh-install default, and all v0.5.1 gameplay fixes retained.
