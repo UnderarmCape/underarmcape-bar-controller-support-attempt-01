@@ -1,13 +1,19 @@
 [CmdletBinding()]
 param(
-    [string]$WorkspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path,
-    [string]$PackageArtifactsRoot = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path 'package'),
+    [string]$WorkspaceRoot,
+    [string]$PackageArtifactsRoot,
     [string]$LegacyPackageRoot,
     [string]$PublicV060PackageRoot
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+    $WorkspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+}
+if ([string]::IsNullOrWhiteSpace($PackageArtifactsRoot)) {
+    $PackageArtifactsRoot = Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path 'package'
+}
 $packageRoot = Join-Path $PackageArtifactsRoot 'BAR_Controller_Support_v0.6.1_Widget_Companion'
 $zipPath = Join-Path $PackageArtifactsRoot 'BAR_Controller_Support_v0.6.1_Widget_Companion.zip'
 $checksumPath = $zipPath + '.sha256'

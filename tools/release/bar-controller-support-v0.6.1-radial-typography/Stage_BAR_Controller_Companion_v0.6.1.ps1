@@ -1,8 +1,8 @@
 [CmdletBinding()]
 param(
-    [string]$WorkspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path,
-    [string]$PackageRoot = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path 'package'),
-    [string]$RuntimeArtifactsRoot = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path 'artifacts\v0.6.1\win-x64'),
+    [string]$WorkspaceRoot,
+    [string]$PackageRoot,
+    [string]$RuntimeArtifactsRoot,
     [switch]$BuildRuntimeArtifacts,
     [Alias('SkipBuild')]
     [switch]$StageOnly
@@ -10,6 +10,16 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+    $WorkspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+}
+if ([string]::IsNullOrWhiteSpace($PackageRoot)) {
+    $PackageRoot = Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path 'package'
+}
+if ([string]::IsNullOrWhiteSpace($RuntimeArtifactsRoot)) {
+    $RuntimeArtifactsRoot = Join-Path $WorkspaceRoot 'artifacts\v0.6.1\win-x64'
+}
 
 $releaseVersion = '0.6.1'
 $fileVersion = '0.6.1.0'
