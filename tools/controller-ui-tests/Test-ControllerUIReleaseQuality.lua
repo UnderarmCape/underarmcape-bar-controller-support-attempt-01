@@ -108,7 +108,12 @@ loadstring = loadstring or load
 local Json = dofile(root .. "/common/luaUtilities/json.lua")
 local defaults = Json.decode(read(root .. "/controller-ui/shipping-defaults.json"))
 local manifest = Json.decode(read(root .. "/controller-ui/shipping-defaults-manifest.json"))
-assertEqual(defaults.defaultsVersion, "0.6.0-4", "shipping defaults revision")
+assertEqual(defaults.defaultsVersion, "0.6.1-1", "shipping defaults revision")
+assertEqual(defaults.compatibleModVersion, "0.6.1", "shipping defaults compatible mod")
+assertEqual(defaults.settings.components.radials.energyCostColorR, 1, "energy cost red channel")
+assertEqual(defaults.settings.components.radials.energyCostColorG, 0.86, "energy cost ships yellow")
+assertEqual(defaults.settings.components.radials.energyCostColorB, 0.12, "energy cost blue channel")
+assertTrue(defaults.settings.components.visibleSelectionRadial ~= nil, "visible-selection radial has an independent style target")
 assertEqual(manifest.revision, 4, "shipping manifest revision")
 assertEqual(#defaults.enforcedPaths, 0, "shipping defaults do not enforce personal appearance")
 local shippedHints = defaults.settings.components.hints
@@ -138,4 +143,4 @@ assertTrue(camera:find('model = { style = "tactical"') and camera:find('model = 
 	and camera:find('model = { style = "build"'), "all production radial owners select polished shared styles")
 assertTrue(camera:find('ControllerUISharedRenderers%.DrawHotSlots'), "production hot slots use shared renderer")
 
-print("Controller UI v0.6.0 release-quality tests passed: polished shared models, stabilized hints, deterministic motion, focus-gated wheel editing, session-only debug, D-pad-ready glyph path, and revision-4 defaults.")
+print("Controller UI v0.6.1 release-quality tests passed: semantic radial typography, HSV/swatches, inherited style targets, stabilized hints, deterministic motion, focused wheel editing, and revision-4 defaults.")
