@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) { $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
 $RepositoryRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-native-widget-unification-test' }
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-native-regression-repair-test' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 $stage = Join-Path $OutputDirectory ('.package-' + [guid]::NewGuid().ToString('N'))
@@ -71,6 +71,11 @@ try {
         'doc\controller-companion-v0.8.0\VANILLA_IDLE_UNIT_NAVIGATION.md',
         'doc\controller-companion-v0.8.0\CONTROLLER_MODE_PANEL_VISIBILITY.md',
         'doc\controller-companion-v0.8.0\TACTICAL_NATIVE_BUTTON_RENDERER.md',
+        'doc\controller-companion-v0.8.0\SMART_X_RESTORE_AND_NATIVE_EXTENSIONS.md',
+        'doc\controller-companion-v0.8.0\CONTROLLER_INPUT_PRIORITY.md',
+        'doc\controller-companion-v0.8.0\BUILD_FACTORY_RADIAL_PAGING.md',
+        'doc\controller-companion-v0.8.0\TACTICAL_RADIAL_TOGGLE.md',
+        'doc\controller-companion-v0.8.0\DISASSEMBLE_ENEMY_TARGETS.md',
         'tools\controller-ui-tests\Test-ControllerHybridRadials.lua',
         'tools\controller-ui-tests\Test-ControllerNativeUIIntegration.lua',
         'tools\controller-ui-tests\Test-ControllerNativeTargeting.lua',
@@ -78,6 +83,7 @@ try {
         'tools\controller-ui-tests\Test-ControllerInputDisassemble.lua',
         'tools\controller-ui-tests\Test-ControllerInputPolish.lua',
         'tools\controller-ui-tests\Test-ControllerNativeWidgetUnification.lua',
+        'tools\controller-ui-tests\Test-ControllerNativeRegressionRepair.lua',
         'tools\dev-scripts\Deploy_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Generate_Controller_Glyph_Atlases_v0.8.ps1'
@@ -103,7 +109,7 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $stage 'payload-sha256.json'), (($payload | ConvertTo-Json -Depth 6) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
 
-    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_NATIVE_WIDGET_UNIFICATION_TEST.zip'
+    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_NATIVE_REGRESSION_REPAIR_TEST.zip'
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()

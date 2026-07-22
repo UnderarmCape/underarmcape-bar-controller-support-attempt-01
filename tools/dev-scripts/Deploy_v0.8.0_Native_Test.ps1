@@ -197,6 +197,7 @@ Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerDisassembleMode.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerInputDisassemble.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerInputPolish.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerNativeWidgetUnification.lua'
+Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerNativeRegressionRepair.lua'
 
 if ($ValidateOnly) {
     Write-Step "Validation passed for $($deployMap.Count) files; BAR build and native base policy are compatible."
@@ -204,7 +205,7 @@ if ($ValidateOnly) {
 }
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.0-native-widget-unification-test-' + $timestamp)
+$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.0-native-regression-repair-test-' + $timestamp)
 if (Test-Path -LiteralPath $backupRoot) { throw "Backup path already exists: $backupRoot" }
 New-Item -ItemType Directory -Path (Join-Path $backupRoot 'live-before') -Force | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -252,8 +253,8 @@ foreach ($record in $preserved) {
 }
 
 $manifest = [ordered]@{
-    kind = 'bar-controller-native-widget-unification-test-deployment-backup'; schemaVersion = 1
-    experiment = ('EXPERIMENTAL ' + [char]0x2014 + ' NATIVE WIDGET, SMART ACTION, AND UI UNIFICATION TEST'); deployedAt = (Get-Date).ToString('o')
+    kind = 'bar-controller-native-regression-repair-test-deployment-backup'; schemaVersion = 1
+    experiment = ('EXPERIMENTAL ' + [char]0x2014 + ' SMART X, RADIAL ROUTING, ENEMY DISASSEMBLE, AND AREA CONFIRMATION TEST'); deployedAt = (Get-Date).ToString('o')
     repositoryRoot = $RepositoryRoot; sourceCommit = $sourceCommit
     barDataPath = $BarDataPath; companionInstallPath = $CompanionInstallPath; backupRoot = $backupRoot
     expectedBarBuild = $ExpectedBuild; buildIdentityMatched = $buildMatches; explicitUnknownBaseOverride = [bool]$AllowUnknownBase
