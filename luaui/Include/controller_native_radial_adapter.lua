@@ -96,6 +96,29 @@ local function tacticalKind(item)
 	return "none"
 end
 
+local function tacticalAreaMode(item)
+	local action = normalizedText(item.action)
+	local text = normalizedText(item.name) .. " " .. action .. " " .. normalizedText(item.tooltip)
+	local types = rawget(_G, "CMDTYPE") or {}
+	local typeID = tonumber(item.type)
+	local isArea = typeID == tonumber(types.ICON_AREA)
+		or typeID == tonumber(types.ICON_UNIT_OR_AREA)
+		or typeID == tonumber(types.ICON_UNIT_FEATURE_OR_AREA)
+		or typeID == tonumber(types.ICON_UNIT_OR_RECTANGLE)
+	if not isArea and not text:find("area", 1, true) and not text:find("radius", 1, true) then return nil end
+	if action == "areamex" or text:find("area mex", 1, true) then return "areaMex" end
+	if text:find("reclaim", 1, true) then return "reclaimArea" end
+	if text:find("repair", 1, true) then return "repairArea" end
+	if text:find("resurrect", 1, true) or action == "rez" then return "resurrectArea" end
+	if text:find("restore", 1, true) then return "restoreArea" end
+	if text:find("capture", 1, true) then return "captureArea" end
+	if text:find("guard", 1, true) then return "guardArea" end
+	if text:find("unload", 1, true) then return "unloadArea" end
+	if text:find("load", 1, true) then return "loadArea" end
+	if text:find("attack", 1, true) then return "attackArea" end
+	return isArea and "genericArea" or nil
+end
+
 function Adapter.New()
 	return setmetatable({}, Adapter)
 end
@@ -215,7 +238,8 @@ function Adapter:BuildTacticalModel(sourceCommands, context)
 				or tonumber(type(item.params) == "table" and item.params[1]) or 0
 			item.currentStateLabel = item.states[item.currentStateIndex + 1]
 			item.isBinaryState = item.isState and #item.states == 2
-			item.kind = item.kind or tacticalKind(item)
+			item.dragMode = item.dragMode or tacticalAreaMode(item)
+			item.kind = item.kind or (item.dragMode and "drag_area") or tacticalKind(item)
 			item.tacticalCategory = tacticalCategory(item)
 			item.vanillaIndex = tonumber(item.vanillaIndex or item.cell or item.index) or sourceIndex
 			items[#items + 1] = item
