@@ -50,7 +50,7 @@ expect(contains(reclaim, "controllerConfirm"), "native reclaim confirm")
 expect(contains(reclaim, "controllerCancel"), "native reclaim cancel")
 expect(contains(reclaim, "mode == 'any'"), "future any-type entry")
 expect(contains(reclaim, "params = { controllerTargeting.targetID }"), "one-target native encoding")
-expect(contains(reclaim, "Spring.GiveOrderToUnitArray(reclaimers, RECLAIM, params, options)"), "selected reclaimers receive native command")
+expect(contains(reclaim, "api.controllerIssueCommand(RECLAIM, params"), "selected reclaimers receive native command through Order Menu")
 expect(contains(reclaim, "gl.DrawGroundCircle"), "shared widget controller radius")
 expect(not contains(reclaim, "markedTargets"), "no parallel target set")
 

@@ -23,7 +23,7 @@ local service = Runtime.New()
 local api = service:PublicAPI()
 local fixture = Json.decode(read(root .. "/tools/controller-ui-tests/fixtures/controller-ui-v0.6.1-hints.json"))
 
-equal(service.activeVersion, "0.8.0-native-input-polish-test-1", "shipping version")
+equal(service.activeVersion, "0.8.0-native-widget-unification-test-1", "shipping version")
 for key, value in pairs(fixture.component) do equal(api.GetComponent("hints")[key], value, "v0.6.1 visual fixture " .. key) end
 for key, value in pairs(fixture.bindingsButton) do equal(api.GetComponent("bindingsButton")[key], value, "bindings fixture " .. key) end
 
@@ -51,9 +51,9 @@ service:Update(0.1)
 equal(#service.visibleHints, 0, "charge owns hint surface")
 context = { disassembleMode = true }
 service:Update(0.05)
-equal(#service.visibleHints, 0, "confirmed-modal exit grace")
+truthy(#service.visibleHints >= 5, "explicit Disassemble state updates immediately")
 service:Update(0.13)
-truthy(#service.visibleHints >= 5, "Disassemble hints visible")
+truthy(#service.visibleHints >= 5, "Disassemble hints remain visible")
 local definitions = service:HintAPI().GetDefinitions()
 truthy(definitions["normal-selection-toggle"] ~= nil, "RT+A definition")
 truthy(definitions["lb-tactical-primary"] ~= nil, "v0.6.1 LB tactical hint retained")
