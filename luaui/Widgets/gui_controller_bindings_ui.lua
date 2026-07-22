@@ -24,6 +24,7 @@ local glLineWidth = gl.LineWidth
 local glBeginEnd = gl.BeginEnd
 local glVertex = gl.Vertex
 local GL_LINE_LOOP = GL.LINE_LOOP
+local ControllerBindingsUIGlyphs = VFS.Include("luaui/Include/controller_glyphs.lua")
 
 local USE_SAFE_AREA_LAYOUT = true
 local SAFE_MAX_X_MARGIN = 120
@@ -1231,13 +1232,36 @@ local function ControllerBindingsUIDrawPanel(x1, y1, x2, y2, title)
 	end
 end
 
+local ControllerBindingsUIControlGlyph = {
+	a = "A", b = "B", x = "X", y = "Y", lb = "LB", rb = "RB", lt = "LT", rt = "RT",
+	backView = "back", menuStart = "start", leftStick = "leftStick", rightStick = "rightStick",
+	leftStickX = "leftStickX", leftStickY = "leftStickY", rightStickX = "rightStickX", rightStickY = "rightStickY",
+	dpadUp = "dpadUp", dpadDown = "dpadDown", dpadLeft = "dpadLeft", dpadRight = "dpadRight", close = "X",
+}
+
+local function ControllerBindingsUIDrawXboxBinding(binding, x, y, size, alignment, maxWidth, opacity)
+	if not ControllerBindingsUIGlyphs then return false end
+	ControllerBindingsUIGlyphs.SetStyle("Xbox", "Xbox")
+	local sequence = ControllerBindingsUIGlyphs.BuildSequence({ binding })
+	ControllerBindingsUIGlyphs.DrawSequence(sequence, x, y, {
+		size = size or 24, spacing = 3, alignment = alignment or "left", maxWidth = maxWidth,
+		colorMode = "Color-friendly", opacity = opacity or 1,
+	})
+	return true
+end
+
 local function ControllerBindingsUIDrawChip(controlId, label, x1, y1, x2, y2, activeIds)
 	local active = activeIds and activeIds[controlId]
 	local fill = active and { 0.15, 0.45, 0.48, 0.96 } or { 0.085, 0.105, 0.13, 0.94 }
 	local outline = active and { 0.55, 0.96, 0.92, 1 } or { 0.28, 0.36, 0.44, 0.9 }
 	ControllerBindingsUIDrawRect(x1, y1, x2, y2, fill)
 	ControllerBindingsUIDrawOutline(x1, y1, x2, y2, outline)
-	ControllerBindingsUIDrawText(label, (x1 + x2) * 0.5, (y1 + y2) * 0.5 - 5, 15, { 0.94, 0.98, 1, 1 }, "oc")
+	local glyph = ControllerBindingsUIControlGlyph[controlId]
+	local size = math.max(18, math.min(y2 - y1 - 6, 34))
+	if not glyph or not ControllerBindingsUIDrawXboxBinding(glyph, (x1 + x2) * 0.5,
+			(y1 + y2 - size) * 0.5, size, "center", math.max(18, x2 - x1 - 8)) then
+		ControllerBindingsUIDrawText(label, (x1 + x2) * 0.5, (y1 + y2) * 0.5 - 5, 15, { 0.94, 0.98, 1, 1 }, "oc")
+	end
 end
 
 local function ControllerBindingsUIDrawModalButton(id, label, x1, y1, x2, y2)
@@ -1498,7 +1522,12 @@ local function ControllerBindingsUIDrawActionList(x1, y1, x2, y2)
 			local suffix = action.readOnly and " (view)" or ""
 			rightText = ControllerBindingsUIDisplayBinding(binding) .. suffix
 		end
-		ControllerBindingsUIDrawText(rightText, x2 - 24, rowY - 19, 13, { 0.78, 0.9, 0.96, 1 }, "or")
+		if category.name ~= "Presets" then
+			ControllerBindingsUIDrawXboxBinding(binding or "Unbound", x2 - 24, rowY - 27, 24, "right", 150)
+			if action.readOnly then ControllerBindingsUIDrawText("view", x2 - 182, rowY - 19, 11, { 0.62, 0.75, 0.82, 1 }, "or") end
+		else
+			ControllerBindingsUIDrawText(rightText, x2 - 24, rowY - 19, 13, { 0.78, 0.9, 0.96, 1 }, "or")
+		end
 		rows[#rows + 1] = { x1 = x1 + 12, y1 = rowY - rowH + 4, x2 = x2 - 12, y2 = rowY + 3, index = i }
 		rowY = rowY - rowH - 3
 	end
@@ -1561,9 +1590,11 @@ local function ControllerBindingsUIDrawDetails(x1, y1, x2, y2)
 	y = y - 28
 	ControllerBindingsUIDrawText("Group: " .. tostring(action.group), x1 + 20, y, 14, { 0.72, 0.84, 0.9, 1 }, "o")
 	y = y - 28
-	ControllerBindingsUIDrawText("Default: " .. ControllerBindingsUIDisplayBinding(action.default), x1 + 20, y, 14, { 0.72, 0.84, 0.9, 1 }, "o")
+	ControllerBindingsUIDrawText("Default:", x1 + 20, y, 14, { 0.72, 0.84, 0.9, 1 }, "o")
+	ControllerBindingsUIDrawXboxBinding(action.default or "Unbound", x1 + 102, y - 8, 24, "left", x2 - x1 - 130)
 	y = y - 28
-	ControllerBindingsUIDrawText("Current: " .. ControllerBindingsUIDisplayBinding(binding), x1 + 20, y, 16, { 0.86, 0.98, 1, 1 }, "o")
+	ControllerBindingsUIDrawText("Current:", x1 + 20, y, 16, { 0.86, 0.98, 1, 1 }, "o")
+	ControllerBindingsUIDrawXboxBinding(binding or "Unbound", x1 + 102, y - 8, 24, "left", x2 - x1 - 130)
 	y = y - 34
 	ControllerBindingsUIDrawText("Control ID: " .. tostring(ControllerBindingsUIBindingToControlId(binding) or "none"), x1 + 20, y, 13, { 0.62, 0.75, 0.82, 1 }, "o")
 	y = y - 45
@@ -2016,6 +2047,7 @@ local function ControllerBindingsUIAction()
 end
 
 function widget:Initialize()
+	if ControllerBindingsUIGlyphs then ControllerBindingsUIGlyphs.SetStyle("Xbox", "Xbox") end
 	if widgetHandler and widgetHandler.AddAction then
 		widgetHandler:AddAction("bar_controller_bindings", ControllerBindingsUIAction, nil, "t")
 	end
@@ -2278,6 +2310,7 @@ function widget:MousePress(x, y, button)
 end
 
 function widget:DrawScreen()
+	if ControllerBindingsUIGlyphs then ControllerBindingsUIGlyphs.SetStyle("Xbox", "Xbox") end
 	ControllerBindingsUITryMigrateLauncher()
 	local vsx, vsy = spGetViewGeometry()
 	ControllerBindingsUIDrawToggleButton(vsx, vsy)
