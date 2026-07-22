@@ -1,22 +1,30 @@
-# v0.8.0 Native Hybrid Live Checklist
+# v0.8.0 Native Hybrid Targeting Live Checklist
 
-Experimental — native panels and blue focus remain visible for validation.
+**EXPERIMENTAL — NATIVE CONTROLLER TARGETING AND COMPACT RADIAL TEST**
 
-1. Open Build Radial with several constructors; verify v0.7 cards, categories, center description/costs, and pages.
-2. Move the stick and mouse between items; verify radial highlight and blue vanilla focus agree.
-3. Verify familiar buildings retain positions when switching constructors, including unsupported-item holes.
-4. Open several labs/factories; verify no builder categories and vanilla cell 1 at top slot 1.
-5. Queue with A and dequeue with X; verify vanilla queue counts update.
-6. Open Tactical; use D-pad Up/Down for Utility/Tactical and stick for items.
-7. Test Visible/Cloak and other binary states.
-8. Open Fire State and Move State sub-radials; confirm the exact live states.
-9. Test Stop, Guard, Repair, Reclaim, Restore, Area Mex, and supported target commands.
-10. Enter build placement; verify Single every time.
-11. Hold LB for Grid; release LB and verify immediate Single.
-12. Exit/reopen and change build item; verify Grid never remains latched.
-13. Test X Quick Place, A normal placement, B cancel, rotation, spacing, water/shoreline, and queue modifiers.
-14. Test Selection, area selection, visible filter, control groups, and Disassemble/reclaim.
-15. Switch to Legacy Controller UI and back; verify radials close, placement resets, and selection remains.
-16. Check `infolog.txt` for Lua errors, focus mismatches, or duplicate command activation; watch frame time.
+1. Select Guard from Tactical Radial and place it with A.
+2. Repeat using X.
+3. Test Repair, Reclaim, Attack, Capture, and Set Target.
+4. Select an area command.
+5. Press A to anchor.
+6. Release A and confirm nothing issues.
+7. Move the cursor to resize the anchored radius.
+8. Press A again and confirm exactly one operation.
+9. Repeat using X, then mixed A/X presses.
+10. Press B during point and area targeting; confirm selection remains and no order issues.
+11. Enter build placement with one constructor, several constructors, a commander, and a construction turret where valid.
+12. Place several queued and non-queued buildings; verify A and X both keep placement active.
+13. Press B after valid, invalid, shoreline, and water previews; confirm constructors remain selected, Grid resets, and controls return immediately after B release.
+14. Press X afterward and confirm normal Smart X works on the next clean press.
+15. Test Build Radial categories with several constructors.
+16. Confirm no empty categories, empty pages, or trailing pages.
+17. Confirm absent commands create no holes before later items.
+18. Confirm unaffordable and disabled but present commands remain visible.
+19. Test multiple factories and labs; queue with A and dequeue with X.
+20. Confirm vanilla cell 1 is top radial slot 1 and later present cells are consecutive.
+21. Move both stick and mouse focus; confirm radial focus and the blue vanilla focus stroke match without flicker.
+22. Verify Fire State, Move State, Visible/Cloak, Stop, Disassemble, LB+B, and RT+A; switch to Legacy fallback and back while preserving selection.
+23. Check `infolog.txt` for Lua errors, invalid target paths, or focus mismatch.
+24. Watch for duplicate orders, stuck A/X/B ownership, repeated resize/layout calls, or frame-time spikes.
 
-Report a mismatch with selected builder/factory, command name, radial slot/page/category, and the blue-focused vanilla cell.
+Report a mismatch with the selected builder/factory, command name and type, target kind, radial category/page/slot, blue-focused vanilla cell, and relevant `infolog.txt` lines.
