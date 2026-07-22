@@ -1,18 +1,7 @@
 # Enemy Disassemble targets
 
-Disassemble separates command sources from reclaim targets. Owned eligible
-constructors are cached as reclaimers. Own units may also be represented by
-vanilla selection; enemy and otherwise unselectable units/structures live in
-the native `markedTargets` collection and use the native Disassemble highlight
-path. Enemy constructors are targets. Factories/labs never become reclaimers.
+Owned eligible constructors remain the command source. Enemy units, enemy structures, friendly targets, and factories may remain reclaim targets; factories never become reclaimers. Direct X and LB+A tap reclaim paths are unchanged.
 
-An exact enemy reticle target can receive immediate X Reclaim or LB+A tap
-Reclaim. LB+A hold can use it as the UnitDefID anchor for native same-type area
-Reclaim. Hold-A scans the engine cylinder without an allied-only filter;
-RT+Hold-A merges the scan into existing marked targets. Batch dispatch combines
-selected own targets and marked targets, deduplicates them, preserves cached
-constructors, and resets inactivity only after an accepted Reclaim.
+LB+A hold captures the hovered target ID, UnitDefID, and position, then starts the controller-owned green reclaim-area gesture. Releasing A/LB only arms confirmation. The reticle changes radius, and a fresh A or X submits `{targetID,x,y,z,r}` through Smart Reclaim's completed-area adapter. The target does not need to be selectable or part of player selection.
 
-No new teammate filter is introduced. BAR's native command eligibility and
-engine rejection remain authoritative, and accepted Disassemble actions do not
-exit the mode or fall through to Move.
+Candidate highlighting continues to use the current same-type filter. B cancels, clears candidates, restores constructor selection, and leaves Disassemble active. Accepted dispatch records activity and resets the inactivity timer without exiting the mode. Native reclaim eligibility and Recoil rejection remain authoritative.

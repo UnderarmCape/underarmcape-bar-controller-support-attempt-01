@@ -1,14 +1,7 @@
-# Build and Factory radial paging
+# Build and Factory global paging
 
-With no radial open, a clean RB tap opens the eligible constructor Build Radial
-or selected Factory/Lab Radial. No eligible context remains a no-op.
+An open Build or Factory/Lab radial flattens its authoritative model into one page sequence: every Economy page, every Combat page, every Utility page, then wrap. Empty categories are omitted. Native `radialPage` and `radialSlot` order is preserved; Legacy pages retain compact groups of eight.
 
-Once either radial is open, it owns LB/RB before shoulder arbitration. RB moves
-to the next compact page and LB to the previous compact page, wrapping within
-the current category. A one-page category safely consumes the shoulder without
-changing category. A page change resets to the first valid compact slot,
-updates the stable focus key and native hidden focus identity, and therefore
-refreshes title, description, indicator, border, and hints.
+RB advances one sequence entry. LB moves one entry backward. Crossing a boundary updates category, local page, global page indicator, the first valid selected item, center text, and the hidden native stable focus key. Backward traversal from the first Combat page enters the final Economy page; backward wrap from Economy enters the final Utility page.
 
-The same press cannot reopen the menu or reach Queue Mode, Move State, or
-Disassemble. Tactical radial ownership disables this path entirely.
+The traversal is rebuilt whenever the native/Legacy option model is refreshed, so changing selection cannot leave stale category/page entries. D-pad category shortcuts remain independent. Queue quantities, compaction, eligibility, and closed-RB opening behavior are unchanged.

@@ -1,37 +1,9 @@
 # Controller native targeting
 
-Status: **EXPERIMENTAL — SMART X, RADIAL ROUTING, ENEMY DISASSEMBLE, AND AREA CONFIRMATION TEST**
+Native Experimental uses hybrid targeting. BAR's current Order Menu descriptor is captured while it is live; after capture, `Spring.GetActiveCommand()` is not a prerequisite. The camera owns first A/X, the neutral release barrier, reticle geometry, second A/X, preview, and B cancellation.
 
-Order Menu is the authoritative broker boundary. A retained session contains
-the command descriptor/ID, registered owner identity and token, phase, anchor,
-current endpoint/radius, confirmation arm, owner confirm/cancel callbacks, and
-final-dispatch state. Engine active-command clearing, radial closure, panel
-visual suppression, and input-mode transitions do not replace an already
-validated owner session.
+The pure `controller_native_targeting.lua` state machine classifies point, circular area, front, rectangle, and build descriptors. Areas encode `{x,y,z,r}`. Fronts and rectangles encode `{x1,y1,z1,x2,y2,z2}`. A five-parameter same-type reclaim is assembled only by the Smart Reclaim adapter. Build descriptors remain in the existing placement system.
 
-The camera checks this broker before normal A selection, Smart X, and
-`Spring.GetActiveCommand`. First A/X anchors. After both buttons are observed
-neutral, the broker arms; the next fresh A or X edge invokes the same registered
-owner's confirm callback. Release never confirms. B calls the owner's cancel.
-BAR's native command eligibility and engine rejection remain authoritative.
+On completion, Order Menu revalidates command identity against its current command model, calls `CommandNotify` once, and performs one direct fallback only when unhandled. The one-shot camera guard prevents Smart X, normal A selection, or a retired owner session from also issuing.
 
-The dispatch boundary is exactly once:
-
-1. Invoke one owner confirm callback.
-2. Attempt `widgetHandler:CommandNotify` once.
-3. If handled, close without a direct order.
-4. If unhandled, attempt one `Spring.GiveOrder`/`CMD.INSERT` fallback.
-5. Mark final dispatch and close, preventing Smart X or another handler from
-   issuing again.
-
-With Controller Debug enabled, Order Menu keeps transition-only diagnostics:
-`SESSION CREATED`, `OWNER`, `ANCHORED`, `BUTTONS NEUTRAL`, `CONFIRM ARMED`,
-`A/X CONFIRM RECEIVED`, `OWNER CONFIRM CALLED`, `COMMAND_NOTIFY HANDLED` or
-`GIVE_ORDER FALLBACK`, and `SESSION CLOSED`. The camera draws the last four
-rows. A debug self-check reports owner count, Area Mex and Smart Area Reclaim
-registration, broker availability, and dispatcher connectivity. Nothing logs
-per frame.
-
-The same deployed source order and owner registration path are exercised by
-the regression harness. The final gameplay proof remains the 47-step live
-checklist; automation cannot substitute for pressing the second button in BAR.
+Input priority is controller target → placement → radials → Disassemble → normal A/X. Native panel visibility does not affect the retained descriptor or controller preview. B clears geometry, preview, highlights, and Disassemble substate and arms the normal cancel-release latch.

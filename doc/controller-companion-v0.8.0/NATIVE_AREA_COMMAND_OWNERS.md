@@ -1,28 +1,15 @@
-# Native area-command owners
+# Native completed-shape adapters
 
-The live failure was a state-copy bug, not hidden-panel suppression or missing
-button edges. `controller_native_command_owner.lua` converted absent
-`anchor`/`current` values into empty tables in `Owner:GetState()`. Area Mex and
-Smart Area Reclaim interpreted those tables as a live preview and called
-`gl.DrawGroundCircle` with nil coordinates. BAR removed both widgets after the
-DrawWorld errors, leaving their retained preview/session path unable to receive
-the second A/X confirmation.
+Controller confirmation no longer depends on BAR's private mouse press/drag/release lifecycle. Native ownership begins after the controller has completed the shape.
 
-`GetState()` now preserves nil for descriptor, anchor, and current. Area Mex,
-Smart Area Reclaim, and the generic Order Menu owner also validate complete
-x/y/z coordinates before drawing. The real widgets therefore remain loaded and
-registered through anchor, neutral release, confirm, and close.
+| Command family | Completed-shape adapter | Native work retained |
+| --- | --- | --- |
+| Area Mex | `WG.areamex.controllerCompleteArea` | metal spots, filtering, queue/build split, preview-command application |
+| Smart Area Reclaim | `WG.smartareareclaim.controllerCompleteArea` | four-parameter feature filtering and transformed reclaim batches |
+| Same-type Reclaim | same Smart Reclaim adapter with five params | Recoil's native `{targetID,x,y,z,r}` semantics |
+| Front/rectangle | `WG.customformations.controllerCompleteShape` | live descriptor and six-coordinate native semantics |
+| Other point/area shapes | `WG.ordermenu.controllerCompleteTargetShape` | validation, notify, engine fallback |
 
-| Command family | Authoritative owner |
-| --- | --- |
-| Reclaim unit/feature/area | Smart Area Reclaim |
-| Area Mex | Area Mex |
-| Formation/front commands | Custom Formations |
-| Other point, area, front, rectangle commands | Order Menu generic owner |
+Smart Area Reclaim explicitly returns unhandled for five parameters so the same-type order reaches Recoil unchanged rather than being misread as `{x,y,z,r}`. Every adapter converges on Order Menu's one `CommandNotify` callsite. Handled commands stop there; unhandled commands receive exactly one `GiveOrder`/`CMD.INSERT` fallback.
 
-The camera is only the highest-priority input/reticle adapter. The owner keeps
-its immutable descriptor and session token, builds final parameters, calls
-`CommandNotify` once, and permits one direct engine fallback only when
-unhandled. A→A, A→X, X→A, and X→X use the same fresh-release barrier. B cancels
-without dispatch. Visual hiding suppresses Order/Build panel draw and mouse
-interception only; Update, owner APIs, and confirmation remain active.
+The earlier registered mouse-owner APIs remain dormant compatibility surfaces. The camera has no `controllerBeginTarget` or `controllerTargetInput` call, so there is no duplicate confirm or preview path.
