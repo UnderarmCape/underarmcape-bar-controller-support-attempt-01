@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) { $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
 $RepositoryRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-native-regression-repair-test' }
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-hybrid-area-idle-repair-test' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 $stage = Join-Path $OutputDirectory ('.package-' + [guid]::NewGuid().ToString('N'))
@@ -50,6 +50,7 @@ try {
         'doc\controller-companion-v0.8.0\STABLE_SLOT_MAPPING.md',
         'doc\controller-companion-v0.8.0\LEGACY_SUNSET_MAP.md',
         'doc\controller-companion-v0.8.0\NATIVE_OVERRIDE_MAINTENANCE.md',
+		'doc\controller-companion-v0.8.0\HYBRID_CONTROLLER_AREA_TARGETING.md',
         'doc\controller-companion-v0.8.0\CONTROLLER_NATIVE_TARGETING.md',
         'doc\controller-companion-v0.8.0\BUILD_RADIAL_ELIGIBILITY.md',
         'doc\controller-companion-v0.8.0\CONTROLLER_CHORD_ARBITRATION.md',
@@ -84,6 +85,7 @@ try {
         'tools\controller-ui-tests\Test-ControllerInputPolish.lua',
         'tools\controller-ui-tests\Test-ControllerNativeWidgetUnification.lua',
         'tools\controller-ui-tests\Test-ControllerNativeRegressionRepair.lua',
+		'tools\controller-ui-tests\Test-ControllerHybridAreaIdleRepair.lua',
         'tools\dev-scripts\Deploy_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Generate_Controller_Glyph_Atlases_v0.8.ps1'
@@ -109,7 +111,7 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $stage 'payload-sha256.json'), (($payload | ConvertTo-Json -Depth 6) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
 
-    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_NATIVE_REGRESSION_REPAIR_TEST.zip'
+    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_HYBRID_AREA_IDLE_REPAIR_TEST.zip'
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
