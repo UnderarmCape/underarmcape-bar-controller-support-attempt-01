@@ -25,6 +25,7 @@ $IncludeFiles = @(
     'controller_ui_editor_workspace.lua',
     'controller_ui_editor_input.lua',
     'controller_ui_shared_renderers.lua',
+    'controller_native_radial_adapter.lua',
     'controller_glyphs.lua'
 )
 $GlyphFiles = @(
@@ -110,6 +111,11 @@ function Assert-Lua([string]$Path) {
     if ($maximum -gt 60) { throw "BAR's 60-upvalue limit is exceeded ($maximum): $Path" }
 }
 
+function Assert-LuaHarness([string]$RelativePath) {
+    & lua (Join-Path $RepositoryRoot $RelativePath) $RepositoryRoot
+    if ($LASTEXITCODE -ne 0) { throw "Lua harness failed: $RelativePath" }
+}
+
 if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) { $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
 $RepositoryRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 $BarDataPath = (Resolve-Path -LiteralPath $BarDataPath).Path
@@ -150,7 +156,7 @@ foreach ($name in $GlyphFiles) {
     $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ('luaui\images\controller-glyphs\' + $name)); destination = (Join-Path $BarDataPath ('LuaUI\Images\controller-glyphs\' + $name)); native = $false })
 }
 foreach ($entry in @($overrideManifest.entries)) {
-    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ([string]$entry.sourcePath)); destination = (Join-Path $BarDataPath ([string]$entry.livePath)); native = $true; baseSha256 = [string]$entry.baseSha256; patchedSha256 = [string]$entry.patchedSha256 })
+    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ([string]$entry.sourcePath)); destination = (Join-Path $BarDataPath ([string]$entry.livePath)); native = $true; baseSha256 = [string]$entry.baseSha256; previousPatchedSha256 = [string]$entry.previousPatchedSha256; patchedSha256 = [string]$entry.patchedSha256 })
 }
 
 $destinations = @{}
@@ -164,11 +170,14 @@ foreach ($item in $deployMap) {
     if ($item.native -and $sourceHash -ne $item.patchedSha256) { throw "Tracked patched hash is stale: $($item.source)" }
     if ($item.native -and (Test-Path -LiteralPath $item.destination -PathType Leaf)) {
         $liveHash = Get-Sha256 $item.destination
-        if ($liveHash -ne $item.baseSha256 -and $liveHash -ne $item.patchedSha256 -and -not $AllowUnknownBase) {
+        if ($liveHash -ne $item.baseSha256 -and $liveHash -ne $item.previousPatchedSha256 -and $liveHash -ne $item.patchedSha256 -and -not $AllowUnknownBase) {
             throw "Unknown loose vanilla override ($liveHash): $($item.destination). Rebase or explicitly use -AllowUnknownBase after inspection."
         }
     }
 }
+
+Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerNativeUIIntegration.lua'
+Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerHybridRadials.lua'
 
 if ($ValidateOnly) {
     Write-Step "Validation passed for $($deployMap.Count) files; BAR build and native base policy are compatible."
@@ -176,7 +185,7 @@ if ($ValidateOnly) {
 }
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.0-native-test-' + $timestamp)
+$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.0-native-hybrid-test-' + $timestamp)
 if (Test-Path -LiteralPath $backupRoot) { throw "Backup path already exists: $backupRoot" }
 New-Item -ItemType Directory -Path (Join-Path $backupRoot 'live-before') -Force | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -224,8 +233,8 @@ foreach ($record in $preserved) {
 }
 
 $manifest = [ordered]@{
-    kind = 'bar-controller-native-test-deployment-backup'; schemaVersion = 1
-    experiment = 'v0.8.0 Native BAR UI Integration Test'; deployedAt = (Get-Date).ToString('o')
+    kind = 'bar-controller-native-hybrid-test-deployment-backup'; schemaVersion = 1
+    experiment = 'v0.8.0 Native Hybrid Radial Test'; deployedAt = (Get-Date).ToString('o')
     repositoryRoot = $RepositoryRoot; sourceCommit = $sourceCommit
     barDataPath = $BarDataPath; companionInstallPath = $CompanionInstallPath; backupRoot = $backupRoot
     expectedBarBuild = $ExpectedBuild; buildIdentityMatched = $buildMatches; explicitUnknownBaseOverride = [bool]$AllowUnknownBase
@@ -240,6 +249,6 @@ foreach ($record in $records) {
     if ((Get-Sha256 $record.destination) -ne $record.postSha256) { throw "Post-manifest verification failed: $($record.destination)" }
 }
 Stop-RuntimesSafely
-Write-Step 'Experimental native integration deployed. BAR was not launched.'
+Write-Step 'Experimental native hybrid radials deployed. BAR was not launched.'
 Write-Output ('BACKUP_ROOT=' + $backupRoot)
 Write-Output ('ROLLBACK_COMMAND=powershell -NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $RepositoryRoot 'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1') + '" -BackupRoot "' + $backupRoot + '"')

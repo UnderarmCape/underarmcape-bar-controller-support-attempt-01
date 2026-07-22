@@ -1,11 +1,11 @@
 {
   "packageName": "BAR Controller Companion",
-  "version": "0.8.0-native-test",
+  "version": "0.8.0-native-hybrid-test",
   "stability": "EXPERIMENTAL",
-  "warning": "EXPERIMENTAL — MAY REQUIRE REBASE AFTER BAR UPDATES",
+  "warning": "EXPERIMENTAL — NATIVE PANELS AND FOCUS VISIBLE FOR VALIDATION",
   "repository": "UnderarmCape/underarmcape-bar-controller-support-attempt-01",
   "branch": "controller/v0.8.0-native-ui-integration-test",
-  "assetName": "BAR_Controller_Support_v0.8.0_NATIVE_TEST.zip",
+  "assetName": "BAR_Controller_Support_v0.8.0_NATIVE_HYBRID_TEST.zip",
   "barBuild": "Beyond All Reason test-30714-2a9339d",
   "barUpstreamCommit": "2a9339d0c587c1444b2b839ba29dc954f1a13b17",
   "publicRelease": false,
@@ -24,6 +24,9 @@
     "native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/gui_buildmenu.lua"
   ],
   "documentation": [
+    "doc/controller-companion-v0.8.0/HYBRID_RADIAL_REPAIR_DESIGN.md",
+    "doc/controller-companion-v0.8.0/RADIAL_VANILLA_MAPPING.md",
+    "doc/controller-companion-v0.8.0/STABLE_SLOT_MAPPING.md",
     "doc/controller-companion-v0.8.0/NATIVE_UI_INTEGRATION_AUDIT.md",
     "doc/controller-companion-v0.8.0/LEGACY_SUNSET_MAP.md",
     "doc/controller-companion-v0.8.0/NATIVE_OVERRIDE_MAINTENANCE.md",
