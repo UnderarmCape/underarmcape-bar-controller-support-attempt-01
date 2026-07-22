@@ -36,6 +36,13 @@ do
 	if ok and type(module) == "table" then ControllerUISharedRenderers = module end
 end
 ControllerSelectionBehavior = ControllerUISharedRenderers and ControllerUISharedRenderers.SelectionBehavior or nil
+ControllerNativeRadialAdapter = ControllerNativeRadialAdapter or nil
+do
+	local ok, module = pcall(VFS.Include, "LuaUI/Include/controller_native_radial_adapter.lua")
+	if ok and type(module) == "table" then ControllerNativeRadialAdapter = module end
+end
+ControllerCameraTestNativeRadialAdapter = ControllerCameraTestNativeRadialAdapter
+	or (ControllerNativeRadialAdapter and ControllerNativeRadialAdapter.New())
 ControllerDisassembleBehavior = ControllerDisassembleBehavior or nil
 do
 	local ok, module = pcall(VFS.Include, "LuaUI/Include/controller_disassemble_behavior.lua")
@@ -160,6 +167,10 @@ local BuildRadialPageColors = {
 		fill = { 0.45, 0.28, 0.04, 0.45 },
 		accent = { 1.0, 0.75, 0.1, 1.0 },
 	},
+	defense = { fill = { 0.38, 0.08, 0.04, 0.45 }, accent = { 1.0, 0.48, 0.16, 1.0 } },
+	production = { fill = { 0.40, 0.24, 0.04, 0.45 }, accent = { 1.0, 0.72, 0.16, 1.0 } },
+	special = { fill = { 0.28, 0.06, 0.34, 0.45 }, accent = { 0.82, 0.40, 1.0, 1.0 } },
+	factory = { fill = { 0.03, 0.18, 0.30, 0.45 }, accent = { 0.35, 0.78, 1.0, 1.0 } },
 }
 
 ControllerCameraTestBuildMenu = ControllerCameraTestBuildMenu or {
@@ -187,6 +198,9 @@ ControllerCameraTestBuildMenu = ControllerCameraTestBuildMenu or {
 	factoryProgressCmdID = "none",
 	factoryProgressValue = "none",
 	factoryProgressSource = "none",
+	isFactoryContext = false,
+	selectedStableKey = nil,
+	nativeModel = nil,
 	-- Affordability cache: rebuilt on open/page-change, then refreshed every 10s
 	affordabilityCache = {},
 	affordabilityCacheTime = -100,
@@ -424,6 +438,9 @@ ControllerCameraTestTacticalMenu = ControllerCameraTestTacticalMenu or {
 	drawCount = 0,
 	hitboxCount = 0,
 	debugRowsCount = 0,
+	selectedStableKey = nil,
+	nativeModel = nil,
+	stateSubradial = { open = false, parentStableKey = nil, selectedIndex = 1, states = {} },
 }
 ControllerCameraTestMemoryDebug = ControllerCameraTestMemoryDebug or {
 	lastSampleTime = -10,
@@ -478,8 +495,13 @@ ControllerCameraTestDisassemble = ControllerCameraTestDisassemble or {
 	lbA = { pressActive = false, startedAt = 0, targetID = nil, unitDefID = nil, holdFired = false },
 }
 ControllerCameraTestNativeUI = ControllerCameraTestNativeUI or {
-	tacticalFocus = 1,
+	tacticalFocus = nil,
 	buildFocus = nil,
+	buildModelRevision = -1,
+	buildFocusRevision = -1,
+	tacticalModelRevision = -1,
+	tacticalFocusRevision = -1,
+	lastSyncSource = "none",
 	controllerStable = false,
 	pendingControllerState = false,
 	pendingSince = 0,
@@ -715,6 +737,8 @@ function ControllerCameraTestGetDefaultSettings()
 		buildFillAlpha = 0.45,
 		buildSelectedBorderScale = 1.3,
 		buildItemSpacing = 1.0,
+		showNativePanelWhileRadialOpen = true,
+		showNativeFocusStroke = true,
 	}
 end
 
@@ -894,6 +918,8 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.hideCompactStatusWhenRadialOpen = settings.hideCompactStatusWhenRadialOpen ~= false
 	settings.placementPopupEnabled = settings.placementPopupEnabled ~= false
 	settings.preferNativeBlueprint = settings.preferNativeBlueprint ~= false
+	settings.showNativePanelWhileRadialOpen = settings.showNativePanelWhileRadialOpen ~= false
+	settings.showNativeFocusStroke = settings.showNativeFocusStroke ~= false
 	if settings.nativeBarUIIntegration ~= "Legacy Controller UI" then
 		settings.nativeBarUIIntegration = "Native Experimental"
 	end
@@ -1301,6 +1327,9 @@ local function resetControllerInputDebug()
 	lastIssuedCommand = "none"
 	ControllerCameraTestBuildPlacement.active = false
 	ControllerCameraTestBuildPlacement.queueActive = false
+	ControllerCameraTestBuildPlacement.placementPattern = "single"
+	ControllerCameraTestBuildPlacement.patternPressActive = false
+	ControllerCameraTestBuildPlacement.patternHoldTriggered = false
 	ControllerCameraTestAreaSelect.pressActive = false
 	ControllerCameraTestAreaSelect.active = false
 	ControllerCameraTestTacticalMenu.open = false
@@ -2276,7 +2305,7 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "rotateBuildingRight", label = "Rotate Building Right", default = "dpadRight", group = "Placement" },
 		{ action = "spacingUp", label = "Increase Spacing", default = "dpadUp", group = "Placement" },
 		{ action = "spacingDown", label = "Decrease Spacing", default = "dpadDown", group = "Placement" },
-		{ action = "patternPrev", label = "Tap Pattern / Hold Grid", default = "LB", group = "Placement" },
+		{ action = "patternPrev", label = "Hold Grid (Momentary)", default = "LB", group = "Placement" },
 		{ action = "patternNext", label = "Placement Pattern Reserved", default = "none", group = "Placement" },
 		{ action = "tacticalSelect", label = "Tactical Select", default = "A", group = "Tactical" },
 		{ action = "tacticalCancel", label = "Tactical Cancel", default = "B", group = "Tactical" },
@@ -2524,6 +2553,8 @@ function ControllerCameraTestGetSettingsDefinitions()
 		disassembleToggleHoldSeconds = { 0.15, 1.50, 0.01, "number", 2 },
 		nativeBarUIIntegration = { 0, 0, 0, "enum", 0 },
 		controllerGlyphStyle = { 0, 0, 0, "enum", 0 },
+		showNativePanelWhileRadialOpen = { 0, 1, 1, "boolean", 0 },
+		showNativeFocusStroke = { 0, 1, 1, "boolean", 0 },
 		visibleSelectionFilter = { 0, 0, 0, "enum", 0 },
 		controlGroupAssignHoldSeconds = { 0.05, 2.5, 0.01, "number", 2 },
 		singlePathSpacing = { 16, 1024, 8, "number", 0 },
@@ -2580,8 +2611,32 @@ function ControllerCameraTestGetSetting(key)
 	return ControllerCameraTestSettings[key]
 end
 
+function ControllerCameraTestResetHybridRadials(reason)
+	ControllerCameraTestBuildMenu.open = false
+	ControllerCameraTestBuildMenu.nativeModel = nil
+	ControllerCameraTestTacticalMenu.open = false
+	ControllerCameraTestTacticalMenu.nativeModel = nil
+	ControllerCameraTestTacticalMenu.cacheValid = false
+	ControllerCameraTestTacticalMenu.stateSubradial = { open = false, parentStableKey = nil, selectedIndex = 1, states = {} }
+	local placement = ControllerCameraTestBuildPlacement
+	placement.active, placement.option, placement.nativePreviewActive = false, nil, false
+	placement.placementMode, placement.placementPattern = "none", "single"
+	placement.patternPressActive, placement.patternHoldTriggered = false, false
+	ControllerCameraTestNativeUI.buildFocus = nil
+	ControllerCameraTestNativeUI.tacticalFocus = nil
+	ControllerCameraTestNativeUI.buildModelRevision = -1
+	ControllerCameraTestNativeUI.tacticalModelRevision = -1
+	local buildApi, orderApi = WG and WG.buildmenu, WG and WG.ordermenu
+	for _, api in ipairs({ buildApi or false, orderApi or false }) do
+		if api and type(api.controllerSetRadialOpen) == "function" then pcall(api.controllerSetRadialOpen, false) end
+		if api and type(api.controllerSetFocus) == "function" then pcall(api.controllerSetFocus, nil, reason or "mode-switch") end
+	end
+	ControllerCameraTestClearDragPreviewCache()
+end
+
 function ControllerCameraTestSetSetting(key, value)
 	local current = ControllerCameraTestSettings[key]
+	local previousMode = ControllerCameraTestSettings.nativeBarUIIntegration
 	if type(current) == "boolean" then
 		if type(value) == "string" then
 			ControllerCameraTestSettings[key] = (value == "true" or value == "ON")
@@ -2609,6 +2664,16 @@ function ControllerCameraTestSetSetting(key, value)
 		ControllerCameraTestAreaSelect.radius = ControllerCameraTestSettings.areaSelectRadius
 	end
 	ControllerCameraTestApplySettingsDefaults()
+	if key == "nativeBarUIIntegration" and previousMode ~= ControllerCameraTestSettings.nativeBarUIIntegration then
+		ControllerCameraTestResetHybridRadials("integration-mode-switch")
+	elseif key == "showNativeFocusStroke" then
+		local buildApi, orderApi = WG and WG.buildmenu, WG and WG.ordermenu
+		for _, api in ipairs({ buildApi or false, orderApi or false }) do
+			if api and type(api.controllerSetFocusVisible) == "function" then
+				pcall(api.controllerSetFocusVisible, ControllerCameraTestSettings.showNativeFocusStroke)
+			end
+		end
+	end
 	return ControllerCameraTestSettings[key]
 end
 
@@ -2802,6 +2867,8 @@ function ControllerCameraTestGetSettingsUICategories()
 		} },
 		{ key = "Radials", items = {
 			{ key = "radialScale", label = "Radial scale", step = 0.05, decimals = 2 },
+			{ key = "showNativePanelWhileRadialOpen", label = "Show Native Panel While Radial Is Open", type = "bool" },
+			{ key = "showNativeFocusStroke", label = "Show Native Focus Stroke", type = "bool" },
 			{ key = "compactSelectedStatus", label = "Compact status panel", type = "bool" },
 			{ key = "hideCompactStatusWhenRadialOpen", label = "Hide status with radial", type = "bool" },
 			-- TEMP BUILD RADIAL TUNING: remove after visual values are finalized.
@@ -8754,6 +8821,77 @@ end
 --------------------------------------------------------------------------------
 -- SECTION: Tactical radial
 --------------------------------------------------------------------------------
+function ControllerCameraTestRebuildNativeTacticalModel(reason)
+	local menu = ControllerCameraTestTacticalMenu
+	local api = WG and WG.ordermenu
+	if not (ControllerCameraTestNativeRadialAdapter and api
+			and type(api.controllerGetCommands) == "function") then
+		menu.cachedCommands, menu.categoryCommands, menu.optionCount = {}, { utility = {}, tactical = {} }, 0
+		return menu.cachedCommands
+	end
+	local ok, commands, revision = pcall(api.controllerGetCommands)
+	if not ok or type(commands) ~= "table" then
+		menu.cachedCommands, menu.categoryCommands, menu.optionCount = {}, { utility = {}, tactical = {} }, 0
+		return menu.cachedCommands
+	end
+	local model = ControllerCameraTestNativeRadialAdapter:BuildTacticalModel(commands, {
+		previousStableKey = menu.selectedStableKey,
+		previousCategory = menu.categoryKey,
+		revision = revision,
+	})
+	menu.nativeModel = model
+	menu.allCachedCommands = model.items
+	menu.categoryCommands = model.byCategory
+	menu.categoryKey = model.category
+	menu.categoryDirection = model.category == "utility" and "up" or "down"
+	menu.selectedIndex = model.selectedIndex
+	menu.selectedStableKey = model.selectedStableKey
+	menu.cacheValid = true
+	menu.cacheLastRefreshTime = debugEventTime
+	menu.lastRebuildReason = tostring(reason or "native revision")
+	menu.optionsRebuildCount = (menu.optionsRebuildCount or 0) + 1
+	ControllerCameraTestNativeUI.tacticalModelRevision = tonumber(revision) or 0
+	ControllerCameraTestRefreshTacticalCategoryCommands()
+	return menu.cachedCommands
+end
+
+function ControllerCameraTestSetNativeTacticalFocus(option, source)
+	if not (ControllerCameraTestUsesNativeBARUI() and type(option) == "table") then return false end
+	local api = WG and WG.ordermenu
+	if not (api and type(api.controllerSetFocus) == "function") then return false end
+	local ok, focused = pcall(api.controllerSetFocus, option.stableKey or option.cmdID, source or "radial")
+	if ok then
+		ControllerCameraTestNativeUI.tacticalFocus = option.stableKey
+		ControllerCameraTestNativeUI.lastSyncSource = source or "radial"
+		return focused ~= nil
+	end
+	return false
+end
+
+function ControllerCameraTestSyncNativeTacticalFocus()
+	local menu, api = ControllerCameraTestTacticalMenu, WG and WG.ordermenu
+	if not (ControllerCameraTestUsesNativeBARUI() and menu.open and api
+			and type(api.controllerGetFocus) == "function") then return end
+	local ok, focus = pcall(api.controllerGetFocus)
+	if not ok or type(focus) ~= "table" then return end
+	if tonumber(focus.modelRevision) ~= ControllerCameraTestNativeUI.tacticalModelRevision then
+		ControllerCameraTestRebuildNativeTacticalModel("vanilla descriptor revision")
+	end
+	if focus.revision == ControllerCameraTestNativeUI.tacticalFocusRevision then return end
+	ControllerCameraTestNativeUI.tacticalFocusRevision = focus.revision
+	if not focus.stableKey or not menu.nativeModel then return end
+	local option, index, category = ControllerNativeRadialAdapter.FindTactical(menu.nativeModel, focus.stableKey)
+	if option and (menu.selectedStableKey ~= focus.stableKey or menu.categoryKey ~= category) then
+		menu.categoryKey = category
+		menu.categoryDirection = category == "utility" and "up" or "down"
+		menu.selectedIndex = index
+		menu.selectedStableKey = focus.stableKey
+		ControllerCameraTestNativeUI.tacticalFocus = focus.stableKey
+		ControllerCameraTestNativeUI.lastSyncSource = focus.source or "vanilla"
+		ControllerCameraTestRefreshTacticalCategoryCommands()
+	end
+end
+
 function ControllerCameraTestBuildTacticalSelectionKey(selectedUnits, isFactory)
 	local count = type(selectedUnits) == "table" and #selectedUnits or 0
 	local first = count > 0 and selectedUnits[1] or "none"
@@ -8799,6 +8937,9 @@ end
 
 function ControllerCameraTestRebuildTacticalCommandCache(reason)
 	local menu = ControllerCameraTestTacticalMenu
+	if ControllerCameraTestUsesNativeBARUI() then
+		return ControllerCameraTestRebuildNativeTacticalModel(reason)
+	end
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	local isFactory = ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits)
 	local selectionKey = ControllerCameraTestBuildTacticalSelectionKey(selectedUnits, isFactory)
@@ -8921,41 +9062,37 @@ function ControllerCameraTestSetTacticalHighlight(index, reason)
 		return
 	end
 	menu.selectedIndex = ((index - 1) % #commands) + 1
+	local option = commands[menu.selectedIndex]
+	menu.selectedStableKey = option and option.stableKey or menu.selectedStableKey
 	menu.lastAction = reason or "highlight changed"
 	ControllerCameraTestRefreshTacticalDebug(commands)
+	ControllerCameraTestSetNativeTacticalFocus(option, reason or "radial")
 end
 
 function ControllerCameraTestToggleTacticalMenu()
 	local menu = ControllerCameraTestTacticalMenu
-	if ControllerCameraTestUsesNativeBARUI() then
-		menu.open = not menu.open
-		local commands = {}
-		if menu.open and WG.ordermenu and type(WG.ordermenu.controllerGetCommands) == "function" then
-			local ok, result = pcall(WG.ordermenu.controllerGetCommands)
-			if ok and type(result) == "table" then commands = result end
-		end
-		if menu.open and #commands == 0 then menu.open = false end
-		ControllerCameraTestNativeUI.tacticalFocus = math.max(1,
-			math.min(#commands, ControllerCameraTestNativeUI.tacticalFocus or 1))
-		local focused = commands[ControllerCameraTestNativeUI.tacticalFocus]
-		if WG.ordermenu and type(WG.ordermenu.controllerSetFocus) == "function" then
-			pcall(WG.ordermenu.controllerSetFocus, menu.open and focused and focused.id or nil)
-		end
-		menu.cachedCommands = commands
-		menu.selectedIndex = ControllerCameraTestNativeUI.tacticalFocus
-		menu.highlightedName = focused and (focused.name or focused.action) or "none"
-		menu.lastAction = menu.open and "native order panel opened" or "native order panel closed"
-		latchSelectionDebugMessage(menu.lastAction)
-		return menu.open
-	end
 	menu.open = not menu.open
+	menu.stateSubradial = { open = false, parentStableKey = nil, selectedIndex = 1, states = {} }
 	if menu.open then
 		ControllerCameraTestMemoryDebug.tacticalOpenCount = (ControllerCameraTestMemoryDebug.tacticalOpenCount or 0) + 1
 		menu.categoryKey = menu.categoryKey or "tactical"
 		menu.categoryDirection = menu.categoryDirection or "down"
 		ControllerCameraTestGetTacticalCommands(true, "menu opened")
+		if #menu.cachedCommands == 0 then menu.open = false end
+		if menu.open and ControllerCameraTestUsesNativeBARUI() and WG.ordermenu then
+			if type(WG.ordermenu.controllerSetRadialOpen) == "function" then
+				pcall(WG.ordermenu.controllerSetRadialOpen, true, ControllerCameraTestSettings.showNativeFocusStroke)
+			end
+			ControllerCameraTestSetNativeTacticalFocus(menu.cachedCommands[menu.selectedIndex], "radial-open")
+		end
 	else
 		menu.cacheValid = false
+		if ControllerCameraTestUsesNativeBARUI() and WG.ordermenu then
+			if type(WG.ordermenu.controllerSetRadialOpen) == "function" then
+				pcall(WG.ordermenu.controllerSetRadialOpen, false, ControllerCameraTestSettings.showNativeFocusStroke)
+			end
+			if type(WG.ordermenu.controllerSetFocus) == "function" then pcall(WG.ordermenu.controllerSetFocus, nil, "radial-close") end
+		end
 	end
 	menu.lastAction = menu.open and "opened" or "closed"
 	ControllerCameraTestRefreshTacticalDebug()
@@ -8974,6 +9111,9 @@ function ControllerCameraTestSelectTacticalCategory(direction, reason)
 	menu.categoryDirection = category.direction
 	menu.selectedIndex = 1
 	ControllerCameraTestRefreshTacticalCategoryCommands()
+	local option = menu.cachedCommands[menu.selectedIndex]
+	menu.selectedStableKey = option and option.stableKey or nil
+	ControllerCameraTestSetNativeTacticalFocus(option, reason or "radial-category")
 	menu.lastAction = tostring(reason or "category") .. ": " .. category.label
 	latchSelectionDebugMessage("Tactical: " .. category.label)
 	return true
@@ -8998,7 +9138,9 @@ function ControllerCameraTestUpdateTacticalStickSelection()
 	end
 
 	ControllerCameraTestMaybeRefreshTacticalCommandCache()
-	local commands = ControllerCameraTestGetTacticalCommands(false, "stick")
+	local subradial = menu.stateSubradial
+	local commands = subradial and subradial.open and subradial.states
+		or ControllerCameraTestGetTacticalCommands(false, "stick")
 	local count = #commands
 	if count <= 0 then
 		ControllerCameraTestRefreshTacticalDebug()
@@ -9025,7 +9167,12 @@ function ControllerCameraTestUpdateTacticalStickSelection()
 	end
 
 	local newIndex = math.floor(adjustedAngle / segment) + 1
-	if newIndex ~= menu.selectedIndex then
+	if subradial and subradial.open then
+		if newIndex ~= subradial.selectedIndex then
+			subradial.selectedIndex = newIndex
+			menu.lastAction = "state stick select"
+		end
+	elseif newIndex ~= menu.selectedIndex then
 		ControllerCameraTestSetTacticalHighlight(newIndex, "stick select")
 	end
 end
@@ -9200,10 +9347,87 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 	return true
 end
 
+function ControllerCameraTestOpenNativeStateSubradial(option)
+	if type(option) ~= "table" or type(option.states) ~= "table" or #option.states < 3 then return false end
+	local menu = ControllerCameraTestTacticalMenu
+	menu.stateSubradial = {
+		open = true,
+		parentStableKey = option.stableKey,
+		parentCmdID = option.cmdID,
+		parentLabel = option.shortLabel or option.name or "State",
+		selectedIndex = math.max(1, math.min(#option.states, (tonumber(option.currentStateIndex) or 0) + 1)),
+		states = option.states,
+	}
+	menu.lastAction = "state sub-radial opened"
+	ControllerCameraTestSetNativeTacticalFocus(option, "state-subradial")
+	return true
+end
+
+function ControllerCameraTestActivateNativeState(option, desiredState)
+	local api = WG and WG.ordermenu
+	if not (type(option) == "table" and api and type(api.controllerActivateState) == "function") then return false end
+	local ok, activated = pcall(api.controllerActivateState, option.cmdID, desiredState)
+	if ok and activated then
+		ControllerCameraTestTacticalMenu.lastResult = tostring(option.name or "State") .. " changed by vanilla descriptor"
+		ControllerCameraTestRebuildNativeTacticalModel("state activated")
+		return true
+	end
+	ControllerCameraTestTacticalMenu.lastResult = tostring(option.name or "State") .. " unavailable"
+	return false
+end
+
+function ControllerCameraTestHandleNativeStateSubradialInput()
+	local menu, subradial = ControllerCameraTestTacticalMenu, ControllerCameraTestTacticalMenu.stateSubradial
+	if not (subradial and subradial.open) then return false end
+	ControllerCameraTestUpdateTacticalStickSelection()
+	if ControllerCameraTestActionPressed("tacticalCancel") or ControllerCameraTestActionPressed("tacticalClose") then
+		subradial.open = false
+		menu.lastAction = "returned to tactical radial"
+		return true
+	end
+	if ControllerCameraTestActionPressed("tacticalSelect") then
+		local option = menu.nativeModel and ControllerNativeRadialAdapter.FindByStableKey(menu.nativeModel, subradial.parentStableKey)
+		if option then
+			ControllerCameraTestActivateNativeState(option, (subradial.selectedIndex or 1) - 1)
+		end
+		subradial.open = false
+		return true
+	end
+	return true
+end
+
 function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 	if type(option) ~= "table" then
 		ControllerCameraTestTacticalMenu.lastResult = "no tactical option"
 		return false
+	end
+	if ControllerCameraTestUsesNativeBARUI() then
+		if option.disabled then
+			ControllerCameraTestTacticalMenu.lastResult = tostring(option.name) .. " disabled by vanilla"
+			return false
+		end
+		if option.isState and stageTargeted then
+			if option.isBinaryState then
+				local desired = (tonumber(option.currentStateIndex) or 0) == 0 and 1 or 0
+				return ControllerCameraTestActivateNativeState(option, desired)
+			elseif ControllerCameraTestOpenNativeStateSubradial(option) then
+				return true
+			end
+		end
+		local api = WG and WG.ordermenu
+		local ok, activated = false, false
+		if api and type(api.controllerActivate) == "function" then
+			ok, activated = pcall(api.controllerActivate, option.cmdID, 1)
+		end
+		ControllerCameraTestTacticalMenu.lastResult = ok and activated
+			and "activated vanilla descriptor" or "vanilla descriptor unavailable"
+		if ok and activated and not option.isState then
+			ControllerCameraTestTacticalMenu.open = false
+			if api and type(api.controllerSetRadialOpen) == "function" then pcall(api.controllerSetRadialOpen, false) end
+		elseif ok and activated then
+			ControllerCameraTestRebuildNativeTacticalModel("state cycled")
+		end
+		return ok and activated
 	end
 	if stageTargeted and ControllerCameraTestTacticalCommandNeedsTarget(option) then
 		return ControllerCameraTestStageTacticalCommand(option)
@@ -9388,50 +9612,7 @@ function ControllerCameraTestHandleTacticalMenuInput()
 	if not menu.open then
 		return false
 	end
-	if ControllerCameraTestUsesNativeBARUI() then
-		local commands = {}
-		if WG.ordermenu and type(WG.ordermenu.controllerGetCommands) == "function" then
-			local ok, result = pcall(WG.ordermenu.controllerGetCommands)
-			if ok and type(result) == "table" then commands = result end
-		end
-		if #commands == 0 then
-			menu.open = false
-			return true
-		end
-		local focus = math.max(1, math.min(#commands, ControllerCameraTestNativeUI.tacticalFocus or 1))
-		if ControllerCameraTestActionPressed("tacticalCancel") or ControllerCameraTestActionPressed("tacticalClose") then
-			menu.open = false
-			if WG.ordermenu and type(WG.ordermenu.controllerSetFocus) == "function" then
-				pcall(WG.ordermenu.controllerSetFocus, nil)
-			end
-			return true
-		elseif WasButtonPressed("dpadUp") or WasButtonPressed("dpadLeft") then
-			focus = ((focus - 2) % #commands) + 1
-		elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadRight") then
-			focus = (focus % #commands) + 1
-		elseif ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("radialQuick") then
-			local direction = ControllerCameraTestActionPressed("radialQuick") and -1 or 1
-			local focused = commands[focus]
-			local ok, activated = false, false
-			if focused and WG.ordermenu and type(WG.ordermenu.controllerActivate) == "function" then
-				ok, activated = pcall(WG.ordermenu.controllerActivate, focused.id, direction)
-			end
-			menu.lastResult = ok and activated and "native command activated" or "native command unavailable"
-			menu.open = false
-			if WG.ordermenu and type(WG.ordermenu.controllerSetFocus) == "function" then
-				pcall(WG.ordermenu.controllerSetFocus, nil)
-			end
-			return true
-		end
-		ControllerCameraTestNativeUI.tacticalFocus = focus
-		menu.selectedIndex = focus
-		menu.cachedCommands = commands
-		menu.highlightedName = commands[focus] and (commands[focus].name or commands[focus].action) or "none"
-		if WG.ordermenu and type(WG.ordermenu.controllerSetFocus) == "function" then
-			pcall(WG.ordermenu.controllerSetFocus, commands[focus] and commands[focus].id or nil)
-		end
-		return true
-	end
+	if ControllerCameraTestUsesNativeBARUI() and ControllerCameraTestHandleNativeStateSubradialInput() then return true end
 
 	ControllerCameraTestMaybeRefreshTacticalCommandCache()
 	ControllerCameraTestUpdateTacticalStickSelection()
@@ -9441,6 +9622,10 @@ function ControllerCameraTestHandleTacticalMenuInput()
 		menu.open = false
 		menu.cacheValid = false
 		menu.lastAction = "cancelled"
+		if ControllerCameraTestUsesNativeBARUI() and WG.ordermenu then
+			if type(WG.ordermenu.controllerSetRadialOpen) == "function" then pcall(WG.ordermenu.controllerSetRadialOpen, false) end
+			if type(WG.ordermenu.controllerSetFocus) == "function" then pcall(WG.ordermenu.controllerSetFocus, nil, "radial-cancel") end
+		end
 		latchSelectionDebugMessage("Tactical menu cancelled")
 		changed = true
 	elseif WasButtonPressed("dpadUp") then
@@ -9639,12 +9824,103 @@ function ControllerCameraTestClassifyBuildOption(unitDef, name)
 	return "Utility"
 end
 
+function ControllerCameraTestRebuildNativeBuildModel(reason)
+	local menu, api = ControllerCameraTestBuildMenu, WG and WG.buildmenu
+	if not (ControllerCameraTestNativeRadialAdapter and api and type(api.controllerGetItems) == "function") then
+		menu.options, menu.optionCount = {}, 0
+		return 0
+	end
+	local ok, items, currentPage, nativePages, nativeCols, nativeRows, revision = pcall(api.controllerGetItems)
+	if not ok or type(items) ~= "table" then
+		menu.options, menu.optionCount = {}, 0
+		return 0
+	end
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	local isFactory = ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits)
+	local model = ControllerCameraTestNativeRadialAdapter:BuildBuildModel(items, {
+		isFactory = isFactory,
+		previousStableKey = menu.selectedStableKey,
+		revision = revision,
+		classify = function(item)
+			local unitDef = item.unitDefID and UnitDefs and UnitDefs[item.unitDefID]
+			return ControllerCameraTestClassifyBuildOption(unitDef, item.name)
+		end,
+	})
+	menu.nativeModel = model
+	menu.options = model.items
+	menu.optionCount = #model.items
+	menu.isFactoryContext = isFactory
+	menu.radialCategories = model.categories
+	menu.selectedIndex = model.selectedIndex
+	menu.selectedStableKey = model.selectedStableKey
+	for index, option in ipairs(menu.options) do option.menuIndex = index end
+	local selected = menu.options[menu.selectedIndex]
+	if selected then
+		menu.radialCategoryName = selected.category
+		for index, category in ipairs(menu.radialCategories) do
+			if category == selected.category then menu.radialCategoryIndex = index; break end
+		end
+		menu.radialPage = selected.radialPage or 1
+	end
+	menu.nativePage = currentPage
+	menu.nativePages = nativePages
+	menu.nativeCols = nativeCols
+	menu.nativeRows = nativeRows
+	menu.lastRebuildReason = tostring(reason or "native revision")
+	ControllerCameraTestNativeUI.buildModelRevision = tonumber(revision) or 0
+	ControllerCameraTestRefreshRadialVisibleOptions()
+	return #menu.options
+end
+
+function ControllerCameraTestSetNativeBuildFocus(option, source)
+	if not (ControllerCameraTestUsesNativeBARUI() and type(option) == "table") then return false end
+	local api = WG and WG.buildmenu
+	if not (api and type(api.controllerSetFocus) == "function") then return false end
+	local ok, focused = pcall(api.controllerSetFocus, option.stableKey or option.unitDefID, source or "radial")
+	if ok then
+		ControllerCameraTestNativeUI.buildFocus = option.stableKey
+		ControllerCameraTestNativeUI.lastSyncSource = source or "radial"
+		return focused ~= nil
+	end
+	return false
+end
+
+function ControllerCameraTestSyncNativeBuildFocus()
+	local menu, api = ControllerCameraTestBuildMenu, WG and WG.buildmenu
+	if not (ControllerCameraTestUsesNativeBARUI() and menu.open and api
+			and type(api.controllerGetFocus) == "function") then return end
+	local ok, focus = pcall(api.controllerGetFocus)
+	if not ok or type(focus) ~= "table" then return end
+	if tonumber(focus.modelRevision) ~= ControllerCameraTestNativeUI.buildModelRevision then
+		ControllerCameraTestRebuildNativeBuildModel("vanilla cell revision")
+	end
+	if focus.revision == ControllerCameraTestNativeUI.buildFocusRevision then return end
+	ControllerCameraTestNativeUI.buildFocusRevision = focus.revision
+	if not focus.stableKey or not menu.nativeModel then return end
+	local option, index = ControllerNativeRadialAdapter.FindByStableKey(menu.nativeModel, focus.stableKey)
+	if option and menu.selectedStableKey ~= focus.stableKey then
+		menu.selectedIndex = index
+		menu.selectedStableKey = focus.stableKey
+		menu.radialCategoryName = option.category
+		menu.radialPage = option.radialPage or 1
+		for categoryIndex, category in ipairs(menu.radialCategories or {}) do
+			if category == option.category then menu.radialCategoryIndex = categoryIndex; break end
+		end
+		ControllerCameraTestNativeUI.buildFocus = focus.stableKey
+		ControllerCameraTestNativeUI.lastSyncSource = focus.source or "vanilla"
+		ControllerCameraTestRefreshRadialVisibleOptions()
+	end
+end
+
 function ControllerCameraTestGatherBuildOptions()
 	local menu = ControllerCameraTestBuildMenu
 	menu.options = {}
 	menu.optionCount = 0
 	menu.highlightedName = "none"
 	menu.highlightedCmdID = "none"
+	if ControllerCameraTestUsesNativeBARUI() then
+		return ControllerCameraTestRebuildNativeBuildModel("gather")
+	end
 
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	if #selectedUnits == 0 then
@@ -9739,6 +10015,37 @@ function ControllerCameraTestRefreshRadialVisibleOptions()
 	menu.radialVisibleOptions = {}
 
 	local filterCat = menu.radialCategoryName or (menu.radialCategories and menu.radialCategories[1]) or "Build"
+	if ControllerCameraTestUsesNativeBARUI() and menu.nativeModel then
+		local maxPage = 1
+		for index, option in ipairs(menu.options or {}) do
+			option.menuIndex = index
+			if option.category == filterCat then maxPage = math.max(maxPage, option.radialPage or 1) end
+		end
+		menu.radialPageCount = maxPage
+		menu.radialPage = math.max(1, math.min(maxPage, menu.radialPage or 1))
+		for _, option in ipairs(menu.options or {}) do
+			if option.category == filterCat and (option.radialPage or 1) == menu.radialPage then
+				menu.radialVisibleOptions[#menu.radialVisibleOptions + 1] = option
+			end
+		end
+		table.sort(menu.radialVisibleOptions, function(a, b)
+			return (a.radialSlot or 1) < (b.radialSlot or 1)
+		end)
+		local selectedVisible = false
+		for _, option in ipairs(menu.radialVisibleOptions) do
+			if option.stableKey == menu.selectedStableKey then
+				menu.selectedIndex, selectedVisible = option.menuIndex, true
+				break
+			end
+		end
+		if not selectedVisible and menu.radialVisibleOptions[1] then
+			local option = menu.radialVisibleOptions[1]
+			menu.selectedIndex, menu.selectedStableKey = option.menuIndex, option.stableKey
+		end
+		ControllerCameraTestRefreshBuildMenuDebug()
+		ControllerCameraTestInvalidateAffordabilityCache()
+		return
+	end
 	local filtered = {}
 	for i, option in ipairs(menu.options) do
 		if option.category == filterCat then
@@ -9967,9 +10274,11 @@ function ControllerCameraTestSetRadialHighlight(localIndex, reason)
 	local option = menu.radialVisibleOptions[localIndex]
 	if option and option.menuIndex then
 		menu.selectedIndex = option.menuIndex
+		menu.selectedStableKey = option.stableKey or menu.selectedStableKey
 		menu.lastAction = reason or "radial highlight changed"
 		menu.radialLastAction = reason or "radial highlight changed"
 		ControllerCameraTestRefreshBuildMenuDebug()
+		ControllerCameraTestSetNativeBuildFocus(option, reason or "radial")
 	end
 end
 
@@ -9999,7 +10308,8 @@ function ControllerCameraTestUpdateRadialStickSelection()
 		end
 		menu.radialLastAngle = angle
 
-		local segment = 2 * math.pi / visibleCount
+		local slotCount = ControllerCameraTestUsesNativeBARUI() and 8 or visibleCount
+		local segment = 2 * math.pi / slotCount
 		local adjustedAngle = angle + (segment / 2)
 		if adjustedAngle >= 2 * math.pi then
 			adjustedAngle = adjustedAngle - 2 * math.pi
@@ -10007,11 +10317,19 @@ function ControllerCameraTestUpdateRadialStickSelection()
 
 		local newIndex = math.floor(adjustedAngle / segment) + 1
 		local option = visibleOptions[newIndex]
+		if ControllerCameraTestUsesNativeBARUI() then
+			option = nil
+			for _, candidate in ipairs(visibleOptions) do
+				if (candidate.radialSlot or 1) == newIndex then option = candidate; break end
+			end
+		end
 		if option and option.menuIndex and menu.selectedIndex ~= option.menuIndex then
 			menu.selectedIndex = option.menuIndex
+			menu.selectedStableKey = option.stableKey or menu.selectedStableKey
 			menu.lastAction = "stick select"
 			menu.radialLastAction = "stick select"
 			ControllerCameraTestRefreshBuildMenuDebug()
+			ControllerCameraTestSetNativeBuildFocus(option, "radial-stick")
 		end
 	end
 end
@@ -10021,29 +10339,6 @@ end
 --------------------------------------------------------------------------------
 function ControllerCameraTestOpenBuildMenu()
 	local menu = ControllerCameraTestBuildMenu
-	if ControllerCameraTestUsesNativeBARUI() then
-		local items = {}
-		if WG.buildmenu and type(WG.buildmenu.controllerGetItems) == "function" then
-			local ok, result = pcall(WG.buildmenu.controllerGetItems)
-			if ok and type(result) == "table" then items = result end
-		end
-		if #items == 0 then
-			menu.open, menu.lastAction = false, "native build menu has no options"
-			latchSelectionDebugMessage(menu.lastAction)
-			return false
-		end
-		menu.open, menu.lastAction, menu.optionCount = true, "native build menu opened", #items
-		ControllerCameraTestNativeUI.buildFocus = items[1].unitDefID
-		if WG.buildmenu and type(WG.buildmenu.controllerSetInputActive) == "function" then
-			pcall(WG.buildmenu.controllerSetInputActive, true)
-		end
-		if WG.buildmenu and type(WG.buildmenu.controllerSetFocus) == "function" then
-			pcall(WG.buildmenu.controllerSetFocus, ControllerCameraTestNativeUI.buildFocus)
-		end
-		activeButtonLayoutSummary = "Native Build Menu: D-pad navigate | A activate | X dequeue | B/Y close"
-		latchSelectionDebugMessage(menu.lastAction .. ": " .. tostring(#items) .. " options")
-		return true
-	end
 	local count = ControllerCameraTestGatherBuildOptions()
 	if count <= 0 then
 		menu.open = false
@@ -10055,9 +10350,18 @@ function ControllerCameraTestOpenBuildMenu()
 	end
 
 	menu.open = true
-	menu.radialCategoryIndex = 1
-	menu.radialCategoryName = menu.radialCategories[1] or "Build"
-	menu.radialPage = 1
+	if ControllerCameraTestUsesNativeBARUI() and menu.options[menu.selectedIndex] then
+		local selected = menu.options[menu.selectedIndex]
+		menu.radialCategoryName = selected.category
+		menu.radialPage = selected.radialPage or 1
+		for index, category in ipairs(menu.radialCategories or {}) do
+			if category == selected.category then menu.radialCategoryIndex = index; break end
+		end
+	else
+		menu.radialCategoryIndex = 1
+		menu.radialCategoryName = menu.radialCategories[1] or "Build"
+		menu.radialPage = 1
+	end
 	menu.radialStickArmed = true
 	menu.radialLastAngle = 0
 	menu.radialLastAction = "none"
@@ -10072,18 +10376,34 @@ function ControllerCameraTestOpenBuildMenu()
 	activeButtonLayoutSummary = "Build radial: LS/D-pad select | LB/RB page/category | A place | X quick-place | B/Y close"
 	latchSelectionDebugMessage("Y build menu opened: " .. tostring(count) .. " options")
 	ControllerCameraTestRefreshBuildMenuDebug()
+	if ControllerCameraTestUsesNativeBARUI() and WG.buildmenu then
+		if type(WG.buildmenu.controllerSetInputActive) == "function" then
+			pcall(WG.buildmenu.controllerSetInputActive, true)
+		end
+		if type(WG.buildmenu.controllerSetRadialOpen) == "function" then
+			pcall(WG.buildmenu.controllerSetRadialOpen, true, ControllerCameraTestSettings.showNativeFocusStroke)
+		end
+		ControllerCameraTestSetNativeBuildFocus(ControllerCameraTestGetRadialCurrentOption(), "radial-open")
+	end
+	return true
 end
 
 function ControllerCameraTestCloseBuildMenu(reason)
 	local menu = ControllerCameraTestBuildMenu
 	menu.open = false
 	if ControllerCameraTestUsesNativeBARUI() and WG.buildmenu then
+		if type(WG.buildmenu.controllerSetRadialOpen) == "function" then
+			pcall(WG.buildmenu.controllerSetRadialOpen, false, ControllerCameraTestSettings.showNativeFocusStroke)
+		end
 		if type(WG.buildmenu.controllerSetFocus) == "function" then pcall(WG.buildmenu.controllerSetFocus, nil) end
 		if type(WG.buildmenu.controllerSetInputActive) == "function" then
 			pcall(WG.buildmenu.controllerSetInputActive, ControllerCameraTestNativeUI.controllerStable)
 		end
 		ControllerCameraTestNativeUI.buildFocus = nil
 	end
+	ControllerCameraTestBuildPlacement.placementPattern = "single"
+	ControllerCameraTestBuildPlacement.patternPressActive = false
+	ControllerCameraTestBuildPlacement.patternHoldTriggered = false
 	menu.lastAction = reason or "closed"
 	activeButtonLayoutSummary = commandLayerActive
 		and XboxController.commandLayoutSummary
@@ -10283,6 +10603,7 @@ function ControllerCameraTestSetPlacementOption(option)
 	placement.patternPressActive = false
 	placement.patternPressStartTime = 0
 	placement.patternHoldTriggered = false
+	placement.placementPattern = "single"
 	latchSelectionDebugMessage("Placement: " .. tostring(option.name))
 	return true
 end
@@ -10305,6 +10626,7 @@ function ControllerCameraTestCancelPlacement(reason)
 	placement.patternPressActive = false
 	placement.patternPressStartTime = 0
 	placement.patternHoldTriggered = false
+	placement.placementPattern = "single"
 	placement.slowPanActive = false  -- reset pan speed on exit
 	latchSelectionDebugMessage("Placement cancelled")
 	ControllerCameraTestClearDragPreviewCache()
@@ -10417,17 +10739,17 @@ function ControllerCameraTestHandlePlacementPatternInput()
 		if not placement.patternPressActive then
 			placement.patternPressActive = true
 			placement.patternPressStartTime = debugEventTime
-			placement.patternHoldTriggered = false
-		elseif not placement.patternHoldTriggered
-			and (debugEventTime - (placement.patternPressStartTime or debugEventTime)) >= (placement.patternHoldSeconds or 0.25) then
-			changed = ControllerCameraTestTryConstructionShortcut("pattern", "grid") or changed
 			placement.patternHoldTriggered = true
+			changed = ControllerCameraTestTryConstructionShortcut("pattern", "grid") or changed
 		end
 	elseif placement.patternPressActive then
-		if not placement.patternHoldTriggered then
-			changed = ControllerCameraTestTryConstructionShortcut("pattern", "cycle") or changed
+		if placement.placementPattern ~= "single" then
+			placement.placementPattern = "single"
+			placement.lastConstructionShortcut = "pattern single (LB released)"
+			placement.gridShortcutResult = "single restored"
+			ControllerCameraTestShowPlacementPatternPopup("single", "pattern")
+			changed = true
 		end
-
 		placement.patternPressActive = false
 		placement.patternPressStartTime = 0
 		placement.patternHoldTriggered = false
@@ -10545,6 +10867,8 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 					ControllerCameraTestBuildPlacement.nativePreviewActive = false
 				end
 				ControllerCameraTestBuildPlacement.active = false
+				ControllerCameraTestBuildPlacement.placementPattern = "single"
+				ControllerCameraTestBuildPlacement.patternPressActive = false
 				ControllerCameraTestBuildPlacement.placementMode = "none"
 				ControllerCameraTestBuildPlacement.cmdDescIndex = nil
 				ControllerCameraTestBuildPlacement.nativeSetActiveCommandResult = "none"
@@ -10583,6 +10907,8 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 				ControllerCameraTestBuildPlacement.nativePreviewActive = false
 			end
 			ControllerCameraTestBuildPlacement.active = false
+			ControllerCameraTestBuildPlacement.placementPattern = "single"
+			ControllerCameraTestBuildPlacement.patternPressActive = false
 			ControllerCameraTestBuildPlacement.placementMode = "none"
 			ControllerCameraTestBuildPlacement.cmdDescIndex = nil
 			ControllerCameraTestBuildPlacement.nativeSetActiveCommandResult = "none"
@@ -10667,6 +10993,8 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 				ControllerCameraTestBuildPlacement.nativePreviewActive = false
 			end
 			ControllerCameraTestBuildPlacement.active = false
+			ControllerCameraTestBuildPlacement.placementPattern = "single"
+			ControllerCameraTestBuildPlacement.patternPressActive = false
 			ControllerCameraTestBuildPlacement.placementMode = "none"
 			ControllerCameraTestBuildPlacement.cmdDescIndex = nil
 			ControllerCameraTestBuildPlacement.nativeSetActiveCommandResult = "none"
@@ -10755,6 +11083,14 @@ function ControllerCameraTestEnterPlacementFromHighlight()
 		placement.placementMode = "factory-queue"
 		ControllerCameraTestPlaceBuildOption(option, true, "factory queued from menu")
 		return
+	end
+	if ControllerCameraTestUsesNativeBARUI() and WG.buildmenu
+			and type(WG.buildmenu.controllerActivate) == "function" then
+		local ok, activated = pcall(WG.buildmenu.controllerActivate, option.stableKey or option.unitDefID, 1)
+		if not ok or not activated then
+			menu.lastAction = "placement failed: vanilla cell unavailable"
+			return false
+		end
 	end
 
 	-- Try native placement first for buildings/structures (non-mobile units)
@@ -10922,7 +11258,7 @@ function ControllerCameraTestHandlePlacementInput(dt)
 				ControllerCameraTestCancelPlacement("cancelled by " .. radialCloseBtn)
 			end
 		elseif ControllerCameraTestHandlePlacementPatternInput() then
-			-- Pattern helper handles LB tap-to-cycle and hold-to-grid.
+			-- LB is a momentary Grid modifier; release always restores Single.
 		elseif ControllerCameraTestActionPressed("spacingUp") then
 			ControllerCameraTestTryConstructionShortcut("spacing", "inc")
 		elseif ControllerCameraTestActionPressed("spacingDown") then
@@ -10931,9 +11267,9 @@ function ControllerCameraTestHandlePlacementInput(dt)
 	end
 
 	if drag.active then
-		activeButtonLayoutSummary = "Drag Build: A/X confirm, B cancel, Back slow/full pan, RS X camera, D-pad L/R facing, U/D spacing, LB tap pattern/hold grid"
+		activeButtonLayoutSummary = "Drag Build: A/X confirm, B cancel, D-pad L/R facing, U/D spacing, hold LB Grid"
 	else
-		activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, Back slow/full pan, RS X camera, D-pad L/R facing, U/D spacing, LB tap pattern/hold grid"
+		activeButtonLayoutSummary = "Placement: A place+exit, X place again, B cancel, D-pad L/R facing, U/D spacing, hold LB Grid"
 	end
 	return true
 end
@@ -10947,38 +11283,10 @@ function ControllerCameraTestHandleBuildMenuInput()
 	if ControllerCameraTestBuildPlacement.active then
 		return false
 	end
-	if ControllerCameraTestUsesNativeBARUI() then
-		if ControllerCameraTestActionPressed("radialCancel") or ControllerCameraTestActionPressed("radialClose") then
-			ControllerCameraTestCloseBuildMenu("native panel closed")
-			return true
-		end
-		local dx, dy = 0, 0
-		if WasButtonPressed("dpadLeft") then dx = -1
-		elseif WasButtonPressed("dpadRight") then dx = 1
-		elseif WasButtonPressed("dpadUp") then dy = -1
-		elseif WasButtonPressed("dpadDown") then dy = 1 end
-		if (dx ~= 0 or dy ~= 0) and WG.buildmenu and type(WG.buildmenu.controllerMoveFocus) == "function" then
-			local ok, unitDefID, item = pcall(WG.buildmenu.controllerMoveFocus, dx, dy)
-			if ok then
-				ControllerCameraTestNativeUI.buildFocus = unitDefID
-				menu.highlightedName = type(item) == "table" and item.name or tostring(unitDefID or "none")
-			end
-		elseif ControllerCameraTestActionPressed("radialSelect") or ControllerCameraTestActionPressed("radialQuick") then
-			local button = ControllerCameraTestActionPressed("radialQuick") and 3 or 1
-			local ok, activated = false, false
-			if WG.buildmenu and type(WG.buildmenu.controllerActivate) == "function" then
-				ok, activated = pcall(WG.buildmenu.controllerActivate,
-					ControllerCameraTestNativeUI.buildFocus, button)
-			end
-			menu.lastAction = ok and activated and "native build command activated" or "native build unavailable"
-			if button == 1 and ok and activated then ControllerCameraTestCloseBuildMenu("native command activated") end
-		end
-		return true
-	end
-
 	if ControllerCameraTestHandleQueueRemovalInput() then
 		return true
 	end
+	local focusBefore = menu.selectedStableKey
 
 	local currentLocalIndex = 1
 	for idx, option in ipairs(menu.radialVisibleOptions or {}) do
@@ -11001,10 +11309,28 @@ function ControllerCameraTestHandleBuildMenuInput()
 				menu.radialLastAction = menu.lastAction
 				ControllerCameraTestShowHotkeyFeedback(string.upper(menu.lastAction), "utility")
 			elseif option then
-				ControllerCameraTestDequeueFactoryBuildOption(option)
+				if ControllerCameraTestUsesNativeBARUI() and WG.buildmenu
+						and type(WG.buildmenu.controllerActivate) == "function" then
+					local ok, activated = pcall(WG.buildmenu.controllerActivate, option.stableKey or option.unitDefID, 3)
+					menu.lastAction = ok and activated and "factory dequeued (X)" or "factory dequeue failed"
+					menu.radialLastAction = menu.lastAction
+				else
+					ControllerCameraTestDequeueFactoryBuildOption(option)
+				end
 			else
 				menu.lastAction = "factory dequeue failed: no option"
 				menu.radialLastAction = "factory dequeue failed: no option"
+			end
+		else
+			local option = type(menu.options) == "table" and menu.options[menu.selectedIndex] or nil
+			if option and not option.disabled then
+				if ControllerCameraTestUsesNativeBARUI() and WG.buildmenu
+						and type(WG.buildmenu.controllerActivate) == "function" then
+					pcall(WG.buildmenu.controllerActivate, option.stableKey or option.unitDefID, 1)
+				end
+				if ControllerCameraTestPlaceBuildOption(option, true, "quick-place (X)") then
+					ControllerCameraTestCloseBuildMenu("quick-place")
+				end
 			end
 		end
 	elseif ControllerCameraTestActionPressed("radialClose") then
@@ -11017,6 +11343,13 @@ function ControllerCameraTestHandleBuildMenuInput()
 				menu.lastAction = ControllerCameraTestGetBuildAvailability(option) or "cannot build"
 				menu.radialLastAction = menu.lastAction
 				ControllerCameraTestShowHotkeyFeedback(string.upper(menu.lastAction), "utility")
+			elseif option and ControllerCameraTestUsesNativeBARUI() and WG.buildmenu
+					and type(WG.buildmenu.controllerActivate) == "function" then
+				local ok, activated = pcall(WG.buildmenu.controllerActivate, option.stableKey or option.unitDefID, 1)
+				menu.lastAction = ok and activated and "factory queued (A)" or "factory queue failed (A)"
+				menu.radialLastAction = menu.lastAction
+				ControllerCameraTestRefreshFactoryQueueCounts()
+				ControllerCameraTestRefreshFactoryQueueProgress()
 			elseif option then
 				local queueActive = ControllerCameraTestIsQueueModifierActive()
 				local queueFrontActive = ControllerCameraTestIsQueueFrontModifierActive() or (normalizedLeftTrigger > 0.5)
@@ -11142,6 +11475,13 @@ function ControllerCameraTestHandleBuildMenuInput()
 
 	activeButtonLayoutSummary = "Build radial: LS select | Dpad Up Combat, Right Utility, Down Economy, Left Build | LB/RB page | A place | X dequeue | B close"
 	ControllerCameraTestRefreshBuildMenuDebug()
+	if ControllerCameraTestUsesNativeBARUI() and menu.open then
+		local option = ControllerCameraTestGetRadialCurrentOption()
+		if option and option.stableKey ~= focusBefore then
+			menu.selectedStableKey = option.stableKey or menu.selectedStableKey
+			ControllerCameraTestSetNativeBuildFocus(option, "radial-input")
+		end
+	end
 	return true
 end
 
@@ -13045,7 +13385,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	elseif ControllerCameraTestTacticalMenu.open then
 		activeButtonLayoutSummary = "Tactical: A/X stage, B/Y close, D-pad/LB/RB choose"
 	elseif ControllerCameraTestBuildPlacement.active then
-		activeButtonLayoutSummary = "Placement: A/X place, RT append, insert modifier fronts, LB tap pattern/hold grid"
+		activeButtonLayoutSummary = "Placement: A/X place, RT append, insert modifier fronts, hold LB Grid"
 	elseif ControllerCameraTestBuildMenu.open then
 		activeButtonLayoutSummary = "Build menu: A placement, X quick-place, B/Y close, D-pad/LB/RB navigate"
 	elseif ControllerCameraTestAreaSelect.active then
@@ -13293,12 +13633,10 @@ function ControllerCameraTestUpdateControllerFrame(dt)
 		if controllerMode and reticleVisible and type(spWarpMouse) == "function" and Spring.GetGameFrame() > 0 and not controllerMouseModeActive then spWarpMouse(screenCenterX, screenCenterY) end
 		return
 	end
-	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestBuildMenu.open
-			and not ControllerCameraTestUsesNativeBARUI() then
+	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestBuildMenu.open then
 		ControllerCameraTestUpdateRadialStickSelection()
 	end
-	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestTacticalMenu.open
-			and not ControllerCameraTestUsesNativeBARUI() then
+	if not ControllerCameraTestSettingsUI.open and ControllerCameraTestTacticalMenu.open then
 		ControllerCameraTestUpdateTacticalStickSelection()
 	end
 	if not pregameCameraModifierActive then
@@ -13352,9 +13690,16 @@ function ControllerCameraTestUpdateNativeInputMode()
 	end
 end
 
+function ControllerCameraTestUpdateHybridNativeSync()
+	if not ControllerCameraTestUsesNativeBARUI() then return end
+	if ControllerCameraTestBuildMenu.open then ControllerCameraTestSyncNativeBuildFocus() end
+	if ControllerCameraTestTacticalMenu.open then ControllerCameraTestSyncNativeTacticalFocus() end
+end
+
 function widget:Update(dt)
 	ControllerCameraTestUpdateControllerFrame(dt)
 	ControllerCameraTestUpdateNativeInputMode()
+	ControllerCameraTestUpdateHybridNativeSync()
 	ControllerCameraTestUpdateBuildMenuCompact()
 end
 
@@ -13617,6 +13962,29 @@ function ControllerCameraTestDrawTacticalRadial()
 	if not menu.open or not ControllerCameraTestControllerUIVisible("tacticalRadial", true) then
 		return
 	end
+	local subradial = menu.stateSubradial
+	if subradial and subradial.open and ControllerUISharedRenderers then
+		local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
+		local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
+		cx, cy = ControllerCameraTestGetControllerUIPosition("tacticalRadial", cx, cy)
+		local minView = math.min(viewSizeX, viewSizeY)
+		local radialScale = (ControllerCameraTestSettings.radialScale or 1) * ControllerCameraTestGetControllerUIScale("tacticalRadial", true)
+		local radius = math.min(520, math.max(220, minView * 0.28 * radialScale))
+		local entries = {}
+		for index, state in ipairs(subradial.states or {}) do entries[index] = { label = tostring(state) } end
+		ControllerUISharedRenderers.DrawRadial({
+			bounds = { x1 = cx - radius * 1.45, y1 = cy - radius * 1.45, x2 = cx + radius * 1.45, y2 = cy + radius * 1.45 },
+			model = { style = "tactical", title = subradial.parentLabel or "State", categoryLabel = "STATE",
+				description = "Choose the state exposed by BAR's live command descriptor.",
+				footer = "LS choose  A confirm  B back", entries = entries,
+				selectedIndex = subradial.selectedIndex or 1, accent = { 0.35, 0.78, 1.0 }, fill = { 0.03, 0.16, 0.28, 0.52 } },
+			theme = { backgroundR = 0.02, backgroundG = 0.03, backgroundB = 0.04,
+				accentR = 0.35, accentG = 0.78, accentB = 1.0 },
+			opacity = ControllerCameraTestGetControllerUIOpacity("tacticalRadial"),
+			settings = ControllerCameraTestGetRadialRendererSettings("tacticalRadial"),
+		})
+		return
+	end
 	if ControllerUISharedRenderers then
 		local commands = ControllerCameraTestGetTacticalCommands(false, "draw")
 		local category = TacticalCategories.Info(menu.categoryKey or "tactical")
@@ -13628,7 +13996,10 @@ function ControllerCameraTestDrawTacticalRadial()
 		local radialScale = (ControllerCameraTestSettings.radialScale or 1) * ControllerCameraTestGetControllerUIScale("tacticalRadial", true)
 		local radius = math.min(520, math.max(220, minView * 0.28 * radialScale))
 		local entries = {}
-		for index, command in ipairs(commands) do entries[index] = { label = command.shortLabel or command.name or "Command" } end
+		for index, command in ipairs(commands) do
+			entries[index] = { label = command.shortLabel or command.name or "Command", disabled = command.disabled == true }
+		end
+		local current = commands[menu.selectedIndex]
 		local chips = {}
 		for _, direction in ipairs(TacticalCategories.Order) do
 			local item = TacticalCategories.ByDirection[direction]
@@ -13638,7 +14009,7 @@ function ControllerCameraTestDrawTacticalRadial()
 		ControllerUISharedRenderers.DrawRadial({
 			bounds = { x1 = cx - radius * 1.45, y1 = cy - radius * 1.45, x2 = cx + radius * 1.45, y2 = cy + radius * 1.45 },
 			model = { style = "tactical", title = category.label, categoryLabel = category.label, selectedTitle = true,
-				description = "Choose a tactical command for the current selection.", footer = "LS choose  A/X confirm  B/Y close",
+				description = current and (current.tooltip or current.currentStateLabel) or "Choose a tactical command for the current selection.", footer = "LS choose  A confirm  B/Y close",
 				detail = "D-pad: Up Utility  |  Down Tactical Actions",
 				entries = entries, categoryChips = chips, selectedIndex = menu.selectedIndex, accent = categoryColor,
 				fill = TacticalCategories.FillColors[category.key] },
@@ -14638,10 +15009,12 @@ function ControllerCameraTestDrawBuildRadial()
 		for index, option in ipairs(visibleOptions) do
 			if option.menuIndex == menu.selectedIndex then selectedIndex = index end
 			local progress = isFactoryContext and option.cmdID and menu.factoryQueueProgress and menu.factoryQueueProgress[option.cmdID]
-			local queueCount = isFactoryContext and option.cmdID and menu.factoryQueueCounts and menu.factoryQueueCounts[option.cmdID] or 0
+			local queueCount = ControllerCameraTestUsesNativeBARUI() and (option.queueCount or 0)
+				or (isFactoryContext and option.cmdID and menu.factoryQueueCounts and menu.factoryQueueCounts[option.cmdID] or 0)
 			entries[index] = { label = option.shortLabel or option.name or "Build", texture = option.iconTexture,
 				disabled = option.disabled == true, unavailableText = option.disabled and ControllerCameraTestGetBuildAvailability(option) or nil,
-				progress = progress, badge = queueCount, indexLabel = index }
+				progress = progress, badge = queueCount, indexLabel = option.radialSlot or index,
+				slot = option.radialSlot or index }
 		end
 		local current = visibleOptions[selectedIndex]
 		local info = current and ControllerCameraTestBuildRadialUnitInfo(current)
@@ -14658,7 +15031,9 @@ function ControllerCameraTestDrawBuildRadial()
 				metadata = info and info.stats or {},
 				categoryLabel = menu.radialCategoryName or (isFactoryContext and "Factory" or "Build"),
 				pageLabel = "PAGE " .. tostring(menu.radialPage or 1) .. "/" .. tostring(menu.radialPageCount or 1),
-				entries = entries, selectedIndex = selectedIndex, accent = pageColor.accent, fill = pageColor.fill },
+				entries = entries, selectedIndex = selectedIndex,
+				slotCount = ControllerCameraTestUsesNativeBARUI() and 8 or #entries,
+				accent = pageColor.accent, fill = pageColor.fill },
 			theme = { backgroundR = pageColor.fill[1], backgroundG = pageColor.fill[2], backgroundB = pageColor.fill[3],
 				accentR = pageColor.accent[1], accentG = pageColor.accent[2], accentB = pageColor.accent[3] },
 			opacity = ControllerCameraTestGetControllerUIOpacity(componentName),
@@ -15075,7 +15450,7 @@ function ControllerCameraTestDrawHelpOverlay()
 		"Factory Radial: Y open | LS/Dpad select | LB/RB page | Y close",
 		"   * A add 1 queue | append modifier + A add 5 queue | B remove 1 | append modifier + B remove 5",
 		"Placement Mode: A place | X place+stay | B cancel | RT append queue | bound insert modifier fronts",
-		"   * RS X camera rotate | Dpad L/R building facing | Dpad U/D spacing | LB tap pattern/hold grid | A/X hold Line/Grid",
+		"   * RS X camera rotate | Dpad L/R building facing | Dpad U/D spacing | hold LB Grid | release LB Single",
 		"Idle Cycling: Dpad L/R idle unit | LB+Dpad L/R idle type | Dpad U/D recall cam | bound modifier + Dpad U/D store cam",
 		"Control Groups: hold Start/Menu overlay | Start+Dpad U/D slot | Start+Dpad L recall | Start+Dpad R same-type/future assign",
 		"Control Groups: Start+L3 clear | Start/Menu uses D-pad/L3 only, not ABXY",

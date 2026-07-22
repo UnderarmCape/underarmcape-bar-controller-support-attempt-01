@@ -1,13 +1,13 @@
 {
   "kind": "bar-controller-native-override-manifest",
   "schemaVersion": 1,
-  "experiment": "v0.8.0 Native BAR UI Integration Test",
+  "experiment": "v0.8.0 Native Hybrid Radial Test",
   "barBuild": "Beyond All Reason test-30714-2a9339d",
   "recoilVersion": "2026.06.12",
   "upstreamRepository": "https://github.com/beyond-all-reason/Beyond-All-Reason",
   "upstreamCommit": "2a9339d0c587c1444b2b839ba29dc954f1a13b17",
   "upstreamSubject": "Release 2026.07-20-2 (#8360)",
-  "looseOverridePolicy": "An absent loose file is accepted only when the live build identity matches barBuild/upstreamCommit. Existing loose files must match baseSha256 or patchedSha256 unless the explicit development override is supplied.",
+  "looseOverridePolicy": "An absent loose file is accepted only when the live build identity matches barBuild/upstreamCommit. Existing loose files must match baseSha256, patchedSha256, or a recorded previousPatchedSha256 unless the explicit development override is supplied.",
   "entries": [
     {
       "livePath": "LuaUI/Widgets/unit_smart_select.lua",
@@ -27,15 +27,17 @@
       "livePath": "LuaUI/Widgets/gui_ordermenu.lua",
       "sourcePath": "native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/gui_ordermenu.lua",
       "baseSha256": "cac5b7ba1a224fd104662c3a39dd7132ec6a48d4f9e1e4b5076a430225be5892",
-      "patchedSha256": "5246b5badc47df7d468a8df78781ed4a492164cf76fe8fd6e42275e3a91951ea",
-      "purpose": "Expose the native command-panel descriptors, activation path, fire-state helper, and focus highlight."
+      "previousPatchedSha256": "5246ec51cbc6b986fe10dfb9253184b417e38d2b22d00941b86ead423d38242f",
+      "patchedSha256": "2ebcb5b2df0529d50fa5392a5cd73cdfd02d5d565229bea50e42a2e5531ceeca",
+      "purpose": "Expose revisioned command descriptors, descriptor-owned state activation, and scoped two-way focus for the hybrid Tactical Radial."
     },
     {
       "livePath": "LuaUI/Widgets/gui_buildmenu.lua",
       "sourcePath": "native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/gui_buildmenu.lua",
       "baseSha256": "fc2056fc99bf7f49ab0eeb18f23308850b35380359331d61948361638017de5a",
-      "patchedSha256": "06607f22d89dc09afd8e868b403098b4f4a4f27fe0bb3db94bd3e55a015f1506",
-      "purpose": "Add controller focus/navigation and activation to the authoritative native build/factory cells."
+      "previousPatchedSha256": "066030b45d3ba3c96b026ce3643e463a711208596559d93fd2858e2a7d1c6429",
+      "patchedSha256": "902c7e0f437760b8ca6e9a37ec732eeb9553c8bfe6569c4fd1c05cb58acf8385",
+      "purpose": "Export all authoritative build/factory cells with revisions, activation, and scoped two-way focus for the hybrid Build/Factory Radials."
     }
   ]
 }

@@ -568,7 +568,9 @@ local function drawBuildRadial(args, cx, cy, radius, accent, values)
 	color({ fill[1], fill[2], fill[3], 0.58 * opacity * values.legacyThemeOpacity }); circle(cx, cy, radius * 1.3, 40)
 	ring(cx, cy, radius, { accent[1], accent[2], accent[3], 0.3 * opacity }, 2, 36)
 	for index, entry in ipairs(entries) do
-		local angle = entryAngle(index, n, typography)
+		-- Hybrid native models may retain holes so familiar BAR cells do not
+		-- collapse into different positions when the selected builder changes.
+		local angle = entryAngle(entry.slot or index, tonumber(model.slotCount) or n, typography)
 		local x, y = cx + radius * values.itemSpacing * cos(angle), cy - radius * values.itemSpacing * sin(angle)
 		local selected = index == (model.selectedIndex or 1); local size = iconSize * (selected and values.selectedScale or 1)
 		local selectedFill = { typography.selectedBackgroundR, typography.selectedBackgroundG, typography.selectedBackgroundB, typography.selectedBackgroundOpacity * opacity }

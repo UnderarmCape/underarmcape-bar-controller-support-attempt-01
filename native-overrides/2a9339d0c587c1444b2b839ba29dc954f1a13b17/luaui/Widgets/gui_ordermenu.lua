@@ -127,6 +127,10 @@ local disableInput = false
 
 -- Highlight API state: items[cmdID] = { color={r,g,b}, startTime=os.clock() }
 local highlight = { items = {}, count = 0, defaultColor = { 1.0, 1.0, 1.0 } }
+ControllerOrderMenuHybridState = ControllerOrderMenuHybridState or {
+	focusCmdID = nil, radialOpen = false, focusVisible = true,
+	focusRevision = 0, modelRevision = 0, focusSource = "none",
+}
 local math_isInRect = math.isInRect
 local clickCountDown = 2
 
@@ -526,6 +530,7 @@ local function refreshCommands()
 	tracy.ZoneBeginN("W:OrderMenu:RefreshCommands:SetupGrid")
 	setupCellGrid(false)
 	tracy.ZoneEnd()
+	ControllerOrderMenuHybridState.modelRevision = ControllerOrderMenuHybridState.modelRevision + 1
 	tracy.ZoneEnd()
 end
 
@@ -718,7 +723,9 @@ function widget:Initialize()
 		for i = 1, #commands do
 			local cmd = commands[i]
 			result[i] = {
+				stableKey = "cmd:" .. tostring(cmd.id),
 				id = cmd.id,
+				cmdID = cmd.id,
 				type = cmd.type,
 				name = cmd.name,
 				action = cmd.action,
@@ -728,9 +735,16 @@ function widget:Initialize()
 				params = cmd.params,
 				isState = isStateCommand[cmd.id] == true,
 				virtualIndex = cmd.virtualIndex,
+				currentStateIndex = (cmd.id == CMD.FIRE_STATE and cmd.virtualIndex)
+					and math_max(0, cmd.virtualIndex - 1) or (tonumber(cmd.params and cmd.params[1]) or 0),
+				vanillaIndex = i,
+				cell = i,
+				row = math_floor((i - 1) / math_max(1, cols)) + 1,
+				column = ((i - 1) % math_max(1, cols)) + 1,
+				focused = cmd.id == ControllerOrderMenuHybridState.focusCmdID,
 			}
 		end
-		return result
+		return result, ControllerOrderMenuHybridState.modelRevision
 	end
 
 	WG['ordermenu'].controllerActivate = function(cmdID, direction)
@@ -760,14 +774,75 @@ function widget:Initialize()
 		doUpdate = true
 		return true
 	end
+	WG['ordermenu'].controllerActivateState = function(cmdID, desiredState)
+		cmdID, desiredState = tonumber(cmdID), tonumber(desiredState)
+		local cmd
+		for i = 1, #commands do
+			if commands[i].id == cmdID then cmd = commands[i]; break end
+		end
+		if not cmd or cmd.disabled or not isStateCommand[cmd.id] or desiredState == nil then
+			return false
+		end
+		local stateCount = type(cmd.params) == "table" and math_max(0, #cmd.params - 1) or 0
+		if desiredState < 0 or (stateCount > 0 and desiredState >= stateCount) then return false end
+		if cmd.id == CMD.FIRE_STATE then
+			OrderMenuFirestate.giveVirtualIndex(desiredState + 1, 0)
+		elseif type(Spring.GiveOrder) == "function" then
+			Spring.GiveOrder(cmd.id, { desiredState }, 0)
+		else
+			return false
+		end
+		doUpdate = true
+		return true
+	end
 
-	WG['ordermenu'].controllerSetFocus = function(cmdID)
-		WG['ordermenu'].clearHighlights()
+	WG['ordermenu'].controllerSetFocus = function(cmdID, source)
+		if type(cmdID) == "string" then cmdID = tonumber(string.match(cmdID, "^cmd:(%-?%d+)$")) end
+		cmdID = tonumber(cmdID)
+		local exists = cmdID == nil
 		if cmdID then
+			for i = 1, #commands do if commands[i].id == cmdID then exists = true; break end end
+		end
+		if not exists then cmdID = nil end
+		if ControllerOrderMenuHybridState.focusCmdID and ControllerOrderMenuHybridState.focusCmdID ~= cmdID then
+			WG['ordermenu'].removeHighlight(ControllerOrderMenuHybridState.focusCmdID)
+		end
+		local changed = ControllerOrderMenuHybridState.focusCmdID ~= cmdID
+			or ControllerOrderMenuHybridState.focusSource ~= (source or "controller")
+		ControllerOrderMenuHybridState.focusCmdID = cmdID
+		ControllerOrderMenuHybridState.focusSource = cmdID and (source or "controller") or "none"
+		if cmdID and ControllerOrderMenuHybridState.focusVisible then
 			WG['ordermenu'].setHighlight(cmdID, { 0.35, 0.78, 1.0 })
 		end
+		if changed then ControllerOrderMenuHybridState.focusRevision = ControllerOrderMenuHybridState.focusRevision + 1 end
+		return ControllerOrderMenuHybridState.focusCmdID
 	end
-	WG['ordermenu'].controllerApiVersion = 1
+	WG['ordermenu'].controllerGetFocus = function()
+		return {
+			stableKey = ControllerOrderMenuHybridState.focusCmdID and ("cmd:" .. tostring(ControllerOrderMenuHybridState.focusCmdID)) or nil,
+			cmdID = ControllerOrderMenuHybridState.focusCmdID,
+			revision = ControllerOrderMenuHybridState.focusRevision,
+			modelRevision = ControllerOrderMenuHybridState.modelRevision,
+			source = ControllerOrderMenuHybridState.focusSource,
+			radialOpen = ControllerOrderMenuHybridState.radialOpen,
+		}
+	end
+	WG['ordermenu'].controllerSetFocusVisible = function(visible)
+		ControllerOrderMenuHybridState.focusVisible = visible ~= false
+		if not ControllerOrderMenuHybridState.focusVisible and ControllerOrderMenuHybridState.focusCmdID then
+			WG['ordermenu'].removeHighlight(ControllerOrderMenuHybridState.focusCmdID)
+		elseif ControllerOrderMenuHybridState.focusVisible and ControllerOrderMenuHybridState.focusCmdID then
+			WG['ordermenu'].setHighlight(ControllerOrderMenuHybridState.focusCmdID, { 0.35, 0.78, 1.0 })
+		end
+		return ControllerOrderMenuHybridState.focusVisible
+	end
+	WG['ordermenu'].controllerSetRadialOpen = function(active, showFocus)
+		ControllerOrderMenuHybridState.radialOpen = active == true
+		if showFocus ~= nil then WG['ordermenu'].controllerSetFocusVisible(showFocus) end
+		if not ControllerOrderMenuHybridState.radialOpen then WG['ordermenu'].controllerSetFocus(nil, "radial-closed") end
+		return ControllerOrderMenuHybridState.radialOpen
+	end
+	WG['ordermenu'].controllerApiVersion = 2
 
 	widgetHandler:AddAction("firestate", OrderMenuFirestate.hotkeyHandler, nil, "p")
 end
@@ -1250,6 +1325,10 @@ function widget:DrawScreen()
 							end
 						end
 						cellHovered = cell
+						if ControllerOrderMenuHybridState.radialOpen and ControllerOrderMenuHybridState.focusCmdID ~= cmd.id
+								and WG['ordermenu'] and type(WG['ordermenu'].controllerSetFocus) == 'function' then
+							WG['ordermenu'].controllerSetFocus(cmd.id, "vanilla-mouse")
+						end
 					end
 				else
 					break

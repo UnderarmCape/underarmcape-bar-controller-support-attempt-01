@@ -84,6 +84,9 @@ local highlightCount = 0
 local defaultHighlightColor = { 1.0, 1.0, 1.0 }
 local controllerFocusDefID
 local controllerInputActive = false
+ControllerBuildMenuHybridState = ControllerBuildMenuHybridState or {
+	radialOpen = false, focusVisible = true, focusRevision = 0, modelRevision = 0, focusSource = "none",
+}
 
 local zoomMult = 1.5
 local defaultCellZoom = 0.025 * zoomMult
@@ -587,6 +590,7 @@ local function RefreshCommands()
 		end
 		tracy.ZoneEnd()
 	end
+	ControllerBuildMenuHybridState.modelRevision = ControllerBuildMenuHybridState.modelRevision + 1
 	tracy.ZoneEnd()
 end
 
@@ -1303,6 +1307,10 @@ function widget:DrawScreen()
 						hoveredCellID = cellRectID
 						local uDefID = -cmds[cellRectID].id
 						WG['buildmenu'].hoverID = uDefID
+						if ControllerBuildMenuHybridState.radialOpen and controllerFocusDefID ~= uDefID
+								and WG['buildmenu'] and type(WG['buildmenu'].controllerSetFocus) == 'function' then
+							WG['buildmenu'].controllerSetFocus(uDefID, "vanilla-mouse")
+						end
 						gl.Color(1, 1, 1, 1)
 						local alt, ctrl, meta, shift = Spring.GetModKeyState()
 						if WG['tooltip'] and not meta then
@@ -2002,44 +2010,94 @@ function widget:Initialize()
 		return unitDefID ~= nil and highlights[unitDefID] ~= nil
 	end
 
-	-- CONTROLLER NATIVE UI INTEGRATION (v0.8.0 experimental)
-	-- Navigation operates on this widget's current page and descriptors, so
-	-- icons, prices, restrictions, factory queues and tooltips remain native.
+	-- CONTROLLER NATIVE UI INTEGRATION (v0.8.0 experimental hybrid)
+	-- Export all authoritative cells.  The controller radial owns presentation,
+	-- while this widget owns ordering, availability, focus and activation.
 	WG['buildmenu'].controllerGetItems = function()
 		local result = {}
 		local pageSize = rows * colls
-		local first = pageSize * (currentPage - 1) + 1
-		local last = math_min(cmdsCount, pageSize * currentPage)
-		for cellID = first, last do
+		for cellID = 1, cmdsCount do
 			local cmd = cmds[cellID]
 			if cmd and cmd.id then
 				local unitDefID = -cmd.id
+				local page = math_floor((cellID - 1) / math_max(1, pageSize)) + 1
+				local pageCell = ((cellID - 1) % math_max(1, pageSize))
+				local unitDef = UnitDefs and UnitDefs[unitDefID]
 				result[#result + 1] = {
+					stableKey = "build:" .. tostring(unitDefID),
 					unitDefID = unitDefID,
 					cmdID = cmd.id,
 					name = unitTranslatedHumanName[unitDefID],
 					tooltip = cmd.tooltip,
+					description = unitTranslatedTooltip[unitDefID] or cmd.tooltip,
 					queueCount = tonumber(cmd.params and cmd.params[1]) or 0,
 					disabled = units.unitRestricted[unitDefID] == true,
 					metalCost = units.unitMetalCost[unitDefID],
 					energyCost = units.unitEnergyCost[unitDefID],
+					health = unitDef and unitDef.health,
+					iconTexture = "#" .. tostring(unitDefID),
+					selected = activeCmd and cmd.name == activeCmd or false,
+					focused = unitDefID == controllerFocusDefID,
 					cell = cellID,
-					page = currentPage,
+					vanillaIndex = cellID,
+					page = page,
+					row = math_floor(pageCell / math_max(1, colls)) + 1,
+					column = (pageCell % math_max(1, colls)) + 1,
 				}
 			end
 		end
-		return result, currentPage, pages, colls, rows
+		return result, currentPage, pages, colls, rows, ControllerBuildMenuHybridState.modelRevision
 	end
 
-	WG['buildmenu'].controllerSetFocus = function(unitDefID)
+	WG['buildmenu'].controllerSetFocus = function(unitDefID, source)
+		if type(unitDefID) == "string" then
+			unitDefID = tonumber(string.match(unitDefID, "^build:(%-?%d+)$"))
+		end
+		unitDefID = tonumber(unitDefID)
+		if unitDefID and not unitDefToCellMap[unitDefID] then
+			local targetCell
+			for cellID = 1, cmdsCount do
+				if cmds[cellID] and -cmds[cellID].id == unitDefID then targetCell = cellID; break end
+			end
+			if targetCell then
+				local pageSize = math_max(1, rows * colls)
+				local targetPage = math_floor((targetCell - 1) / pageSize) + 1
+				if targetPage ~= currentPage then
+					currentPage = targetPage
+					RefreshCommands()
+					doUpdate = true
+				end
+			else
+				unitDefID = nil
+			end
+		end
 		if controllerFocusDefID and controllerFocusDefID ~= unitDefID then
 			WG['buildmenu'].removeHighlight(controllerFocusDefID)
 		end
+		local changed = controllerFocusDefID ~= unitDefID or ControllerBuildMenuHybridState.focusSource ~= (source or "controller")
 		controllerFocusDefID = unitDefID
-		if unitDefID then
+		ControllerBuildMenuHybridState.focusSource = unitDefID and (source or "controller") or "none"
+		if unitDefID and ControllerBuildMenuHybridState.focusVisible then
 			WG['buildmenu'].setHighlight(unitDefID, { 0.35, 0.78, 1.0 })
 		end
+		if changed then ControllerBuildMenuHybridState.focusRevision = ControllerBuildMenuHybridState.focusRevision + 1 end
 		return controllerFocusDefID
+	end
+	WG['buildmenu'].controllerGetFocus = function()
+		local cellID
+		for index = 1, cmdsCount do
+			if cmds[index] and -cmds[index].id == controllerFocusDefID then cellID = index; break end
+		end
+		return {
+			stableKey = controllerFocusDefID and ("build:" .. tostring(controllerFocusDefID)) or nil,
+			unitDefID = controllerFocusDefID,
+			cell = cellID,
+			page = cellID and (math_floor((cellID - 1) / math_max(1, rows * colls)) + 1) or currentPage,
+			revision = ControllerBuildMenuHybridState.focusRevision,
+			modelRevision = ControllerBuildMenuHybridState.modelRevision,
+			source = ControllerBuildMenuHybridState.focusSource,
+			radialOpen = ControllerBuildMenuHybridState.radialOpen,
+		}
 	end
 
 	WG['buildmenu'].controllerMoveFocus = function(deltaX, deltaY)
@@ -2056,11 +2114,19 @@ function widget:Initialize()
 			end
 		end
 		index = math_max(1, math.min(#items, index + (deltaX or 0) + ((deltaY or 0) * colls)))
-		return WG['buildmenu'].controllerSetFocus(items[index].unitDefID), items[index]
+		return WG['buildmenu'].controllerSetFocus(items[index].unitDefID, "controller-grid"), items[index]
 	end
 
 	WG['buildmenu'].controllerActivate = function(unitDefID, button)
+		if type(unitDefID) == "string" then
+			unitDefID = tonumber(string.match(unitDefID, "^build:(%-?%d+)$"))
+		end
 		local cellID = unitDefToCellMap[unitDefID]
+		if not cellID then
+			for index = 1, cmdsCount do
+				if cmds[index] and -cmds[index].id == unitDefID then cellID = index; break end
+			end
+		end
 		local cmd = cellID and cmds[cellID]
 		if not cmd or units.unitRestricted[unitDefID] then
 			return false
@@ -2072,6 +2138,21 @@ function widget:Initialize()
 		button = button or 1
 		Spring.SetActiveCommand(cmdDescIndex, button, button == 1, button == 3, Spring.GetModKeyState())
 		return true
+	end
+	WG['buildmenu'].controllerSetRadialOpen = function(active, showFocus)
+		ControllerBuildMenuHybridState.radialOpen = active == true
+		if showFocus ~= nil then WG['buildmenu'].controllerSetFocusVisible(showFocus) end
+		if not ControllerBuildMenuHybridState.radialOpen then WG['buildmenu'].controllerSetFocus(nil, "radial-closed") end
+		return ControllerBuildMenuHybridState.radialOpen
+	end
+	WG['buildmenu'].controllerSetFocusVisible = function(visible)
+		ControllerBuildMenuHybridState.focusVisible = visible ~= false
+		if not ControllerBuildMenuHybridState.focusVisible and controllerFocusDefID then
+			WG['buildmenu'].removeHighlight(controllerFocusDefID)
+		elseif ControllerBuildMenuHybridState.focusVisible and controllerFocusDefID then
+			WG['buildmenu'].setHighlight(controllerFocusDefID, { 0.35, 0.78, 1.0 })
+		end
+		return ControllerBuildMenuHybridState.focusVisible
 	end
 
 	WG['buildmenu'].controllerSetInputActive = function(active)
@@ -2086,7 +2167,7 @@ function widget:Initialize()
 	WG['buildmenu'].controllerGetInputActive = function()
 		return controllerInputActive
 	end
-	WG['buildmenu'].controllerApiVersion = 1
+	WG['buildmenu'].controllerApiVersion = 2
 end
 
 
