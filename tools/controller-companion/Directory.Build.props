@@ -1,0 +1,12 @@
+<Project>
+  <!-- The single authoritative version source for every experimental companion binary. -->
+  <PropertyGroup>
+    <ControllerCompanionSemanticVersion>0.8.0</ControllerCompanionSemanticVersion>
+    <ControllerCompanionChannel>Experimental</ControllerCompanionChannel>
+    <ControllerCompanionDisplayVersion>v$(ControllerCompanionSemanticVersion) $(ControllerCompanionChannel)</ControllerCompanionDisplayVersion>
+    <Version>$(ControllerCompanionSemanticVersion)</Version>
+    <AssemblyVersion>$(ControllerCompanionSemanticVersion).0</AssemblyVersion>
+    <FileVersion>$(ControllerCompanionSemanticVersion).0</FileVersion>
+    <InformationalVersion>$(ControllerCompanionSemanticVersion)+$(ControllerCompanionChannel)</InformationalVersion>
+  </PropertyGroup>
+</Project>

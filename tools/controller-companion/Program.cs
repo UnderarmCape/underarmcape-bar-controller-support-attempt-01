@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Globalization;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -28,7 +29,8 @@ internal static class Program
             out int rateHz,
             out string? settingsPath,
             out bool configureOnly,
-            out bool verbose))
+            out bool verbose,
+            out bool standalone))
         {
             PrintUsage();
             return 2;
@@ -53,7 +55,7 @@ internal static class Program
 
         CameraSettingResult cameraSetting =
             CameraSettings.EnsureCardinalDirectionLockDisabled(settingsPath);
-        Console.WriteLine("BAR Controller Bridge v0.7.0");
+        Console.WriteLine(ProductMetadata.BridgeBanner);
         Console.WriteLine("Camera setting: " + GetCameraStatus(cameraSetting.Status));
         if (verbose)
         {
@@ -91,9 +93,27 @@ internal static class Program
         double intervalMilliseconds = 1000.0 / rateHz;
         double nextSendMilliseconds = 0;
         bool sendErrorReported = false;
+        var sessionTracker = new EngineSessionTracker(TimeSpan.FromSeconds(3));
+        long nextSessionPollMilliseconds = 0;
+        string lastSessionStatus = string.Empty;
 
         while (keepRunning)
         {
+            if (!standalone && loopTimer.ElapsedMilliseconds >= nextSessionPollMilliseconds)
+            {
+                string sessionStatus = sessionTracker.Observe(DateTime.UtcNow, GetEngineProcesses());
+                if (!string.Equals(sessionStatus, lastSessionStatus, StringComparison.Ordinal))
+                {
+                    Console.WriteLine("Session: " + sessionStatus);
+                    lastSessionStatus = sessionStatus;
+                }
+                if (sessionTracker.ShouldStop)
+                {
+                    keepRunning = false;
+                    break;
+                }
+                nextSessionPollMilliseconds = loopTimer.ElapsedMilliseconds + 500;
+            }
             bool connected = XInputGetState(0, out XInputState state) == ErrorSuccess;
             if (connected != lastConnected)
             {
@@ -153,8 +173,37 @@ internal static class Program
             }
         }
 
-        Console.WriteLine("Stopped.");
+        Console.WriteLine(sessionTracker.ShouldStop ? "Stopped after tracked game session." : "Stopped.");
+        Console.Out.Flush();
+        Console.Error.Flush();
         return 0;
+    }
+
+    private static IEnumerable<EngineProcessSnapshot> GetEngineProcesses()
+    {
+        var result = new List<EngineProcessSnapshot>();
+        foreach (Process process in Process.GetProcesses())
+        {
+            try
+            {
+                if (!EngineSessionTracker.IsEngineName(process.ProcessName) || process.HasExited) continue;
+                result.Add(new EngineProcessSnapshot
+                {
+                    ProcessId = process.Id,
+                    ProcessName = process.ProcessName,
+                    StartedUtc = process.StartTime.ToUniversalTime(),
+                });
+            }
+            catch
+            {
+                // A process may disappear or deny metadata access between enumeration and inspection.
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+        return result;
     }
 
     private static string GetCameraStatus(CameraSettingStatus status)
@@ -244,13 +293,15 @@ internal static class Program
         out int rateHz,
         out string? settingsPath,
         out bool configureOnly,
-        out bool verbose)
+        out bool verbose,
+        out bool standalone)
     {
         port = DefaultPort;
         rateHz = DefaultRateHz;
         settingsPath = null;
         configureOnly = false;
         verbose = false;
+        standalone = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -281,6 +332,10 @@ internal static class Program
             {
                 verbose = true;
             }
+            else if (argument == "--standalone")
+            {
+                standalone = true;
+            }
             else
             {
                 return false;
@@ -294,7 +349,7 @@ internal static class Program
     {
         Console.Error.WriteLine(
             "Usage: BARControllerBridge [--port 28777] [--rate 120] " +
-            "[--settings-file path] [--configure-only] [--verbose]\n" +
+            "[--settings-file path] [--configure-only] [--verbose] [--standalone]\n" +
             "       BARControllerBridge <check|defaults|update|status|reload|help> [options]");
     }
 

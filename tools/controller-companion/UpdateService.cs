@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 
 internal static class UpdateService
 {
-    private const string CurrentVersion = "0.7.0";
+    private static string CurrentVersion => ProductMetadata.SemanticVersion;
     private const string Repository = "UnderarmCape/underarmcape-bar-controller-support-attempt-01";
     private const string DefaultsBranch = "controller-ui-live-defaults";
     private const string DefaultsFileName = "shipping-defaults.json";
