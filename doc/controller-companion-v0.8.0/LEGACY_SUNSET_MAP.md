@@ -1,24 +1,18 @@
-# Legacy sunset map
+# Legacy Sunset Map
 
-The v0.8.0 experiment defaults to **Native Experimental** but retains **Legacy Controller UI** as a persisted Bindings UI setting. The camera widget is the single switch owner. Native and legacy handlers are mutually exclusive; changing the setting never enables two command emitters or two renderers for the same interaction.
+Public v0.7.0 and its tag are immutable. This experimental branch keeps `Native Experimental` and `Legacy Controller UI` mutually exclusive.
 
-| Capability | Native Experimental | Legacy Controller UI | Candidate deletion after play-test approval |
+| Legacy responsibility | Native replacement | Current decision | Deletion gate |
 |---|---|---|---|
-| A / RT+A selection | `WG.smartselect` updates Recoil's selected-unit array | v0.7 reticle selection functions | Controller-only selection mutation helpers once every selection profile is confirmed |
-| Area selection | Smart Select filter plus engine selection | v0.7 controller area collector/filter | Redundant selection application and outline plumbing |
-| Disassemble target visuals | BAR selected-unit outlines; no marked target set is populated or drawn | `markedTargets` and custom world outlines | Marked-target storage, pruning, and custom outline draw block |
-| Single reclaim | Patched Smart Area Reclaim controller entry; native one-target `CMD.RECLAIM` | v0.7 per-target queue | Legacy reclaim queue and marked-target confirmation |
-| Same-type area reclaim | Native five-parameter target-area command | v0.7 controller area modal | Legacy candidate discovery, area modal, and radial renderer |
-| Tactical controls | Current `gui_ordermenu` descriptors, availability, state and highlight | v0.7 template-driven tactical radial | Command templates and controller-only tactical renderer |
-| Build/factory controls | Current `gui_buildmenu` cells, costs, queue, availability, focus, and enlarged stable gamepad grid | v0.7 build radial | Build option gathering and controller-only build radial |
-| Hints | Native command and selection context | v0.7 custom-modal context | Obsolete marked-target hint branches |
+| Build option discovery/classification | vanilla cells + hybrid adapter; v0.7 classifier fallback | keep fallback | BAR exports reliable categories across factions |
+| Factory build/queue execution | vanilla Build Menu activation | Native uses vanilla; Legacy retained | live queue/dequeue approval across labs |
+| Tactical template discovery | vanilla Order Menu descriptors | Native bypass removed; templates Legacy-only | mixed-selection and state approval |
+| Tactical state cycling | Order Menu state activation | Native state values are descriptor-owned | Fire/Move/binary live approval |
+| Controller build placement | no equivalent complete controller system | keep v0.7 placement | not a legacy-deletion candidate |
+| Custom selection mutation | SmartSelect | disabled in Native | broad selection approval |
+| Marked-target reclaim | Smart Area Reclaim | disabled in Native | reclaim/disassemble approval |
+| v0.7 radial renderer | no vanilla replacement intended | permanent controller presentation | not a sunset candidate |
 
-## Switch behavior
+Changing integration mode closes active Build/Tactical/state radials, clears native focus/capture, resets build placement to Single, invalidates adapter caches, refreshes hints, and preserves engine selection.
 
-`Native BAR UI Integration` is stored with the normal controller settings. `Native Experimental` is the v0.8.0 default. Existing v0.7 configuration without the key migrates to that default. Selecting `Legacy Controller UI` routes selection, reclaim, tactical, build, drawing, and hint state back to the retained v0.7 paths.
-
-The experimental setting does not alter public shipping-default documents. It is branch-local widget behavior for Kailil's test deployment.
-
-## Approval gate
-
-Do not delete the retained legacy branches until manual gameplay verifies friendly units and structures, multi-selection, reclaim-capable mixed selections, factory queues, uncommon command descriptors, spectator transitions, and both controller families. A later cleanup can then remove the rows marked as candidates and drop the override switch in a separate milestone.
+Legacy code is ready for later deletion only after multiple constructors/factories, tactical mixed selections, native selection/reclaim, rollback, performance, and focus synchronization have passed the live checklist. Panel hiding is a separate later change; it does not require returning to legacy execution.

@@ -1,26 +1,22 @@
-# v0.8.0 native integration live checklist
+# v0.8.0 Native Hybrid Live Checklist
 
-Keep BAR closed until ready to perform this checklist. This package is experimental and may require a rebase after BAR updates.
+Experimental — native panels and blue focus remain visible for validation.
 
-1. Start a skirmish and confirm normal A selection uses BAR's ordinary selected-unit outlines.
-2. Use RT+A to add and remove friendly mobile units and structures without changing the rest of the selection.
-3. Select reclaim-capable constructors and hold LB+RB for the new 0.33-second default to enter Disassemble Mode.
-4. Open Controller Bindings, change **Disassemble Toggle Hold Duration** within 0.15–1.50 seconds, exit/reopen the panel, and retest entry and exit.
-5. Aim at a friendly unit/structure and tap LB+A for single native reclaim.
-6. Hold LB+A on a friendly unit/structure, move the reticle to set the radius, and release A for native same-type area reclaim.
-7. Compare the reclaim command cursor/radius and resulting orders with mouse/keyboard BAR.
-8. During targeting press B to cancel; with no target active press B to clear the vanilla selection. Confirm Disassemble remains active.
-9. During targeting press X over ground; confirm targeting cancels, Move is issued, and Disassemble remains active.
-10. Press LB+B; confirm native Stop reaches the actual selected units and Disassemble remains active.
-11. Open the tactical layer and test Visible/Cloak on a capable unit.
-12. Cycle Fire State forward and backward and compare the order panel state.
-13. Cycle Hold Position, Maneuver, and Roam and compare the order panel state.
-14. Test Repeat, On/Off, Priority, factory, transport, and wait controls only where the native panel advertises them.
-15. Select a builder/factory, open the native build UI, navigate with D-pad, activate with A, and decrement a factory queue with X.
-16. Move back to mouse/keyboard and confirm the standard build grid returns after the input hysteresis delay without flicker.
-17. In Bindings UI compare Auto, Xbox, and PlayStation glyph styles; unplug/reconnect if testing Auto detection.
-18. Confirm the five D-pad glyphs look exactly like v0.7.0.
-19. Inspect `infolog.txt` for Lua errors, widget removal, duplicate orders, and compatibility warnings; observe frame-time while input is idle and while menus are open.
-20. Switch **Native BAR UI Integration** to **Legacy Controller UI** and smoke-test v0.7 selection, reclaim, tactical, and build paths without double rendering.
+1. Open Build Radial with several constructors; verify v0.7 cards, categories, center description/costs, and pages.
+2. Move the stick and mouse between items; verify radial highlight and blue vanilla focus agree.
+3. Verify familiar buildings retain positions when switching constructors, including unsupported-item holes.
+4. Open several labs/factories; verify no builder categories and vanilla cell 1 at top slot 1.
+5. Queue with A and dequeue with X; verify vanilla queue counts update.
+6. Open Tactical; use D-pad Up/Down for Utility/Tactical and stick for items.
+7. Test Visible/Cloak and other binary states.
+8. Open Fire State and Move State sub-radials; confirm the exact live states.
+9. Test Stop, Guard, Repair, Reclaim, Restore, Area Mex, and supported target commands.
+10. Enter build placement; verify Single every time.
+11. Hold LB for Grid; release LB and verify immediate Single.
+12. Exit/reopen and change build item; verify Grid never remains latched.
+13. Test X Quick Place, A normal placement, B cancel, rotation, spacing, water/shoreline, and queue modifiers.
+14. Test Selection, area selection, visible filter, control groups, and Disassemble/reclaim.
+15. Switch to Legacy Controller UI and back; verify radials close, placement resets, and selection remains.
+16. Check `infolog.txt` for Lua errors, focus mismatches, or duplicate command activation; watch frame time.
 
-If native widgets disappear after a BAR update, close BAR and restore immediately. Do not use the unknown-base override as a routine fix.
+Report a mismatch with selected builder/factory, command name, radial slot/page/category, and the blue-focused vanilla cell.
