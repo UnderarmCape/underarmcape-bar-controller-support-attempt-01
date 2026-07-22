@@ -1,9 +1,7 @@
 # Vanilla Idle Builders navigation
 
-The live Idle Builders widget now has one internal `activateIdleEntry` action shared by its clickable icons and controller entry points. It refreshes the real `idleList`, selects only live idle units, optionally sends `viewselection`, plays the same left/right click sound, updates the icon highlight, and forces redraw.
+The native Idle Builders override exposes only `controllerGetLiveIdleEntries`, a read-only snapshot built from the exact current `existingIcons` order and live `idleList` buckets used by the ZZZ widget. It filters invalid/dead IDs during snapshot creation. No controller activation, click, mouse, sound, or selection wrapper is exported.
 
-D-pad Left calls `controllerActivatePreviousEntry`; D-pad Right calls `controllerActivateNextEntry`. Traversal uses the widget's sorted `existingIcons` and each current idle bucket, including wrap. The camera stores diagnostics only and owns no idle inventory.
+The camera widget owns the controller action. D-pad Right/Left wraps through the flattened live IDs and directly selects/focuses exactly one with `Spring.SelectUnitArray` plus the v0.7 camera-target helper. It remembers the last ID and UnitDef. If that ID disappears or becomes non-idle, traversal repairs to a current live ID of the remembered type before continuing.
 
-Mouse icon actions and controller actions both update remembered `unitID` and `unitDefID`. On list refresh, a missing unit repairs to another current idle unit of the same type; if none remains, focus clears. Dead, busy, under-construction, or otherwise non-idle units cannot persist.
-
-LB+D-pad Down calls `controllerActivateAllFocusedType`. It selects the current live bucket for the remembered type, focuses the camera with `viewselection`, preserves native sound/highlight behavior, and safely does nothing without valid focus. Active radials, settings/modal UI, placement, and higher-priority modes consume D-pad first.
+LB+D-pad Down directly selects the snapshot bucket for the remembered type, so busy and otherwise non-idle same-type units are excluded. Settings, placement, active targeting, Build/Factory radial, Tactical Radial, and Disassemble have higher priority and suppress idle traversal.

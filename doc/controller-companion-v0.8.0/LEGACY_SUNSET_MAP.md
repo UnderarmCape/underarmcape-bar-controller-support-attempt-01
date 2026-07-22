@@ -13,6 +13,6 @@ Public v0.7.0 and its tag are immutable. This experimental branch keeps `Native 
 | Marked-target reclaim | Smart Area Reclaim | disabled in Native | reclaim/disassemble approval |
 | v0.7 radial renderer | no vanilla replacement intended | permanent controller presentation | not a sunset candidate |
 
-Changing integration mode closes active Build/Tactical/state radials, clears native focus/capture, resets build placement to Single, invalidates adapter caches, refreshes hints, and preserves engine selection.
+Changing integration mode closes active Build/Tactical radials, clears native focus/capture, resets build placement to Single, invalidates adapter caches, refreshes hints, and preserves engine selection.
 
 Legacy code is ready for later deletion only after multiple constructors/factories, tactical mixed selections, native selection/reclaim, rollback, performance, and focus synchronization have passed the live checklist. Panel hiding is a separate later change; it does not require returning to legacy execution.

@@ -1,63 +1,91 @@
-# v0.8.0 hybrid area / idle repair live checklist
+# v0.8.0 Experimental live test checklist
 
-**EXPERIMENTAL — HYBRID AREA TARGETING, GLOBAL RADIAL PAGING, AND VANILLA IDLE CONTROL TEST**
+Run against `Beyond All Reason test-30735-bf9c7bf` with Native Experimental selected. These are manual checks; automated validation is not a claim of live gameplay success.
 
-Run against `Beyond All Reason test-30735-bf9c7bf` with Native Experimental enabled and Legacy available.
+## Version/lifecycle
 
-## Area commands
+1. Launch bridge and confirm `BAR Controller Bridge v0.8.0 Experimental`.
+2. Launch a game session.
+3. Exit Spring/Recoil.
+4. Confirm session companion and bridge close cleanly.
 
-1. Open Area Mex.
-2. A anchor → A confirm.
-3. A anchor → X confirm.
-4. X anchor → A confirm.
-5. X anchor → X confirm.
-6. Confirm exactly one Area Mex batch.
-7. Repeat with Smart Area Reclaim.
-8. Repeat with another circular area command.
-9. Test a front/rectangle command if available.
-10. Confirm B cancels.
+## A selection
 
-## Build Radial traversal
+5. Repeatedly select individual same-type units with A.
+6. Confirm every tap selects only the hovered unit.
+7. Perform at least 50–100 repeated selections.
+8. Verify Hold-A area selection.
+9. Verify RT+A additive selection.
 
-11. Open a constructor with Economy, Combat, and Utility commands.
-12. RB through every Economy page.
-13. Confirm next RB enters Combat.
-14. Continue into Utility.
-15. Confirm wrap to Economy.
-16. Use LB to traverse the exact reverse order.
-17. Confirm first valid item is focused after category changes.
+## Tactical immediate commands
 
-## Idle Builders
+10. Test LB immediate Attack.
+11. Test LB immediate Patrol.
+12. Test LB immediate Fight.
+13. Confirm commands issue at the current cursor.
+14. Confirm one order each.
 
-18. Create multiple idle builders.
-19. D-pad Right cycles through vanilla ZZZ entries.
-20. D-pad Left cycles backward.
-21. Confirm vanilla camera movement and highlight.
-22. Use the mouse on the ZZZ widget and confirm controller remembers that entry.
-23. With multiple idle units of the same type, press LB+D-pad Down.
-24. Confirm all currently idle units of that type are selected.
-25. Confirm non-idle units of that type are not selected.
+## Tactical Radial
 
-## Enemy Disassemble
+15. Choose a point command.
+16. Confirm no anchor appears during radial selection.
+17. Press a fresh A to place.
+18. Repeat with X.
+19. Test B cancellation.
+20. Test Area Mex four A/X combinations.
+21. Test Smart Reclaim four combinations.
+22. Test Disassemble radius four combinations.
 
-26. LB+A tap enemy target remains functional.
-27. LB+A hold over enemy unit.
-28. Resize and confirm with A.
-29. Repeat confirming with X.
-30. Repeat with enemy structure.
-31. Confirm same-type enemy reclaim operates once.
-32. Confirm Disassemble remains active.
+## State cycling
+
+23. Focus Move State and press A repeatedly.
+24. Press X repeatedly to reverse.
+25. Repeat with Fire State.
+26. Confirm no sub-radial opens.
+
+## Constructor radial
+
+27. Confirm Economy, Build, Utility, and Combat items exist.
+28. Confirm factories/labs/construction turrets appear in Build.
+29. Inspect sparse mixed pages.
+30. Confirm colored sectors and labels.
+31. Confirm Economy and Combat may share clearly.
+32. Traverse all pages with RB/LB.
+
+## Factory radial
+
+33. Confirm order Constructors→Utility→Combat.
+34. Confirm scouts/transports/support units are grouped in Utility.
+35. Confirm combat units are grouped together.
+36. Confirm mixed sectors and labels.
+37. Recheck A/X/RT quantity controls.
+
+## Native cells
+
+38. Compare radial items to vanilla Build Menu cells.
+39. Confirm icons, costs, badges, queue counts, and disabled states match.
+40. Confirm selected-border scale still works.
+
+## Idle units
+
+41. D-pad Right through the live ZZZ entries.
+42. D-pad Left backward.
+43. Confirm camera focus.
+44. Create several idle units of one type.
+45. Focus one with D-pad.
+46. Press LB+D-pad Down.
+47. Confirm all currently idle units of that type are selected.
+48. Confirm busy/non-idle units are excluded.
 
 ## General
 
-33. Recheck Smart X.
-34. Recheck Hold-X drag Move.
-35. Recheck Tactical toggle.
-36. Recheck Distributed Grid.
-37. Recheck factory quantities.
-38. Recheck control groups.
-39. Recheck stable hints.
-40. Recheck hidden panels.
-41. Test Legacy fallback.
-42. Check `infolog.txt`.
-43. Watch for duplicate commands or frame-time spikes.
+49. Recheck Smart X.
+50. Recheck Hold-X drag Move.
+51. Recheck Distributed Grid.
+52. Recheck Build cancellation.
+53. Recheck groups.
+54. Recheck hint stability.
+55. Recheck hidden panels.
+56. Test Legacy fallback.
+57. Check `infolog.txt`.
+58. Watch for duplicate orders and frame-time spikes.

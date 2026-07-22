@@ -44,17 +44,15 @@ Model getters are called only when the vanilla model revision changes or a menu 
 
 ## Categories and slots
 
-Builders retain the v0.7 classifier (Economy, Combat, Utility, Build) when BAR supplies no category metadata. Adapter category ordering also accepts Defense, Production, and Special. Factories/labs use the sole internal `Factory` scope and render no builder category layer.
+Builders use BAR metadata and a small ambiguity table to classify the authoritative cells in Economy, Build, Utility, Combat order. Factories/labs classify the same authoritative command list in Constructors, Utility, Combat order.
 
-Eight canonical positions are used, with slot 1 at the top and increasing clockwise in the v0.7 direction. Vanilla cell order seeds the canonical position. Missing cells remain holes instead of compacting familiar items. Factory cell 1 therefore maps to radial slot 1; cells 9, 17, and so on start later pages.
-
-The first position observed for a stable item is cached for the widget session. After reload it is rebuilt deterministically from vanilla cell order. If BAR presents conflicting positions for the same item or two remembered items collide, vanilla order wins for the first item and the collision moves to the next free position; `slotException` records that case.
+Pages contain at most eight positions, with slot 1 at the top and increasing clockwise in the v0.7 direction. Present items are compacted without holes. A deterministic minimal-page packer preserves fixed category order and vanilla order within each category while balancing legal page boundaries and avoiding one-item mixed wedges where possible. Mixed pages publish explicit slot-aligned sector runs.
 
 ## Tactical model
 
 The actual Order Menu descriptors are separated into Utility and Tactical. D-pad Up/Down changes those categories; the left stick selects within the category. Commands unavailable to the current selection are absent because the vanilla Order Menu already filtered them.
 
-State labels are read from descriptor params. Three-or-more-state commands open a nested state radial. Binary states activate immediately. State confirmation is handled inside the patched Order Menu (`controllerActivateState`); the controller does not keep a parallel state value.
+State labels are read from descriptor params. Three-or-more-state commands cycle directly: A moves forward and X moves backward. Binary states activate immediately. State changes are handled inside the patched Order Menu (`controllerActivateState`); the controller does not keep a parallel state value.
 
 ## Placement
 
@@ -64,14 +62,13 @@ Every entry and exit forces `single`. LB press changes to `grid`; LB release imm
 
 ## Native panels and fallback
 
-`Show Native Panel While Radial Is Open` and `Show Native Focus Stroke` default to enabled. The experimental branch deliberately leaves the vanilla Build/Order panels visible; the focus-stroke setting is wired into both vanilla APIs. Panel hiding is deferred until live synchronization approval.
+Stable controller-mode hysteresis hides the native Build/Order panels and their mouse interception while leaving descriptors, queue state, and focus identity live. Mouse mode restores the panels. The debug visibility override remains explicit.
 
-Native and Legacy execution are mutually exclusive. Changing integration mode closes both radials, closes any state sub-radial, clears native focus/capture, resets placement to Single, and invalidates cached models without changing the selected units. Legacy continues to use the v0.7 data/execution path.
+Native and Legacy execution are mutually exclusive. Changing integration mode closes both radials, clears native focus/capture, resets placement to Single, and invalidates cached models without changing the selected units. Legacy continues to use the v0.7 data/execution path.
 
 ## Remaining risks
 
-- BAR exposes ordering but not a universal cross-faction builder category/slot table. Cross-builder consistency therefore depends on stable vanilla cell order and the session canonical cache.
+- BAR exposes role metadata but not a universal cross-faction semantic category table. Genuinely ambiguous units may require a documented exact-name override after live evidence.
 - Some modded state descriptors may expose non-label params. They remain activatable through vanilla but may need label-specific normalization after live evidence.
 - Mouse-to-radial synchronization requires the radial to remain open while mouse input is accepted by BAR's input-mode transition.
-- The native panels remain deliberately visible and may overlap custom layouts at unusual UI scales.
-
+- Visual and gameplay behavior still require the 58-step live checklist; automated coverage does not establish live-input success.

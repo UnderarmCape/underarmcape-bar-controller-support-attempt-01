@@ -1,12 +1,12 @@
 # Controller input priority
 
-A consumed press is never reconsidered by a lower layer.
+A consumed edge is never reconsidered by a lower layer.
 
 | Input | Highest to lowest priority |
 | --- | --- |
-| A / X | active controller-owned point/area/front/rectangle target; build placement; Factory/Lab radial; Tactical radial/sub-radial; Disassemble direct target; normal selection/Smart X |
-| B | hybrid target cancellation; placement cancellation; active radial close; Disassemble sub-operation/double-B; normal clear selection |
-| RB / LB with Build/Factory open | Back/View+RB Tactical toggle where applicable; global radial traversal; modal quantity action; shoulder chord only when explicitly permitted |
-| D-pad | settings/modal or active radial; build-placement controls; normal-gameplay Idle Builders navigation |
+| A / X | controller point/area/front/rectangle targeting; build placement; Factory quantity; Tactical item or direct state cycle; Disassemble; normal A/Smart X |
+| B | target cancellation; placement cancellation; active radial close; Disassemble sub-operation/double-B; normal clear |
+| RB / LB | active Build/Factory global packed-page traversal; modal quantity/state action; shoulder chord only when explicitly eligible |
+| D-pad | settings/modal; active radial; placement; normal live-idle navigation |
 
-The root update services hybrid targeting before `ControllerCameraTestUpdateDisassembleController`, so a same-type reclaim's second A/X cannot fall into Disassemble or normal handlers. Build/Factory traversal consumes its shoulder edge before queue/move/disassemble chords. Idle actions are reached only after placement and both radials decline input.
+The root update services hybrid targeting before Disassemble and normal selection, preventing a second A/X from leaking. A Tactical radial selection closes and arms neutral waiting before any normal action. Build/Factory shoulder traversal clears chord state. Idle navigation is reached only after every higher-priority modal declines the input. Legacy Controller UI retains its separate existing paths.

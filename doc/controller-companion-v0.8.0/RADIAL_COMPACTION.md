@@ -1,6 +1,6 @@
 # Build and Factory Radial Compaction
 
-Status: **EXPERIMENTAL — NATIVE CONTROLLER TARGETING AND COMPACT RADIAL TEST**
+Status: **EXPERIMENTAL — V0.7 TACTICAL RESTORE, MIXED RADIAL SECTORS, NATIVE CELLS, AND IDLE CONTROL TEST**
 
 ## Authoritative source
 
@@ -8,26 +8,19 @@ The patched vanilla Build Menu exports its already-authoritative current cells. 
 
 ## Builder algorithm
 
-For each exported builder item, the adapter keeps the stable unit/command key, source index, availability metadata, cost, icon, and native cell identity. It classifies present items into the stable Economy, Combat, Defense, Utility, Build, Production, Special, or extra category sequence.
+For each exported builder item, the adapter keeps the stable unit/command key, source index, availability metadata, cost, icon, and native cell identity. It classifies present items into the fixed Economy, Build, Utility, Combat sequence.
 
-Each non-empty category is then packed independently in source order:
-
-- compact position `n` maps to page `floor((n - 1) / 8) + 1`;
-- slot maps to `((n - 1) % 8) + 1`;
-- slot 1 remains the established top position;
-- page count is `ceil(present category items / 8)`.
-
-No empty category is emitted. No empty or trailing page is possible. No absent global canonical position reserves a blank slot. The model publishes exact `itemCount`, `categoryCounts`, and `pageCounts` invariants for validation.
+The ordered category runs are concatenated and packed globally. Dynamic programming fixes the minimal page count first, then chooses deterministic boundaries that avoid one-item mixed sectors and extremely uneven sparse pages when possible. Slot 1 remains the established top position. No empty category is emitted, no page is empty, and the model publishes exact `itemCount`, `categoryCounts`, `pageCount`, page entries, and sector boundaries.
 
 ## Factory/lab algorithm
 
-Factories and labs use one non-empty `Factory` scope and retain vanilla source order. Present vanilla cell 1 is the first source item and therefore top radial slot 1. Later present cells fill consecutive slots and pages. Units the factory cannot produce reserve nothing.
+Factories and labs classify the unmodified vanilla command list into Constructors, Utility, and Combat. Mobile builders are Constructors; scouts, transports, sensors, and unarmed support are Utility; direct-combat units are Combat. Units the factory cannot produce reserve nothing.
 
 ## Focus and navigation
 
 The adapter preserves `selectedStableKey` if that real command still exists after a rebuild. If it disappeared, focus moves directly to the first present item. The camera then sends that stable key back to the vanilla blue focus stroke. It never keeps an obsolete absolute slot.
 
-D-pad/category and LB/RB navigation use the emitted non-empty category list. A direct D-pad category that does not exist is ignored; page cycling skips it because it is not in the model. Analog selection sees only real compact items.
+RB/LB use the global page list and wrap. Analog selection sees only real compact items. Every page change focuses its first valid slot and synchronizes the native stable key.
 
 ## Invariants
 
@@ -36,8 +29,8 @@ D-pad/category and LB/RB navigation use the emitted non-empty category list. A d
 - Every exported item with a stable command identity maps to one radial item.
 - Present items occupy consecutive slots within each page.
 - No category or page has zero items.
-- Page count is derived independently per category.
-- Stable relative vanilla order is preserved within each category or factory.
+- Page count is the global minimum `ceil(itemCount / 8)`.
+- Stable relative vanilla order is preserved within each category.
 - Disabled/unaffordable present entries remain visible and retain their availability reason.
 
 Tactical Utility/Tactical categories are unchanged; this compaction applies only to Build and Factory/Lab models.
