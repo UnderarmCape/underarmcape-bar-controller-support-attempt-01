@@ -2,11 +2,13 @@
   "kind": "bar-controller-native-override-manifest",
   "schemaVersion": 1,
   "experiment": "EXPERIMENTAL — SMART X, RADIAL ROUTING, ENEMY DISASSEMBLE, AND AREA CONFIRMATION TEST",
-  "barBuild": "Beyond All Reason test-30725-99351e5",
+  "barBuild": "Beyond All Reason test-30735-bf9c7bf",
   "recoilVersion": "2026.06.12",
   "upstreamRepository": "https://github.com/beyond-all-reason/Beyond-All-Reason",
-  "upstreamCommit": "99351e53d26f5e55fa007ca1e208b936f22bd3ab",
-  "upstreamSubject": "Release 2026.07-21-2 (#8373)",
+  "upstreamCommit": "bf9c7bfdba26704832157bba47f3653ba8bdd8d2",
+  "upstreamSubject": "Release 2026.07-22-2 (#8388)",
+  "sourceDirectoryCommit": "99351e53d26f5e55fa007ca1e208b936f22bd3ab",
+  "sourceDirectoryCompatibility": "The eight tracked upstream widget files are byte-identical between sourceDirectoryCommit and upstreamCommit; source paths retain the original audited directory while base hashes apply exactly to both builds.",
   "looseOverridePolicy": "An absent loose file is accepted only when the live build identity matches barBuild/upstreamCommit. Existing loose files must match baseSha256, patchedSha256, or a recorded previousPatchedSha256 unless the explicit development override is supplied.",
   "entries": [
     {

@@ -2,7 +2,7 @@
 
 **EXPERIMENTAL — SMART X, RADIAL ROUTING, ENEMY DISASSEMBLE, AND AREA CONFIRMATION TEST**
 
-Run against `Beyond All Reason test-30725-99351e5`. Enable Native Experimental,
+Run against `Beyond All Reason test-30735-bf9c7bf`. Enable Native Experimental,
 leave Legacy available, and enable Controller Debug only when collecting the
 transition strip.
 

@@ -1,8 +1,11 @@
 # Native BAR UI integration audit
 
 Status: v0.8.0 experimental implementation basis
-BAR game: `Beyond All Reason test-30725-99351e5`
-BAR upstream commit: `99351e53d26f5e55fa007ca1e208b936f22bd3ab` (`Release 2026.07-21-2`)
+BAR game: `Beyond All Reason test-30735-bf9c7bf`
+BAR upstream commit: `bf9c7bfdba26704832157bba47f3653ba8bdd8d2` (`Release 2026.07-22-2`)
+
+The eight tracked native widget sources are byte-identical between the prior
+`99351e53` audit and this build; their base SHA-256 identities remain exact.
 Recoil: `2026.06.12`
 
 The live archive advanced from test-30714 during the hybrid repair. Deployment stopped before writes; all four native sources were compared with the new Rapid package, and the changed Build/Order sources were rebased before validation resumed.

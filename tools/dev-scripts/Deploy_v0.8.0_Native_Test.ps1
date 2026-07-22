@@ -11,7 +11,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RequiredBranch = 'controller/v0.8.0-native-ui-integration-test'
-$ExpectedBuild = 'Beyond All Reason test-30725-99351e5'
+$ExpectedBuild = 'Beyond All Reason test-30735-bf9c7bf'
 $OverrideManifestRelative = 'native-overrides\native-override-manifest.json'
 $WidgetFiles = @(
     'gui_controller_camera_test.lua',
@@ -130,7 +130,7 @@ $CompanionInstallPath = (Resolve-Path -LiteralPath $CompanionInstallPath).Path
 $overrideManifestPath = Join-Path $RepositoryRoot $OverrideManifestRelative
 if (-not (Test-Path -LiteralPath $overrideManifestPath -PathType Leaf)) { throw 'Native override manifest is missing.' }
 $overrideManifest = Get-Content -Raw -Encoding UTF8 $overrideManifestPath | ConvertFrom-Json
-if ($overrideManifest.kind -ne 'bar-controller-native-override-manifest' -or $overrideManifest.upstreamCommit -ne '99351e53d26f5e55fa007ca1e208b936f22bd3ab') {
+if ($overrideManifest.kind -ne 'bar-controller-native-override-manifest' -or $overrideManifest.upstreamCommit -ne 'bf9c7bfdba26704832157bba47f3653ba8bdd8d2') {
     throw 'Unexpected native override manifest identity.'
 }
 

@@ -2,7 +2,7 @@
 
 **EXPERIMENTAL — SMART X, RADIAL ROUTING, ENEMY DISASSEMBLE, AND AREA CONFIRMATION TEST**
 
-This local-only test package targets `Beyond All Reason test-30725-99351e5` / upstream commit `99351e53d26f5e55fa007ca1e208b936f22bd3ab`. It restores the commit `95e4b907` Smart X decision tree, adds narrow native Repair/Reclaim routing, repairs Build/Factory paging and the Tactical toggle chord, calls the live Idle Builders API, supports enemy Disassemble targets, and keeps native area-command owners alive through final confirmation. It is not a stable release and does not replace v0.7.0.
+This local-only test package targets `Beyond All Reason test-30735-bf9c7bf` / upstream commit `bf9c7bfdba26704832157bba47f3653ba8bdd8d2`. The eight tracked upstream widgets are byte-identical to the previously audited `99351e53` source set. It restores the commit `95e4b907` Smart X decision tree, adds narrow native Repair/Reclaim routing, repairs Build/Factory paging and the Tactical toggle chord, calls the live Idle Builders API, supports enemy Disassemble targets, and keeps native area-command owners alive through final confirmation. It is not a stable release and does not replace v0.7.0.
 
 Close BAR, then validate compatibility:
 

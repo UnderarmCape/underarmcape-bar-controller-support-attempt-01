@@ -1,6 +1,6 @@
 # Native override maintenance
 
-This experiment installs eight loose LuaUI files over BAR's Rapid-packed production files. Loose VFS files win over the packed copies. Every override is pinned to BAR upstream commit `99351e53d26f5e55fa007ca1e208b936f22bd3ab`, live identity `Beyond All Reason test-30725-99351e5`, and Recoil `2026.06.12`.
+This experiment installs eight loose LuaUI files over BAR's Rapid-packed production files. Loose VFS files win over the packed copies. Every override is pinned by exact base hash to BAR upstream commit `bf9c7bfdba26704832157bba47f3653ba8bdd8d2`, live identity `Beyond All Reason test-30735-bf9c7bf`, and Recoil `2026.06.12`. These eight upstream files are byte-identical to the original `99351e53` audited source directory, which remains in the package as explicit provenance.
 
 `native-overrides/native-override-manifest.json` is authoritative for base hashes, patched hashes, source paths, and purpose.
 
