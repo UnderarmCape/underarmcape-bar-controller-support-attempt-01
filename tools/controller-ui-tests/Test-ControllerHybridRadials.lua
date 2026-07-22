@@ -17,7 +17,7 @@ local adapter = Adapter.New()
 local builder = adapter:BuildBuildModel({
 	{ unitDefID = 101, cmdID = -101, name = "Solar", cell = 1 },
 	{ unitDefID = 102, cmdID = -102, name = "Radar", cell = 2 },
-	{ unitDefID = 109, cmdID = -109, name = "Fusion", cell = 9 },
+	{ unitDefID = 109, cmdID = -109, name = "Fusion", cell = 9, disabled = true },
 }, {
 	classify = function(item) return item.unitDefID == 102 and "Utility" or "Economy" end,
 	previousStableKey = "build:109",
@@ -26,13 +26,24 @@ local builder = adapter:BuildBuildModel({
 expect(builder.kind == "builder", "builder model kind")
 expect(builder.selectedStableKey == "build:109", "build focus preserved by stable unit identity")
 expect(builder.items[1].radialSlot == 1, "slot 1 is top/first")
-expect(builder.items[2].radialPage == 2 and builder.items[2].radialSlot == 1, "vanilla cell 9 maps deterministically")
+expect(builder.items[2].radialPage == 1 and builder.items[2].radialSlot == 2, "present entries compact within category")
+expect(builder.items[2].disabled == true, "disabled authoritative item remains visible")
 expect(#builder.categories == 2, "builder categories retained")
+expect(builder.itemCount == 3 and builder.categoryCounts.Economy == 2, "model exports exact compact counts")
 
 local changedBuilder = adapter:BuildBuildModel({
 	{ unitDefID = 102, cmdID = -102, name = "Radar", cell = 1 },
 }, { classify = function() return "Utility" end, previousStableKey = "build:102" })
-expect(changedBuilder.items[1].radialSlot == 2, "missing earlier cells do not compact a familiar item")
+expect(changedBuilder.items[1].radialSlot == 1, "missing earlier cells never leave a radial hole")
+
+local pagedSource = {}
+for index = 1, 9 do
+	pagedSource[index] = { unitDefID = 300 + index, cmdID = -(300 + index), name = "Item " .. index, cell = index * 3 }
+end
+local paged = adapter:BuildBuildModel(pagedSource, { classify = function() return "Economy" end })
+expect(paged.items[8].radialPage == 1 and paged.items[8].radialSlot == 8, "first compact page is full")
+expect(paged.items[9].radialPage == 2 and paged.items[9].radialSlot == 1, "ninth present item starts page two")
+expect(paged.pageCounts.Economy == 2, "page count derives from present entries")
 
 local factory = adapter:BuildBuildModel({
 	{ unitDefID = 201, cmdID = -201, name = "Peewee", cell = 1, queueCount = 3 },
@@ -41,6 +52,7 @@ local factory = adapter:BuildBuildModel({
 expect(factory.kind == "factory" and #factory.categories == 1 and factory.categories[1] == "Factory", "factory is uncategorized")
 expect(factory.items[1].radialSlot == 1 and factory.items[2].radialSlot == 2, "factory follows vanilla cells")
 expect(factory.items[1].queueCount == 3, "factory queue count is vanilla-backed")
+expect(factory.itemCount == 2 and factory.pageCounts.Factory == 1, "factory pages are compact and non-empty")
 
 local tactical = adapter:BuildTacticalModel({
 	{ id = 20, name = "Fire State", action = "firestate", isState = true,
@@ -57,7 +69,7 @@ expect(tactical.selectedStableKey == "cmd:50", "tactical focus preserved by comm
 expect(#tactical.byCategory.utility[1].states == 3, "Fire State exposes descriptor states")
 expect(tactical.byCategory.utility[3].isBinaryState, "Visible/Cloak is a native binary toggle")
 
-local camera = read("luaui/Widgets/gui_controller_camera_test.lua")
+local camera = read("luaui/Widgets/gui_controller_camera_test.lua"):gsub("\r\n", "\n")
 local renderer = read("luaui/Include/controller_ui_shared_renderers.lua")
 local buildMenu = read("native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_buildmenu.lua")
 local orderMenu = read("native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_ordermenu.lua")
@@ -66,11 +78,12 @@ expect(contains(camera, "ControllerCameraTestRebuildNativeBuildModel"), "shared 
 expect(contains(camera, "ControllerCameraTestRebuildNativeTacticalModel"), "shared tactical adapter production path")
 expect(not contains(camera, "native order panel opened"), "giant native tactical bypass removed")
 expect(not contains(camera, "Native Build Menu: D-pad navigate"), "flat native build bypass removed")
-expect(contains(renderer, "entry.slot or index"), "renderer honors canonical holes")
+expect(contains(renderer, "entry.slot or index"), "renderer honors adapter-provided radial slots")
 expect(contains(camera, "slotCount = ControllerCameraTestUsesNativeBARUI() and 8"), "fixed eight-slot hybrid wheel")
 expect(contains(camera, "ControllerCameraTestOpenNativeStateSubradial"), "multi-state sub-radial")
 expect(contains(camera, "ControllerCameraTestActivateNativeState"), "state activation delegates to vanilla")
 expect(contains(camera, 'placement.placementPattern = "single"'), "placement resets to Single")
+expect(contains(camera, "function ControllerCameraTestPlacementShouldExit(button)\n\treturn false"), "A/X placement remains active")
 expect(contains(camera, 'pattern single (LB released)'), "LB release restores Single")
 expect(not contains(camera, 'ControllerCameraTestTryConstructionShortcut("pattern", "cycle")'), "LB no longer latches/cycles placement mode")
 expect(contains(camera, "showNativePanelWhileRadialOpen = true"), "native panel setting defaults on")
@@ -79,6 +92,7 @@ expect(contains(buildMenu, "controllerGetFocus"), "Build Menu exports two-way fo
 expect(contains(buildMenu, "controllerSetRadialOpen"), "Build Menu scopes synchronization")
 expect(contains(orderMenu, "controllerGetFocus"), "Order Menu exports two-way focus")
 expect(contains(orderMenu, "controllerActivateState"), "Order Menu owns state activation")
+expect(contains(orderMenu, "controllerIssueActiveTarget"), "Order Menu owns single target dispatch")
 expect(contains(orderMenu, '"vanilla-mouse"'), "mouse hover reports vanilla focus")
 expect(contains(buildMenu, '"vanilla-mouse"'), "build mouse hover reports vanilla focus")
 expect(contains(camera, "option and option.stableKey ~= focusBefore"), "unchanged radial focus does not overwrite vanilla mouse focus")
