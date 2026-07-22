@@ -69,12 +69,12 @@ test(12, "No stale X latch after tap", function() return has(camera, "drag.press
 
 -- 13-22 Build/Factory paging.
 test(13, "Closed RB opens eligible radial", function() return has(camera, 'event == "rb-tap"') and has(camera, "attemptBuildMenu()") end)
-test(14, "Open Build RB advances page", function() return has(camera, "menu.radialPage % menu.radialPageCount") end)
-test(15, "Open Build LB returns page", function() return has(camera, "menu.radialPage - 2") end)
+test(14, "Open Build RB advances global page", function() return has(camera, "ControllerCameraTestTraverseRadialPages(1)") end)
+test(15, "Open Build LB returns global page", function() return has(camera, "ControllerCameraTestTraverseRadialPages(-1)") end)
 test(16, "Factory shares next-page handler", function() return has(camera, "menu.isFactoryContext") and has(camera, "radialNextPage") end)
 test(17, "Factory shares previous-page handler", function() return has(camera, "menu.isFactoryContext") and has(camera, "radialPrevPage") end)
-test(18, "One-page radial is safe", function() return has(camera, "single page: next no-op") and has(camera, "single page: previous no-op") end)
-test(19, "One press changes one page", function() return has(camera, 'menu.lastAction = "page next"') end)
+test(18, "One-page radial is safe", function() return has(camera, "single global page: no-op") end)
+test(19, "One press changes one global page", function() return has(camera, "global page next:") end)
 test(20, "Page input cannot trigger Queue Mode", function() return has(camera, "if ControllerCameraTestBuildMenu.open or ControllerCameraTestTacticalMenu.open then") end)
 test(21, "Page input cannot trigger Move State", function() return has(camera, "ControllerCameraTestInputChord = ControllerInputChords.New()") end)
 test(22, "Page focus updates native identity", function() return has(camera, "first.menuIndex, first.stableKey") and has(camera, "ControllerCameraTestSetNativeBuildFocus") end)
@@ -89,10 +89,10 @@ test(28, "Closing toggle consumes RB cycle", function() return has(camera, "wait
 test(29, "Clean later RB is rearmed", function() return has(camera, 'rearmed after RB release') end)
 
 -- 30-38 Vanilla idle navigation.
-test(30, "D-pad Left invokes vanilla previous API", function() return has(camera, "api.controllerPreviousIdleUnit") end)
-test(31, "D-pad Right invokes vanilla next API", function() return has(camera, "api.controllerNextIdleUnit") end)
+test(30, "D-pad Left invokes vanilla previous entry API", function() return has(camera, "api.controllerActivatePreviousEntry") end)
+test(31, "D-pad Right invokes vanilla next entry API", function() return has(camera, "api.controllerActivateNextEntry") end)
 test(32, "Vanilla list ordering is used", function() return has(idle, "for _, unitDefID in ipairs(existingIcons)") end)
-test(33, "Vanilla selection is used", function() return has(idle, "Spring.SelectUnitArray({ unitID })") end)
+test(33, "Vanilla selection is used", function() return has(idle, "Spring.SelectUnitArray(selected)") end)
 test(34, "Vanilla camera focus is used", function() return has(idle, 'Spring.SendCommands("viewselection")') end)
 test(35, "Vanilla highlight updates", function() return has(idle, "controllerHighlighted") and has(idle, "doUpdateForce = true") end)
 test(36, "Dead/non-idle entries are filtered", function() return has(idle, "spGetUnitIsDead(unitID)") and has(idle, "isWorkerUnitIdle") end)
@@ -120,7 +120,9 @@ test(51, "Timer resets only after accepted reclaim", function() return has(camer
 test(52, "Disassemble remains active", function() return has(camera, "state.successfulActivity, state.lastReclaimAt = true") end)
 
 -- 53-72 runtime-equivalent area owner route.
-test(53, "LB Tactical activation begins broker session", function() return has(camera, "api.controllerBeginTarget") end)
+test(53, "LB Tactical activation begins controller-owned hybrid state", function()
+	return has(camera, "ControllerCameraTestBeginHybridTargeting") and not has(camera, "api.controllerBeginTarget")
+end)
 test(54, "Area Mex registers after Order Menu", function() return has(mex, "registerControllerOwner()") and has(mex, "controllerRegisterCommandOwner") end)
 test(55, "Smart Reclaim registers after Order Menu", function() return has(reclaim, "function widget:Update()") and has(reclaim, "controllerRegisterCommandOwner") end)
 test(56, "Hidden Order Menu retains Update", function() return has(order, "function widget:Update(dt)") and has(order, "controllerPanelVisible") end)
@@ -135,11 +137,14 @@ test(64, "X to X works", function() return select(1,runArea("X","X")) == 1 end)
 test(65, "Owner confirm callback is called", function() local n=runArea("A","A"); return n==1 end)
 test(66, "Exactly one CommandNotify boundary", function() local _,count=order:gsub("pcall%(widgetHandler%.CommandNotify",""); return count==1 end)
 test(67, "Direct fallback only when unhandled", function() return has(order,"COMMAND_NOTIFY HANDLED") and has(order,"GIVE_ORDER FALLBACK") end)
-test(68, "Smart X cannot steal confirm", function() return has(camera,"elseif ControllerCameraTestHandleNativeTargetingInput() then") end)
+test(68, "Smart X cannot steal confirm", function() return has(camera,"local nativeTargetBusy = ControllerCameraTestHandleNativeTargetingInput()") end)
 test(69, "Normal A cannot steal confirm", function() return has(camera,"ControllerCameraTestCancelAreaSelect(\"cancelled by native command targeting\")") end)
 test(70, "B cancels session", function() return has(ownerSource,"if input.cancelPressed then") end)
 test(71, "Session clears after completion", function() local _,_,_,state=runArea("A","A"); return state.phase=="IDLE" and state.anchor==nil end)
-test(72, "Transition trace records full route", function() return has(order,"SESSION CREATED") and has(order,"CONFIRM ARMED") and has(order,"SESSION CLOSED") end)
+test(72, "Transition trace records full hybrid route", function()
+	return has(camera,"TARGET STATE CREATED") and has(camera,"FINAL DISPATCH STARTED")
+		and has(order,"NATIVE TRANSFORM CALLED")
+end)
 
 -- 73-88 preserved regressions and delivery coverage.
 test(73, "Build eligibility remains", function() return has(camera,"ControllerCameraTestGetBuildSelectionContext") end)

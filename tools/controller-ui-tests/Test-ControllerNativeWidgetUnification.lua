@@ -99,7 +99,7 @@ test(9, "B cancels", function()
 end)
 test(10, "Exactly one dispatch occurs", function() local n=runAreaCombo("A","A"); return n == 1 and has(ownerSource,"operation already dispatched") end)
 test(11, "Mouse path still works", function() return has(areaMex,"function widget:CommandNotify") and has(formations,"function widget:MousePress") end)
-test(12, "Camera bridge does not duplicate final dispatch", function() return has(camera,"function ControllerCameraTestIssueNativeTarget(params)") and has(camera,"final dispatch is owner-only") end)
+test(12, "Camera bridge does not duplicate final dispatch", function() return has(camera,"function ControllerCameraTestIssueNativeTarget(params, shape)") and has(camera,"if state.dispatchStarted then return false end") end)
 test(13, "Generic Order Menu fallback is used only for ownerless commands", function() return has(order,"entry and entry.api or controllerTargetOwner") end)
 
 -- 14-20 Build/Factory selected border.
@@ -153,9 +153,9 @@ test(52, "Guard uses native pipeline", function() return has(camera,"ControllerC
 test(53, "Repair uses native pipeline", function() return has(camera,'StageAreaCommandShortcut("repairArea"') end)
 test(54, "Reclaim uses native pipeline", function() return has(camera,'StageAreaCommandShortcut("reclaimArea"') end)
 test(55, "Stop uses native pipeline", function() return has(camera,'NativeImmediateShortcut((CMD and CMD.STOP)') end)
-test(56, "Area shortcuts use owner APIs", function() return all(camera,"controllerBeginTarget", "controllerTargetInput") end)
+test(56, "Area shortcuts use hybrid completed-shape APIs", function() return all(camera,"ControllerCameraTestBeginHybridTargeting", "controllerGetCommandDescriptor") and not has(camera,"api.controllerTargetInput") end)
 test(57, "Disabled commands do not execute", function() return has(order,"source.disabled ~= true") end)
-test(58, "Exactly one order issues", function() return has(order,"controllerDispatchCommand") and has(order,"COMMAND_NOTIFY HANDLED") and has(ownerSource,"operation already dispatched") end)
+test(58, "Exactly one order issues", function() return has(order,"controllerDispatchCommand") and has(order,"COMMAND_NOTIFY HANDLED") and has(camera,"dispatchStarted") end)
 
 -- 59-66 Vanilla groups.
 test(59, "Controller-created group appears in vanilla UI", function() return has(camera,"Spring.SetUnitGroup(unitID, groupNumber)") end)
@@ -206,8 +206,8 @@ test(97, "One cycle creates one action", function() local s=Chords.New(); chordS
 test(98, "Distributed build has higher priority in build placement", function() return has(camera,"distributedPlacementOwns") and has(camera,"if not disassembleBusy and not distributedPlacementOwns") end)
 
 -- 99-105 Idle-unit navigation.
-test(99, "D-pad Left invokes vanilla previous idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(-1)") and has(camera,"api.controllerPreviousIdleUnit") end)
-test(100, "D-pad Right invokes vanilla next idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(1)") and has(camera,"api.controllerNextIdleUnit") end)
+test(99, "D-pad Left invokes vanilla previous idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(-1)") and has(camera,"api.controllerActivatePreviousEntry") end)
+test(100, "D-pad Right invokes vanilla next idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(1)") and has(camera,"api.controllerActivateNextEntry") end)
 test(101, "Vanilla ordering is used", function() return has(idle,"for _, unitDefID in ipairs(existingIcons)") end)
 test(102, "Camera behavior matches vanilla", function() return has(idle,'Spring.SendCommands("viewselection")') and has(idle,"Spring.SelectUnitArray") end)
 test(103, "Native idle highlight updates", function() return has(idle,"controllerHighlighted") and has(idle,"controllerCursorTypeID") end)
@@ -279,10 +279,10 @@ test(137, "Relevant .NET tests/builds pass", function()
 	if not pipe then return false end; local output=pipe:read("*a"); pipe:close(); return output==""
 end)
 test(138, "Deployment and rollback manifests cover every changed file", function()
-	return all(deploy,"controller_native_command_owner.lua","Test-ControllerNativeWidgetUnification.lua","Test-ControllerNativeRegressionRepair.lua")
+	return all(deploy,"controller_native_command_owner.lua","Test-ControllerNativeWidgetUnification.lua","Test-ControllerNativeRegressionRepair.lua","Test-ControllerHybridAreaIdleRepair.lua")
 		and all(manifest,"cmd_area_mex.lua","cmd_buildsplit.lua","cmd_customformations2.lua","gui_idle_builders.lua")
-		and has(restore,"bar-controller-native-regression-repair-test-deployment-backup")
-		and has(packageScript,"BAR_Controller_Support_v0.8.0_NATIVE_REGRESSION_REPAIR_TEST.zip")
+		and has(restore,"bar-controller-hybrid-area-idle-repair-test-deployment-backup")
+		and has(packageScript,"BAR_Controller_Support_v0.8.0_HYBRID_AREA_IDLE_REPAIR_TEST.zip")
 end)
 
 assert(#cases == 138, "expected exactly 138 cases")

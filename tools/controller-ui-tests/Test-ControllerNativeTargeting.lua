@@ -169,9 +169,9 @@ expect(contains(adapter, "if item.stableKey == selectedKey"), "focus follows sta
 expect(contains(adapter, "selectedIndex, selectedKey = 1"), "missing focus falls back to first present item")
 expect(contains(adapter, "item.disabled = item.disabled == true"), "present disabled entries remain visible")
 expect(contains(adapter, "item.queueCount = tonumber(item.queueCount) or 0"), "factory queue metadata survives compaction")
-expect(contains(targetingDoc, "First A/X anchors"), "targeting workflow is documented")
-expect(contains(targetingDoc, "BAR's native command eligibility and engine rejection remain authoritative"), "native eligibility boundary is documented")
+expect(contains(targetingDoc, "first A/X") and contains(targetingDoc, "second A/X"), "targeting workflow is documented")
+expect(contains(targetingDoc, "revalidates command identity") and contains(targetingDoc, "one direct fallback"), "native eligibility boundary is documented")
 expect(contains(compactionDoc, "No empty category is emitted"), "empty-category rule is documented")
-expect(contains(checklist, "47. Watch for duplicate orders or frame-time spikes"), "47-step live checklist covers duplicate/performance watch")
+expect(contains(checklist, "43. Watch for duplicate commands or frame-time spikes"), "43-step live checklist covers duplicate/performance watch")
 
 print(string.format("Controller Native Targeting tests passed: %d validations.", checks))
