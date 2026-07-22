@@ -21,3 +21,16 @@ The normal Controller Bindings UI has a compact **Hints** settings page:
 - Reset Hint Appearance
 
 Changes call the lean runtime directly and are stored as personal settings. Text and glyph scales remain independent. Spacing scales row, column, panel padding, and glyph-to-text gaps. Reset removes only appearance overrides and resolves the experimental shipped defaults. Rendering remains single-owner and performs no per-frame texture loading.
+
+## Stable update model
+
+Passive reticle hover and target identity are no longer part of the hint context
+signature. Radial open/close, targeting transitions, queue state, Disassemble,
+and other explicit button-driven changes rebuild immediately. Actual selection
+changes use a 0.16-second debounce. A model equal to the current model does not
+increment the revision or rebuild draw data.
+
+Controller Debug exposes model revision, last update reason, update timestamp,
+and update count/rate. Hover can still change reticle and native target visuals
+without changing hint text. Existing hint scale and spacing persistence remains
+fully functional.

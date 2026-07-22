@@ -320,9 +320,8 @@ function Runtime.New()
 	bind("select", "Select Unit", normal, 1); bind("smartAction", "Smart Action", function(c) return normal(c) and not c.hasTransport end, 3)
 	bind("smartAction", "Load / Move Transport", function(c) return normal(c) and c.hasTransport end, 3, { id = "normal-transport-smart" })
 	bind("smartAction", "Draw Move / Build Path", function(c) return normal(c) and c.hasSelection end, 4, { hold = true, id = "normal-smart-hold" })
-	add({ id = "normal-selection-toggle", inputs = { "RT", "A" }, label = "Add to Selection", priority = 2, group = "Selection",
-		when = function(c) return normal(c) and c.selectionToggleModifier and c.hoverFriendlyTarget end,
-		labelResolver = function(c) return c.hoverSelectionToggleAction or "Add to Selection" end })
+	add({ id = "normal-selection-toggle", inputs = { "RT", "A" }, label = "Add / Remove Selection", priority = 2, group = "Selection",
+		when = function(c) return normal(c) and c.selectionToggleModifier end })
 	bind("cancel", "Clear Selection", function(c) return normal(c) and c.hasSelection end, 5)
 	bind("buildRadial", "Build / Factory Radial", function(c) return normal(c) and (c.hasBuilder or c.hasFactory) end, 6)
 	bind("commandLayer", "Tactical Command Layer", function(c) return normal(c) and c.hasSelection end, 7)
@@ -343,14 +342,12 @@ function Runtime.New()
 	local function legacyReclaim(c) return c.disassembleAreaReclaim and not c.nativeBarUI and not c.disassembleToggleCharge end
 	add({ id = "disassemble-exit", inputs = { "LB", "RB" }, label = "Exit Disassemble Mode", hold = true, when = disassemble, priority = 1, group = "Commands" })
 	add({ id = "disassemble-native-select", inputs = { "A" }, label = "Select Unit", when = nativeDisassemble, priority = 2, group = "Selection" })
-	add({ id = "disassemble-native-toggle", inputs = { "RT", "A" }, label = "Add / Remove Selection", when = nativeDisassemble, priority = 3, group = "Selection",
-		labelResolver = function(c) return c.hoverSelectionToggleAction or "Add / Remove Selection" end })
-	add({ id = "disassemble-native-move", inputs = { "X" }, label = "Move", when = nativeDisassemble, priority = 4, group = "Commands" })
+	add({ id = "disassemble-native-toggle", inputs = { "RT", "A" }, label = "Add / Remove Selection", when = nativeDisassemble, priority = 3, group = "Selection" })
+	add({ id = "disassemble-native-reclaim", inputs = { "X" }, label = "Reclaim Target / Move on Empty", when = nativeDisassemble, priority = 4, group = "Commands" })
 	add({ id = "disassemble-native-cancel", inputs = { "B" }, label = "Clear Selection / Cancel Target", when = nativeDisassemble, priority = 5, group = "Commands" })
 	add({ id = "disassemble-mark", inputs = { "A" }, label = "Mark Target", when = legacyDisassemble, priority = 2, group = "Selection" })
 	add({ id = "disassemble-mark-area", inputs = { "A" }, label = "Mark Targets in Area", hold = true, when = legacyDisassemble, priority = 3, group = "Selection" })
-	add({ id = "disassemble-additive", inputs = { "RT", "A" }, label = "Add / Remove Target", when = legacyDisassemble, priority = 3, group = "Selection",
-		labelResolver = function(c) return c.disassembleTargetToggleAction or "Add / Remove Target" end })
+	add({ id = "disassemble-additive", inputs = { "RT", "A" }, label = "Add / Remove Target", when = legacyDisassemble, priority = 3, group = "Selection" })
 	add({ id = "disassemble-reclaim", inputs = { "LB", "A" }, label = "Reclaim Target", when = disassemble, priority = 4, group = "Commands" })
 	add({ id = "disassemble-reclaim-area", inputs = { "LB", "A" }, label = "Same-Type Area Reclaim", hold = true, when = disassemble, priority = 5, group = "Commands" })
 	add({ id = "disassemble-stop", inputs = { "LB", "B" }, label = "Stop Selected", when = disassemble, priority = 6, group = "Commands" })
@@ -394,12 +391,17 @@ function Runtime.New()
 	function self:ContextSignature(context)
 		local keys = { "pregame", "mouseMode", "bindingsOpen", "buildMenuOpen", "buildPlacement", "factoryRadialOpen",
 			"tacticalRadialOpen", "selectionRadialOpen", "visibleSelectionRadialOpen", "areaSelection", "stagedTactical",
-			"dgunMode", "hasSelection", "hasBuilder", "hasFactory", "commandLayer", "controlGroupLayer", "pitchLayer",
-			"lbTacticalLayer", "selectionRevision", "selectedCount", "hasTransport", "hasWorldTarget", "hoverTargetType",
-			"smartTargetType", "visibleSelectionFilter", "selectionProfile", "hoverSelectionToggleAction", "selectionToggleModifier", "disassembleTargetToggleAction",
-			"disassembleMode", "disassembleToggleCharge", "disassembleAreaMarking", "disassembleAreaReclaim", "markedCount",
+			"dgunMode", "commandLayer", "controlGroupLayer", "pitchLayer",
+			"lbTacticalLayer", "visibleSelectionFilter", "selectionToggleModifier",
+			"disassembleMode", "disassembleToggleCharge", "disassembleAreaMarking", "disassembleAreaReclaim", "disassembleMarkedCount",
 			"nativeBarUI", "nativeCommandActive", "controllerGlyphStyle", "controllerGlyphFamily" }
 		local values = {}; for i, key in ipairs(keys) do values[i] = tostring(context[key]) end; return table.concat(values, "|")
+	end
+	function self:SelectionSignature(context)
+		local keys = { "selectionRevision", "selectedCount", "hasSelection", "multipleSelection",
+			"hasBuilder", "hasFactory", "hasTransport", "selectionProfile" }
+		local values = {}; for i, key in ipairs(keys) do values[i] = tostring(context[key]) end
+		return table.concat(values, "|")
 	end
 	function self:Update(dt)
 		dt = math.max(0, tonumber(dt) or 0); self.animationTime, self.pollElapsed = self.animationTime + dt, self.pollElapsed + dt
@@ -410,20 +412,36 @@ function Runtime.New()
 		if self.glyphs and type(self.glyphs.SetStyle) == "function" then
 			self.glyphs.SetStyle(context.controllerGlyphStyle, context.controllerGlyphFamily)
 		end
-		local signature = self:ContextSignature(context); local bindingRevision = type(api.GetBindingRevision) == "function" and api.GetBindingRevision() or 0
-		local committed, changed = context, signature ~= self.contextSignature
-		local behavior = self.renderers and self.renderers.SelectionBehavior
-		if behavior then
-			self.hintContextState = self.hintContextState or behavior.NewHintContextState()
-			local immediate = self.settings.components.hints.confirmedModalImmediate ~= false and
-				(context.buildMenuOpen or context.buildPlacement or context.tacticalRadialOpen or context.selectionRadialOpen
-				or context.visibleSelectionRadialOpen or context.stagedTactical or context.dgunMode or context.bindingsOpen
-				or context.lbTacticalLayer or context.disassembleToggleCharge or context.disassembleAreaMarking or context.disassembleAreaReclaim)
-			committed, changed = behavior.AdvanceHintContext(self.hintContextState, context, signature, self.animationTime,
-				immediate, self.settings.components.hints.contextEnterDebounce, self.settings.components.hints.contextExitGrace)
+		local stateSignature, selectionSignature = self:ContextSignature(context), self:SelectionSignature(context)
+		local bindingRevision = type(api.GetBindingRevision) == "function" and api.GetBindingRevision() or 0
+		local committed, changed, reason = self.committedContext, false, nil
+		if not committed then
+			committed, changed, reason = context, true, "initial"
+		elseif stateSignature ~= self.committedStateSignature then
+			committed, changed, reason = context, true, "explicit-state"
+			self.selectionCandidate, self.selectionCandidateSince = nil, nil
+		elseif selectionSignature ~= self.committedSelectionSignature then
+			if self.selectionCandidateSignature ~= selectionSignature then
+				self.selectionCandidate, self.selectionCandidateSignature = context, selectionSignature
+				self.selectionCandidateSince = self.animationTime
+			elseif self.animationTime - (self.selectionCandidateSince or self.animationTime) >= 0.16 then
+				committed, changed, reason = self.selectionCandidate, true, "selection-debounced"
+				self.selectionCandidate, self.selectionCandidateSignature, self.selectionCandidateSince = nil, nil, nil
+			end
+		else
+			self.selectionCandidate, self.selectionCandidateSignature, self.selectionCandidateSince = nil, nil, nil
 		end
-		if changed or bindingRevision ~= self.bindingRevision or self.lastHintRevision ~= self.hintRevision then
-			self.contextSignature, self.bindingRevision, self.lastHintRevision = self:ContextSignature(committed), bindingRevision, self.hintRevision
+		if bindingRevision ~= self.bindingRevision or self.lastHintRevision ~= self.hintRevision then
+			committed, changed, reason = context, true, bindingRevision ~= self.bindingRevision and "bindings" or "definitions"
+		end
+		if changed then
+			self.committedContext = committed
+			self.committedStateSignature = self:ContextSignature(committed)
+			self.committedSelectionSignature = self:SelectionSignature(committed)
+			self.contextSignature, self.bindingRevision, self.lastHintRevision =
+				self.committedStateSignature .. "|" .. self.committedSelectionSignature, bindingRevision, self.hintRevision
+			self.modelRevision, self.lastUpdateReason = (self.modelRevision or 0) + 1, reason
+			self.lastRebuildAt, self.rebuildCount = self.animationTime, (self.rebuildCount or 0) + 1
 			self:Rebuild(committed, api)
 		end
 	end
@@ -474,7 +492,10 @@ function Runtime.New()
 	function self:HintAPI()
 		return { Register = add, Unregister = function(id) self.hints[id] = nil; self.hintRevision = self.hintRevision + 1 end,
 			GetVisibleActions = function() return self.visibleHints end, GetDefinitions = function() return self.hints end,
-			Invalidate = function() self.contextSignature = "" end }
+			Invalidate = function() self.committedStateSignature = "" end,
+			GetDiagnostics = function() return { modelRevision = self.modelRevision or 0,
+				lastUpdateReason = self.lastUpdateReason or "none", lastRebuildAt = self.lastRebuildAt or 0,
+				rebuildCount = self.rebuildCount or 0, selectionDebounceSeconds = 0.16 } end }
 	end
 	function self:GetConfigData()
 		return { schemaVersion = Runtime.SCHEMA_VERSION, personalSettings = self.personal,
