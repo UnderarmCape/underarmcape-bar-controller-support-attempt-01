@@ -13,11 +13,11 @@ $BackupRoot = (Resolve-Path -LiteralPath $BackupRoot).Path
 $manifestPath = Join-Path $BackupRoot 'deployment-manifest.json'
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'Deployment manifest is missing.' }
 $manifest = Get-Content -Raw -Encoding UTF8 $manifestPath | ConvertFrom-Json
-if ($manifest.kind -notin @('bar-controller-native-test-deployment-backup', 'bar-controller-native-hybrid-test-deployment-backup', 'bar-controller-native-hybrid-targeting-test-deployment-backup', 'bar-controller-native-input-disassemble-test-deployment-backup', 'bar-controller-native-input-polish-test-deployment-backup', 'bar-controller-native-widget-unification-test-deployment-backup', 'bar-controller-native-regression-repair-test-deployment-backup', 'bar-controller-hybrid-area-idle-repair-test-deployment-backup') -or $manifest.schemaVersion -ne 1) { throw 'Unexpected deployment manifest.' }
+if ($manifest.kind -notin @('bar-controller-native-test-deployment-backup', 'bar-controller-native-hybrid-test-deployment-backup', 'bar-controller-native-hybrid-targeting-test-deployment-backup', 'bar-controller-native-input-disassemble-test-deployment-backup', 'bar-controller-native-input-polish-test-deployment-backup', 'bar-controller-native-widget-unification-test-deployment-backup', 'bar-controller-native-regression-repair-test-deployment-backup', 'bar-controller-hybrid-area-idle-repair-test-deployment-backup', 'bar-controller-radial-tactical-idle-redesign-test-deployment-backup') -or $manifest.schemaVersion -ne 1) { throw 'Unexpected deployment manifest.' }
 if (-not [IO.Path]::GetFullPath([string]$manifest.backupRoot).Equals($BackupRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Backup-root identity mismatch.' }
 
 $processes = @(Get-CimInstance Win32_Process | Where-Object {
-    $_.Name -match '^(?i)(BARControllerBridge|BARControllerLauncher|BARControllerCompanionInstaller|BARControllerCompanionRestore|BARControllerUIDefaultsPublisher|spring|spring-headless|Beyond-All-Reason|BAR)\.exe$'
+    $_.Name -match '^(?i)(BARControllerBridge|BARControllerLauncher|BARControllerCompanionInstaller|BARControllerCompanionRestore|BARControllerUIDefaultsPublisher|spring|spring-headless|recoil|Beyond-All-Reason|BAR)\.exe$'
 })
 if ($processes.Count -gt 0) {
     $processes | Select-Object ProcessId, Name, ExecutablePath | Format-List
@@ -25,9 +25,13 @@ if ($processes.Count -gt 0) {
 }
 
 $allowedRoot = [IO.Path]::GetFullPath([string]$manifest.barDataPath).TrimEnd('\') + '\'
+$allowedCompanionRoot = [IO.Path]::GetFullPath([string]$manifest.companionInstallPath).TrimEnd('\') + '\'
 function Assert-Allowed([string]$Path) {
     $full = [IO.Path]::GetFullPath($Path)
-    if (-not $full.StartsWith($allowedRoot, [StringComparison]::OrdinalIgnoreCase)) { throw "Restore target escaped BAR data: $Path" }
+    if (-not $full.StartsWith($allowedRoot, [StringComparison]::OrdinalIgnoreCase) -and
+            -not $full.StartsWith($allowedCompanionRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Restore target escaped BAR data and companion roots: $Path"
+    }
     return $full
 }
 
@@ -88,4 +92,4 @@ foreach ($record in @($manifest.preservedFiles)) {
 $result = [ordered]@{ kind = 'bar-controller-native-test-rollback-result'; rolledBackAt = (Get-Date).ToString('o'); sourceDeployment = $manifestPath; artifacts = $artifacts }
 [IO.File]::WriteAllText((Join-Path $BackupRoot 'rollback-result.json'), (($result | ConvertTo-Json -Depth 6) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
 Write-Output ('ROLLBACK_COMPLETE=' + $BackupRoot)
-Write-Output 'The exact pre-deployment Lua files, glyph assets, widget configuration, and spring settings were restored. BAR was not launched.'
+Write-Output 'The exact pre-deployment BAR/controller files, companion executables, and preserved configuration were restored. BAR was not launched.'

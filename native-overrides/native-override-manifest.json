@@ -1,7 +1,7 @@
 {
   "kind": "bar-controller-native-override-manifest",
   "schemaVersion": 1,
-  "experiment": "EXPERIMENTAL — HYBRID AREA TARGETING, GLOBAL RADIAL PAGING, AND VANILLA IDLE CONTROL TEST",
+  "experiment": "EXPERIMENTAL — V0.7 TACTICAL RESTORE, MIXED RADIAL SECTORS, NATIVE CELLS, AND IDLE CONTROL TEST",
   "barBuild": "Beyond All Reason test-30735-bf9c7bf",
   "recoilVersion": "2026.06.12",
   "upstreamRepository": "https://github.com/beyond-all-reason/Beyond-All-Reason",
@@ -38,9 +38,9 @@
       "livePath": "LuaUI/Widgets/gui_buildmenu.lua",
       "sourcePath": "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_buildmenu.lua",
       "baseSha256": "082298c94eb24c17db180d5be34ed4a79bccb7751450f76d685f44cf346a12dd",
-      "previousPatchedSha256": "a664a35978c909886f821196b67571d48dbf6c68925f23b0988c827dd7c441a4",
-      "patchedSha256": "9e65edcac8e71a21288a8b08eb7762062412b3f4e6bba243944d9e641612803c",
-      "purpose": "Export authoritative build/factory cells, native one/five queue edits, revisions, activation, and scoped two-way focus for the hybrid Build/Factory Radials."
+      "previousPatchedSha256": "9e65edcac8e71a21288a8b08eb7762062412b3f4e6bba243944d9e641612803c",
+      "patchedSha256": "544b1884aabe7a226601f9a16f59bd204cb39e2da94a1881e140c1ae7a887c3a",
+      "purpose": "Export authoritative build/factory cells and reuse the exact shared vanilla cell renderer for both the grid and controller radials."
     },
     {
       "livePath": "LuaUI/Widgets/cmd_area_mex.lua",
@@ -69,9 +69,9 @@
       "livePath": "LuaUI/Widgets/gui_idle_builders.lua",
       "sourcePath": "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_idle_builders.lua",
       "baseSha256": "766e9afa7d33cad7a19006d174cdcc4c2b5c00c4e0e61dd4903cec0cac7c4f09",
-      "previousPatchedSha256": "c53fff62c4f361c98d8984108e04ad11e55accc18e091c5db6c048a5e9574e68",
-      "patchedSha256": "51a44edb798c6cf5a22e42efc851298ef2671655b9a161ea30c058b33c0a2e17",
-      "purpose": "Share the real Idle Builders icon activation with controller previous/next focus and select-all-currently-idle same-type actions."
+      "previousPatchedSha256": "51a44edb798c6cf5a22e42efc851298ef2671655b9a161ea30c058b33c0a2e17",
+      "patchedSha256": "20acd0dd25ead9bab0985e056f44953ffda9ceddfe29d714d453e3edf8945f5e",
+      "purpose": "Expose a read-only ordered snapshot of the live vanilla ZZZ list; controller code owns direct exact-ID selection and focus."
     }
   ]
 }

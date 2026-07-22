@@ -7,11 +7,18 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) { $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
 $RepositoryRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-hybrid-area-idle-repair-test' }
+$versionDefinitionPath = Join-Path $RepositoryRoot 'tools\controller-companion\Directory.Build.props'
+[xml]$versionDefinition = Get-Content -Raw -Encoding UTF8 $versionDefinitionPath
+$semanticVersion = [string]$versionDefinition.Project.PropertyGroup.ControllerCompanionSemanticVersion
+$releaseChannel = [string]$versionDefinition.Project.PropertyGroup.ControllerCompanionChannel
+if ($semanticVersion -ne '0.8.0' -or $releaseChannel -ne 'Experimental') { throw 'Unexpected central experimental version metadata.' }
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-radial-tactical-idle-redesign-test' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 $stage = Join-Path $OutputDirectory ('.package-' + [guid]::NewGuid().ToString('N'))
+$publishScratch = Join-Path $OutputDirectory ('.publish-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage | Out-Null
+New-Item -ItemType Directory -Path $publishScratch | Out-Null
 try {
     $files = @(
         'luaui\Widgets\gui_controller_camera_test.lua',
@@ -24,6 +31,7 @@ try {
         'luaui\Include\controller_ui_editor_workspace.lua',
         'luaui\Include\controller_ui_editor_input.lua',
         'luaui\Include\controller_ui_shared_renderers.lua',
+        'luaui\Include\controller_native_build_cell_renderer.lua',
         'luaui\Include\controller_native_radial_adapter.lua',
         'luaui\Include\controller_native_targeting.lua',
         'luaui\Include\controller_native_command_owner.lua',
@@ -35,6 +43,9 @@ try {
         'luaui\images\controller-glyphs\LICENSE.md',
         'controller-ui\shipping-defaults.json',
         'controller-ui\shipping-defaults-manifest.json',
+        'tools\controller-companion\Directory.Build.props',
+        'tools\controller-companion\Shared\ProductMetadata.cs',
+        'tools\controller-companion\Shared\EngineSessionTracker.cs',
         'native-overrides\native-override-manifest.json',
         'native-overrides\99351e53d26f5e55fa007ca1e208b936f22bd3ab\luaui\Widgets\unit_smart_select.lua',
         'native-overrides\99351e53d26f5e55fa007ca1e208b936f22bd3ab\luaui\Widgets\unit_smart_area_reclaim.lua',
@@ -77,6 +88,13 @@ try {
         'doc\controller-companion-v0.8.0\BUILD_FACTORY_RADIAL_PAGING.md',
         'doc\controller-companion-v0.8.0\TACTICAL_RADIAL_TOGGLE.md',
         'doc\controller-companion-v0.8.0\DISASSEMBLE_ENEMY_TARGETS.md',
+        'doc\controller-companion-v0.8.0\VERSION_AND_SESSION_LIFECYCLE.md',
+        'doc\controller-companion-v0.8.0\CONTROLLER_SINGLE_SELECTION.md',
+        'doc\controller-companion-v0.8.0\V07_TACTICAL_INPUT_RESTORE.md',
+        'doc\controller-companion-v0.8.0\TACTICAL_STATE_CYCLING.md',
+        'doc\controller-companion-v0.8.0\RADIAL_PAGE_PACKING.md',
+        'doc\controller-companion-v0.8.0\BUILD_FACTORY_CATEGORY_MODEL.md',
+        'doc\controller-companion-v0.8.0\NATIVE_BUILD_CELL_RENDERER.md',
         'tools\controller-ui-tests\Test-ControllerHybridRadials.lua',
         'tools\controller-ui-tests\Test-ControllerNativeUIIntegration.lua',
         'tools\controller-ui-tests\Test-ControllerNativeTargeting.lua',
@@ -86,6 +104,7 @@ try {
         'tools\controller-ui-tests\Test-ControllerNativeWidgetUnification.lua',
         'tools\controller-ui-tests\Test-ControllerNativeRegressionRepair.lua',
 		'tools\controller-ui-tests\Test-ControllerHybridAreaIdleRepair.lua',
+        'tools\controller-ui-tests\Test-ControllerInputRestoration.lua',
         'tools\dev-scripts\Deploy_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Generate_Controller_Glyph_Atlases_v0.8.ps1'
@@ -96,10 +115,32 @@ try {
         New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
         Copy-Item -LiteralPath $source -Destination $destination
     }
+    $nativeManifest = Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot 'native-overrides\native-override-manifest.json') | ConvertFrom-Json
+    foreach ($entry in @($nativeManifest.entries)) {
+        $source = Join-Path $RepositoryRoot ([string]$entry.sourcePath)
+        $destination = Join-Path $stage ([string]$entry.livePath)
+        New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+        Copy-Item -LiteralPath $source -Destination $destination -Force
+    }
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'LICENSE.md') -Destination (Join-Path $stage 'LICENSE.md')
     $releaseRoot = Join-Path $RepositoryRoot 'tools\release\bar-controller-support-v0.8.0-native-test'
     foreach ($name in @('Install_v0.8.0_NATIVE_TEST.ps1', 'Restore_v0.8.0_NATIVE_TEST.ps1', 'README_EXPERIMENTAL.md', 'manifest.json')) {
         Copy-Item -LiteralPath (Join-Path $releaseRoot $name) -Destination (Join-Path $stage $name)
+    }
+
+    $installerName = 'BAR_Controller_Companion_Installer_v' + $semanticVersion + '_' + $releaseChannel + '.exe'
+    $restoreName = 'BAR_Controller_Companion_Restore_v' + $semanticVersion + '_' + $releaseChannel + '.exe'
+    $publishProjects = @(
+        [pscustomobject]@{ project = 'tools\controller-companion\BarControllerCompanion.csproj'; output = 'bridge'; executable = 'BARControllerBridge.exe'; target = 'BARControllerBridge.exe' },
+        [pscustomobject]@{ project = 'tools\controller-companion\Launcher\BARControllerLauncher.csproj'; output = 'launcher'; executable = 'BARControllerLauncher.exe'; target = 'BARControllerLauncher.exe' },
+        [pscustomobject]@{ project = 'tools\controller-companion\Installer\BARControllerCompanionInstaller.csproj'; output = 'installer'; executable = $installerName; target = $installerName },
+        [pscustomobject]@{ project = 'tools\controller-companion\Restore\BARControllerCompanionRestore.csproj'; output = 'restore'; executable = $restoreName; target = $restoreName }
+    )
+    foreach ($publish in $publishProjects) {
+        $publishOutput = Join-Path $publishScratch $publish.output
+        & dotnet publish (Join-Path $RepositoryRoot $publish.project) -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o $publishOutput
+        if ($LASTEXITCODE -ne 0) { throw "Publish failed: $($publish.project)" }
+        Copy-Item -LiteralPath (Join-Path $publishOutput $publish.executable) -Destination (Join-Path $stage $publish.target)
     }
 
     $payload = New-Object Collections.Generic.List[object]
@@ -111,7 +152,7 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $stage 'payload-sha256.json'), (($payload | ConvertTo-Json -Depth 6) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
 
-    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_HYBRID_AREA_IDLE_REPAIR_TEST.zip'
+    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_RADIAL_TACTICAL_IDLE_REDESIGN_TEST.zip'
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
@@ -125,5 +166,11 @@ finally {
         $resolvedOutput = [IO.Path]::GetFullPath($OutputDirectory).TrimEnd('\') + '\'
         if (-not $resolvedStage.StartsWith($resolvedOutput, [StringComparison]::OrdinalIgnoreCase)) { throw 'Refusing to remove package staging path outside output directory.' }
         Remove-Item -LiteralPath $resolvedStage -Recurse -Force
+    }
+    if (Test-Path -LiteralPath $publishScratch) {
+        $resolvedPublish = [IO.Path]::GetFullPath($publishScratch)
+        $resolvedOutput = [IO.Path]::GetFullPath($OutputDirectory).TrimEnd('\') + '\'
+        if (-not $resolvedPublish.StartsWith($resolvedOutput, [StringComparison]::OrdinalIgnoreCase)) { throw 'Refusing to remove publish scratch path outside output directory.' }
+        Remove-Item -LiteralPath $resolvedPublish -Recurse -Force
     }
 }

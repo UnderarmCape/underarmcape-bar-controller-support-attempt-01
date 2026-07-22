@@ -26,6 +26,7 @@ $IncludeFiles = @(
     'controller_ui_editor_workspace.lua',
     'controller_ui_editor_input.lua',
     'controller_ui_shared_renderers.lua',
+    'controller_native_build_cell_renderer.lua',
     'controller_native_radial_adapter.lua',
     'controller_native_targeting.lua',
     'controller_native_command_owner.lua',
@@ -86,9 +87,9 @@ function Assert-NativeBuildMenuEntries([string]$ConfigPath) {
 
 function Stop-RuntimesSafely {
     $all = @(Get-CimInstance Win32_Process | Where-Object {
-        $_.Name -match '^(?i)(BARControllerBridge|BARControllerLauncher|BARControllerCompanionInstaller|BARControllerCompanionRestore|BARControllerUIDefaultsPublisher|spring|spring-headless|Beyond-All-Reason|BAR)\.exe$'
+        $_.Name -match '^(?i)(BARControllerBridge|BARControllerLauncher|BARControllerCompanionInstaller|BARControllerCompanionRestore|BARControllerUIDefaultsPublisher|spring|spring-headless|recoil|Beyond-All-Reason|BAR)\.exe$'
     })
-    $bar = @($all | Where-Object { $_.Name -match '^(?i)(spring|spring-headless|Beyond-All-Reason|BAR)\.exe$' })
+    $bar = @($all | Where-Object { $_.Name -match '^(?i)(spring|spring-headless|recoil|Beyond-All-Reason|BAR)\.exe$' })
     if ($bar.Count -gt 0) {
         $bar | Select-Object ProcessId, Name, ExecutablePath | Format-List
         throw 'BAR is running. Close it manually; this tool never force-kills BAR.'
@@ -102,7 +103,7 @@ function Stop-RuntimesSafely {
         if (Get-Process -Id $item.ProcessId -ErrorAction SilentlyContinue) { throw "$($item.Name) did not exit cleanly." }
     }
     $remaining = @(Get-CimInstance Win32_Process | Where-Object {
-        $_.Name -match '^(?i)(BARControllerBridge|BARControllerLauncher|BARControllerCompanionInstaller|BARControllerCompanionRestore|BARControllerUIDefaultsPublisher|spring|spring-headless|Beyond-All-Reason|BAR)\.exe$'
+        $_.Name -match '^(?i)(BARControllerBridge|BARControllerLauncher|BARControllerCompanionInstaller|BARControllerCompanionRestore|BARControllerUIDefaultsPublisher|spring|spring-headless|recoil|Beyond-All-Reason|BAR)\.exe$'
     })
     if ($remaining.Count -gt 0) { throw 'A BAR/controller deployment process remains active.' }
 }
@@ -142,6 +143,28 @@ if (Test-Path -LiteralPath (Join-Path $RepositoryRoot '.git')) {
     $sourceCommit = (& git -C $RepositoryRoot rev-parse HEAD).Trim()
 }
 
+$publishRoot = Join-Path $RepositoryRoot ('artifacts\v0.8.0-radial-tactical-idle-redesign-test\.deploy-' + [guid]::NewGuid().ToString('N'))
+$bridgePublish = Join-Path $publishRoot 'bridge'
+$launcherPublish = Join-Path $publishRoot 'launcher'
+$bridgeSource = Join-Path $RepositoryRoot 'BARControllerBridge.exe'
+$launcherSource = Join-Path $RepositoryRoot 'BARControllerLauncher.exe'
+$bridgeProject = Join-Path $RepositoryRoot 'tools\controller-companion\BarControllerCompanion.csproj'
+$launcherProject = Join-Path $RepositoryRoot 'tools\controller-companion\Launcher\BARControllerLauncher.csproj'
+if ((Test-Path -LiteralPath $bridgeProject -PathType Leaf) -and (Test-Path -LiteralPath $launcherProject -PathType Leaf)) {
+    foreach ($publish in @(
+        [pscustomobject]@{ project = $bridgeProject; output = $bridgePublish },
+        [pscustomobject]@{ project = $launcherProject; output = $launcherPublish }
+    )) {
+        & dotnet publish $publish.project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o $publish.output
+        if ($LASTEXITCODE -ne 0) { throw "Companion publish failed: $($publish.project)" }
+    }
+    $bridgeSource = Join-Path $bridgePublish 'BARControllerBridge.exe'
+    $launcherSource = Join-Path $launcherPublish 'BARControllerLauncher.exe'
+}
+elseif (-not (Test-Path -LiteralPath $bridgeSource -PathType Leaf) -or -not (Test-Path -LiteralPath $launcherSource -PathType Leaf)) {
+    throw 'Neither companion source projects nor packaged companion executables are available.'
+}
+
 Stop-RuntimesSafely
 $infolog = Join-Path $BarDataPath 'infolog.txt'
 $widgetConfigPath = Join-Path $BarDataPath 'LuaUI\Config\BYAR.lua'
@@ -154,23 +177,25 @@ if (-not $buildMatches -and -not $AllowUnknownBase) {
 
 $deployMap = New-Object Collections.Generic.List[object]
 foreach ($name in $WidgetFiles) {
-    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ('luaui\Widgets\' + $name)); destination = (Join-Path $BarDataPath ('LuaUI\Widgets\' + $name)); native = $false })
+    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ('luaui\Widgets\' + $name)); destination = (Join-Path $BarDataPath ('LuaUI\Widgets\' + $name)); native = $false; scope = 'bar' })
 }
 foreach ($name in $IncludeFiles) {
-    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ('luaui\Include\' + $name)); destination = (Join-Path $BarDataPath ('LuaUI\Include\' + $name)); native = $false })
+    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ('luaui\Include\' + $name)); destination = (Join-Path $BarDataPath ('LuaUI\Include\' + $name)); native = $false; scope = 'bar' })
 }
 foreach ($name in $GlyphFiles) {
-    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ('luaui\images\controller-glyphs\' + $name)); destination = (Join-Path $BarDataPath ('LuaUI\Images\controller-glyphs\' + $name)); native = $false })
+    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ('luaui\images\controller-glyphs\' + $name)); destination = (Join-Path $BarDataPath ('LuaUI\Images\controller-glyphs\' + $name)); native = $false; scope = 'bar' })
 }
 foreach ($name in $ControllerUIFiles) {
-    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ('controller-ui\' + $name)); destination = (Join-Path $BarDataPath ('controller-ui\' + $name)); native = $false })
+    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ('controller-ui\' + $name)); destination = (Join-Path $BarDataPath ('controller-ui\' + $name)); native = $false; scope = 'bar' })
 }
+$deployMap.Add([pscustomobject]@{ source = $bridgeSource; destination = (Join-Path $CompanionInstallPath 'BARControllerBridge.exe'); native = $false; scope = 'companion' })
+$deployMap.Add([pscustomobject]@{ source = $launcherSource; destination = (Join-Path $CompanionInstallPath 'BARControllerLauncher.exe'); native = $false; scope = 'companion' })
 foreach ($entry in @($overrideManifest.entries)) {
     $previousPatchedSha256 = ''
     if ($null -ne $entry.PSObject.Properties['previousPatchedSha256']) {
         $previousPatchedSha256 = [string]$entry.previousPatchedSha256
     }
-    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ([string]$entry.sourcePath)); destination = (Join-Path $BarDataPath ([string]$entry.livePath)); native = $true; baseSha256 = [string]$entry.baseSha256; previousPatchedSha256 = $previousPatchedSha256; patchedSha256 = [string]$entry.patchedSha256 })
+    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ([string]$entry.sourcePath)); destination = (Join-Path $BarDataPath ([string]$entry.livePath)); native = $true; scope = 'bar'; baseSha256 = [string]$entry.baseSha256; previousPatchedSha256 = $previousPatchedSha256; patchedSha256 = [string]$entry.patchedSha256 })
 }
 
 $destinations = @{}
@@ -199,6 +224,7 @@ Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerInputPolish.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerNativeWidgetUnification.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerNativeRegressionRepair.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerHybridAreaIdleRepair.lua'
+Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerInputRestoration.lua'
 
 if ($ValidateOnly) {
     Write-Step "Validation passed for $($deployMap.Count) files; BAR build and native base policy are compatible."
@@ -206,7 +232,7 @@ if ($ValidateOnly) {
 }
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.0-hybrid-area-idle-repair-test-' + $timestamp)
+$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.0-radial-tactical-idle-redesign-test-' + $timestamp)
 if (Test-Path -LiteralPath $backupRoot) { throw "Backup path already exists: $backupRoot" }
 New-Item -ItemType Directory -Path (Join-Path $backupRoot 'live-before') -Force | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -216,7 +242,11 @@ foreach ($item in $deployMap) {
     $preHash = if ($existed) { Get-Sha256 $item.destination } else { $null }
     $backup = $null
     if ($existed) {
-        $relative = Get-RelativeBarPath $item.destination
+        $relative = if ($item.scope -eq 'companion') {
+            Join-Path 'Companion' ([IO.Path]::GetFileName($item.destination))
+        } else {
+            Join-Path 'BARData' (Get-RelativeBarPath $item.destination)
+        }
         $backup = Join-Path (Join-Path $backupRoot 'live-before') $relative
         New-Item -ItemType Directory -Path (Split-Path -Parent $backup) -Force | Out-Null
         Copy-Item -LiteralPath $item.destination -Destination $backup
@@ -227,7 +257,7 @@ foreach ($item in $deployMap) {
     $postHash = Get-Sha256 $item.destination
     if ($postHash -ne (Get-Sha256 $item.source)) { throw "Installed hash mismatch: $($item.destination)" }
     $records.Add([pscustomobject][ordered]@{
-        source = $item.source; destination = $item.destination; nativeOverride = $item.native
+        source = $item.source; destination = $item.destination; deploymentScope = $item.scope; nativeOverride = $item.native
         existedBefore = $existed; preSha256 = $preHash; backup = $backup; postSha256 = $postHash
     })
 }
@@ -254,8 +284,8 @@ foreach ($record in $preserved) {
 }
 
 $manifest = [ordered]@{
-    kind = 'bar-controller-hybrid-area-idle-repair-test-deployment-backup'; schemaVersion = 1
-    experiment = ('EXPERIMENTAL ' + [char]0x2014 + ' HYBRID AREA TARGETING, GLOBAL RADIAL PAGING, AND VANILLA IDLE CONTROL TEST'); deployedAt = (Get-Date).ToString('o')
+    kind = 'bar-controller-radial-tactical-idle-redesign-test-deployment-backup'; schemaVersion = 1
+    experiment = ('EXPERIMENTAL ' + [char]0x2014 + ' V0.7 TACTICAL RESTORE, MIXED RADIAL SECTORS, NATIVE CELLS, AND IDLE CONTROL TEST'); deployedAt = (Get-Date).ToString('o')
     repositoryRoot = $RepositoryRoot; sourceCommit = $sourceCommit
     barDataPath = $BarDataPath; companionInstallPath = $CompanionInstallPath; backupRoot = $backupRoot
     expectedBarBuild = $ExpectedBuild; buildIdentityMatched = $buildMatches; explicitUnknownBaseOverride = [bool]$AllowUnknownBase
@@ -270,6 +300,6 @@ foreach ($record in $records) {
     if ((Get-Sha256 $record.destination) -ne $record.postSha256) { throw "Post-manifest verification failed: $($record.destination)" }
 }
 Stop-RuntimesSafely
-Write-Step 'Experimental hybrid area targeting, global radial paging, and vanilla idle control repair deployed. BAR was not launched.'
+Write-Step 'Experimental v0.7 tactical restore, mixed radial sectors, native cells, idle control, and v0.8.0 companion deployed. BAR was not launched.'
 Write-Output ('BACKUP_ROOT=' + $backupRoot)
 Write-Output ('ROLLBACK_COMMAND=powershell -NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $RepositoryRoot 'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1') + '" -BackupRoot "' + $backupRoot + '"')
