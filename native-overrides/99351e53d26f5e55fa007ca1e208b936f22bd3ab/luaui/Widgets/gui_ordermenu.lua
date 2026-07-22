@@ -786,6 +786,75 @@ function widget:Initialize()
 		doUpdate = true
 		return true
 	end
+	-- Return the descriptor that the engine says is active, then reconcile it
+	-- against this widget's current authoritative command list.  Controller
+	-- targeting never relies on a stale radial selection.
+	WG['ordermenu'].controllerGetActiveTargetDescriptor = function()
+		local cmdIndex, activeID, activeType, activeName = Spring.GetActiveCommand()
+		activeID = tonumber(activeID)
+		if not cmdIndex or not activeID then return nil end
+		local source
+		for i = 1, #commands do
+			if commands[i].id == activeID then source = commands[i]; break end
+		end
+		if not source or source.disabled then return nil end
+		local engineDescriptor = type(Spring.GetActiveCmdDesc) == "function"
+			and Spring.GetActiveCmdDesc(cmdIndex) or nil
+		return {
+			stableKey = "cmd:" .. tostring(activeID),
+			cmdIndex = cmdIndex,
+			id = activeID,
+			cmdID = activeID,
+			type = tonumber(engineDescriptor and engineDescriptor.type) or tonumber(activeType) or source.type,
+			name = (engineDescriptor and engineDescriptor.name) or activeName or source.name,
+			action = (engineDescriptor and engineDescriptor.action) or source.action,
+			tooltip = (engineDescriptor and engineDescriptor.tooltip) or source.tooltip,
+			params = (engineDescriptor and engineDescriptor.params) or source.params,
+			disabled = false,
+			buildFacing = Spring.GetBuildFacing and Spring.GetBuildFacing() or nil,
+		}
+	end
+
+	local function controllerCommandOptions(options)
+		local list, notify = {}, { alt = false, ctrl = false, meta = false, shift = false, right = false }
+		if type(options) == "table" then
+			for key, value in pairs(options) do
+				local name = type(key) == "number" and tostring(value) or tostring(key)
+				local enabled = type(key) == "number" or value == true
+				if enabled and notify[name] ~= nil then
+					notify[name] = true
+					list[#list + 1] = name
+				end
+			end
+		end
+		return list, notify
+	end
+
+	-- Mirror the native mouse release boundary: LuaUI CommandNotify gets first
+	-- refusal (Area Mex and Smart Area Reclaim depend on this), then exactly one
+	-- engine order is issued only when no widget handled the command.
+	WG['ordermenu'].controllerIssueActiveTarget = function(expectedCmdID, params, options, dispatchMode)
+		local descriptor = WG['ordermenu'].controllerGetActiveTargetDescriptor()
+		expectedCmdID = tonumber(expectedCmdID)
+		if not descriptor or descriptor.cmdID ~= expectedCmdID or type(params) ~= "table" then
+			return false, "active command changed"
+		end
+		local optionList, notifyOptions = controllerCommandOptions(options)
+		local notifyOK, handled = pcall(widgetHandler.CommandNotify, widgetHandler,
+			expectedCmdID, params, notifyOptions)
+		if not notifyOK then return false, "CommandNotify failed" end
+		if handled then return true, "widget" end
+		local issuedOK, accepted
+		if dispatchMode == "insert-front" then
+			local insertParams = { 0, expectedCmdID, 0 }
+			for i = 1, #params do insertParams[#insertParams + 1] = params[i] end
+			issuedOK, accepted = pcall(Spring.GiveOrder, CMD.INSERT, insertParams, { "alt" })
+		else
+			issuedOK, accepted = pcall(Spring.GiveOrder, expectedCmdID, params, optionList)
+		end
+		return issuedOK and accepted ~= false, issuedOK and "engine" or "GiveOrder failed"
+	end
+	WG['ordermenu'].controllerTargetingAPIVersion = 3
 	WG['ordermenu'].controllerActivateState = function(cmdID, desiredState)
 		cmdID, desiredState = tonumber(cmdID), tonumber(desiredState)
 		local cmd

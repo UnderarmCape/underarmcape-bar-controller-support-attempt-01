@@ -43,6 +43,11 @@ do
 end
 ControllerCameraTestNativeRadialAdapter = ControllerCameraTestNativeRadialAdapter
 	or (ControllerNativeRadialAdapter and ControllerNativeRadialAdapter.New())
+ControllerNativeTargeting = ControllerNativeTargeting or nil
+do
+	local ok, module = pcall(VFS.Include, "LuaUI/Include/controller_native_targeting.lua")
+	if ok and type(module) == "table" then ControllerNativeTargeting = module end
+end
 ControllerDisassembleBehavior = ControllerDisassembleBehavior or nil
 do
 	local ok, module = pcall(VFS.Include, "LuaUI/Include/controller_disassemble_behavior.lua")
@@ -507,6 +512,10 @@ ControllerCameraTestNativeUI = ControllerCameraTestNativeUI or {
 	pendingSince = 0,
 	lastCompatibilityWarning = nil,
 }
+ControllerCameraTestNativeTargeting = ControllerCameraTestNativeTargeting
+	or (ControllerNativeTargeting and ControllerNativeTargeting.New())
+	or { phase = "IDLE", cancelReleaseRequired = false, lastResult = "unavailable" }
+ControllerCameraTestNativeTargeting.descriptorDirty = true
 ControllerCameraTestLBHotkeys = ControllerCameraTestLBHotkeys or {
 	A = { pending = false, lastPressTime = 0, pressCount = 0 },
 	B = { pending = false, lastPressTime = 0, pressCount = 0 },
@@ -2612,6 +2621,9 @@ function ControllerCameraTestGetSetting(key)
 end
 
 function ControllerCameraTestResetHybridRadials(reason)
+	local selectionBefore = ControllerCameraTestSafeSelectionSnapshot(
+		type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+	if type(Spring.SetActiveCommand) == "function" then pcall(Spring.SetActiveCommand, nil) end
 	ControllerCameraTestBuildMenu.open = false
 	ControllerCameraTestBuildMenu.nativeModel = nil
 	ControllerCameraTestTacticalMenu.open = false
@@ -2622,6 +2634,17 @@ function ControllerCameraTestResetHybridRadials(reason)
 	placement.active, placement.option, placement.nativePreviewActive = false, nil, false
 	placement.placementMode, placement.placementPattern = "none", "single"
 	placement.patternPressActive, placement.patternHoldTriggered = false, false
+	if ControllerNativeTargeting then
+		ControllerNativeTargeting.Reset(ControllerCameraTestNativeTargeting, reason or "mode switch")
+	end
+	ControllerCameraTestNativeTargeting.cancelReleaseRequired = false
+	local drag = ControllerCameraTestDragCommand
+	drag.active, drag.pressActive, drag.nativeControllerTargeting = false, false, false
+	drag.option, drag.cmdID = nil, nil
+	drag.startX, drag.startY, drag.startZ = nil, nil, nil
+	drag.endX, drag.endY, drag.endZ = nil, nil, nil
+	ControllerCameraTestTacticalMenu.stagedOption = nil
+	ControllerCameraTestTacticalMenu.repeatPlacementActive = false
 	ControllerCameraTestNativeUI.buildFocus = nil
 	ControllerCameraTestNativeUI.tacticalFocus = nil
 	ControllerCameraTestNativeUI.buildModelRevision = -1
@@ -2632,6 +2655,11 @@ function ControllerCameraTestResetHybridRadials(reason)
 		if api and type(api.controllerSetFocus) == "function" then pcall(api.controllerSetFocus, nil, reason or "mode-switch") end
 	end
 	ControllerCameraTestClearDragPreviewCache()
+	local selectionAfter = ControllerCameraTestSafeSelectionSnapshot(
+		type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+	if #selectionBefore > 0 and not ControllerCameraTestSelectionsEqual(selectionBefore, selectionAfter) then
+		ControllerCameraTestSelectSnapshot(selectionBefore, "Preserved across UI mode switch", true)
+	end
 end
 
 function ControllerCameraTestSetSetting(key, value)
@@ -3050,7 +3078,11 @@ function ControllerCameraTestIsAppendQueueModifierActive()
 	if not ControllerCameraTestActionDown("appendQueueModifier") or ControllerCameraTestIsQueueFrontModifierActive() then
 		return false
 	end
-	if commandLayerActive and not ControllerCameraTestBuildPlacement.active and not ControllerCameraTestBuildMenu.open then
+	local nativeTargetActive = ControllerCameraTestNativeTargeting
+		and ControllerCameraTestNativeTargeting.phase ~= "IDLE"
+		and ControllerCameraTestNativeTargeting.phase ~= "BUILD_PLACEMENT"
+	if commandLayerActive and not nativeTargetActive
+		and not ControllerCameraTestBuildPlacement.active and not ControllerCameraTestBuildMenu.open then
 		return false
 	end
 	return true
@@ -3435,6 +3467,9 @@ function ControllerCameraTestAreaCommandRadius(startX, startZ, endX, endZ)
 	local dx = (endX or startX or 0) - (startX or 0)
 	local dz = (endZ or startZ or 0) - (startZ or 0)
 	local rawRadius = math.sqrt(dx * dx + dz * dz)
+	if ControllerCameraTestDragCommand.nativeControllerTargeting then
+		return rawRadius, rawRadius
+	end
 	if rawRadius < 10 then
 		rawRadius = 120
 	end
@@ -6059,6 +6094,188 @@ function ControllerCameraTestSelectSnapshot(units, label, skipPrevious)
 	history.currentSelection = safe
 	history.selectionRevision = (history.selectionRevision or 0) + 1
 	ControllerCameraTestCycleDebug.lastResult = tostring(label or "Selection") .. ": " .. #safe
+	return true
+end
+
+function ControllerCameraTestArmCancelRelease(reason)
+	local state = ControllerCameraTestNativeTargeting
+	if ControllerNativeTargeting then
+		ControllerNativeTargeting.ArmCancelRelease(state, reason)
+	else
+		state.cancelReleaseRequired = true
+		state.lastResult = reason or "cancel release required"
+	end
+end
+
+function ControllerCameraTestHandleCancelReleaseLatch()
+	local state = ControllerCameraTestNativeTargeting
+	if not state.cancelReleaseRequired then return false end
+	if ControllerCameraTestActionDown("cancel") then return true end
+	if ControllerNativeTargeting then ControllerNativeTargeting.ReleaseCancelLatch(state)
+	else state.cancelReleaseRequired = false end
+	return false
+end
+
+function ControllerCameraTestRestoreSelectionIfChanged(selectionBefore, label)
+	local selectionAfter = ControllerCameraTestSafeSelectionSnapshot(
+		type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+	if #selectionBefore > 0 and not ControllerCameraTestSelectionsEqual(selectionBefore, selectionAfter) then
+		return ControllerCameraTestSelectSnapshot(selectionBefore, label or "Selection preserved", true)
+	end
+	return true
+end
+
+function ControllerCameraTestClearNativeTargetPreview(reason)
+	local drag = ControllerCameraTestDragCommand
+	if drag.nativeControllerTargeting then
+		drag.active, drag.pressActive, drag.nativeControllerTargeting = false, false, false
+		drag.option, drag.cmdID = nil, nil
+		drag.startX, drag.startY, drag.startZ = nil, nil, nil
+		drag.endX, drag.endY, drag.endZ = nil, nil, nil
+		drag.previewPoints = {}
+		ControllerCameraTestClearDragPreviewCache()
+	end
+	if reason then ControllerCameraTestNativeTargeting.lastResult = reason end
+end
+
+function ControllerCameraTestCancelActiveCommandTargeting(reason, armRelease)
+	local selectionBefore = ControllerCameraTestSafeSelectionSnapshot(
+		type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+	if type(Spring.SetActiveCommand) == "function" then pcall(Spring.SetActiveCommand, nil) end
+	ControllerCameraTestClearNativeTargetPreview(reason or "targeting cancelled")
+	if ControllerNativeTargeting then
+		ControllerNativeTargeting.Reset(ControllerCameraTestNativeTargeting, reason or "targeting cancelled")
+	end
+	ControllerCameraTestNativeTargeting.descriptorDirty = false
+	if armRelease then ControllerCameraTestArmCancelRelease(reason or "targeting cancelled by B") end
+	ControllerCameraTestRestoreSelectionIfChanged(selectionBefore, "Preserved after command cancel")
+	latchSelectionDebugMessage(reason or "Targeting cancelled")
+	return true
+end
+
+function ControllerCameraTestRefreshNativeTargetingDescriptor(force)
+	local state = ControllerCameraTestNativeTargeting
+	if not ControllerCameraTestUsesNativeBARUI() or not ControllerNativeTargeting then
+		if ControllerNativeTargeting then ControllerNativeTargeting.Reset(state, "legacy controller UI") end
+		state.descriptorDirty = false
+		return nil
+	end
+	if not force and not state.descriptorDirty then return state.descriptor end
+	state.descriptorDirty = false
+	local api = WG and WG.ordermenu
+	local descriptor
+	if api and type(api.controllerGetActiveTargetDescriptor) == "function" then
+		local ok, value = pcall(api.controllerGetActiveTargetDescriptor)
+		if ok and type(value) == "table" then descriptor = value end
+	end
+	ControllerNativeTargeting.SetDescriptor(state, descriptor, CMDTYPE)
+	return state.descriptor
+end
+
+function ControllerCameraTestShowNativeTargetPreview()
+	local state, drag = ControllerCameraTestNativeTargeting, ControllerCameraTestDragCommand
+	if not state.anchor or not state.current then return end
+	local isArea = state.shape == "area"
+	drag.active = true
+	drag.pressActive = false
+	drag.nativeControllerTargeting = true
+	drag.mode = isArea and "genericArea" or "fightLine"
+	drag.cmdID = state.cmdID
+	drag.option = {
+		name = state.descriptor and state.descriptor.name or "Command",
+		shortLabel = state.descriptor and state.descriptor.name or "Command",
+		kind = isArea and "drag_area" or "drag_line",
+		dragMode = drag.mode,
+		iconLabel = isArea and "AREA" or "TARGET",
+	}
+	drag.startX, drag.startY, drag.startZ = state.anchor.x, state.anchor.y, state.anchor.z
+	drag.endX, drag.endY, drag.endZ = state.current.x, state.current.y, state.current.z
+end
+
+function ControllerCameraTestIssueNativeTarget(params)
+	local state = ControllerCameraTestNativeTargeting
+	local api = WG and WG.ordermenu
+	if not (api and type(api.controllerIssueActiveTarget) == "function") then
+		state.lastResult = "Order Menu targeting API unavailable"
+		return false
+	end
+	local queueActive = ControllerCameraTestIsQueueModifierActive()
+	local dispatchMode = ControllerCameraTestIsQueueFrontModifierActive() and "insert-front" or nil
+	local options = ControllerCameraTestGetCommandOptions()
+	local ok, accepted, route = pcall(api.controllerIssueActiveTarget,
+		state.cmdID, params, options, dispatchMode)
+	if not ok or not accepted then
+		state.lastResult = tostring(route or "target rejected")
+		return false
+	end
+	state.lastResult = "issued once via " .. tostring(route or "engine")
+	local descriptor = state.descriptor
+	local cmdID = state.cmdID
+	ControllerCameraTestClearNativeTargetPreview()
+	if queueActive then
+		ControllerNativeTargeting.Reset(state, "queued target issued")
+		ControllerNativeTargeting.SetDescriptor(state, descriptor, CMDTYPE)
+		state.persistentUntilQueueRelease = true
+		state.descriptorDirty = false
+	else
+		if type(Spring.SetActiveCommand) == "function" then pcall(Spring.SetActiveCommand, nil) end
+		ControllerNativeTargeting.Reset(state, "target issued")
+		state.descriptorDirty = false
+	end
+	lastIssuedCommand = "Native target: " .. tostring(cmdID)
+	if #params >= 3 then
+		ControllerCameraTestSetCommandMarker(params[1], params[2], params[3],
+			descriptor and descriptor.name or "Command", "native-target")
+	end
+	return true
+end
+
+function ControllerCameraTestHandleNativeTargetingInput()
+	if not ControllerCameraTestUsesNativeBARUI() or not ControllerNativeTargeting then return false end
+	local state = ControllerCameraTestNativeTargeting
+	local descriptor = ControllerCameraTestRefreshNativeTargetingDescriptor(false)
+	if not descriptor or state.phase == ControllerNativeTargeting.IDLE
+		or state.phase == ControllerNativeTargeting.BUILD_PLACEMENT then return false end
+
+	if state.persistentUntilQueueRelease and not ControllerCameraTestIsQueueModifierActive() then
+		ControllerCameraTestCancelActiveCommandTargeting("queue modifier released", false)
+		return true
+	end
+	if ControllerCameraTestActionPressed("cancel") then
+		return ControllerCameraTestCancelActiveCommandTargeting("targeting cancelled by B", true)
+	end
+
+	local target = ControllerCameraTestGetReticleTargetInfo()
+	if target.targetType == "feature" and target.targetID then
+		target.commandID = ControllerCameraTestFeatureCommandID(target.targetID)
+	end
+	if state.anchor then
+		ControllerNativeTargeting.UpdatePreview(state, target)
+		ControllerCameraTestShowNativeTargetPreview()
+	end
+	if ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction") then
+		local params, result
+		if state.anchor then
+			params, result = ControllerNativeTargeting.BuildAnchoredParams(state)
+		else
+			params, result = ControllerNativeTargeting.BeginOrBuildPoint(
+				state, target, CMDTYPE, ControllerCameraTestIsAlliedUnit)
+			if result == "anchor" then
+				ControllerCameraTestShowNativeTargetPreview()
+				ControllerCameraTestShowHotkeyFeedback("ANCHOR", "utility")
+				return true
+			end
+		end
+		if params then
+			ControllerCameraTestIssueNativeTarget(params)
+		else
+			state.lastResult = tostring(result or "invalid target")
+			ControllerCameraTestShowHotkeyFeedback("INVALID TARGET", "utility")
+		end
+	end
+	activeButtonLayoutSummary = state.anchor
+		and "Native area target: move reticle, A/X confirm, B cancel, RT append"
+		or "Native command target: A/X confirm, B cancel, RT append"
 	return true
 end
 
@@ -9297,6 +9514,7 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 	local isAreaCmd = ControllerCameraTestIsAreaTacticalOption(option)
 
 	if ControllerCameraTestActionPressed("tacticalCancel") or ControllerCameraTestActionPressed("cancel") then
+		ControllerCameraTestArmCancelRelease("staged tactical cancelled by B")
 		if drag.active and (isAreaCmd or isLineCmd) then
 			drag.active = false
 			drag.startX, drag.startY, drag.startZ = nil, nil, nil
@@ -9381,6 +9599,12 @@ function ControllerCameraTestHandleNativeStateSubradialInput()
 	if not (subradial and subradial.open) then return false end
 	ControllerCameraTestUpdateTacticalStickSelection()
 	if ControllerCameraTestActionPressed("tacticalCancel") or ControllerCameraTestActionPressed("tacticalClose") then
+		if ControllerCameraTestActionPressed("tacticalCancel") then
+			local selectionBefore = ControllerCameraTestSafeSelectionSnapshot(
+				type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+			ControllerCameraTestArmCancelRelease("state radial returned by B")
+			ControllerCameraTestRestoreSelectionIfChanged(selectionBefore, "Preserved after state radial cancel")
+		end
 		subradial.open = false
 		menu.lastAction = "returned to tactical radial"
 		return true
@@ -9424,6 +9648,8 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 		if ok and activated and not option.isState then
 			ControllerCameraTestTacticalMenu.open = false
 			if api and type(api.controllerSetRadialOpen) == "function" then pcall(api.controllerSetRadialOpen, false) end
+			ControllerCameraTestNativeTargeting.descriptorDirty = true
+			ControllerCameraTestRefreshNativeTargetingDescriptor(true)
 		elseif ok and activated then
 			ControllerCameraTestRebuildNativeTacticalModel("state cycled")
 		end
@@ -9619,6 +9845,12 @@ function ControllerCameraTestHandleTacticalMenuInput()
 	local changed = false
 
 	if ControllerCameraTestActionPressed("tacticalCancel") or ControllerCameraTestActionPressed("tacticalClose") then
+		local selectionBefore
+		if ControllerCameraTestActionPressed("tacticalCancel") then
+			selectionBefore = ControllerCameraTestSafeSelectionSnapshot(
+				type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+			ControllerCameraTestArmCancelRelease("tactical radial cancelled by B")
+		end
 		menu.open = false
 		menu.cacheValid = false
 		menu.lastAction = "cancelled"
@@ -9627,6 +9859,9 @@ function ControllerCameraTestHandleTacticalMenuInput()
 			if type(WG.ordermenu.controllerSetFocus) == "function" then pcall(WG.ordermenu.controllerSetFocus, nil, "radial-cancel") end
 		end
 		latchSelectionDebugMessage("Tactical menu cancelled")
+		if selectionBefore then
+			ControllerCameraTestRestoreSelectionIfChanged(selectionBefore, "Preserved after tactical radial cancel")
+		end
 		changed = true
 	elseif WasButtonPressed("dpadUp") then
 		ControllerCameraTestSelectTacticalCategory("up", "D-pad category")
@@ -10609,6 +10844,8 @@ function ControllerCameraTestSetPlacementOption(option)
 end
 
 function ControllerCameraTestCancelPlacement(reason)
+	local selectionBefore = ControllerCameraTestSafeSelectionSnapshot(
+		type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
 	local placement = ControllerCameraTestBuildPlacement
 	if placement.nativePreviewActive then
 		ControllerCameraTestClearNativeBuildCommand()
@@ -10630,6 +10867,10 @@ function ControllerCameraTestCancelPlacement(reason)
 	placement.slowPanActive = false  -- reset pan speed on exit
 	latchSelectionDebugMessage("Placement cancelled")
 	ControllerCameraTestClearDragPreviewCache()
+	if tostring(reason or ""):find("B", 1, true) then
+		ControllerCameraTestArmCancelRelease("placement cancelled by B")
+	end
+	ControllerCameraTestRestoreSelectionIfChanged(selectionBefore, "Preserved after placement cancel")
 end
 
 function ControllerCameraTestRotatePlacementFacing(delta)
@@ -11019,7 +11260,7 @@ function ControllerCameraTestPlaceHighlightedBuildOption(exitPlacement, source)
 end
 
 function ControllerCameraTestPlacementShouldExit(button)
-	return button == "place" and not ControllerCameraTestIsQueueModifierActive()
+	return false
 end
 
 function ControllerCameraTestDequeueFactoryBuildOption(option)
@@ -11172,9 +11413,8 @@ function ControllerCameraTestHandlePlacementInput(dt)
 	if ControllerCameraTestActionPressed("cancelPlacement") then
 		if drag.active then
 			ControllerCameraTestCancelDrag("cancelled by B")
-		else
-			ControllerCameraTestCancelPlacement("cancelled by B")
 		end
+		ControllerCameraTestCancelPlacement("cancelled by B")
 	-- Back button: toggle slow pan speed during placement
 	elseif WasButtonPressed("back") then
 		placement.slowPanActive = not placement.slowPanActive
@@ -11299,7 +11539,11 @@ function ControllerCameraTestHandleBuildMenuInput()
 	local categories = menu.radialCategories or { "Economy", "Combat", "Utility", "Build" }
 
 	if ControllerCameraTestActionPressed("radialCancel") then
+		local selectionBefore = ControllerCameraTestSafeSelectionSnapshot(
+			type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+		ControllerCameraTestArmCancelRelease("build radial cancelled by B")
 		ControllerCameraTestCloseBuildMenu("closed by B")
+		ControllerCameraTestRestoreSelectionIfChanged(selectionBefore, "Preserved after build radial cancel")
 	elseif ControllerCameraTestActionPressed("radialQuick") then
 		local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 		if ControllerCameraTestSelectionPrefersFactoryQueue(selectedUnits) then
@@ -11571,6 +11815,7 @@ function ControllerCameraTestHandleNormalXInput(dt)
 
 	if drag.active and ControllerCameraTestActionPressed("cancel") then
 		ControllerCameraTestCancelDrag("cancelled by B")
+		ControllerCameraTestArmCancelRelease("drag cancelled by B")
 		return true
 	end
 
@@ -11627,6 +11872,7 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 
 	if drag.active and ControllerCameraTestActionPressed("cancel") then
 		ControllerCameraTestCancelDrag("cancelled by B")
+		ControllerCameraTestArmCancelRelease("drag cancelled by B")
 		return true
 	end
 
@@ -12946,6 +13192,8 @@ function widget:Initialize()
 	end
 	ControllerCameraTestEnsureBindings()
 	ControllerCameraTestInstallWGAPI()
+	ControllerCameraTestNativeTargeting.descriptorDirty = true
+	ControllerCameraTestRefreshNativeTargetingDescriptor(true)
 	ControllerCameraTestVisibleSelection.currentSelection = ControllerCameraTestSafeSelectionSnapshot(
 		type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
 	updateScreenCenter(spGetViewGeometry())
@@ -12953,11 +13201,19 @@ function widget:Initialize()
 	ControllerCameraTestShowHotkeyFeedback("HOTKEY UI READY", "utility")
 end
 
+function widget:ActiveCommandChanged(cmdID, cmdType)
+	ControllerCameraTestNativeTargeting.descriptorDirty = true
+	ControllerCameraTestRefreshNativeTargetingDescriptor(true)
+end
+
 function widget:Shutdown()
 	if ControllerCameraTestSocketBridge then
 		ControllerCameraTestSocketBridge:Shutdown()
 	end
 	ControllerCameraTestRemoveWGAPI()
+	if ControllerCameraTestNativeTargeting.phase ~= "IDLE" then
+		ControllerCameraTestCancelActiveCommandTargeting("widget shutdown", false)
+	end
 	ControllerCameraTestClearDragPreviewCache()
 	if ControllerCameraTestExitDgunMode then
 		ControllerCameraTestExitDgunMode("widget shutdown")
@@ -13305,6 +13561,17 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
 			ControllerCameraTestCancelAreaSelect("cancelled by Disassemble Mode")
 		end
+	elseif ControllerCameraTestHandleCancelReleaseLatch() then
+		commandLayerActive = false
+	elseif ControllerCameraTestHandleNativeTargetingInput() then
+		commandLayerActive = false
+		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
+			ControllerCameraTestCancelAreaSelect("cancelled by native command targeting")
+		end
+	elseif ControllerCameraTestHandlePlacementInput(dt) then
+		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
+			ControllerCameraTestCancelAreaSelect("cancelled by placement")
+		end
 	elseif ControllerCameraTestHandleStagedTacticalCommandInput() then
 		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
 			ControllerCameraTestCancelAreaSelect("cancelled by tactical stage")
@@ -13317,10 +13584,6 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	elseif ControllerCameraTestHandleTacticalMenuInput() then
 		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
 			ControllerCameraTestCancelAreaSelect("cancelled by tactical menu")
-		end
-	elseif ControllerCameraTestHandlePlacementInput(dt) then
-		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
-			ControllerCameraTestCancelAreaSelect("cancelled by placement")
 		end
 	elseif ControllerCameraTestHandleBuildMenuInput() then
 		-- Build-menu input consumes normal A/B/Y/D-pad actions while it is open.
@@ -13345,6 +13608,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 
 			if areaBusy and ControllerCameraTestActionPressed("cancel") then
 				ControllerCameraTestCancelAreaSelect("cancelled by B")
+				ControllerCameraTestArmCancelRelease("area selection cancelled by B")
 			elseif xBusy and ControllerCameraTestActionPressed("cancel") then
 				-- Handled inside X handler
 			elseif not areaBusy and not xBusy and ControllerCameraTestActionPressed("cancel") then
@@ -13376,6 +13640,10 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	elseif commandLayerActive then
 		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.open and "Tactical: D-pad category, LS choose, A/X confirm, B/Y cancel"
 			or XboxController.commandLayoutSummary
+	elseif ControllerCameraTestNativeTargeting.phase == (ControllerNativeTargeting and ControllerNativeTargeting.CONTROLLER_AREA_TARGETING) then
+		activeButtonLayoutSummary = "Native area target: move reticle, A/X confirm, B cancel, RT append"
+	elseif ControllerCameraTestNativeTargeting.phase == (ControllerNativeTargeting and ControllerNativeTargeting.POINT_TARGETING) then
+		activeButtonLayoutSummary = "Native command target: A/X confirm, B cancel, RT append"
 	elseif type(ControllerCameraTestTacticalMenu.stagedOption) == "table" then
 		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.repeatPlacementActive
 			and "Tactical repeat: move reticle, A place again, release RT clear, B cancel"
