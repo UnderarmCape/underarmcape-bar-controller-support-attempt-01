@@ -2141,6 +2141,30 @@ function widget:Initialize()
 		Spring.SetActiveCommand(cmdDescIndex, button, button == 1, button == 3, Spring.GetModKeyState())
 		return true
 	end
+	-- Factory/Lab queue edits deliberately use the same command-cell click path
+	-- as BAR's native Build Menu. Shift is BAR/Recoil's authoritative x5
+	-- quantity modifier; right-click removal naturally clamps at queue zero.
+	WG['buildmenu'].controllerQueue = function(unitDefID, delta)
+		delta = tonumber(delta)
+		if delta ~= 1 and delta ~= -1 and delta ~= 5 and delta ~= -5 then return false end
+		if type(unitDefID) == "string" then
+			unitDefID = tonumber(string.match(unitDefID, "^build:(%-?%d+)$"))
+		end
+		local cellID = unitDefToCellMap[unitDefID]
+		if not cellID then
+			for index = 1, cmdsCount do
+				if cmds[index] and -cmds[index].id == unitDefID then cellID = index; break end
+			end
+		end
+		local cmd = cellID and cmds[cellID]
+		if not cmd or units.unitRestricted[unitDefID] then return false end
+		local cmdDescIndex = spGetCmdDescIndex(cmd.id)
+		if not cmdDescIndex then return false end
+		local button, shift = delta > 0 and 1 or 3, math.abs(delta) == 5
+		Spring.SetActiveCommand(cmdDescIndex, button, button == 1, button == 3,
+			false, false, false, shift)
+		return true
+	end
 	WG['buildmenu'].controllerSetRadialOpen = function(active, showFocus)
 		ControllerBuildMenuHybridState.radialOpen = active == true
 		if showFocus ~= nil then WG['buildmenu'].controllerSetFocusVisible(showFocus) end

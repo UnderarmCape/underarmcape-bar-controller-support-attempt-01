@@ -18,6 +18,40 @@ local function copyArray(values)
 	return result
 end
 
+function Behavior.IsConstructorDef(unitDef)
+	return type(unitDef) == "table" and unitDef.isFactory ~= true
+		and (unitDef.isBuilder == true or unitDef.canBuild == true
+			or (type(unitDef.buildOptions) == "table" and #unitDef.buildOptions > 0))
+end
+
+function Behavior.FilterConstructors(units, resolveDef, hasReclaim)
+	local result, seen = {}, {}
+	if type(resolveDef) ~= "function" then return result end
+	for _, unitID in ipairs(type(units) == "table" and units or {}) do
+		if not seen[unitID] and Behavior.IsConstructorDef(resolveDef(unitID))
+				and (type(hasReclaim) ~= "function" or hasReclaim(unitID) == true) then
+			seen[unitID], result[#result + 1] = true, unitID
+		end
+	end
+	table.sort(result)
+	return result
+end
+
+function Behavior.FilterOwnedTargets(units, constructorSet, isValid, resolveDefID, requiredDefID)
+	local result, seen = {}, {}
+	constructorSet = type(constructorSet) == "table" and constructorSet or {}
+	for _, unitID in ipairs(type(units) == "table" and units or {}) do
+		local typeMatches = requiredDefID == nil or (type(resolveDefID) == "function"
+			and resolveDefID(unitID) == requiredDefID)
+		if not seen[unitID] and not constructorSet[unitID] and typeMatches
+				and type(isValid) == "function" and isValid(unitID) == true then
+			seen[unitID], result[#result + 1] = true, unitID
+		end
+	end
+	table.sort(result)
+	return result
+end
+
 function Behavior.NewToggleCharge()
 	return {
 		charging = false,

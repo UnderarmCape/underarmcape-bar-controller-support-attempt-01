@@ -1,7 +1,7 @@
 {
   "kind": "bar-controller-native-override-manifest",
   "schemaVersion": 1,
-  "experiment": "EXPERIMENTAL — NATIVE CONTROLLER TARGETING AND COMPACT RADIAL TEST",
+  "experiment": "EXPERIMENTAL — INPUT STATE, FACTORY SHORTCUT, AND VANILLA DISASSEMBLE TEST",
   "barBuild": "Beyond All Reason test-30725-99351e5",
   "recoilVersion": "2026.06.12",
   "upstreamRepository": "https://github.com/beyond-all-reason/Beyond-All-Reason",
@@ -35,9 +35,9 @@
       "livePath": "LuaUI/Widgets/gui_buildmenu.lua",
       "sourcePath": "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_buildmenu.lua",
       "baseSha256": "082298c94eb24c17db180d5be34ed4a79bccb7751450f76d685f44cf346a12dd",
-      "previousPatchedSha256": "06607f22d89dc09afd8e868b403098b4f4a4f27fe0bb3db94bd3e55a015f1506",
-      "patchedSha256": "264c57807a25f0a6b1441d05a69d1c45783aef855a0fa4afa6f42d326726afc7",
-      "purpose": "Export all authoritative build/factory cells with revisions, activation, and scoped two-way focus for the hybrid Build/Factory Radials."
+      "previousPatchedSha256": "264c57807a25f0a6b1441d05a69d1c45783aef855a0fa4afa6f42d326726afc7",
+      "patchedSha256": "a664a35978c909886f821196b67571d48dbf6c68925f23b0988c827dd7c441a4",
+      "purpose": "Export authoritative build/factory cells, native one/five queue edits, revisions, activation, and scoped two-way focus for the hybrid Build/Factory Radials."
     }
   ]
 }

@@ -11,6 +11,10 @@ Targeting.POINT_TARGETING = "POINT_TARGETING"
 Targeting.CONTROLLER_AREA_TARGETING = "CONTROLLER_AREA_TARGETING"
 Targeting.FRONT_TARGETING = "FRONT_TARGETING"
 Targeting.BUILD_PLACEMENT = "BUILD_PLACEMENT"
+Targeting.WAITING_FOR_FRESH_INPUT = "WAITING_FOR_FRESH_INPUT"
+Targeting.WAITING_FOR_ANCHOR_PRESS = "WAITING_FOR_ANCHOR_PRESS"
+Targeting.WAITING_FOR_ANCHOR_RELEASE = "WAITING_FOR_ANCHOR_RELEASE"
+Targeting.RESIZING_ARMED = "RESIZING_ARMED"
 
 local function shallowCopy(source)
 	local result = {}
@@ -48,6 +52,7 @@ end
 function Targeting.New()
 	return {
 		phase = Targeting.IDLE,
+		targetMode = Targeting.IDLE,
 		descriptor = nil,
 		cmdID = nil,
 		shape = nil,
@@ -56,6 +61,8 @@ function Targeting.New()
 		radius = 0,
 		cancelReleaseRequired = false,
 		persistentUntilQueueRelease = false,
+		freshInputObserved = false,
+		confirmationArmed = false,
 		lastResult = "idle",
 	}
 end
@@ -63,13 +70,17 @@ end
 function Targeting.Reset(state, reason)
 	state = type(state) == "table" and state or Targeting.New()
 	state.phase = Targeting.IDLE
+	state.targetMode = Targeting.IDLE
 	state.descriptor = nil
 	state.cmdID = nil
 	state.shape = nil
 	state.anchor = nil
+	state.anchorX, state.anchorY, state.anchorZ = nil, nil, nil
 	state.current = nil
 	state.radius = 0
 	state.persistentUntilQueueRelease = false
+	state.freshInputObserved = false
+	state.confirmationArmed = false
 	state.lastResult = reason or "reset"
 	return state
 end
@@ -106,17 +117,47 @@ function Targeting.SetDescriptor(state, descriptor, types)
 	local cmdID = tonumber(descriptor.id or descriptor.cmdID)
 	local phase = Targeting.Classify(descriptor, types)
 	if phase == Targeting.IDLE then return Targeting.Reset(state, "active command is not targetable") end
-	if state.cmdID ~= cmdID then
+	if state.cmdID ~= cmdID or state.targetMode ~= phase then
 		Targeting.Reset(state, "active target command changed")
 		state.descriptor = shallowCopy(descriptor)
 		state.cmdID = cmdID
-		state.phase = phase
-		state.lastResult = "target command active"
+		state.targetMode = phase
+		state.phase = phase == Targeting.BUILD_PLACEMENT
+			and Targeting.BUILD_PLACEMENT or Targeting.WAITING_FOR_FRESH_INPUT
+		state.lastResult = phase == Targeting.BUILD_PLACEMENT
+			and "build command delegated" or "waiting for radial confirm release"
 	else
 		state.descriptor = shallowCopy(descriptor)
-		if not state.anchor then state.phase = phase end
+		state.targetMode = phase
 	end
 	return state
+end
+
+-- Command-radial confirmation and world-target confirmation share A/X.  A
+-- target command is therefore unusable until both buttons have first been
+-- observed released.  Area commands add a second release barrier after the
+-- anchor press.  A release only arms the next transition; it can never issue.
+function Targeting.ObserveInput(state, selectDown, smartDown)
+	if type(state) ~= "table" then return Targeting.IDLE end
+	local neutral = selectDown ~= true and smartDown ~= true
+	if not neutral then return state.phase end
+	if state.phase == Targeting.WAITING_FOR_FRESH_INPUT then
+		state.freshInputObserved = true
+		state.phase = state.targetMode == Targeting.POINT_TARGETING
+			and Targeting.POINT_TARGETING or Targeting.WAITING_FOR_ANCHOR_PRESS
+		state.lastResult = "fresh target input armed"
+	elseif state.phase == Targeting.WAITING_FOR_ANCHOR_RELEASE then
+		state.confirmationArmed = true
+		state.phase = Targeting.RESIZING_ARMED
+		state.lastResult = "area confirmation armed"
+	end
+	return state.phase
+end
+
+function Targeting.CanAcceptPress(state)
+	local phase = type(state) == "table" and state.phase or Targeting.IDLE
+	return phase == Targeting.POINT_TARGETING or phase == Targeting.WAITING_FOR_ANCHOR_PRESS
+		or phase == Targeting.RESIZING_ARMED
 end
 
 local function directTarget(descriptor, target, types, isAlliedUnit)
@@ -159,19 +200,26 @@ end
 
 function Targeting.BeginOrBuildPoint(state, target, types, isAlliedUnit)
 	if type(state) ~= "table" or not state.descriptor then return nil, "no active target command" end
+	if state.phase ~= Targeting.POINT_TARGETING and state.phase ~= Targeting.WAITING_FOR_ANCHOR_PRESS then
+		return nil, "fresh target press required"
+	end
 	local params, result = directTarget(state.descriptor, target, types, isAlliedUnit)
 	if params then return params, result end
 	if result ~= "anchor" then return nil, result end
-	state.anchor = { x = target.x, y = target.y, z = target.z }
-	state.current = { x = target.x, y = target.y, z = target.z }
+	-- The anchor is copied once and never derived from the moving reticle.
+	state.anchor = { x = tonumber(target.x), y = tonumber(target.y), z = tonumber(target.z) }
+	state.anchorX, state.anchorY, state.anchorZ = state.anchor.x, state.anchor.y, state.anchor.z
+	state.current = { x = state.anchor.x, y = state.anchor.y, z = state.anchor.z }
 	state.radius = 0
+	state.confirmationArmed = false
 	if hasType(state.descriptor, "ICON_FRONT", types) then
-		state.phase, state.shape = Targeting.FRONT_TARGETING, "front"
+		state.shape = "front"
 	elseif hasType(state.descriptor, "ICON_UNIT_OR_RECTANGLE", types) then
-		state.phase, state.shape = Targeting.CONTROLLER_AREA_TARGETING, "rectangle"
+		state.shape = "rectangle"
 	else
-		state.phase, state.shape = Targeting.CONTROLLER_AREA_TARGETING, "area"
+		state.shape = "area"
 	end
+	state.phase = Targeting.WAITING_FOR_ANCHOR_RELEASE
 	state.lastResult = "anchor latched"
 	return nil, "anchor"
 end
@@ -189,6 +237,9 @@ end
 function Targeting.BuildAnchoredParams(state)
 	if type(state) ~= "table" or not state.anchor or not state.current then
 		return nil, "area anchor is missing"
+	end
+	if state.phase ~= Targeting.RESIZING_ARMED or state.confirmationArmed ~= true then
+		return nil, "release anchor input before confirming"
 	end
 	local radius = tonumber(state.radius) or 0
 	if state.shape == "front" or state.shape == "rectangle" then
