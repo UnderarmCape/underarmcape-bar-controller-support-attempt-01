@@ -253,7 +253,8 @@ function widget:DrawWorld()
 	local ownerState = smartControllerOwner and smartControllerOwner:GetState() or nil
 	local hasLegacyArea = controllerTargeting.active and controllerTargeting.mode ~= 'single'
 		and controllerTargeting.x and controllerTargeting.z
-	if ownerState and ownerState.anchor and ownerState.current then
+	if ownerState and ownerState.anchor and ownerState.current
+			and ownerState.anchor.x and ownerState.anchor.y and ownerState.anchor.z then
 		gl.Color(0.35, 1.0, 0.25, 0.82)
 		gl.LineWidth(2.25)
 		gl.DrawGroundCircle(ownerState.anchor.x, ownerState.anchor.y or 0,

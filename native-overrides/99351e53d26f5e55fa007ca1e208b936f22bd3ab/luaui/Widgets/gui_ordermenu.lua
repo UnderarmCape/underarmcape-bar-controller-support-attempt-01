@@ -145,7 +145,17 @@ local stateLightDisplayLists = {}
 local controllerTargetOwner
 local controllerCommandOwners = {}
 local controllerActiveTargetAPI
+local controllerTargetDiagnostics = { revision = 0, events = {}, last = "IDLE" }
 local drawCell
+
+local function controllerTargetTrace(event, detail)
+	local row = tostring(event) .. (detail and (" | " .. tostring(detail)) or "")
+	if controllerTargetDiagnostics.last == row then return end
+	controllerTargetDiagnostics.revision = controllerTargetDiagnostics.revision + 1
+	controllerTargetDiagnostics.last = row
+	controllerTargetDiagnostics.events[#controllerTargetDiagnostics.events + 1] = row
+	while #controllerTargetDiagnostics.events > 12 do table.remove(controllerTargetDiagnostics.events, 1) end
+end
 
 -- Cache for translations to avoid repeated Spring.I18N calls
 local translationCache = {}
@@ -867,7 +877,10 @@ function widget:Initialize()
 		local notifyOK, handled = pcall(widgetHandler.CommandNotify, widgetHandler,
 			cmdID, params, notifyOptions)
 		if not notifyOK then return false, "CommandNotify failed" end
-		if handled then return true, "widget" end
+		if handled then
+			controllerTargetTrace("COMMAND_NOTIFY HANDLED", cmdID)
+			return true, "widget"
+		end
 		local issuedOK, accepted
 		if dispatchMode == "insert-front" then
 			local insertParams = { 0, cmdID, 0 }
@@ -876,6 +889,7 @@ function widget:Initialize()
 		else
 			issuedOK, accepted = pcall(Spring.GiveOrder, cmdID, params, optionList)
 		end
+		if issuedOK and accepted ~= false then controllerTargetTrace("GIVE_ORDER FALLBACK", cmdID) end
 		return issuedOK and accepted ~= false, issuedOK and "engine" or "GiveOrder failed"
 	end
 
@@ -974,13 +988,34 @@ function widget:Initialize()
 		local entry = controllerCommandOwners[tonumber(cmdID)]
 			or (WG.ControllerNativeCommandOwners and WG.ControllerNativeCommandOwners[tonumber(cmdID)])
 		controllerActiveTargetAPI = entry and entry.api or controllerTargetOwner
-		return controllerActiveTargetAPI:Begin(descriptor)
+		local began, result = controllerActiveTargetAPI:Begin(descriptor)
+		if began then
+			controllerTargetDiagnostics.events = {}
+			controllerTargetTrace("SESSION CREATED", cmdID)
+			controllerTargetTrace("OWNER: " .. tostring(entry and entry.name or "ORDER_MENU"))
+		end
+		return began, result
 	end
 	WG['ordermenu'].controllerTargetInput = function(input)
 		if not controllerActiveTargetAPI then return false, "inactive" end
+		local before = controllerActiveTargetAPI:GetState()
+		if before and before.anchor and before.confirmationArmed
+				and (input.selectPressed or input.smartPressed) then
+			controllerTargetTrace(input.selectPressed and "A CONFIRM RECEIVED" or "X CONFIRM RECEIVED")
+			controllerTargetTrace("OWNER CONFIRM CALLED", before.ownerName)
+		end
 		local consumed, result = controllerActiveTargetAPI:Input(input)
 		local state = controllerActiveTargetAPI:GetState()
-		if not state or state.phase == "IDLE" then controllerActiveTargetAPI = nil end
+		if before and not before.anchor and state and state.anchor then controllerTargetTrace("ANCHORED") end
+		if before and before.phase == "WAITING_FOR_ANCHOR_RELEASE"
+				and state and state.phase == "RESIZING_ARMED" then
+			controllerTargetTrace("BUTTONS NEUTRAL")
+			controllerTargetTrace("CONFIRM ARMED")
+		end
+		if not state or state.phase == "IDLE" then
+			controllerTargetTrace("SESSION CLOSED", result)
+			controllerActiveTargetAPI = nil
+		end
 		return consumed, result
 	end
 	WG['ordermenu'].controllerGetTargetState = function()
@@ -990,9 +1025,26 @@ function widget:Initialize()
 	WG['ordermenu'].controllerCancelTarget = function(reason)
 		local active = controllerActiveTargetAPI
 		controllerActiveTargetAPI = nil
-		return active and active:Cancel(reason) or false
+		local cancelled = active and active:Cancel(reason) or false
+		if cancelled then controllerTargetTrace("SESSION CLOSED", reason or "cancelled") end
+		return cancelled
 	end
-	WG['ordermenu'].controllerTargetingAPIVersion = 5
+	WG['ordermenu'].controllerGetTargetDiagnostics = function()
+		local events = {}
+		for i, event in ipairs(controllerTargetDiagnostics.events) do events[i] = event end
+		local ownerCount = 0
+		for _ in pairs(controllerCommandOwners) do ownerCount = ownerCount + 1 end
+		return {
+			revision = controllerTargetDiagnostics.revision,
+			last = controllerTargetDiagnostics.last,
+			events = events,
+			ownerCount = ownerCount,
+			areaMexRegistered = GameCMD and controllerCommandOwners[GameCMD.AREA_MEX] ~= nil,
+			smartAreaReclaimRegistered = controllerCommandOwners[CMD.RECLAIM] ~= nil,
+			dispatcherConnected = true,
+		}
+	end
+	WG['ordermenu'].controllerTargetingAPIVersion = 6
 	WG['ordermenu'].controllerActivateState = function(cmdID, desiredState)
 		cmdID, desiredState = tonumber(cmdID), tonumber(desiredState)
 		local cmd
@@ -1935,7 +1987,8 @@ end
 function widget:DrawWorld()
 	if controllerActiveTargetAPI ~= controllerTargetOwner or not controllerTargetOwner then return end
 	local state = controllerTargetOwner:GetState()
-	if not state.anchor or not state.current then return end
+	if not state.anchor or not state.current
+			or not state.anchor.x or not state.anchor.y or not state.anchor.z then return end
 	gl.DepthTest(false)
 	gl.LineWidth(2.4)
 	gl.Color(0.30, 0.80, 1.0, 0.90)

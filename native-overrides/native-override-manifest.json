@@ -1,7 +1,7 @@
 {
   "kind": "bar-controller-native-override-manifest",
   "schemaVersion": 1,
-  "experiment": "EXPERIMENTAL — NATIVE WIDGET, SMART ACTION, AND UI UNIFICATION TEST",
+  "experiment": "EXPERIMENTAL — SMART X, RADIAL ROUTING, ENEMY DISASSEMBLE, AND AREA CONFIRMATION TEST",
   "barBuild": "Beyond All Reason test-30725-99351e5",
   "recoilVersion": "2026.06.12",
   "upstreamRepository": "https://github.com/beyond-all-reason/Beyond-All-Reason",
@@ -20,16 +20,16 @@
       "livePath": "LuaUI/Widgets/unit_smart_area_reclaim.lua",
       "sourcePath": "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/unit_smart_area_reclaim.lua",
       "baseSha256": "53241a515f92f73f061e253b49dff76e0327994178833067802b4409b434ef73",
-      "previousPatchedSha256": "69c7b3c49f4b46a8b22d5b51fac3944913beb47d0fc1c35ae2156418a9901a84",
-      "patchedSha256": "82ce8a6035f54f9501ce7f7b2cae60a95cde28ec1ba38de302e2b48b4b6bc96f",
+      "previousPatchedSha256": "82ce8a6035f54f9501ce7f7b2cae60a95cde28ec1ba38de302e2b48b4b6bc96f",
+      "patchedSha256": "02473ecc3974a2b0c662506a076d70fb5e26d5a22d718089436964942e09f6fc",
       "purpose": "Bridge controller anchor/radius input to Recoil CMD.RECLAIM single, any-area, and same-type-area parameter forms."
     },
     {
       "livePath": "LuaUI/Widgets/gui_ordermenu.lua",
       "sourcePath": "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_ordermenu.lua",
       "baseSha256": "445053a54056dd82d5d348e43cbb6b0f534b6af3ef03cd2b479eca7eeef2caf3",
-      "previousPatchedSha256": "098d40340ad51509b73ce1c090387e313da2413d1893f7749e0483db7b5c2f06",
-      "patchedSha256": "2cfc47b87844257939432a5f2570f570c54286fd45c61c26dba79b8d3856cd7a",
+      "previousPatchedSha256": "2cfc47b87844257939432a5f2570f570c54286fd45c61c26dba79b8d3856cd7a",
+      "patchedSha256": "92fc6159d9485db23bfcf66d3f0cb5f097f2bef465d9f6b7b2ab83bb23366c2a",
       "purpose": "Expose revisioned command descriptors, retain validated cached descriptors through native active-command clearing, and provide exactly-once CommandNotify-aware controller target dispatch with scoped two-way focus."
     },
     {
@@ -44,8 +44,8 @@
       "livePath": "LuaUI/Widgets/cmd_area_mex.lua",
       "sourcePath": "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/cmd_area_mex.lua",
       "baseSha256": "da9c8e0a6c7075225bce53c460116c9a90f5bdf21af881cc9e9f24d5ed3c3316",
-      "previousPatchedSha256": "6f68ad4b993916af867d0caeb34435983881c724ec573f7bf19784b638f5e715",
-      "patchedSha256": "e86a3f72c7b98417524e6e28c1385a3f24bd71ed6f0f577e7c4b31a50c381c4a",
+      "previousPatchedSha256": "e86a3f72c7b98417524e6e28c1385a3f24bd71ed6f0f577e7c4b31a50c381c4a",
+      "patchedSha256": "6c8a0f1c16ec683931f3e702e3c677547c19abe43e3aece0e5745362d1792449",
       "purpose": "Own Area Mex controller anchor, preview, and exactly-once final confirmation while retaining the native Area Mex executor."
     },
     {
@@ -66,7 +66,8 @@
       "livePath": "LuaUI/Widgets/gui_idle_builders.lua",
       "sourcePath": "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_idle_builders.lua",
       "baseSha256": "766e9afa7d33cad7a19006d174cdcc4c2b5c00c4e0e61dd4903cec0cac7c4f09",
-      "patchedSha256": "f1fd532abad0f740afe1012467508d74c28e46b7b5cb56784b1032fc8491b519",
+      "previousPatchedSha256": "f1fd532abad0f740afe1012467508d74c28e46b7b5cb56784b1032fc8491b519",
+      "patchedSha256": "c53fff62c4f361c98d8984108e04ad11e55accc18e091c5db6c048a5e9574e68",
       "purpose": "Expose the live native Idle Builders ordering and selection/focus behavior to D-pad navigation."
     }
   ]

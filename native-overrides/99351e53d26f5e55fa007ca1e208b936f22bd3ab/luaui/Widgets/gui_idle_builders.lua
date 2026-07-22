@@ -243,9 +243,10 @@ local function drawContent()
 				end
 
 				local texSize = floor(iconSize*1.33)
-				local zoom = i == hoveredIcon and (b and 0.15 or 0.105) or 0.05
+				local controllerHighlighted = unitDefID == controllerCursorTypeID
+				local zoom = (i == hoveredIcon or controllerHighlighted) and (b and 0.15 or 0.105) or 0.05
 				local highlightOpacity = 0
-				if i == hoveredIcon then
+				if i == hoveredIcon or controllerHighlighted then
 					highlightOpacity = 0.22
 				end
 				if showStack then
@@ -464,6 +465,7 @@ local function controllerSelect(unitID, unitDefID, label)
 	Spring.SelectUnitArray({ unitID })
 	Spring.SendCommands("viewselection")
 	if playSounds then Spring.PlaySoundFile(rightclick, soundVolume, 'ui') end
+	doUpdateForce = true
 	controllerLastResult = label or "selected"
 	return true
 end
@@ -628,6 +630,18 @@ function widget:Initialize()
 		return posX, posY, backgroundRect and backgroundRect[3] or posX, backgroundRect and backgroundRect[4] or posY + usedHeight
 	end
 	WG['idlebuilders'].controllerCycle = controllerCycle
+	WG['idlebuilders'].controllerPreviousIdleUnit = function()
+		return controllerCycle(-1, false)
+	end
+	WG['idlebuilders'].controllerNextIdleUnit = function()
+		return controllerCycle(1, false)
+	end
+	WG['idlebuilders'].controllerPreviousIdleType = function()
+		return controllerCycle(-1, true)
+	end
+	WG['idlebuilders'].controllerNextIdleType = function()
+		return controllerCycle(1, true)
+	end
 	WG['idlebuilders'].controllerGetSnapshot = function()
 		updateList(true)
 		return controllerSnapshot()

@@ -289,7 +289,8 @@ end
 function widget:DrawWorld()
 	if not areaMexControllerOwner then return end
 	local state = areaMexControllerOwner:GetState()
-	if not state.anchor or not state.current then return end
+	if not state.anchor or not state.current
+			or not state.anchor.x or not state.anchor.y or not state.anchor.z then return end
 	gl.Color(0.93, 0.93, 0.93, 0.9)
 	gl.LineWidth(2.4)
 	gl.DrawGroundCircle(state.anchor.x, state.anchor.y, state.anchor.z, math.max(1, state.radius or 0), 64)

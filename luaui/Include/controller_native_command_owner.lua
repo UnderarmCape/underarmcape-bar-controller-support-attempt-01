@@ -63,9 +63,13 @@ end
 
 function Owner:GetState()
 	local state = copy(self.state)
-	state.descriptor = copy(self.state.descriptor)
-	state.anchor = copy(self.state.anchor)
-	state.current = copy(self.state.current)
+	-- Preserve nil here.  Turning an absent anchor/current into an empty table
+	-- makes every consumer believe an area gesture is already anchored.  In the
+	-- live widgets that also sends nil coordinates to gl.DrawGroundCircle and
+	-- causes BAR to remove the command owner from LuaUI.
+	state.descriptor = self.state.descriptor and copy(self.state.descriptor) or nil
+	state.anchor = self.state.anchor and copy(self.state.anchor) or nil
+	state.current = self.state.current and copy(self.state.current) or nil
 	state.ownerName = self.name
 	state.dispatchCount = self.dispatchCount
 	state.transitionRevision = self.transitionRevision
