@@ -10,19 +10,27 @@ function Chords.New()
 		startedAt = 0,
 		waitingForRelease = false,
 		longFired = false,
-		factoryContext = false,
+		longAction = nil,
 		lastEvent = "idle",
 	}
 end
 
-function Chords.Update(state, now, lbDown, rbDown, rbPressed, rbReleased, holdSeconds, factoryContext, disassembleActive)
+function Chords.Update(state, now, lbDown, rbDown, rbPressed, rbReleased, holdSeconds, longAction, legacyDisassembleActive)
 	state = type(state) == "table" and state or Chords.New()
 	now = tonumber(now) or 0
 	lbDown, rbDown = lbDown == true, rbDown == true
 	holdSeconds = tonumber(holdSeconds) or 0.33
+	if type(longAction) ~= "string" then
+		if longAction == true then longAction = "factory-queue-mode"
+		elseif legacyDisassembleActive == true then longAction = "disable-disassemble"
+		elseif legacyDisassembleActive == false then longAction = "enable-disassemble"
+		else longAction = nil end
+	end
 
 	if state.waitingForRelease then
-		if not lbDown and not rbDown then
+		-- RB owns rearming. LB may remain held so every distinct RB tap gets a
+		-- fresh short/long decision.
+		if not rbDown then
 			state.waitingForRelease, state.lastEvent = false, "released"
 		end
 		return nil, state
@@ -34,7 +42,7 @@ function Chords.Update(state, now, lbDown, rbDown, rbPressed, rbReleased, holdSe
 		if lbDown and rbPressed == true then
 			state.active = true
 			state.startedAt = now
-			state.factoryContext = factoryContext == true
+			state.longAction = type(longAction) == "string" and longAction or nil
 			state.longFired = false
 			state.lastEvent = "started"
 			return "started", state
@@ -50,10 +58,12 @@ function Chords.Update(state, now, lbDown, rbDown, rbPressed, rbReleased, holdSe
 	local elapsed = math.max(0, now - (tonumber(state.startedAt) or now))
 	if rbDown and elapsed >= holdSeconds then
 		state.active, state.waitingForRelease, state.longFired = false, true, true
-		local event
-		if state.factoryContext then event = "factory-queue-mode"
-		else event = disassembleActive == true and "disable-disassemble" or "enable-disassemble" end
-		state.lastEvent = event
+		local event = state.longAction
+		if event ~= "factory-queue-mode" and event ~= "disable-disassemble"
+				and event ~= "enable-disassemble" then
+			event = nil
+		end
+		state.lastEvent = event or "unsupported-long"
 		return event, state
 	end
 

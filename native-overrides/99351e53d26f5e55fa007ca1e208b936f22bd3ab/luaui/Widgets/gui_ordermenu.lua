@@ -833,11 +833,24 @@ function widget:Initialize()
 	-- Mirror the native mouse release boundary: LuaUI CommandNotify gets first
 	-- refusal (Area Mex and Smart Area Reclaim depend on this), then exactly one
 	-- engine order is issued only when no widget handled the command.
-	WG['ordermenu'].controllerIssueActiveTarget = function(expectedCmdID, params, options, dispatchMode)
+	WG['ordermenu'].controllerIssueActiveTarget = function(expectedCmdID, params, options, dispatchMode, cachedDescriptor)
 		local descriptor = WG['ordermenu'].controllerGetActiveTargetDescriptor()
 		expectedCmdID = tonumber(expectedCmdID)
-		if not descriptor or descriptor.cmdID ~= expectedCmdID or type(params) ~= "table" then
-			return false, "active command changed"
+		if (not descriptor or descriptor.cmdID ~= expectedCmdID) and type(cachedDescriptor) == "table"
+				and tonumber(cachedDescriptor.cmdID or cachedDescriptor.id) == expectedCmdID then
+			-- BAR may clear Spring.GetActiveCommand after the controller anchor is
+			-- placed. Revalidate the cached descriptor against the live Order Menu
+			-- model instead of abandoning the controller-owned operation.
+			for i = 1, #commands do
+				if commands[i].id == expectedCmdID and commands[i].disabled ~= true then
+					descriptor = cachedDescriptor
+					break
+				end
+			end
+		end
+		if not descriptor or tonumber(descriptor.cmdID or descriptor.id) ~= expectedCmdID
+				or type(params) ~= "table" then
+			return false, "active and cached command unavailable"
 		end
 		local optionList, notifyOptions = controllerCommandOptions(options)
 		local notifyOK, handled = pcall(widgetHandler.CommandNotify, widgetHandler,
@@ -854,7 +867,7 @@ function widget:Initialize()
 		end
 		return issuedOK and accepted ~= false, issuedOK and "engine" or "GiveOrder failed"
 	end
-	WG['ordermenu'].controllerTargetingAPIVersion = 3
+	WG['ordermenu'].controllerTargetingAPIVersion = 4
 	WG['ordermenu'].controllerActivateState = function(cmdID, desiredState)
 		cmdID, desiredState = tonumber(cmdID), tonumber(desiredState)
 		local cmd

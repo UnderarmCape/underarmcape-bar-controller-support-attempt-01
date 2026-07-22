@@ -497,12 +497,15 @@ ControllerCameraTestDisassemble = ControllerCameraTestDisassemble or {
 	toggle = ControllerDisassembleBehavior and ControllerDisassembleBehavior.NewToggleCharge()
 		or { charging = false, startedAt = 0, progress = 0, waitingForRelease = false, lastEvent = "idle" },
 	activatedAt = 0,
+	lastReclaimAt = 0,
 	successfulActivity = false,
 	lastValidationAt = -10,
 	lastResult = "inactive",
 	markArea = { pressActive = false, active = false, startedAt = 0, radius = 320, additive = false, typeFilter = nil },
 	areaReclaim = { active = false, anchorUnitID = nil, unitDefID = nil, x = nil, y = nil, z = nil, radius = 120, candidates = {} },
 	lbA = { pressActive = false, startedAt = 0, targetID = nil, unitDefID = nil, holdFired = false },
+	doubleB = ControllerDisassembleBehavior and ControllerDisassembleBehavior.NewDoubleBTap()
+		or { lastPressAt = -10, releaseArmed = true, lastEvent = "idle" },
 }
 ControllerCameraTestInputChord = ControllerCameraTestInputChord
 	or (ControllerInputChords and ControllerInputChords.New())
@@ -524,6 +527,8 @@ ControllerCameraTestNativeTargeting = ControllerCameraTestNativeTargeting
 	or (ControllerNativeTargeting and ControllerNativeTargeting.New())
 	or { phase = "IDLE", cancelReleaseRequired = false, lastResult = "unavailable" }
 ControllerCameraTestNativeTargeting.descriptorDirty = true
+ControllerCameraTestNativeTargeting.trace = ControllerCameraTestNativeTargeting.trace or {}
+ControllerCameraTestNativeTargeting.traceRevision = ControllerCameraTestNativeTargeting.traceRevision or 0
 ControllerCameraTestLBHotkeys = ControllerCameraTestLBHotkeys or {
 	A = { pending = false, lastPressTime = 0, pressCount = 0 },
 	B = { pending = false, lastPressTime = 0, pressCount = 0 },
@@ -727,7 +732,7 @@ function ControllerCameraTestGetDefaultSettings()
 		disassembleToggleHoldSeconds = 0.33,
 		nativeBarUIIntegration = "Native Experimental",
 		controllerGlyphStyle = "Auto",
-		disassembleUnusedTimeoutSeconds = 20.0,
+		disassembleUnusedTimeoutSeconds = 30.0,
 		lbTapMaxSeconds = 0.20,
 		lbTacticalHoldSeconds = 0.20,
 		visibleSelectionFilter = "Combat",
@@ -859,7 +864,7 @@ function ControllerCameraTestClampSetting(name, value)
 		aHoldSeconds = { 0.05, 2.0 },
 		areaReclaimHoldSeconds = { 0.10, 2.0 },
 		disassembleToggleHoldSeconds = { 0.15, 1.50 },
-		disassembleUnusedTimeoutSeconds = { 5.0, 120.0 },
+		disassembleUnusedTimeoutSeconds = { 30.0, 30.0 },
 		lbTapMaxSeconds = { 0.08, 0.50 },
 		lbTacticalHoldSeconds = { 0.08, 0.50 },
 		controlGroupAssignHoldSeconds = { 0.05, 2.5 },
@@ -908,7 +913,7 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.aHoldSeconds = ControllerCameraTestClampSetting("aHoldSeconds", settings.aHoldSeconds or 0.38)
 	settings.areaReclaimHoldSeconds = ControllerCameraTestClampSetting("areaReclaimHoldSeconds", settings.areaReclaimHoldSeconds or 0.45)
 	settings.disassembleToggleHoldSeconds = ControllerCameraTestClampSetting("disassembleToggleHoldSeconds", settings.disassembleToggleHoldSeconds or defaults.disassembleToggleHoldSeconds)
-	settings.disassembleUnusedTimeoutSeconds = ControllerCameraTestClampSetting("disassembleUnusedTimeoutSeconds", settings.disassembleUnusedTimeoutSeconds or 20.0)
+	settings.disassembleUnusedTimeoutSeconds = 30.0
 	settings.lbTapMaxSeconds = ControllerCameraTestClampSetting("lbTapMaxSeconds", settings.lbTapMaxSeconds or defaults.lbTapMaxSeconds)
 	settings.lbTacticalHoldSeconds = ControllerCameraTestClampSetting("lbTacticalHoldSeconds", settings.lbTacticalHoldSeconds or defaults.lbTacticalHoldSeconds)
 	if not ControllerSelectionBehavior or not ControllerSelectionBehavior.IsValidFilter(settings.visibleSelectionFilter) then
@@ -2647,6 +2652,14 @@ function ControllerCameraTestResetHybridRadials(reason)
 	end
 	ControllerCameraTestNativeTargeting.cancelReleaseRequired = false
 	if ControllerInputChords then ControllerCameraTestInputChord = ControllerInputChords.New() end
+	if ControllerCameraTestDisassemble.active then
+		ControllerCameraTestExitDisassembleMode("Disassemble Mode Disabled", reason or "mode switch")
+	elseif ControllerDisassembleBehavior then
+		ControllerCameraTestDisassemble.doubleB = ControllerDisassembleBehavior.NewDoubleBTap()
+	end
+	if ControllerCameraTestAreaSelect.owner == "disassemble" then
+		ControllerCameraTestCancelAreaSelect("mode switch")
+	end
 	local drag = ControllerCameraTestDragCommand
 	drag.active, drag.pressActive, drag.nativeControllerTargeting = false, false, false
 	drag.option, drag.cmdID = nil, nil
@@ -6149,6 +6162,23 @@ function ControllerCameraTestClearNativeTargetPreview(reason)
 	if reason then ControllerCameraTestNativeTargeting.lastResult = reason end
 end
 
+function ControllerCameraTestTraceNativeTarget(event, detail)
+	if not ControllerCameraTestSettings.debugPanelVisible then return end
+	local state = ControllerCameraTestNativeTargeting
+	local activeID = ControllerCameraTestGetNativeActiveCommandID and ControllerCameraTestGetNativeActiveCommandID() or nil
+	local row = string.format("%s phase=%s active=%s cached=%s A=%s/%s Aowner=%s X=%s/%s Xowner=%s anchor=%s armed=%s %s",
+		tostring(event), tostring(state.phase), tostring(activeID), tostring(state.cmdID),
+		tostring(ControllerCameraTestActionDown("select")), tostring(ControllerCameraTestActionPressed("select")),
+		"native-targeting",
+		tostring(ControllerCameraTestActionDown("smartAction")), tostring(ControllerCameraTestActionPressed("smartAction")),
+		"native-targeting", tostring(state.anchor ~= nil), tostring(state.confirmationArmed == true), tostring(detail or ""))
+	state.traceRevision = (state.traceRevision or 0) + 1
+	state.lastTrace = row
+	state.trace[#state.trace + 1] = row
+	while #state.trace > 16 do table.remove(state.trace, 1) end
+	Spring.Echo("[Controller Native Target] " .. row)
+end
+
 function ControllerCameraTestCancelActiveCommandTargeting(reason, armRelease)
 	local selectionBefore = ControllerCameraTestSafeSelectionSnapshot(
 		type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
@@ -6160,6 +6190,7 @@ function ControllerCameraTestCancelActiveCommandTargeting(reason, armRelease)
 	ControllerCameraTestNativeTargeting.descriptorDirty = false
 	if armRelease then ControllerCameraTestArmCancelRelease(reason or "targeting cancelled by B") end
 	ControllerCameraTestRestoreSelectionIfChanged(selectionBefore, "Preserved after command cancel")
+	ControllerCameraTestTraceNativeTarget("cancel", reason)
 	latchSelectionDebugMessage(reason or "Targeting cancelled")
 	return true
 end
@@ -6172,6 +6203,14 @@ function ControllerCameraTestRefreshNativeTargetingDescriptor(force)
 		return nil
 	end
 	if not force and not state.descriptorDirty then return state.descriptor end
+	-- Once the controller owns an anchor, Spring.GetActiveCommand is no longer
+	-- authoritative: BAR may clear it as part of its mouse-oriented lifecycle.
+	-- Keep the already validated descriptor until confirm or explicit cancel.
+	if state.anchor and state.descriptor and state.cmdID then
+		state.descriptorDirty = false
+		ControllerCameraTestTraceNativeTarget("descriptor-cached", "engine active command change ignored")
+		return state.descriptor
+	end
 	state.descriptorDirty = false
 	local api = WG and WG.ordermenu
 	local descriptor
@@ -6180,6 +6219,7 @@ function ControllerCameraTestRefreshNativeTargetingDescriptor(force)
 		if ok and type(value) == "table" then descriptor = value end
 	end
 	ControllerNativeTargeting.SetDescriptor(state, descriptor, CMDTYPE)
+	ControllerCameraTestTraceNativeTarget("descriptor-refresh", descriptor and "live descriptor" or "no descriptor")
 	return state.descriptor
 end
 
@@ -6213,13 +6253,16 @@ function ControllerCameraTestIssueNativeTarget(params)
 	local queueActive = ControllerCameraTestIsQueueModifierActive()
 	local dispatchMode = ControllerCameraTestIsQueueFrontModifierActive() and "insert-front" or nil
 	local options = ControllerCameraTestGetCommandOptions()
+	ControllerCameraTestTraceNativeTarget("dispatch-attempt", "params=" .. tostring(#params))
 	local ok, accepted, route = pcall(api.controllerIssueActiveTarget,
-		state.cmdID, params, options, dispatchMode)
+		state.cmdID, params, options, dispatchMode, state.descriptor)
 	if not ok or not accepted then
 		state.lastResult = tostring(route or "target rejected")
+		ControllerCameraTestTraceNativeTarget("dispatch-rejected", state.lastResult)
 		return false
 	end
 	state.lastResult = "issued once via " .. tostring(route or "engine")
+	ControllerCameraTestTraceNativeTarget("dispatch-accepted", tostring(route or "engine"))
 	local descriptor = state.descriptor
 	local cmdID = state.cmdID
 	ControllerCameraTestClearNativeTargetPreview()
@@ -6270,11 +6313,14 @@ function ControllerCameraTestHandleNativeTargetingInput()
 			and (ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction")) then
 		local params, result
 		if state.anchor then
+			ControllerCameraTestTraceNativeTarget("confirm-press", "fresh A/X press")
 			params, result = ControllerNativeTargeting.BuildAnchoredParams(state)
 		else
+			ControllerCameraTestTraceNativeTarget("target-press", "anchor or point")
 			params, result = ControllerNativeTargeting.BeginOrBuildPoint(
 				state, target, CMDTYPE, ControllerCameraTestIsAlliedUnit)
 			if result == "anchor" then
+				ControllerCameraTestTraceNativeTarget("anchor-created", "waiting for release")
 				ControllerCameraTestShowNativeTargetPreview()
 				ControllerCameraTestShowHotkeyFeedback("ANCHOR", "utility")
 				return true
@@ -6668,6 +6714,7 @@ function ControllerCameraTestConfirmNativeReclaim()
 	ControllerCameraTestDisassemble.areaReclaim.active = false
 	if ok and result == true then
 		ControllerCameraTestDisassemble.successfulActivity = true
+		ControllerCameraTestDisassemble.lastReclaimAt = debugEventTime
 		ControllerCameraTestShowHotkeyFeedback("RECLAIM", "reclaim")
 		return true
 	end
@@ -6730,6 +6777,30 @@ function ControllerCameraTestCancelNativeDisassembleGesture(reason)
 	ControllerCameraTestRestoreDisassembleConstructors("Constructors restored")
 end
 
+function ControllerCameraTestHandleDisassembleB()
+	local state = ControllerCameraTestDisassemble
+	local event
+	event, state.doubleB = ControllerDisassembleBehavior.UpdateDoubleBTap(state.doubleB, debugEventTime,
+		ControllerCameraTestActionPressed("cancel"), ControllerCameraTestActionReleased("cancel"),
+		ControllerDisassembleBehavior.DISASSEMBLE_DOUBLE_B_SECONDS)
+	if event == "exit" then
+		ControllerCameraTestExitDisassembleMode("Disassemble Mode Disabled", "double-B exit")
+		return true
+	end
+	if event ~= "first" then return false end
+	local sharedArea = ControllerCameraTestAreaSelect
+	if sharedArea and sharedArea.owner == "disassemble" and (sharedArea.pressActive or sharedArea.active) then
+		ControllerCameraTestCancelAreaSelect("Disassemble selection cancelled")
+		ControllerCameraTestRestoreDisassembleConstructors("Constructors restored")
+	elseif state.areaReclaim.active or state.lbA.pressActive or state.markArea.pressActive or state.markArea.active then
+		ControllerCameraTestCancelDisassembleSubstates("Disassemble sub-operation cancelled")
+		ControllerCameraTestRestoreDisassembleConstructors("Constructors restored")
+	else
+		state.lastResult = "first B registered"
+	end
+	return true
+end
+
 function ControllerCameraTestStartNativeSameTypeReclaim(targetID, unitDefID)
 	if not targetID or not unitDefID or ControllerCameraTestConstructorSet()[targetID] then return false end
 	local x, y, z = spGetUnitPosition(targetID)
@@ -6752,6 +6823,15 @@ function ControllerCameraTestUpdateNativeDisassembleInput(dt)
 	local aDown = ControllerCameraTestActionDown("select")
 	local xDown = ControllerCameraTestActionDown("smartAction")
 
+	-- LB+B Stop has higher priority than the mode-local double-B gesture.
+	if lbDown and ControllerCameraTestActionPressed("cancel") then
+		ControllerCameraTestRestoreDisassembleConstructors("Constructors restored")
+		ControllerCameraTestIssueNativeDisassembleStop()
+		state.doubleB = ControllerDisassembleBehavior.NewDoubleBTap()
+		return true
+	end
+	if ControllerCameraTestHandleDisassembleB() then return true end
+
 	if state.areaReclaim.active then
 		local area = state.areaReclaim
 		area.releasedThisFrame = false
@@ -6764,12 +6844,6 @@ function ControllerCameraTestUpdateNativeDisassembleInput(dt)
 					area.x, area.y, area.z, area.radius)
 			end
 		end
-		if ControllerCameraTestActionPressed("cancel") then
-			ControllerCameraTestCancelNativeDisassembleGesture("same-type area cancelled")
-			ControllerCameraTestArmCancelRelease("Disassemble target cancelled by B")
-			ControllerCameraTestShowHotkeyFeedback("TARGET CANCELLED", "utility")
-			return true
-		end
 		if ControllerCameraTestActionReleased("select") or not lbDown then
 			state.lbA.pressActive, state.lbA.holdFired = false, false
 			area.waitingForNeutral, area.releasedThisFrame = true, true
@@ -6780,32 +6854,15 @@ function ControllerCameraTestUpdateNativeDisassembleInput(dt)
 		end
 		if area.confirmArmed and (ControllerCameraTestActionPressed("select")
 				or ControllerCameraTestActionPressed("smartAction")) then
-			local candidates = ControllerCameraTestCollectOwnedTargetsInRadius(
-				area.x, area.z, area.radius, { [area.unitDefID] = true })
-			local targets = ControllerCameraTestNativeDisassembleTargets(candidates, area.unitDefID)
-			ControllerCameraTestCancelNativeTargeting()
-			ControllerCameraTestIssueDisassembleReclaim(targets)
+			ControllerCameraTestConfirmNativeReclaim()
 			ControllerCameraTestRestoreDisassembleConstructors("Constructors restored")
 			area.active, area.confirmArmed, area.candidates = false, false, {}
 		end
 		return true
 	end
 
-	if lbDown and ControllerCameraTestActionPressed("cancel") then
-		ControllerCameraTestRestoreDisassembleConstructors("Constructors restored")
-		ControllerCameraTestIssueNativeDisassembleStop()
-		ControllerCameraTestArmCancelRelease("Disassemble Stop consumed LB+B")
-		return true
-	end
 	if ControllerCameraTestActionPressed("smartAction") then
 		ControllerCameraTestIssueNativeDisassembleMove()
-		return true
-	end
-
-	if ControllerCameraTestActionPressed("cancel") then
-		ControllerCameraTestCancelNativeDisassembleGesture("native targets cancelled")
-		ControllerCameraTestArmCancelRelease("Disassemble target cancelled by B")
-		ControllerCameraTestShowHotkeyFeedback("CONSTRUCTORS RESTORED", "utility")
 		return true
 	end
 
@@ -6840,44 +6897,7 @@ function ControllerCameraTestUpdateNativeDisassembleInput(dt)
 		return true
 	end
 
-	local mark = state.markArea
-	if not lbDown and ControllerCameraTestActionPressed("select") and reticleHasWorldTarget then
-		mark.pressActive, mark.active, mark.startedAt = true, false, debugEventTime
-		mark.anchorX, mark.anchorY, mark.anchorZ = reticleWorldX, reticleWorldY or 0, reticleWorldZ
-		mark.radius = ControllerDisassembleBehavior.MIN_TARGET_RADIUS
-		return true
-	end
-	if mark.pressActive and aDown then
-		local threshold = ControllerCameraTestSettings.aHoldSeconds or ControllerDisassembleBehavior.AREA_MARK_HOLD_SECONDS
-		if not mark.active and debugEventTime - mark.startedAt >= threshold then mark.active = true end
-		if mark.active and reticleHasWorldTarget and reticleWorldX and reticleWorldZ then
-			local dx, dz = reticleWorldX - mark.anchorX, reticleWorldZ - mark.anchorZ
-			mark.radius = clamp(math.sqrt(dx * dx + dz * dz),
-				ControllerDisassembleBehavior.MIN_TARGET_RADIUS, ControllerDisassembleBehavior.MAX_TARGET_RADIUS)
-		end
-		return true
-	end
-	if mark.pressActive and ControllerCameraTestActionReleased("select") then
-		local targets
-		if mark.active then
-			local candidates = ControllerCameraTestCollectOwnedTargetsInRadius(mark.anchorX, mark.anchorZ, mark.radius)
-			targets = ControllerCameraTestNativeDisassembleTargets(candidates)
-		else
-			local targetID = ControllerCameraTestGetReticleOwnedTarget()
-			targets = ControllerCameraTestNativeDisassembleTargets(targetID and { targetID } or {})
-		end
-		mark.pressActive, mark.active = false, false
-		if #targets > 0 then
-			ControllerCameraTestVisibleSelection.suppressNextSnapshot = true
-			pcall(spSelectUnitArray, targets, false)
-			state.lastResult = "native targets selected: " .. tostring(#targets)
-		else
-			ControllerCameraTestRestoreDisassembleConstructors("Constructors restored")
-			ControllerCameraTestShowHotkeyFeedback("NO DISASSEMBLY TARGETS", "utility")
-		end
-		return true
-	end
-	return true
+	return ControllerCameraTestHandleNormalAInput(dt, true) or true
 end
 
 function ControllerCameraTestSelectionsContainSameUnits(first, second)
@@ -6911,6 +6931,9 @@ end
 function ControllerCameraTestCancelDisassembleSubstates(reason)
 	local state = ControllerCameraTestDisassemble
 	if ControllerCameraTestUsesNativeBARUI() then ControllerCameraTestCancelNativeTargeting() end
+	if ControllerCameraTestAreaSelect.owner == "disassemble" then
+		ControllerCameraTestCancelAreaSelect(reason or "Disassemble selection cancelled")
+	end
 	state.markArea.pressActive, state.markArea.active = false, false
 	state.markArea.typeFilter = nil
 	state.areaReclaim.active, state.areaReclaim.anchorUnitID = false, nil
@@ -6929,12 +6952,13 @@ function ControllerCameraTestEnterDisassembleMode()
 	table.sort(reclaimers)
 	if #reclaimers == 0 then
 		state.lastResult = "no constructor selection"
-		ControllerCameraTestShowHotkeyFeedback("SELECT A CONSTRUCTOR", "utility")
 		return false
 	end
 	if ControllerCameraTestUsesNativeBARUI() then
 		state.active, state.reclaimers, state.markedTargets, state.highlightedTargets = true, reclaimers, {}, {}
-		state.activatedAt, state.successfulActivity, state.lastValidationAt = debugEventTime, false, debugEventTime
+		state.activatedAt, state.lastReclaimAt, state.successfulActivity, state.lastValidationAt =
+			debugEventTime, debugEventTime, false, debugEventTime
+		state.doubleB = ControllerDisassembleBehavior.NewDoubleBTap()
 		ControllerCameraTestCancelDisassembleSubstates("native mode entered")
 		state.active, state.reclaimers = true, reclaimers
 		state.lastResult = "native enabled with " .. tostring(#reclaimers) .. " reclaimers"
@@ -6942,7 +6966,9 @@ function ControllerCameraTestEnterDisassembleMode()
 		return true
 	end
 	state.active, state.reclaimers, state.markedTargets, state.highlightedTargets = true, reclaimers, {}, {}
-	state.activatedAt, state.successfulActivity, state.lastValidationAt = debugEventTime, false, debugEventTime
+	state.activatedAt, state.lastReclaimAt, state.successfulActivity, state.lastValidationAt =
+		debugEventTime, debugEventTime, false, debugEventTime
+	state.doubleB = ControllerDisassembleBehavior.NewDoubleBTap()
 	ControllerCameraTestCancelDisassembleSubstates("mode entered")
 	state.active, state.reclaimers, state.activatedAt, state.successfulActivity = true, reclaimers, debugEventTime, false
 	if type(spSelectUnitArray) == "function" then
@@ -6957,9 +6983,18 @@ end
 function ControllerCameraTestExitDisassembleMode(toast, reason)
 	local state = ControllerCameraTestDisassemble
 	if not state.active and not state.toggle.charging then return false end
+	local reclaimers = {}
+	for _, unitID in ipairs(state.reclaimers or {}) do
+		if ControllerCameraTestIsDisassembleConstructor(unitID) then reclaimers[#reclaimers + 1] = unitID end
+	end
 	ControllerCameraTestCancelDisassembleSubstates(reason or "mode exited")
+	if #reclaimers > 0 and type(spSelectUnitArray) == "function" then
+		ControllerCameraTestVisibleSelection.suppressNextSnapshot = true
+		pcall(spSelectUnitArray, reclaimers, false)
+	end
 	state.active, state.markedTargets, state.highlightedTargets = false, {}, {}
 	state.reclaimers, state.successfulActivity = {}, false
+	state.doubleB = ControllerDisassembleBehavior.NewDoubleBTap()
 	state.lastResult = tostring(reason or "disabled")
 	ControllerCameraTestShowHotkeyFeedback(string.upper(toast or "Disassemble Mode Disabled"), "utility")
 	return true
@@ -7031,23 +7066,22 @@ function ControllerCameraTestIssueDisassembleReclaim(targets)
 			validTargets[#validTargets + 1] = unitID
 		end
 	end
+	local routes = ControllerDisassembleBehavior and ControllerDisassembleBehavior.PlanReclaimRoutes(
+		state.reclaimers, validTargets, spGetUnitPosition) or {}
 	local issuedTargets, reclaimID = 0, (CMD and CMD.RECLAIM) or 90
-	for index, targetID in ipairs(validTargets) do
-		local options = index == 1 and {} or { "shift" }
-		local accepted = false
-		if type(spGiveOrderToUnitArray) == "function" then
-			local ok, result = pcall(spGiveOrderToUnitArray, state.reclaimers, reclaimID, { targetID }, options)
-			accepted = ok and result ~= false
-		elseif type(spGiveOrderToUnit) == "function" then
-			for _, reclaimerID in ipairs(state.reclaimers) do
-				local ok, result = pcall(spGiveOrderToUnit, reclaimerID, reclaimID, { targetID }, options)
-				accepted = accepted or (ok and result ~= false)
+	if type(spGiveOrderToUnit) == "function" then
+		for _, route in ipairs(routes) do
+			for index, targetID in ipairs(route.targets) do
+				local options = index == 1 and {} or { "shift" }
+				local ok, result = pcall(spGiveOrderToUnit, route.constructorID,
+					reclaimID, { targetID }, options)
+				if ok and result ~= false then issuedTargets = issuedTargets + 1 end
 			end
 		end
-		if accepted then issuedTargets = issuedTargets + 1 end
 	end
 	if issuedTargets > 0 then
 		state.successfulActivity, state.lastResult = true, "reclaim issued for " .. tostring(issuedTargets) .. " targets"
+		state.lastReclaimAt = debugEventTime
 		ControllerCameraTestShowHotkeyFeedback("RECLAIM " .. tostring(issuedTargets), "reclaim")
 	end
 	return issuedTargets
@@ -7120,14 +7154,16 @@ function ControllerCameraTestUpdateDisassembleModeInput(dt)
 	if ControllerCameraTestUsesNativeBARUI() then
 		return ControllerCameraTestUpdateNativeDisassembleInput(dt)
 	end
-	if ControllerCameraTestUpdateAreaReclaimTargeting() then return true end
 
 	if ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestActionPressed("cancel") then
 		ControllerCameraTestCancelDisassembleSubstates("stopped")
 		ControllerCameraTestStopDisassembleReclaimers()
+		state.doubleB = ControllerDisassembleBehavior.NewDoubleBTap()
 		ControllerCameraTestShowHotkeyFeedback("STOP", "utility")
 		return true
 	end
+	if ControllerCameraTestHandleDisassembleB() then return true end
+	if ControllerCameraTestUpdateAreaReclaimTargeting() then return true end
 
 	local lbDown = ControllerCameraTestActionDown("pitchModifier")
 	if lbDown and ControllerCameraTestActionPressed("select") then
@@ -7158,10 +7194,6 @@ function ControllerCameraTestUpdateDisassembleModeInput(dt)
 			ControllerDisassembleBehavior.CollectMarkedTypes(state.markedTargets, Spring.GetUnitDefID) or nil) or nil
 		return true
 	end
-	if mark.pressActive and ControllerCameraTestActionPressed("cancel") then
-		mark.pressActive, mark.active, mark.typeFilter, state.lastResult = false, false, nil, "area marking cancelled"
-		return true
-	end
 	if mark.pressActive and ControllerCameraTestActionDown("select") then
 		local threshold = ControllerCameraTestSettings.aHoldSeconds
 			or (ControllerDisassembleBehavior and ControllerDisassembleBehavior.AREA_MARK_HOLD_SECONDS) or 0.38
@@ -7187,21 +7219,14 @@ end
 function ControllerCameraTestUpdateDisassembleLifecycle()
 	local state = ControllerCameraTestDisassemble
 	if not state.active then return end
-	if ControllerCameraTestUsesNativeBARUI() then
-		if debugEventTime - (state.lastValidationAt or -10) >= 0.25 then
-			state.lastValidationAt = debugEventTime
-			ControllerCameraTestValidateReclaimers(false)
-		end
-		return
-	end
 	if debugEventTime - (state.lastValidationAt or -10) >= 0.25 then
 		state.lastValidationAt = debugEventTime
-		if not ControllerCameraTestValidateReclaimers(true) then return end
+		if not ControllerCameraTestValidateReclaimers(not ControllerCameraTestUsesNativeBARUI()) then return end
 	end
 	if ControllerDisassembleBehavior and ControllerDisassembleBehavior.TimeoutExpired(
-			state.activatedAt, debugEventTime, state.successfulActivity,
-			ControllerCameraTestSettings.disassembleUnusedTimeoutSeconds) then
-		ControllerCameraTestExitDisassembleMode("Disassemble Mode Timed Out", "unused timeout")
+			state.lastReclaimAt or state.activatedAt, debugEventTime,
+			ControllerDisassembleBehavior.DISASSEMBLE_INACTIVITY_TIMEOUT_SECONDS) then
+		ControllerCameraTestExitDisassembleMode("Disassemble Mode Timed Out", "inactivity timeout")
 	end
 end
 
@@ -10239,6 +10264,35 @@ function ControllerCameraTestSetNativeBuildFocus(option, source)
 	return false
 end
 
+function ControllerCameraTestGetBuildSelectionContext(selectedUnits)
+	local hasConstructor = false
+	for _, unitID in ipairs(type(selectedUnits) == "table" and selectedUnits or {}) do
+		if ControllerCameraTestIsSafeSelectableUnit(unitID) then
+			local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
+			if type(unitDef) == "table" and unitDef.isFactory == true then
+				return "factory" -- deterministic mixed-selection priority
+			end
+			if type(unitDef) == "table" and unitDef.isFactory ~= true
+					and ControllerCameraTestIsBuilderUnitDef(unitDef) then
+				hasConstructor = true
+			end
+		end
+	end
+	return hasConstructor and "constructor" or nil
+end
+
+function ControllerCameraTestInvalidateBuildContext(reason)
+	local menu = ControllerCameraTestBuildMenu
+	if menu.open then ControllerCameraTestCloseBuildMenu(reason or "selection changed") end
+	menu.options, menu.radialVisibleOptions, menu.optionCount = {}, {}, 0
+	menu.nativeModel, menu.selectedStableKey = nil, nil
+	ControllerCameraTestNativeUI.buildModelRevision = -1
+	if WG.buildmenu and type(WG.buildmenu.controllerSetFocus) == "function" then
+		pcall(WG.buildmenu.controllerSetFocus, nil, "selection-invalidated")
+	end
+	ControllerCameraTestNativeUI.buildFocus = nil
+end
+
 function ControllerCameraTestSyncNativeBuildFocus()
 	local menu, api = ControllerCameraTestBuildMenu, WG and WG.buildmenu
 	if not (ControllerCameraTestUsesNativeBARUI() and menu.open and api
@@ -10693,6 +10747,13 @@ end
 --------------------------------------------------------------------------------
 function ControllerCameraTestOpenBuildMenu()
 	local menu = ControllerCameraTestBuildMenu
+	local selected = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	local context = ControllerCameraTestGetBuildSelectionContext(selected)
+	if not context then
+		ControllerCameraTestInvalidateBuildContext("no valid build owner")
+		menu.lastAction = "no valid build owner"
+		return false
+	end
 	local count = ControllerCameraTestGatherBuildOptions()
 	if count <= 0 then
 		menu.open = false
@@ -11429,8 +11490,9 @@ function ControllerCameraTestEnterPlacementFromHighlight()
 	if not option then
 		menu.lastAction = "placement failed: no option"
 		ControllerCameraTestRefreshBuildMenuDebug()
-		return
+		return false
 	end
+	menu.isFactoryContext = context == "factory"
 	if option.disabled then
 		menu.lastAction = ControllerCameraTestGetBuildAvailability(option) or "cannot build"
 		ControllerCameraTestShowHotkeyFeedback(string.upper(menu.lastAction), "utility")
@@ -11857,6 +11919,9 @@ function ControllerCameraTestCancelAreaSelect(reason)
 	local area = ControllerCameraTestAreaSelect
 	area.pressActive = false
 	area.active = false
+	area.owner = nil
+	area.brushedUnits, area.initialSelection = {}, {}
+	area.constructorSet = nil
 	area.lastResult = reason or "cancelled"
 	ControllerCameraTestLayerDebug.areaSelect = area.lastResult
 end
@@ -12043,8 +12108,9 @@ function ControllerCameraTestHandleCommandLayerDragInputs(dt)
 	return drag.pressActive or drag.active
 end
 
-function ControllerCameraTestHandleNormalAInput(dt)
-	if ControllerCameraTestActionDown("pitchModifier")
+function ControllerCameraTestHandleNormalAInput(dt, disassembleMode)
+	disassembleMode = disassembleMode == true
+	if not disassembleMode and ControllerCameraTestActionDown("pitchModifier")
 			and (ControllerCameraTestCanUseLBHotkeys() or ControllerCameraTestVisibleSelection.radial.open) then
 		return false
 	end
@@ -12057,6 +12123,9 @@ function ControllerCameraTestHandleNormalAInput(dt)
 		area.active = false
 		area.pressStartTime = debugEventTime
 		area.lastResult = "press started"
+		area.owner = disassembleMode and "disassemble" or "normal"
+		area.additive = ControllerCameraTestIsQueueModifierActive()
+		area.constructorSet = disassembleMode and ControllerCameraTestConstructorSet() or nil
 		ControllerCameraTestLayerDebug.areaSelect = area.lastResult
 
 		-- Prepare live brush selection state
@@ -12068,11 +12137,19 @@ function ControllerCameraTestHandleNormalAInput(dt)
 		area.currentFilter = area.currentFilter or "All Mobile"
 
 		-- Store initial selection if RT (append modifier) is held
-		if ControllerCameraTestIsQueueModifierActive() then
+		if area.additive then
 			local sel = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+			if disassembleMode then sel = ControllerCameraTestNativeDisassembleTargets(sel) end
 			for _, uID in ipairs(sel) do
 				area.initialSelection[uID] = true
 			end
+		end
+		if disassembleMode and type(spSelectUnitArray) == "function" then
+			local sanitized = {}
+			for unitID in pairs(area.initialSelection) do sanitized[#sanitized + 1] = unitID end
+			table.sort(sanitized)
+			ControllerCameraTestVisibleSelection.suppressNextSnapshot = true
+			pcall(spSelectUnitArray, sanitized, false)
 		end
 	end
 
@@ -12081,19 +12158,19 @@ function ControllerCameraTestHandleNormalAInput(dt)
 			area.active = true
 			area.lastResult = "active"
 			ControllerCameraTestLayerDebug.areaSelect = "active radius " .. tostring(math.floor(area.radius))
-			latchSelectionDebugMessage("Area select active")
+			latchSelectionDebugMessage(disassembleMode and "Disassemble area select active" or "Area select active")
 		end
 		if area.active then
 			ControllerCameraTestUpdateAreaRadius(dt)
 			ControllerCameraTestLayerDebug.areaSelect = "active radius " .. tostring(math.floor(area.radius))
 
 			-- Intercept X button for selection filter radial
-			if ControllerCameraTestActionPressed("smartAction") then
+			if not disassembleMode and ControllerCameraTestActionPressed("smartAction") then
 				area.filterRadialOpen = true
 				area.highlightedFilter = nil
 			end
 
-			if area.filterRadialOpen then
+			if not disassembleMode and area.filterRadialOpen then
 				if ControllerCameraTestActionDown("smartAction") then
 					local aimX = normalizedLeftX
 					local aimY = -normalizedLeftY  -- aimY positive is up!
@@ -12140,9 +12217,13 @@ function ControllerCameraTestHandleNormalAInput(dt)
 									local isMobile = ControllerCameraTestIsMobileUnitDef(unitDef)
 									local isBuilder = isMobile and (unitDef.isBuilder or unitDef.canBuild or (type(unitDef.buildOptions) == "table" and #unitDef.buildOptions > 0))
 
-									local matchesFilter = false
+									local matchesFilter = disassembleMode
+										and ControllerCameraTestIsSafeSelectableUnit(unitID)
+										and not (area.constructorSet and area.constructorSet[unitID])
 									local filter = area.currentFilter or "All Mobile"
-									if filter == "All Mobile" then
+									if disassembleMode then
+										-- Disassemble intentionally accepts owned units and structures.
+									elseif filter == "All Mobile" then
 										matchesFilter = isMobile
 									elseif filter == "Combat" then
 										matchesFilter = isMobile and not isBuilder and (unitDef.canAttack or (type(unitDef.weapons) == "table" and #unitDef.weapons > 0))
@@ -12197,7 +12278,32 @@ function ControllerCameraTestHandleNormalAInput(dt)
 			-- Already selected live! Just finalize and clean up brush state.
 			area.filterRadialOpen = false
 			area.highlightedFilter = nil
-			area.lastResult = "live brush selection completed"
+			area.lastResult = disassembleMode and "Disassemble live brush selection completed"
+				or "live brush selection completed"
+			if disassembleMode and not area.additive and (area.lastBrushedCount or 0) == 0 then
+				ControllerCameraTestRestoreDisassembleConstructors("Constructors restored")
+			end
+		elseif disassembleMode then
+			local targetID = ControllerCameraTestGetReticleOwnedTarget()
+			if targetID and area.constructorSet and area.constructorSet[targetID] then targetID = nil end
+			local selected = ControllerCameraTestNativeDisassembleTargets(
+				type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+			if targetID then
+				local finalSelection
+				if area.additive and ControllerDisassembleBehavior then
+					finalSelection = ControllerDisassembleBehavior.ToggleSelection(selected, targetID)
+				else
+					finalSelection = { targetID }
+				end
+				ControllerCameraTestVisibleSelection.suppressNextSnapshot = true
+				pcall(spSelectUnitArray, finalSelection, false)
+				area.lastResult = area.additive and "Disassemble target toggled" or "Disassemble target selected"
+			elseif not area.additive then
+				ControllerCameraTestRestoreDisassembleConstructors("Constructors restored")
+				area.lastResult = "Disassemble target empty"
+			else
+				area.lastResult = "Disassemble additive target unchanged"
+			end
 		elseif (debugEventTime - (area.lastTapTime or -10)) <= 0.35 then
 			local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 			local targetID = area.lastTapUnitID
@@ -12251,6 +12357,8 @@ function ControllerCameraTestHandleNormalAInput(dt)
 		end
 		area.pressActive = false
 		area.active = false
+		area.owner = nil
+		area.constructorSet = nil
 	end
 
 	return area.pressActive or area.active
@@ -12437,7 +12545,6 @@ function ControllerCameraTestCycleMoveStateFromSelection()
 		if firstDescriptor then break end
 	end
 	if not firstDescriptor then
-		ControllerCameraTestShowHotkeyFeedback("MOVE STATE UNAVAILABLE", "utility")
 		return false
 	end
 
@@ -12491,8 +12598,22 @@ function ControllerCameraTestToggleFactoryQueueMode()
 			return false
 		end
 	end
-	ControllerCameraTestShowHotkeyFeedback("QUEUE MODE UNAVAILABLE", "utility")
 	return false
+end
+
+function ControllerCameraTestResolveLBLongAction(selected, disassembleActive)
+	local context = ControllerCameraTestGetBuildSelectionContext(selected)
+	if ControllerCameraTestBuildMenu.open and context == "factory" then
+		return "factory-queue-mode"
+	end
+	if disassembleActive then return "disable-disassemble" end
+	if context == "factory" then return nil end
+	for _, unitID in ipairs(type(selected) == "table" and selected or {}) do
+		if ControllerCameraTestIsDisassembleConstructor(unitID) then
+			return "enable-disassemble"
+		end
+	end
+	return nil
 end
 
 function ControllerCameraTestUpdateDisassembleController(dt)
@@ -12501,13 +12622,12 @@ function ControllerCameraTestUpdateDisassembleController(dt)
 	local lbDown = ControllerCameraTestActionDown("pitchModifier")
 	local rbDown = ControllerCameraTestActionDown("buildRadial")
 	local selected = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
-	local factoryContext = ControllerCameraTestBuildMenu.open
-		and ControllerCameraTestSelectionPrefersFactoryQueue(selected)
+	local longAction = ControllerCameraTestResolveLBLongAction(selected, state.active)
 	local event
 	event, ControllerCameraTestInputChord = ControllerInputChords.Update(
 		ControllerCameraTestInputChord, debugEventTime, lbDown, rbDown,
 		ControllerCameraTestActionPressed("buildRadial"), ControllerCameraTestActionReleased("buildRadial"),
-		ControllerCameraTestSettings.disassembleToggleHoldSeconds, factoryContext, state.active)
+		ControllerCameraTestSettings.disassembleToggleHoldSeconds, longAction)
 	if event == "started" then
 		ControllerCameraTestConsumeLBCycle("LB+RB chord")
 		ControllerCameraTestResetLBHotkeys()
@@ -13420,7 +13540,12 @@ end
 
 function widget:ActiveCommandChanged(cmdID, cmdType)
 	ControllerCameraTestNativeTargeting.descriptorDirty = true
-	ControllerCameraTestRefreshNativeTargetingDescriptor(true)
+	if ControllerCameraTestNativeTargeting.anchor then
+		ControllerCameraTestTraceNativeTarget("active-command-changed",
+			"cached operation retained; new=" .. tostring(cmdID))
+	else
+		ControllerCameraTestRefreshNativeTargetingDescriptor(true)
+	end
 end
 
 function widget:Shutdown()
@@ -13775,7 +13900,8 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 
 	if disassembleBusy then
 		commandLayerActive = false
-		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
+		if ControllerCameraTestAreaSelect.owner ~= "disassemble"
+				and (ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active) then
 			ControllerCameraTestCancelAreaSelect("cancelled by Disassemble Mode")
 		end
 	elseif ControllerCameraTestHandleCancelReleaseLatch() then
@@ -16964,6 +17090,7 @@ end
 
 function widget:SelectionChanged(selectedUnits)
 	ControllerCameraTestRecordSelectionSnapshot(selectedUnits)
+	ControllerCameraTestInvalidateBuildContext("selection changed")
 end
 
 --------------------------------------------------------------------------------
@@ -17017,14 +17144,17 @@ function widget:DrawWorld()
 
 	if ControllerCameraTestAreaSelect.active and reticleHasWorldTarget then
 		local R = ControllerCameraTestAreaSelect.radius
+		local disassembleBrush = ControllerCameraTestAreaSelect.owner == "disassemble"
 		-- Stroke
 		gl.LineWidth(2.5)
-		gl.Color(0.25, 0.75, 1.0, 0.75)
+		gl.Color(disassembleBrush and 0.2 or 0.25, disassembleBrush and 1.0 or 0.75,
+			disassembleBrush and 0.46 or 1.0, 0.75)
 		gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, R, 48)
 
 		-- Fill (concentric rings for smooth look, 22% opacity)
 		gl.LineWidth(2.0)
-		gl.Color(0.25, 0.75, 1.0, 0.22)
+		gl.Color(disassembleBrush and 0.2 or 0.25, disassembleBrush and 1.0 or 0.75,
+			disassembleBrush and 0.46 or 1.0, 0.22)
 		local step = R / 25
 		for r = step, R - step/2, step do
 			gl.DrawGroundCircle(reticleWorldX, reticleWorldY, reticleWorldZ, r, 32)
@@ -17032,17 +17162,6 @@ function widget:DrawWorld()
 	end
 
 	local disassemble = ControllerCameraTestDisassemble
-	if disassemble and disassemble.active and ControllerCameraTestUsesNativeBARUI()
-			and disassemble.markArea.active and disassemble.markArea.anchorX and disassemble.markArea.anchorZ then
-		-- Native mode uses BAR's real selection outlines. The only controller
-		-- overlay is the fixed-anchor targeting circle while A remains held.
-		gl.LineWidth(3)
-		gl.Color(1.0, 0.52, 0.12, 0.86)
-		gl.DrawGroundCircle(disassemble.markArea.anchorX, disassemble.markArea.anchorY or 0,
-			disassemble.markArea.anchorZ, disassemble.markArea.radius or 120, 64)
-		gl.Color(1, 1, 1, 1)
-		gl.LineWidth(1)
-	end
 	if disassemble and disassemble.active and not ControllerCameraTestUsesNativeBARUI() then
 		ControllerCameraTestPruneMarkedTargets()
 		gl.LineWidth(2.6)

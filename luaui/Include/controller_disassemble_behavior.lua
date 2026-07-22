@@ -4,7 +4,9 @@
 
 local Behavior = {
 	DISASSEMBLE_TOGGLE_HOLD_SECONDS = 1.0,
-	DISASSEMBLE_UNUSED_TIMEOUT_SECONDS = 20.0,
+	DISASSEMBLE_INACTIVITY_TIMEOUT_SECONDS = 30.0,
+	DISASSEMBLE_UNUSED_TIMEOUT_SECONDS = 30.0, -- compatibility alias
+	DISASSEMBLE_DOUBLE_B_SECONDS = 0.35,
 	AREA_RECLAIM_HOLD_SECONDS = 0.45,
 	AREA_MARK_HOLD_SECONDS = 0.38,
 	MIN_TARGET_RADIUS = 120,
@@ -181,10 +183,70 @@ function Behavior.OrderTargets(targets)
 	return result
 end
 
-function Behavior.TimeoutExpired(activatedAt, now, successfulActivity, timeoutSeconds)
-	return successfulActivity ~= true
-		and (tonumber(now) or 0) - (tonumber(activatedAt) or 0)
-			>= (tonumber(timeoutSeconds) or Behavior.DISASSEMBLE_UNUSED_TIMEOUT_SECONDS)
+function Behavior.PlanReclaimRoutes(constructors, targets, resolvePosition)
+	local routes, remaining, seenTargets = {}, {}, {}
+	local orderedConstructors = Behavior.OrderTargets(constructors)
+	for _, constructorID in ipairs(orderedConstructors) do
+		local x, _, z
+		if type(resolvePosition) == "function" then x, _, z = resolvePosition(constructorID) end
+		if tonumber(x) and tonumber(z) then
+			routes[#routes + 1] = { constructorID = constructorID, targets = {}, x = x, z = z }
+		end
+	end
+	for _, targetID in ipairs(type(targets) == "table" and targets or {}) do
+		if not seenTargets[targetID] then
+			local x, _, z
+			if type(resolvePosition) == "function" then x, _, z = resolvePosition(targetID) end
+			if tonumber(x) and tonumber(z) then
+				seenTargets[targetID] = true
+				remaining[#remaining + 1] = { id = targetID, x = x, z = z }
+			end
+		end
+	end
+	table.sort(remaining, function(a, b) return a.id < b.id end)
+	while #routes > 0 and #remaining > 0 do
+		local bestRoute, bestTarget, bestDistance
+		for routeIndex, route in ipairs(routes) do
+			for targetIndex, target in ipairs(remaining) do
+				local dx, dz = target.x - route.x, target.z - route.z
+				local distance = dx * dx + dz * dz
+				if not bestDistance or distance < bestDistance
+						or (distance == bestDistance and route.constructorID < routes[bestRoute].constructorID)
+						or (distance == bestDistance and route.constructorID == routes[bestRoute].constructorID
+							and target.id < remaining[bestTarget].id) then
+					bestRoute, bestTarget, bestDistance = routeIndex, targetIndex, distance
+				end
+			end
+		end
+		local route, target = routes[bestRoute], table.remove(remaining, bestTarget)
+		route.targets[#route.targets + 1] = target.id
+		route.x, route.z = target.x, target.z
+	end
+	return routes
+end
+
+function Behavior.NewDoubleBTap()
+	return { lastPressAt = -10, releaseArmed = true, lastEvent = "idle" }
+end
+
+function Behavior.UpdateDoubleBTap(state, now, pressed, released, windowSeconds)
+	state = type(state) == "table" and state or Behavior.NewDoubleBTap()
+	now = tonumber(now) or 0
+	if released == true then state.releaseArmed, state.lastEvent = true, "released" end
+	if pressed ~= true or state.releaseArmed ~= true then return nil, state end
+	state.releaseArmed = false
+	if now - (tonumber(state.lastPressAt) or -10)
+			<= (tonumber(windowSeconds) or Behavior.DISASSEMBLE_DOUBLE_B_SECONDS) then
+		state.lastPressAt, state.lastEvent = -10, "exit"
+		return "exit", state
+	end
+	state.lastPressAt, state.lastEvent = now, "first"
+	return "first", state
+end
+
+function Behavior.TimeoutExpired(lastSuccessfulReclaimAt, now, timeoutSeconds)
+	return (tonumber(now) or 0) - (tonumber(lastSuccessfulReclaimAt) or 0)
+		>= (tonumber(timeoutSeconds) or Behavior.DISASSEMBLE_INACTIVITY_TIMEOUT_SECONDS)
 end
 
 return Behavior
