@@ -54,6 +54,24 @@ function Behavior.FilterOwnedTargets(units, constructorSet, isValid, resolveDefI
 	return result
 end
 
+-- Native Reclaim accepts hostile units and structures as well as local ones.
+-- Selection allegiance is deliberately absent; the engine remains the final
+-- legality authority.  The constructor set is the only exclusion.
+function Behavior.FilterNativeTargets(units, constructorSet, isValid, resolveDefID, requiredDefID)
+	local result, seen = {}, {}
+	constructorSet = type(constructorSet) == "table" and constructorSet or {}
+	for _, unitID in ipairs(type(units) == "table" and units or {}) do
+		local typeMatches = requiredDefID == nil or (type(resolveDefID) == "function"
+			and resolveDefID(unitID) == requiredDefID)
+		if not seen[unitID] and not constructorSet[unitID] and typeMatches
+				and (type(isValid) ~= "function" or isValid(unitID) == true) then
+			seen[unitID], result[#result + 1] = true, unitID
+		end
+	end
+	table.sort(result)
+	return result
+end
+
 function Behavior.NewToggleCharge()
 	return {
 		charging = false,
