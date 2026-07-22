@@ -28,8 +28,8 @@ local FALLBACK = {
 		accentR = 0.34, accentG = 0.82, accentB = 0.92, mutedR = 0.36, mutedG = 0.52, mutedB = 0.60,
 		dangerR = 0.92, dangerG = 0.28, dangerB = 0.24 },
 	components = {
-		hints = { enabled = true, x = 0.018, y = 0.035, scale = 1, opacity = 1, fontScale = 1,
-			iconScale = 1, rowSpacing = 5, columnSpacing = 18, iconTextSpacing = 8, padding = 12,
+		hints = { enabled = true, x = 0.018, y = 0.035, scale = 1.25, opacity = 1, fontScale = 1.15,
+			iconScale = 1.25, spacingScale = 1.10, rowSpacing = 5, columnSpacing = 18, iconTextSpacing = 8, padding = 12,
 			maxWidth = 0.52, columns = 2, backgroundOpacity = 0, textOpacity = 1, borderOpacity = 0,
 			borderThickness = 0, fadeDuration = 0.18, contextEnterDebounce = 0.14, contextExitGrace = 0.12,
 			confirmedModalImmediate = true, presentation = "Glyph + Action Text", showChip = true,
@@ -82,6 +82,7 @@ function Runtime.New()
 		hints = {}, visibleHints = {}, hintRevision = 1, contextSignature = "", bindingRevision = -1,
 		pollElapsed = 0, animationTime = 0, alpha = 1, radialCache = {},
 		legacyAuthorData = nil, legacyEditorChrome = nil,
+		migratedLegacyHints = false, migratedSmallHintDefault = false,
 	}
 	local ok, result = false, nil
 	if VFS and type(VFS.Include) == "function" then ok, result = pcall(VFS.Include, "LuaUI/Include/controller_ui_shared_renderers.lua") end
@@ -112,6 +113,68 @@ function Runtime.New()
 		if cachedValid and type(cached.enforcedSettings) == "table" then merge(resolved, cached.enforcedSettings) end
 		self.settings, self.revision, self.radialCache = resolved, self.revision + 1, {}
 		self:Recalculate()
+	end
+
+	local function personalHints(create)
+		if create then
+			self.personal = type(self.personal) == "table" and self.personal or {}
+			self.personal.components = type(self.personal.components) == "table" and self.personal.components or {}
+			self.personal.components.hints = type(self.personal.components.hints) == "table"
+				and self.personal.components.hints or {}
+		end
+		return self.personal and self.personal.components and self.personal.components.hints or nil
+	end
+
+	function self:MigrateLegacyHints(data)
+		if self.migratedLegacyHints or type(data) ~= "table" then return false end
+		local saved = type(data.personalSettings) == "table" and data.personalSettings or data.settings
+		local hints = saved and saved.components and saved.components.hints
+		if type(hints) ~= "table" then return false end
+		local target = personalHints(true)
+		for key, value in pairs(hints) do target[key] = copy(value) end
+		self.migratedLegacyHints = true
+		self:LoadSettings()
+		return true
+	end
+
+	function self:MigrateExactSmallHintDefault()
+		local hints = personalHints(false)
+		if type(hints) ~= "table" then return false end
+		local exact = tonumber(hints.scale) == 1 and tonumber(hints.fontScale) == 1
+			and tonumber(hints.iconScale) == 1 and hints.spacingScale == nil
+			and tonumber(hints.rowSpacing) == 5 and tonumber(hints.columnSpacing) == 18
+			and tonumber(hints.iconTextSpacing) == 8 and tonumber(hints.padding) == 12
+		if not exact then return false end
+		for _, key in ipairs({ "scale", "fontScale", "iconScale", "spacingScale",
+			"rowSpacing", "columnSpacing", "iconTextSpacing", "padding" }) do hints[key] = nil end
+		self.migratedSmallHintDefault = true
+		self:LoadSettings()
+		return true
+	end
+
+	function self:SetHintAppearance(key, value)
+		local ranges = {
+			scale = { 0.75, 2.50 }, fontScale = { 0.75, 2.00 },
+			iconScale = { 0.75, 2.00 }, spacingScale = { 0.75, 1.75 },
+		}
+		local range = ranges[key]; if not range then return false end
+		personalHints(true)[key] = clamp(value, range[1], range[2])
+		self:LoadSettings()
+		return true
+	end
+
+	function self:ResetHintAppearance(key)
+		local hints = personalHints(false)
+		if type(hints) == "table" then
+			local allowed = { scale = true, fontScale = true, iconScale = true, spacingScale = true }
+			if allowed[key] then hints[key] = nil
+			else
+				for _, appearanceKey in ipairs({ "scale", "fontScale", "iconScale", "spacingScale",
+					"rowSpacing", "columnSpacing", "iconTextSpacing", "padding" }) do hints[appearanceKey] = nil end
+			end
+		end
+		self:LoadSettings()
+		return true
 	end
 
 	function self:EffectiveScale(name)
@@ -397,6 +460,8 @@ function Runtime.New()
 			GetColor = function(role, alpha) return self:Color(role, alpha) end, GetRevision = function() return self.revision end,
 			GetPropertySource = function() return self.personal and "personal" or self.layerStatus end,
 			GetLayerStatus = function() return { activeVersion = self.activeVersion, status = self.layerStatus, dirty = false, undo = 0, redo = 0 } end,
+			SetHintAppearance = function(key, value) return self:SetHintAppearance(key, value) end,
+			ResetHintAppearance = function(key) return self:ResetHintAppearance(key) end,
 			MigrateLegacyBindingsButton = function(rightOffset, topOffset)
 				if self.migratedLegacyLauncher then return false end
 				local component = self.settings.components.bindingsButton
@@ -414,7 +479,9 @@ function Runtime.New()
 	function self:GetConfigData()
 		return { schemaVersion = Runtime.SCHEMA_VERSION, personalSettings = self.personal,
 			settings = self.personal, authorData = self.legacyAuthorData, editorChrome = self.legacyEditorChrome,
-			migratedLegacyLauncher = self.migratedLegacyLauncher, editorOpen = false }
+			migratedLegacyLauncher = self.migratedLegacyLauncher,
+			migratedLegacyHints = self.migratedLegacyHints,
+			migratedSmallHintDefault = self.migratedSmallHintDefault, editorOpen = false }
 	end
 	function self:SetConfigData(data)
 		if type(data) ~= "table" then return end
@@ -423,6 +490,9 @@ function Runtime.New()
 			self.personal = type(saved) == "table" and copy(saved) or nil
 		end
 		self.migratedLegacyLauncher = data.migratedLegacyLauncher == true; self:LoadSettings()
+		self.migratedLegacyHints = data.migratedLegacyHints == true
+		self.migratedSmallHintDefault = data.migratedSmallHintDefault == true
+		if not self.migratedSmallHintDefault then self:MigrateExactSmallHintDefault() end
 		self.legacyAuthorData = type(data.authorData) == "table" and copy(data.authorData) or nil
 		self.legacyEditorChrome = type(data.editorChrome) == "table" and copy(data.editorChrome) or nil
 	end

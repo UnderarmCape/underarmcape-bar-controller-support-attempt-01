@@ -158,7 +158,7 @@ local ControllerBindingsUI = {
 	},
 	mode = "bindings",
 	settingsList = {},
-	settingsPages = { "Camera", "Input", "Radials", "Selection", "Placement", "UI" },
+	settingsPages = { "Camera", "Input", "Radials", "Selection", "Placement", "Hints", "UI" },
 	settingsPageIndex = 1,
 	settingsItemIndex = 1,
 	currentPreset = "Build-First Commander",
@@ -459,6 +459,25 @@ local ControllerBindingsUILayoutDefinitionsList = {
 	},
 }
 
+local ControllerBindingsUIHintDefinitionsList = {
+	{ key = "scale", label = "Hint Overall Scale", type = "number", min = 0.75, max = 2.50,
+		step = 0.05, default = 1.25, value = 1.25, decimals = 2, group = "Hints", source = "controllerUI",
+		description = "Scales the complete controller hint presentation." },
+	{ key = "fontScale", label = "Hint Text Scale", type = "number", min = 0.75, max = 2.00,
+		step = 0.05, default = 1.15, value = 1.15, decimals = 2, group = "Hints", source = "controllerUI",
+		description = "Scales action text without changing button glyph size." },
+	{ key = "iconScale", label = "Hint Glyph Scale", type = "number", min = 0.75, max = 2.00,
+		step = 0.05, default = 1.25, value = 1.25, decimals = 2, group = "Hints", source = "controllerUI",
+		description = "Scales Xbox, PlayStation, and fallback input glyphs without changing action text." },
+	{ key = "spacingScale", label = "Hint Spacing", type = "number", min = 0.75, max = 1.75,
+		step = 0.05, default = 1.10, value = 1.10, decimals = 2, group = "Hints", source = "controllerUI",
+		description = "Adjusts row, column, padding, and glyph-to-text spacing from compact to wide." },
+	{ key = "resetHintAppearance", label = "Reset Hint Appearance", type = "action",
+		default = "Reset", value = "Reset", min = 0, max = 0, step = 0, decimals = 0,
+		group = "Hints", source = "controllerUI",
+		description = "Restores the readable experimental shipped hint defaults." },
+}
+
 local malformedLogged = {}
 local function ControllerBindingsUIIsRowMalformed(item)
 	if not item or type(item) ~= "table" or not item.key or not item.label or not item.type then
@@ -479,7 +498,11 @@ end
 
 local function ControllerBindingsUIGetSettingValue(item)
 	if not item or ControllerBindingsUIIsRowMalformed(item) then return nil end
-	if item.source == "bindingsUI" then
+	if item.source == "controllerUI" then
+		if item.type == "action" then return nil end
+		local shared = WG and WG.ControllerUISettings
+		return shared and type(shared.Get) == "function" and shared.Get("hints", item.key) or item.value
+	elseif item.source == "bindingsUI" then
 		if item.type == "action" then
 			return nil
 		end
@@ -499,7 +522,16 @@ end
 
 local function ControllerBindingsUISetSettingValue(item, value)
 	if not item or ControllerBindingsUIIsRowMalformed(item) then return end
-	if item.source == "bindingsUI" then
+	if item.source == "controllerUI" then
+		local shared = WG and WG.ControllerUISettings
+		if not shared then return end
+		if item.type == "action" and type(shared.ResetHintAppearance) == "function" then
+			shared.ResetHintAppearance()
+			ControllerBindingsUISetToast("Hint appearance reset")
+		elseif type(shared.SetHintAppearance) == "function" then
+			shared.SetHintAppearance(item.key, value)
+		end
+	elseif item.source == "bindingsUI" then
 		if item.type == "action" then
 			if item.key == "bindingsUILayout.resetLayout" then
 				ControllerBindingsUILayoutResetAll()
@@ -519,7 +551,13 @@ end
 
 local function ControllerBindingsUIResetSettingValue(item)
 	if not item or type(item) ~= "table" or ControllerBindingsUIIsRowMalformed(item) then return end
-	if item.source == "bindingsUI" then
+	if item.source == "controllerUI" then
+		local shared = WG and WG.ControllerUISettings
+		if shared and type(shared.ResetHintAppearance) == "function" then
+			shared.ResetHintAppearance(item.type == "action" and nil or item.key)
+			ControllerBindingsUISetToast(item.type == "action" and "Hint appearance reset" or ("Reset " .. item.label))
+		end
+	elseif item.source == "bindingsUI" then
 		if item.type == "action" then
 			if item.key == "bindingsUILayout.resetLayout" then
 				ControllerBindingsUILayoutResetAll()
@@ -648,6 +686,9 @@ local function ControllerBindingsUIRebuildSettings()
 	end
 	for i = 1, #ControllerBindingsUILayoutDefinitionsList do
 		newList[#newList + 1] = ControllerBindingsUILayoutDefinitionsList[i]
+	end
+	for i = 1, #ControllerBindingsUIHintDefinitionsList do
+		newList[#newList + 1] = ControllerBindingsUIHintDefinitionsList[i]
 	end
 	ControllerBindingsUI.settingsList = newList
 end

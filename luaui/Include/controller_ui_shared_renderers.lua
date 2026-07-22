@@ -209,12 +209,13 @@ function Renderers.DrawHints(args)
 			glyphHeight = max(glyphHeight, height)
 		end
 	end
-	local rowHeight = max(24 * scale, fontSize + (component.rowSpacing or 0) * scale, glyphHeight + 6 * scale)
+	local spacingScale = tonumber(component.spacingScale) or 1
+	local rowHeight = max(24 * scale, fontSize + (component.rowSpacing or 0) * scale * spacingScale, glyphHeight + 6 * scale)
 	if component.overflow == "Wrap" then rowHeight = rowHeight + fontSize * 0.72 * (max(2, component.wrapLines or 2) - 1) end
 	local viewportW, viewportH = args.viewportWidth or 1920, args.viewportHeight or 1080
 	local columns = floor(component.columns or 0); if columns <= 0 then columns = viewportW < 1100 and 1 or 2 end
 	columns = max(1, min(columns, count)); local rows = ceil(count / columns)
-	local padding = (component.padding or 8) * scale
+	local padding = (component.padding or 8) * scale * spacingScale
 	local panelWidth = min((component.maxWidth or 0.52) * viewportW, max(300 * scale, columns * 285 * scale))
 	local moreHeight = count < #hints and 20 * scale or 0
 	local contextHeight = component.showContextHeader and 22 * scale or 0
@@ -241,7 +242,7 @@ function Renderers.DrawHints(args)
 		color({ accent[1], accent[2], accent[3], 0.18 * opacity }); gl.Rect(x1, y1 + panelHeight - contextHeight, x1 + panelWidth, y1 + panelHeight)
 		color(foreground); gl.Text(args.contextLabel or "Gameplay", x1 + padding, y1 + panelHeight - contextHeight + 6 * scale, 11 * fontScale, "o")
 	end
-	local columnGap = (component.columnSpacing or 12) * scale
+	local columnGap = (component.columnSpacing or 12) * scale * spacingScale
 	local columnWidth = (panelWidth - padding * 2 - (columns - 1) * columnGap) / columns
 	local hits, motions = {}, {}
 	local effects = { textShadow = 0, glyphShadow = 0, textGlow = 0, glyphGlow = 0, glyph = 0, textBackground = 0, clipped = 0 }
@@ -272,7 +273,7 @@ function Renderers.DrawHints(args)
 		end
 		if showAction then
 			local labelText = tostring(compact and (hint.compactLabel or hint.label) or hint.label or "")
-			local labelX = rx + chipWidth + (showChip and (component.iconTextSpacing or 8) * scale or 0)
+			local labelX = rx + chipWidth + (showChip and (component.iconTextSpacing or 8) * scale * spacingScale or 0)
 			if hint.hold and component.showHoldIndicator ~= false and component.holdStyle ~= "Hold Glyph" then
 				local holdSize = fontSize * (component.holdLabelScale or 1.08)
 				local holdColor = { component.holdColorR or 1, component.holdColorG or 0.72, component.holdColorB or 0.22, (component.holdOpacity or 1) * opacity }

@@ -18,7 +18,12 @@ local pendingConfig
 
 function widget:Initialize()
 	service = Runtime.New()
-	if pendingConfig then service:SetConfigData(pendingConfig); pendingConfig = nil end
+	if pendingConfig then
+		service:SetConfigData(pendingConfig)
+		pendingConfig = nil
+	elseif widgetHandler and type(widgetHandler.configData) == "table" then
+		service:MigrateLegacyHints(widgetHandler.configData["Controller UI Layout"])
+	end
 	WG.ControllerUISettings = service:PublicAPI()
 	WG.ControllerHintRegistry = service:HintAPI()
 end
