@@ -89,18 +89,18 @@ test(28, "Closing toggle consumes RB cycle", function() return has(camera, "wait
 test(29, "Clean later RB is rearmed", function() return has(camera, 'rearmed after RB release') end)
 
 -- 30-38 Vanilla idle navigation.
-test(30, "D-pad Left invokes vanilla previous entry API", function() return has(camera, "api.controllerActivatePreviousEntry") end)
-test(31, "D-pad Right invokes vanilla next entry API", function() return has(camera, "api.controllerActivateNextEntry") end)
+test(30, "D-pad Left selects previous live ID", function() return has(camera, "ControllerCameraTestCycleIdleUnit(-1)") end)
+test(31, "D-pad Right selects next live ID", function() return has(camera, "ControllerCameraTestCycleIdleUnit(1)") end)
 test(32, "Vanilla list ordering is used", function() return has(idle, "for _, unitDefID in ipairs(existingIcons)") end)
-test(33, "Vanilla selection is used", function() return has(idle, "Spring.SelectUnitArray(selected)") end)
-test(34, "Vanilla camera focus is used", function() return has(idle, 'Spring.SendCommands("viewselection")') end)
-test(35, "Vanilla highlight updates", function() return has(idle, "controllerHighlighted") and has(idle, "doUpdateForce = true") end)
+test(33, "Exact direct selection is used", function() return has(camera, "ControllerCameraTestFocusAndSelectUnit(unitID") end)
+test(34, "v0.7 camera focus is used", function() return has(camera, "ControllerCameraTestFocusCameraAt") end)
+test(35, "Controller remembers ID and type", function() return has(camera, "currentUnitID = unitID") and has(camera, "currentTypeKey = unitDefID") end)
 test(36, "Dead/non-idle entries are filtered", function() return has(idle, "spGetUnitIsDead(unitID)") and has(idle, "isWorkerUnitIdle") end)
 test(37, "Radials suppress idle cycling", function() return has(camera, "ControllerCameraTestHandleBuildMenuInput()") and has(camera, "ControllerCameraTestHandleTacticalMenuInput()") end)
 test(38, "Missing API is safe", function()
-	return has(camera, 'if type(cycle) ~= "function" then')
+	return has(camera, 'type(WG.idlebuilders.controllerGetLiveIdleEntries) == "function"')
 		and has(camera, "vanilla idle widget unavailable")
-		and has(camera, "local ok, selected, snapshot = pcall(cycle)")
+		and has(camera, "if #units == 0 then")
 end)
 
 -- 39-52 Enemy Disassemble.
@@ -165,7 +165,10 @@ test(83, "Move State remains", function() return has(camera,"ControllerCameraTes
 test(84, "Legacy fallback remains", function() return has(camera,"not ControllerCameraTestUsesNativeBARUI()") end)
 test(85, "Owner state preserves nil coordinates", function() local o=Owner.New({dispatch=function()return true end}); local s=o:GetState(); return s.anchor==nil and s.current==nil end)
 test(86, "Preview renderers guard coordinates", function() return has(mex,"not state.anchor.x") and has(reclaim,"ownerState.anchor.x") end)
-test(87, "No .NET source changed by repair", function() local p=io.popen('git -C "'..root..'" diff --name-only -- "*.cs" "*.csproj"'); local out=p:read("*a"); p:close(); return out=="" end)
+test(87, "Companion lifecycle repair is covered", function()
+	return has(read("tools/controller-companion/Shared/EngineSessionTracker.cs"), "TrackedProcessId")
+		and has(read("tools/controller-companion/Tests/Program.cs"), "TestProductMetadataAndSessionLifecycle")
+end)
 test(88, "Deployment scripts reference repair harness", function() return has(read("tools/dev-scripts/Deploy_v0.8.0_Native_Test.ps1"),"Test-ControllerNativeRegressionRepair.lua") end)
 
 assert(#cases == 88, "expected exactly 88 cases")

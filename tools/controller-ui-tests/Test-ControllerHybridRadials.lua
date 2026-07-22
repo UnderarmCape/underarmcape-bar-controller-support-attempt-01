@@ -41,18 +41,18 @@ for index = 1, 9 do
 	pagedSource[index] = { unitDefID = 300 + index, cmdID = -(300 + index), name = "Item " .. index, cell = index * 3 }
 end
 local paged = adapter:BuildBuildModel(pagedSource, { classify = function() return "Economy" end })
-expect(paged.items[8].radialPage == 1 and paged.items[8].radialSlot == 8, "first compact page is full")
-expect(paged.items[9].radialPage == 2 and paged.items[9].radialSlot == 1, "ninth present item starts page two")
-expect(paged.pageCounts.Economy == 2, "page count derives from present entries")
+expect(paged.items[4].radialPage == 1 and paged.items[4].radialSlot == 4, "minimal pages balance without an avoidable singleton")
+expect(paged.items[5].radialPage == 2 and paged.items[5].radialSlot == 1, "second balanced page is contiguous")
+expect(paged.pageCount == 2, "global page count derives from present entries")
 
 local factory = adapter:BuildBuildModel({
 	{ unitDefID = 201, cmdID = -201, name = "Peewee", cell = 1, queueCount = 3 },
 	{ unitDefID = 202, cmdID = -202, name = "Rocko", cell = 2 },
 }, { isFactory = true })
-expect(factory.kind == "factory" and #factory.categories == 1 and factory.categories[1] == "Factory", "factory is uncategorized")
+expect(factory.kind == "factory" and #factory.categories == 1 and factory.categories[1] == "Utility", "factory uses the Constructors/Utility/Combat model")
 expect(factory.items[1].radialSlot == 1 and factory.items[2].radialSlot == 2, "factory follows vanilla cells")
 expect(factory.items[1].queueCount == 3, "factory queue count is vanilla-backed")
-expect(factory.itemCount == 2 and factory.pageCounts.Factory == 1, "factory pages are compact and non-empty")
+expect(factory.itemCount == 2 and factory.pageCount == 1, "factory pages are compact and non-empty")
 
 local tactical = adapter:BuildTacticalModel({
 	{ id = 20, name = "Fire State", action = "firestate", isState = true,
@@ -80,7 +80,7 @@ expect(not contains(camera, "native order panel opened"), "giant native tactical
 expect(not contains(camera, "Native Build Menu: D-pad navigate"), "flat native build bypass removed")
 expect(contains(renderer, "entry.slot or index"), "renderer honors adapter-provided radial slots")
 expect(contains(camera, "slotCount = ControllerCameraTestUsesNativeBARUI() and 8"), "fixed eight-slot hybrid wheel")
-expect(contains(camera, "ControllerCameraTestOpenNativeStateSubradial"), "multi-state sub-radial")
+expect(not contains(camera, "ControllerCameraTestOpenNativeStateSubradial"), "state cycling has no sub-radial")
 expect(contains(camera, "ControllerCameraTestActivateNativeState"), "state activation delegates to vanilla")
 expect(contains(camera, 'placement.placementPattern = "single"'), "placement resets to Single")
 expect(contains(camera, "function ControllerCameraTestPlacementShouldExit(button)\n\treturn false"), "A/X placement remains active")

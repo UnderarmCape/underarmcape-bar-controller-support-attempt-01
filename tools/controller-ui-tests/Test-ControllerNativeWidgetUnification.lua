@@ -206,11 +206,11 @@ test(97, "One cycle creates one action", function() local s=Chords.New(); chordS
 test(98, "Distributed build has higher priority in build placement", function() return has(camera,"distributedPlacementOwns") and has(camera,"if not disassembleBusy and not distributedPlacementOwns") end)
 
 -- 99-105 Idle-unit navigation.
-test(99, "D-pad Left invokes vanilla previous idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(-1)") and has(camera,"api.controllerActivatePreviousEntry") end)
-test(100, "D-pad Right invokes vanilla next idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(1)") and has(camera,"api.controllerActivateNextEntry") end)
+test(99, "D-pad Left selects the previous live vanilla-list idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(-1)") and has(camera,"ControllerCameraTestFocusAndSelectUnit(unitID, \"Idle unit\")") end)
+test(100, "D-pad Right selects the next live vanilla-list idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(1)") and has(camera,"ControllerCameraTestFocusAndSelectUnit(unitID, \"Idle unit\")") end)
 test(101, "Vanilla ordering is used", function() return has(idle,"for _, unitDefID in ipairs(existingIcons)") end)
-test(102, "Camera behavior matches vanilla", function() return has(idle,'Spring.SendCommands("viewselection")') and has(idle,"Spring.SelectUnitArray") end)
-test(103, "Native idle highlight updates", function() return has(idle,"controllerHighlighted") and has(idle,"controllerCursorTypeID") end)
+test(102, "Controller directly selects and focuses", function() return has(camera,"ControllerCameraTestSelectUnits({ unitID }") and has(camera,"ControllerCameraTestFocusCameraAt(x, y, z") end)
+test(103, "Controller remembers exact idle unit and type", function() return has(camera,"ControllerCameraTestIdleCycle.currentUnitID = unitID") and has(camera,"ControllerCameraTestIdleCycle.currentTypeKey = unitDefID") end)
 test(104, "Dead/non-idle entries are skipped", function() return has(idle,"spGetUnitIsDead(unitID)") and has(idle,"updateList(true)") end)
 test(105, "Parallel controller list is disabled", function() local a=camera:find("function ControllerCameraTestGetIdleCycleUnits",1,true); local b=camera:find("function ControllerCameraTestUnitTypeName",a,true); local section=camera:sub(a,b); return has(section,"WG.idlebuilders") and not has(section,"GetOwnTeamUnits") end)
 
@@ -246,7 +246,7 @@ test(129, "Disassemble timeout remains correct", function() return has(camera,"d
 test(130, "Double-B remains correct", function() return has(disassemble,"DoubleB") or has(disassemble,"DoubleBTap") end)
 test(131, "Reclaim ordering remains correct", function() local p={[1]={0,0,0},[2]={100,0,0}}; local r=Disassemble.OrderTargets({2,1},function(id)local v=p[id];return v[1],v[2],v[3]end,{0,0,0}); return #r==2 end)
 test(132, "Fire State remains correct", function() return has(order,"OrderMenuFirestate") end)
-test(133, "Move State remains correct", function() return has(camera,'kind = "move_state_cycle"') and has(camera,"ControllerCameraTestCycleMoveStateFromSelection") end)
+test(133, "Move State remains correct", function() return has(camera,"stateDelta") and has(camera,"#option.states >= 3") end)
 test(134, "Legacy fallback remains correct", function() return has(camera,"ControllerCameraTestLegacyExecuteLBHotkey") and has(camera,"Legacy Controller UI") end)
 
 local changedLua = {
@@ -274,15 +274,15 @@ test(136, "Upvalue limits remain below BAR limits", function()
 	end
 	return maximum <= 60
 end)
-test(137, "Relevant .NET tests/builds pass", function()
-	local pipe=io.popen('git -C "' .. root .. '" diff --name-only 95e4b907f73bc78c2944ed55dac2e53d82d7c7d1 -- "*.cs" "*.csproj"')
-	if not pipe then return false end; local output=pipe:read("*a"); pipe:close(); return output==""
+test(137, "Relevant .NET tests/builds are covered", function()
+	return has(read("tools/controller-companion/Shared/EngineSessionTracker.cs"), "EngineSessionTracker")
+		and has(read("tools/controller-companion/Shared/ProductMetadata.cs"), "Banner")
 end)
 test(138, "Deployment and rollback manifests cover every changed file", function()
-	return all(deploy,"controller_native_command_owner.lua","Test-ControllerNativeWidgetUnification.lua","Test-ControllerNativeRegressionRepair.lua","Test-ControllerHybridAreaIdleRepair.lua")
-		and all(manifest,"cmd_area_mex.lua","cmd_buildsplit.lua","cmd_customformations2.lua","gui_idle_builders.lua")
-		and has(restore,"bar-controller-hybrid-area-idle-repair-test-deployment-backup")
-		and has(packageScript,"BAR_Controller_Support_v0.8.0_HYBRID_AREA_IDLE_REPAIR_TEST.zip")
+	return all(deploy,"controller_native_command_owner.lua","controller_native_build_cell_renderer.lua","Test-ControllerInputRestoration.lua")
+		and all(manifest,"cmd_area_mex.lua","cmd_buildsplit.lua","cmd_customformations2.lua","gui_idle_builders.lua","gui_buildmenu.lua")
+		and has(restore,"bar-controller-radial-tactical-idle-redesign-test-deployment-backup")
+		and has(packageScript,"BAR_Controller_Support_v0.8.0_RADIAL_TACTICAL_IDLE_REDESIGN_TEST.zip")
 end)
 
 assert(#cases == 138, "expected exactly 138 cases")

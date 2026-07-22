@@ -11,6 +11,7 @@ local cases = {}
 local function test(id, label, callback) cases[#cases + 1] = { id, label, callback } end
 
 local camera = read("luaui/Widgets/gui_controller_camera_test.lua")
+local radialAdapter = read("luaui/Include/controller_native_radial_adapter.lua")
 local targetingSource = read("luaui/Include/controller_native_targeting.lua")
 local order = read("native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_ordermenu.lua")
 local build = read("native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_buildmenu.lua")
@@ -110,9 +111,9 @@ test(60, "Retired reclaim owner update is unused", function() return lacks(camer
 
 -- 61-72: global Build/Factory traversal.
 test(61, "Flattened traversal exists", function() return has(camera,"ControllerCameraTestRebuildRadialPageTraversal") end)
-test(62, "Traversal begins Economy", function() return has(camera,'{ "Economy", "Combat", "Utility" }') end)
-test(63, "Traversal includes Combat", function() return has(camera,'"Economy", "Combat", "Utility"') end)
-test(64, "Traversal ends Utility", function() return has(camera,'"Combat", "Utility"') end)
+test(62, "Traversal begins Economy", function() return has(radialAdapter,'"Economy", "Build", "Utility", "Combat"') end)
+test(63, "Traversal includes Build", function() return has(radialAdapter,'"Economy", "Build", "Utility", "Combat"') end)
+test(64, "Traversal ends Combat", function() return has(radialAdapter,'"Utility", "Combat"') end)
 test(65, "Empty categories are omitted", function() return has(camera,"if count == 0 then return 0 end") end)
 test(66, "Native page order is retained", function() return has(camera,"tonumber(option.radialPage)") end)
 test(67, "Legacy page order is retained", function() return has(camera,"math.ceil(count / 8)") end)
@@ -122,20 +123,20 @@ test(70, "Traversal wraps", function() return has(camera,"% #traversal") end)
 test(71, "Destination first item receives native focus", function() return has(camera,"ControllerCameraTestSetNativeBuildFocus(first") end)
 test(72, "Page indicator uses global index", function() return has(camera,"menu.radialTraversalIndex or 1") and has(camera,"menu.radialTraversalCount or 1") end)
 
--- 73-85: shared vanilla Idle Builders actions.
-test(73, "Idle widget has one shared activation", function() return has(idle,"local function activateIdleEntry") end)
-test(74, "Mouse uses shared activation", function() return has(idle,"activateIdleEntry(unitDefID, {") end)
-test(75, "Previous entry API is exact", function() return has(idle,"controllerActivatePreviousEntry") and has(camera,"api.controllerActivatePreviousEntry") end)
-test(76, "Next entry API is exact", function() return has(idle,"controllerActivateNextEntry") and has(camera,"api.controllerActivateNextEntry") end)
-test(77, "Vanilla idle order is flattened", function() return has(idle,"for _, unitDefID in ipairs(existingIcons)") end)
-test(78, "Entry activation selects live units", function() return has(idle,"Spring.SelectUnitArray(selected)") end)
-test(79, "Entry activation focuses camera", function() return has(idle,'Spring.SendCommands("viewselection")') end)
-test(80, "Entry activation preserves sound", function() return has(idle,"options.focusCamera and rightclick or leftclick") end)
-test(81, "Entry activation updates highlight", function() return has(idle,"controllerCursorUnitID, controllerCursorTypeID = chosen, unitDefID") end)
-test(82, "Focused identity is remembered", function() return has(idle,"currentUnitID = controllerCursorUnitID") and has(idle,"currentTypeID = controllerCursorTypeID") end)
-test(83, "Invalid focused identity is repaired", function() return has(idle,"if not repaired then repaired = (idleList[controllerCursorTypeID] or {})[1] end") end)
-test(84, "LB plus Down selects focused type", function() return has(camera,"ControllerCameraTestSelectAllFocusedIdleType") and has(idle,"controllerActivateAllFocusedType") end)
-test(85, "Select-all uses only current idle bucket", function() return has(idle,"local selected = options.selectAll and live or { chosen }") end)
+-- 73-85: read-only vanilla Idle Builders source with direct controller action.
+test(73, "Idle widget exports one read-only snapshot", function() return has(idle,"controllerGetLiveIdleEntries") end)
+test(74, "Snapshot uses live icon order", function() return has(idle,"for _, unitDefID in ipairs(existingIcons)") end)
+test(75, "Previous entry is controller-owned", function() return has(camera,"ControllerCameraTestCycleIdleUnit(-1)") end)
+test(76, "Next entry is controller-owned", function() return has(camera,"ControllerCameraTestCycleIdleUnit(1)") end)
+test(77, "Vanilla idle order is flattened", function() return has(idle,"units[#units + 1] = unitID") end)
+test(78, "Camera selects the exact live ID", function() return has(camera,'ControllerCameraTestFocusAndSelectUnit(unitID, "Idle unit")') end)
+test(79, "Entry activation focuses camera", function() return has(camera,"ControllerCameraTestFocusCameraAt") end)
+test(80, "Controller does not invoke mouse sound/click wrapper", function() return lacks(camera,"activateIdleEntry") end)
+test(81, "Focused identity is controller-owned", function() return has(camera,"ControllerCameraTestIdleCycle.currentUnitID = unitID") end)
+test(82, "Focused type is remembered", function() return has(camera,"ControllerCameraTestIdleCycle.currentTypeKey = unitDefID") end)
+test(83, "Invalid focused identity repairs by remembered type", function() return has(camera,"if Spring.GetUnitDefID(unitID) == ControllerCameraTestIdleCycle.currentTypeKey") end)
+test(84, "LB plus Down selects focused type", function() return has(camera,"ControllerCameraTestSelectAllFocusedIdleType") end)
+test(85, "Select-all uses only live current bucket", function() return has(camera,'ControllerCameraTestSelectUnits(bucket.units, "Idle type group")') end)
 
 -- 86-89: regression and delivery contracts.
 test(86, "Passing controller systems remain", function() return has(camera,'drag.mode = "moveLine"') and has(camera,"ControllerCameraTestUpdateDistributedGridChord") and has(camera,"ControllerCameraTestGetBuildSelectionContext") end)

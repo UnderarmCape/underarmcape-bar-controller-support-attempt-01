@@ -163,7 +163,7 @@ expect(contains(orders, "issuedOK and accepted ~= false"), "engine dispatch resu
 expect(contains(orders, 'dispatchMode == "insert-front"'), "existing insertion modifier is retained")
 expect(contains(adapter, "itemCount = #result"), "exact authoritative radial count is exported")
 expect(contains(adapter, "categoryCounts = categoryCounts"), "non-empty category counts are exported")
-expect(contains(adapter, "pageCounts = pageCounts"), "page counts are derived from compact items")
+expect(contains(adapter, "pageCount = #pages"), "global page count is derived from compact items")
 expect(contains(adapter, "if categoriesSeen[category]"), "zero-item categories are omitted")
 expect(contains(adapter, "if item.stableKey == selectedKey"), "focus follows stable command identity")
 expect(contains(adapter, "selectedIndex, selectedKey = 1"), "missing focus falls back to first present item")
@@ -172,6 +172,6 @@ expect(contains(adapter, "item.queueCount = tonumber(item.queueCount) or 0"), "f
 expect(contains(targetingDoc, "first A/X") and contains(targetingDoc, "second A/X"), "targeting workflow is documented")
 expect(contains(targetingDoc, "revalidates command identity") and contains(targetingDoc, "one direct fallback"), "native eligibility boundary is documented")
 expect(contains(compactionDoc, "No empty category is emitted"), "empty-category rule is documented")
-expect(contains(checklist, "43. Watch for duplicate commands or frame-time spikes"), "43-step live checklist covers duplicate/performance watch")
+expect(contains(checklist, "58. Watch for duplicate orders and frame-time spikes"), "58-step live checklist covers duplicate/performance watch")
 
 print(string.format("Controller Native Targeting tests passed: %d validations.", checks))

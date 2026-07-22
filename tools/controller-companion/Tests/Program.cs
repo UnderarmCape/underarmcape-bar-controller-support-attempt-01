@@ -18,6 +18,7 @@ internal static class Program
         try
         {
             string repositoryRoot = FindRepositoryRoot();
+            TestProductMetadataAndSessionLifecycle();
             byte[] defaults = File.ReadAllBytes(Path.Combine(repositoryRoot, "controller-ui", "shipping-defaults.json"));
             byte[] manifest = File.ReadAllBytes(Path.Combine(repositoryRoot, "controller-ui", "shipping-defaults-manifest.json"));
             using var server = new FixtureServer(defaults, manifest);
@@ -69,13 +70,13 @@ internal static class Program
             string statusPath = Path.Combine(testRoot, "program-data", "update-status.json");
             using JsonDocument status = JsonDocument.Parse(File.ReadAllText(statusPath));
             Assert(status.RootElement.GetProperty("ReleaseAvailable").GetBoolean(), "newer release reported, not applied");
-            Assert(status.RootElement.GetProperty("LatestRelease").GetString() == "0.7.1", "release version parsed");
+            Assert(status.RootElement.GetProperty("LatestRelease").GetString() == "0.8.1", "release version parsed");
 
             Assert(UpdateService.RunCommand(new[] { "reload", "--bar-data", barData }) == 0, "reload marker");
             using JsonDocument reload = JsonDocument.Parse(File.ReadAllText(Path.Combine(cacheDirectory, "reload-request.json")));
             Assert(reload.RootElement.GetProperty("kind").GetString() == "bar-controller-ui-reload-request", "reload handoff format");
 
-            Console.WriteLine("Update/defaults tests passed: valid/newer pair, known-good backup, downgrade prevention, malformed JSON, hash/ID failure, timeout/offline cache, release report, reload handoff.");
+            Console.WriteLine("Companion tests passed: central v0.8 Experimental metadata, attach/wait/transition/exit lifecycle, valid/newer defaults pair, known-good backup, downgrade prevention, malformed JSON, hash/ID failure, timeout/offline cache, release report, reload handoff.");
             return 0;
         }
         catch (Exception exception)
@@ -90,6 +91,30 @@ internal static class Program
             Environment.SetEnvironmentVariable("BAR_CONTROLLER_PROGRAM_DATA", null);
             if (Directory.Exists(testRoot)) Directory.Delete(testRoot, recursive: true);
         }
+    }
+
+    private static void TestProductMetadataAndSessionLifecycle()
+    {
+        Assert(ProductMetadata.SemanticVersion == "0.8.0", "central semantic version");
+        Assert(ProductMetadata.Channel == "Experimental", "central channel");
+        Assert(ProductMetadata.DisplayVersion == "v0.8.0 Experimental", "central display version");
+        Assert(ProductMetadata.BridgeBanner == "BAR Controller Bridge v0.8.0 Experimental", "bridge banner");
+
+        DateTime start = new DateTime(2026, 7, 23, 0, 0, 0, DateTimeKind.Utc);
+        var tracker = new EngineSessionTracker(TimeSpan.FromSeconds(3));
+        Assert(tracker.Observe(start, Array.Empty<EngineProcessSnapshot>()) == "waiting for Spring/Recoil", "never-attached bridge waits");
+        Assert(!tracker.HasAttached && !tracker.ShouldStop, "never-attached standalone remains open");
+        var spring = new EngineProcessSnapshot { ProcessId = 101, ProcessName = "spring", StartedUtc = start.AddSeconds(1) };
+        tracker.Observe(start.AddSeconds(1), new[] { spring });
+        Assert(tracker.HasAttached && tracker.TrackedProcessId == 101, "tracks Spring PID");
+        tracker.Observe(start.AddSeconds(2), Array.Empty<EngineProcessSnapshot>());
+        Assert(!tracker.ShouldStop, "bounded restart grace");
+        var recoil = new EngineProcessSnapshot { ProcessId = 202, ProcessName = "Recoil", StartedUtc = start.AddSeconds(2) };
+        tracker.Observe(start.AddSeconds(3), new[] { recoil });
+        Assert(tracker.TrackedProcessId == 202, "follows relevant engine transition");
+        tracker.Observe(start.AddSeconds(4), Array.Empty<EngineProcessSnapshot>());
+        tracker.Observe(start.AddSeconds(8), Array.Empty<EngineProcessSnapshot>());
+        Assert(tracker.ShouldStop, "exits after tracked engine and grace");
     }
 
     private static string FindRepositoryRoot()
@@ -191,7 +216,7 @@ internal static class Program
                     }
                     else if (path.EndsWith("release", StringComparison.Ordinal))
                     {
-                        payload = Encoding.UTF8.GetBytes("{\"tag_name\":\"v0.7.1\",\"assets\":[{\"name\":\"BAR_Controller_Support_v0.7.1_Widget_Companion.zip\",\"browser_download_url\":\"" + BaseUrl + "package.zip\",\"digest\":\"sha256:" + new string('a', 64) + "\"}]}");
+                        payload = Encoding.UTF8.GetBytes("{\"tag_name\":\"v0.8.1\",\"assets\":[{\"name\":\"BAR_Controller_Support_v0.8.1_Widget_Companion.zip\",\"browser_download_url\":\"" + BaseUrl + "package.zip\",\"digest\":\"sha256:" + new string('a', 64) + "\"}]}");
                     }
                     else { context.Response.StatusCode = 404; context.Response.Close(); continue; }
                     context.Response.ContentType = "application/json";

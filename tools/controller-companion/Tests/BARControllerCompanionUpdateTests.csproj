@@ -7,5 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\UpdateService.cs" Link="UpdateService.cs" />
+    <Compile Include="..\Shared\ProductMetadata.cs" Link="ProductMetadata.cs" />
+    <Compile Include="..\Shared\EngineSessionTracker.cs" Link="EngineSessionTracker.cs" />
   </ItemGroup>
 </Project>
