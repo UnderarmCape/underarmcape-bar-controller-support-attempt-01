@@ -156,7 +156,11 @@ foreach ($name in $GlyphFiles) {
     $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ('luaui\images\controller-glyphs\' + $name)); destination = (Join-Path $BarDataPath ('LuaUI\Images\controller-glyphs\' + $name)); native = $false })
 }
 foreach ($entry in @($overrideManifest.entries)) {
-    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ([string]$entry.sourcePath)); destination = (Join-Path $BarDataPath ([string]$entry.livePath)); native = $true; baseSha256 = [string]$entry.baseSha256; previousPatchedSha256 = [string]$entry.previousPatchedSha256; patchedSha256 = [string]$entry.patchedSha256 })
+    $previousPatchedSha256 = ''
+    if ($null -ne $entry.PSObject.Properties['previousPatchedSha256']) {
+        $previousPatchedSha256 = [string]$entry.previousPatchedSha256
+    }
+    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ([string]$entry.sourcePath)); destination = (Join-Path $BarDataPath ([string]$entry.livePath)); native = $true; baseSha256 = [string]$entry.baseSha256; previousPatchedSha256 = $previousPatchedSha256; patchedSha256 = [string]$entry.patchedSha256 })
 }
 
 $destinations = @{}
