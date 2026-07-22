@@ -1,110 +1,75 @@
-# v0.8.0 Native Widget Unification Live Checklist
+# v0.8.0 native regression-repair live checklist
 
-**EXPERIMENTAL — NATIVE WIDGET, SMART ACTION, AND UI UNIFICATION TEST**
+**EXPERIMENTAL — SMART X, RADIAL ROUTING, ENEMY DISASSEMBLE, AND AREA CONFIRMATION TEST**
 
-## Tactical area command
+Run against `Beyond All Reason test-30725-99351e5`. Enable Native Experimental,
+leave Legacy available, and enable Controller Debug only when collecting the
+transition strip.
 
-1. Select an area command.
-2. Press A to anchor.
-3. Release A.
-4. Resize.
-5. Press A to confirm.
-6. Repeat A anchor → X confirm.
-7. Repeat X anchor → A confirm.
-8. Repeat X anchor → X confirm.
-9. Confirm exactly one command each time.
-10. Cancel with B.
+## Smart X
 
-## Build Radial eligibility
+1. Test normal Smart X tap behavior against the pre-unification behavior.
+2. Test Hold-X drag Move.
+3. Test ground-constructor Repair.
+4. Test air-constructor Repair.
+5. Test constructor Reclaim on an enemy unit.
+6. Test constructor Reclaim on an enemy structure.
+7. Confirm X does not Move over a valid Repair/Reclaim target.
 
-11. Clear selection and press RB; nothing should open.
-12. Select combat units and press RB; nothing should open.
-13. Select a factory/lab and verify only Factory/Lab Radial behavior.
-14. Select a constructor and confirm Build Radial opens.
-15. Change selection and verify no stale radial model opens.
+## Build and Factory paging
 
-## Move State and chord ownership
+8. Tap RB to open the Build Radial.
+9. Tap RB to move to the next page.
+10. Tap LB to move to the previous page.
+11. Repeat paging with a Factory/Lab Radial.
+12. Confirm a one-page model safely remains on its page.
 
-16. Hold LB.
-17. Tap RB repeatedly without releasing LB.
-18. Confirm every tap advances Move State.
-19. Confirm unsupported selection shows no toast.
-20. Hold LB+RB in Factory Radial and confirm Queue Mode.
-21. Confirm Disassemble does not activate for factory/lab.
-22. Long-hold with combat units only; confirm silent no-op.
-23. Long-hold with constructor; confirm Disassemble.
+## Tactical toggle
 
-## Disassemble target selection
+13. Hold Back/View and press RB.
+14. Confirm the Tactical Radial opens.
+15. Repeat the chord and confirm it closes.
+16. Confirm the chord never opens Build/Factory.
+17. Confirm RB cannot open Build/Factory while Tactical is open.
 
-24. Hold A and compare circle behavior with normal area selection.
-25. Confirm Disassemble circle is green.
-26. Confirm circle does not use tactical fixed-anchor behavior.
-27. Select targets with Hold A.
-28. Use RT+Hold A to add more targets.
-29. Use RT+A to add/remove individual targets.
-30. Confirm vanilla outlines.
-31. Confirm cached constructors remain excluded.
+## Idle units
 
-## Disassemble timer and exit
+18. Use D-pad Left in normal gameplay.
+19. Use D-pad Right in normal gameplay.
+20. Confirm vanilla Idle Builders ordering.
+21. Confirm vanilla selection and camera focus.
+22. Confirm the vanilla idle icon highlight and sound.
 
-32. Enter Disassemble and perform no reclaim.
-33. Confirm auto-exit after 30 seconds.
-34. Enter again and issue reclaim.
-35. Confirm timer resets.
-36. Double-tap B while idle and confirm exit.
-37. Start a sub-operation, press B to cancel, then press B again to exit.
+## Enemy Disassemble
 
-## Reclaim ordering
+23. X-reclaim an enemy unit.
+24. X-reclaim an enemy structure.
+25. LB+A tap an enemy target.
+26. LB+A hold over an enemy target.
+27. Confirm same-type area Reclaim includes valid enemy matches.
+28. Brush enemy targets with Hold A.
+29. Add enemy targets with RT+Hold A.
+30. Confirm owned constructors touched by the brush join the reclaimer set and are not targets.
 
-38. Select a 3×3 target grid.
-39. Issue selected-target reclaim.
-40. Confirm constructors begin with nearby targets.
-41. Confirm movement progresses locally instead of star-shaped jumping.
-42. Repeat with multiple constructors.
-43. Test same-type area reclaim.
-44. Confirm native-like ordering.
+## Area commands
 
-## Hints
+31. Open Area Mex or another area command through an LB Tactical Radial.
+32. Test A anchor → A confirm.
+33. Test A anchor → X confirm.
+34. Test X anchor → A confirm.
+35. Test X anchor → X confirm.
+36. Confirm exactly one command appears for each test.
+37. Confirm B cancels without issuing.
+38. If a test fails, enable Controller Debug and record the last transition shown.
 
-45. Confirm hints are significantly larger and more readable.
-46. Open Controller Bindings UI.
-47. Adjust Hint Overall Scale.
-48. Adjust text and glyph scales.
-49. Adjust spacing.
-50. Reset hint appearance.
-51. Confirm settings persist.
-52. Compare Xbox/PlayStation or restored glyph styles.
+## General regression pass
 
-## General
-
-53. Recheck build placement B cancellation.
-54. Recheck factory +1/−1/+5/−5.
-55. Recheck radial compaction.
-56. Recheck blue native focus synchronization.
-57. Test Legacy fallback.
-58. Check `infolog.txt`.
-59. Watch for duplicate commands or frame-time spikes.
-
-## Native widget unification addendum
-
-60. Test A→A, A→X, X→A, and X→X for Reclaim, Repair, Area Mex, and a Front command.
-61. Confirm each final action produces exactly one order and B produces none.
-62. Test ground and air-constructor Smart X Repair.
-63. Test Smart X Reclaim on enemy mobile units and structures.
-64. In Disassemble, X-reclaim an enemy unit and feature; X on empty ground moves.
-65. Brush over another own mobile constructor and confirm it joins reclaimers.
-66. Confirm factories do not join and enemy area candidates highlight.
-67. Exercise every mapping in `LB_NATIVE_COMMAND_MAPPING.md` with RT append.
-68. Create groups with keyboard and controller, then recall them from both paths.
-69. Hover several targets without changing the hint model revision.
-70. Select a different unit and confirm one debounced hint update.
-71. With three constructors, arm LB+RB+RT and preview nine Grid positions.
-72. Confirm the nine positions are distributed, not duplicated to each constructor.
-73. Tap RB to open the radial; hold RB alone and confirm no action.
-74. Hold LB and repeat RB taps; confirm one Move State step per release.
-75. Test RB-first LB join inside and outside the configured grace window.
-76. D-pad-cycle idle units and compare order/focus with the Idle Builders widget.
-77. Confirm Build/Order panels hide in controller mode and return in mouse mode.
-78. While hidden, change selection and confirm native radial models remain current.
-79. Compare Tactical outer buttons with the corresponding vanilla Order Menu cells.
-80. Recheck Legacy Controller UI, `infolog.txt`, duplicate orders, and frame time.
+39. Recheck Distributed Grid.
+40. Recheck one-B build cancellation and constructor selection preservation.
+41. Recheck Factory +1/−1/+5/−5 quantities.
+42. Recheck vanilla control groups.
+43. Recheck native panels hide in controller mode and return in mouse mode.
+44. Recheck stable hints without passive-hover churn.
+45. Switch to Legacy fallback and back to Native Experimental.
+46. Inspect `infolog.txt` for Lua errors or removed widgets.
+47. Watch for duplicate orders or frame-time spikes.

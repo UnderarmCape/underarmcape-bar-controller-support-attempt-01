@@ -1,24 +1,28 @@
 # Native area-command owners
 
-This experiment keeps the camera widget as an input/reticle adapter. The widget
-that owns a BAR command owns its descriptor, target lifecycle, preview, and
-final confirmation through `controller_native_command_owner.lua`. Final orders
-cross one Order Menu boundary: `CommandNotify` once, then `Spring.GiveOrder`
-only when no widget handled the command.
+The live failure was a state-copy bug, not hidden-panel suppression or missing
+button edges. `controller_native_command_owner.lua` converted absent
+`anchor`/`current` values into empty tables in `Owner:GetState()`. Area Mex and
+Smart Area Reclaim interpreted those tables as a live preview and called
+`gl.DrawGroundCircle` with nil coordinates. BAR removed both widgets after the
+DrawWorld errors, leaving their retained preview/session path unable to receive
+the second A/X confirmation.
 
-| Command family | Authoritative owner | Controller behavior |
-| --- | --- | --- |
-| Reclaim unit/feature/area | Smart Area Reclaim | Native eligibility, native area preview, one confirmation |
-| Area Mex | Area Mex | Native spot/build executor receives `{x,y,z,radius}` |
-| Move/Fight/Attack/Patrol/Unload/Set Target/Manual Launch fronts | Custom Formations | Native formation dots and assignment algorithm |
-| Repair/Resurrect/Restore/Capture/Guard/Load/Unload/Attack areas | Order Menu generic owner | Live descriptor type drives anchor and params |
-| Point/unit/map commands | Order Menu generic owner | Live descriptor and engine legality remain authoritative |
+`GetState()` now preserves nil for descriptor, anchor, and current. Area Mex,
+Smart Area Reclaim, and the generic Order Menu owner also validate complete
+x/y/z coordinates before drawing. The real widgets therefore remain loaded and
+registered through anchor, neutral release, confirm, and close.
 
-All four confirmation combinations are valid after the release barrier: A→A,
-A→X, X→A, and X→X. A command-radial confirmation cannot leak into the first
-world anchor. Queue persistence recreates the same descriptor only after a
-successful dispatch and ends when RT is released. B cancels without issuing.
+| Command family | Authoritative owner |
+| --- | --- |
+| Reclaim unit/feature/area | Smart Area Reclaim |
+| Area Mex | Area Mex |
+| Formation/front commands | Custom Formations |
+| Other point, area, front, rectangle commands | Order Menu generic owner |
 
-Fallback ownership is explicit: if no registered command widget claims the
-live command ID, Order Menu owns the operation. The camera never reconstructs
-the final command parameters or sends a duplicate fallback order.
+The camera is only the highest-priority input/reticle adapter. The owner keeps
+its immutable descriptor and session token, builds final parameters, calls
+`CommandNotify` once, and permits one direct engine fallback only when
+unhandled. A→A, A→X, X→A, and X→X use the same fresh-release barrier. B cancels
+without dispatch. Visual hiding suppresses Order/Build panel draw and mouse
+interception only; Update, owner APIs, and confirmation remain active.
