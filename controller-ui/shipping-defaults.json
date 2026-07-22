@@ -1,8 +1,8 @@
 {
   "kind": "bar-controller-ui-defaults",
   "schemaVersion": 3,
-  "defaultsVersion": "0.8.0-native-widget-unification-test-1",
-  "generatedAt": "2026-07-22T00:00:00Z",
+  "defaultsVersion": "0.8.0-radial-tactical-idle-redesign-test-1",
+  "generatedAt": "2026-07-23T00:00:00Z",
   "compatibleModVersion": "0.8.0-experimental",
   "settings": {
     "global": {

@@ -505,56 +505,6 @@ local function activateIdleEntry(unitDefID, options)
 	return true, controllerSnapshot()
 end
 
-local function controllerActivateAdjacent(delta)
-	updateList(true)
-	local snapshot = controllerSnapshot()
-	if #snapshot.units == 0 then
-		controllerLastResult = "no idle units"
-		return false, controllerSnapshot()
-	end
-	local current = delta < 0 and 1 or 0
-	for i, unitID in ipairs(snapshot.units) do
-		if unitID == controllerCursorUnitID then current = i break end
-	end
-	local index = ((current - 1 + delta) % #snapshot.units) + 1
-	local unitID = snapshot.units[index]
-	return activateIdleEntry(Spring.GetUnitDefID(unitID), {
-		unitID = unitID, focusCamera = true,
-		label = "idle entry " .. tostring(index) .. "/" .. tostring(#snapshot.units),
-	})
-end
-
-local function controllerActivateAdjacentType(delta)
-	updateList(true)
-	local snapshot = controllerSnapshot()
-	if #snapshot.types == 0 then
-		controllerLastResult = "no idle types"
-		return false, controllerSnapshot()
-	end
-	local current = delta < 0 and 1 or 0
-	for i, bucket in ipairs(snapshot.types) do
-		if bucket.unitDefID == controllerCursorTypeID then current = i break end
-	end
-	local index = ((current - 1 + delta) % #snapshot.types) + 1
-	local bucket = snapshot.types[index]
-	return activateIdleEntry(bucket.unitDefID, {
-		unitID = bucket.units[1], focusCamera = true,
-		label = "idle type " .. tostring(index) .. "/" .. tostring(#snapshot.types),
-	})
-end
-
-local function controllerActivateFocused(selectAll)
-	updateList(true)
-	if not controllerCursorTypeID then
-		controllerLastResult = "no focused idle entry"
-		return false, controllerSnapshot()
-	end
-	return activateIdleEntry(controllerCursorTypeID, {
-		unitID = controllerCursorUnitID, selectAll = selectAll == true,
-		focusCamera = true,
-	})
-end
-
 local function checkUnitGroupsPos(isViewresize)
 
 	if WG['unitgroups'] then
@@ -682,28 +632,9 @@ function widget:Initialize()
 	WG['idlebuilders'].getPosition = function()
 		return posX, posY, backgroundRect and backgroundRect[3] or posX, backgroundRect and backgroundRect[4] or posY + usedHeight
 	end
-	WG['idlebuilders'].controllerActivatePreviousEntry = function()
-		return controllerActivateAdjacent(-1)
-	end
-	WG['idlebuilders'].controllerActivateNextEntry = function()
-		return controllerActivateAdjacent(1)
-	end
-	WG['idlebuilders'].controllerActivateFocusedEntry = function()
-		return controllerActivateFocused(false)
-	end
-	WG['idlebuilders'].controllerActivateAllFocusedType = function()
-		return controllerActivateFocused(true)
-	end
-	-- Compatibility aliases now route through the same internal action as the
-	-- icon's real mouse click rather than maintaining a controller-only list.
-	WG['idlebuilders'].controllerCycle = function(delta, byType)
-		return byType and controllerActivateAdjacentType(delta) or controllerActivateAdjacent(delta)
-	end
-	WG['idlebuilders'].controllerPreviousIdleUnit = WG['idlebuilders'].controllerActivatePreviousEntry
-	WG['idlebuilders'].controllerNextIdleUnit = WG['idlebuilders'].controllerActivateNextEntry
-	WG['idlebuilders'].controllerPreviousIdleType = function() return controllerActivateAdjacentType(-1) end
-	WG['idlebuilders'].controllerNextIdleType = function() return controllerActivateAdjacentType(1) end
-	WG['idlebuilders'].controllerGetSnapshot = function()
+	-- Read-only controller boundary: the camera widget owns exact-ID selection
+	-- and focus. This returns the same ordered live ZZZ data used by the icons.
+	WG['idlebuilders'].controllerGetLiveIdleEntries = function()
 		updateList(true)
 		return controllerSnapshot()
 	end

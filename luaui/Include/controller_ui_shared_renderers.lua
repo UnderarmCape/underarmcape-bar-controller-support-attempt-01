@@ -566,7 +566,40 @@ local function drawBuildRadial(args, cx, cy, radius, accent, values)
 	local typography, roles = values.typography, {}; local n = max(1, #entries)
 	local iconSize = min(500, max(56, radius * 0.27 * values.iconScale))
 	local fill = model.fill or { theme.backgroundR or 0.02, theme.backgroundG or 0.03, theme.backgroundB or 0.04 }
-	color({ fill[1], fill[2], fill[3], 0.58 * opacity * values.legacyThemeOpacity }); circle(cx, cy, radius * 1.3, 40)
+	local sectors, slotCount = model.sectors or {}, tonumber(model.slotCount) or n
+	if #sectors <= 1 then
+		color({ fill[1], fill[2], fill[3], 0.58 * opacity * values.legacyThemeOpacity }); circle(cx, cy, radius * 1.3, 40)
+	else
+		for _, sector in ipairs(sectors) do
+			local sectorColor = sector.fill or fill
+			local startAngle = ((sector.firstSlot - 1.5) * pi * 2 / slotCount) - pi * 0.5
+			local endAngle = ((sector.lastSlot - 0.5) * pi * 2 / slotCount) - pi * 0.5
+			local steps = max(4, floor((endAngle - startAngle) / (pi * 2) * 40))
+			color({ sectorColor[1], sectorColor[2], sectorColor[3], (sectorColor[4] or 0.58) * opacity * values.legacyThemeOpacity })
+			gl.BeginEnd(GL.TRIANGLE_FAN, function()
+				gl.Vertex(cx, cy)
+				for step = 0, steps do
+					local angle = startAngle + (endAngle - startAngle) * step / steps
+					gl.Vertex(cx + radius * 1.3 * cos(angle), cy - radius * 1.3 * sin(angle))
+				end
+			end)
+			local middle = (startAngle + endAngle) * 0.5
+			local chipColor = sector.accent or accent
+			color({ chipColor[1], chipColor[2], chipColor[3], 0.96 * opacity })
+			local sectorLabelSize = sector.count == 1 and 8 or 9
+			gl.Text(string.upper(tostring(sector.label or sector.category or "")),
+				cx + radius * 0.67 * cos(middle), cy - radius * 0.67 * sin(middle),
+				max(8, sectorLabelSize * values.fontScale), "oc")
+		end
+		for index = 2, #sectors do
+			local angle = ((sectors[index].firstSlot - 1.5) * pi * 2 / slotCount) - pi * 0.5
+			color({ 0.88, 0.95, 1, 0.52 * opacity }); gl.LineWidth(1.5)
+			gl.BeginEnd(GL.LINES, function()
+				gl.Vertex(cx + radius * 0.38 * cos(angle), cy - radius * 0.38 * sin(angle))
+				gl.Vertex(cx + radius * 1.3 * cos(angle), cy - radius * 1.3 * sin(angle))
+			end)
+		end
+	end
 	ring(cx, cy, radius, { accent[1], accent[2], accent[3], 0.3 * opacity }, 2, 36)
 	for index, entry in ipairs(entries) do
 		-- Hybrid native models may retain holes so familiar BAR cells do not
@@ -594,7 +627,13 @@ local function drawBuildRadial(args, cx, cy, radius, accent, values)
 		else
 			outline(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5, border, 1)
 		end
-		if entry.texture then
+		local renderedByNativeCell = false
+		if type(args.entryRenderer) == "function" then
+			local ok, rendered = pcall(args.entryRenderer, entry,
+				{ x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5 }, selected, index)
+			renderedByNativeCell = ok and rendered == true
+		end
+		if not renderedByNativeCell and entry.texture then
 			gl.Texture(entry.texture)
 			local iconOpacity = entry.disabled and typography.unavailableIconOpacity or selected and typography.selectedIconOpacity or 1
 			if entry.progress and entry.progress >= 0 and entry.progress <= 1 and gl.Scissor then
@@ -602,14 +641,14 @@ local function drawBuildRadial(args, cx, cy, radius, accent, values)
 				if entry.progress > 0 then gl.Scissor(x - size * 0.5, y - size * 0.5, size, size * entry.progress); color({ 1, 1, 1, iconOpacity * opacity }); gl.TexRect(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5); gl.Scissor(false) end
 			else color({ 1, 1, 1, iconOpacity * opacity }); gl.TexRect(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5) end
 			gl.Texture(false)
-		else
+		elseif not renderedByNativeCell then
 			local labelColor = selected and { typography.selectedLabelR, typography.selectedLabelG, typography.selectedLabelB, typography.selectedLabelOpacity } or nil
 			drawRoleText(entry.disabled and "unavailableText" or "metadata", entry.label or "Build", entry.disabled and typography.unavailableText or typography.metadata,
 				x, y - 6, values.fontScale, opacity, roles, labelColor)
 		end
-		drawRoleText("slotNumber", entry.indexLabel or index, typography.slotNumber, x - size * 0.5 + 6, y + size * 0.5 - 16, values.fontScale, opacity, roles)
-		if entry.disabled and entry.unavailableText then drawRoleText("unavailableText", entry.unavailableText, typography.unavailableText, x, y - size * 0.5 + 4, values.fontScale, opacity, roles) end
-		if (entry.badge or 0) > 0 then
+		if not renderedByNativeCell then drawRoleText("slotNumber", entry.indexLabel or index, typography.slotNumber, x - size * 0.5 + 6, y + size * 0.5 - 16, values.fontScale, opacity, roles) end
+		if not renderedByNativeCell and entry.disabled and entry.unavailableText then drawRoleText("unavailableText", entry.unavailableText, typography.unavailableText, x, y - size * 0.5 + 4, values.fontScale, opacity, roles) end
+		if not renderedByNativeCell and (entry.badge or 0) > 0 then
 			local badge = "x" .. tostring(entry.badge); local badgeW = max(28, #badge * 8 + 10); local bx2, by2 = x + size * 0.5 + 3, y + size * 0.5 + 3
 			color({ 0.04, 0.08, 0.12, 0.88 * opacity }); gl.Rect(bx2 - badgeW, by2 - 20, bx2, by2); outline(bx2 - badgeW, by2 - 20, bx2, by2, { accent[1], accent[2], accent[3], 0.7 * opacity }, 1)
 			drawRoleText("metadata", badge, typography.metadata, bx2 - badgeW * 0.5, by2 - 16, values.fontScale, opacity, roles)

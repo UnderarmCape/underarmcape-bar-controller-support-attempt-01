@@ -9,8 +9,9 @@ Adapter.__index = Adapter
 
 Adapter.SLOT_COUNT = 8
 Adapter.BUILDER_CATEGORY_ORDER = {
-	"Economy", "Combat", "Defense", "Utility", "Build", "Production", "Special",
+	"Economy", "Build", "Utility", "Combat",
 }
+Adapter.FACTORY_CATEGORY_ORDER = { "Constructors", "Utility", "Combat" }
 Adapter.TACTICAL_CATEGORY_ORDER = { "utility", "tactical" }
 
 local function shallowCopy(source)
@@ -131,6 +132,92 @@ function Adapter.StableCommandKey(item)
 	return stableCommandKey(item)
 end
 
+local function orderedCategories(factory)
+	return factory and Adapter.FACTORY_CATEGORY_ORDER or Adapter.BUILDER_CATEGORY_ORDER
+end
+
+local function pagePenalty(flat, first, last, targetSize)
+	local length = last - first + 1
+	local runs, previous = {}, nil
+	for index = first, last do
+		local item = flat[index]
+		if not item then return 1000000000 end
+		local category = item.category
+		if category ~= previous then
+			runs[#runs + 1] = { category = category, count = 1 }
+			previous = category
+		else
+			runs[#runs].count = runs[#runs].count + 1
+		end
+	end
+	local penalty = (length - targetSize) * (length - targetSize) * 10
+	if #runs > 1 then
+		for _, run in ipairs(runs) do
+			if run.count == 1 then penalty = penalty + 10000 end
+		end
+	end
+	if first > 1 and flat[first - 1].category == flat[first].category then penalty = penalty + 2 end
+	if last < #flat and flat[last + 1].category == flat[last].category then penalty = penalty + 2 end
+	return penalty
+end
+
+-- Deterministic minimal-page ordered packing. Dynamic programming selects page
+-- breaks without reordering items; its dominant penalty removes avoidable
+-- one-slot category wedges, then balances pages and category splits.
+function Adapter.PackCategories(flat, slotCount)
+	slotCount = tonumber(slotCount) or Adapter.SLOT_COUNT
+	local total = #(type(flat) == "table" and flat or {})
+	if total == 0 then return {} end
+	local pageCount = math.ceil(total / slotCount)
+	local targetSize = total / pageCount
+	local dp, previous = { [0] = { [0] = 0 } }, {}
+	for page = 1, pageCount do
+		dp[page], previous[page] = {}, {}
+		for last = page, math.min(total, page * slotCount) do
+			local bestCost, bestFirst
+			for length = 1, slotCount do
+				local first = last - length + 1
+				local prior = first - 1
+				local priorCost = first >= 1 and dp[page - 1] and dp[page - 1][prior]
+				if type(priorCost) == "number" then
+					local remaining = total - last
+					if remaining >= (pageCount - page) and remaining <= (pageCount - page) * slotCount then
+						local cost = priorCost + pagePenalty(flat, first, last, targetSize)
+						if bestCost == nil or cost < bestCost or (cost == bestCost and first < bestFirst) then
+							bestCost, bestFirst = cost, first
+						end
+					end
+				end
+			end
+			if bestFirst then dp[page][last], previous[page][last] = bestCost, bestFirst end
+		end
+	end
+	local ranges, last = {}, total
+	for page = pageCount, 1, -1 do
+		local first = previous[page][last]
+		ranges[page] = { first = first, last = last }
+		last = first - 1
+	end
+	local pages = {}
+	for page, range in ipairs(ranges) do
+		local entries, sectors, sector
+		entries, sectors = {}, {}
+		for index = range.first, range.last do
+			local item = flat[index]
+			local slot = index - range.first + 1
+			entries[#entries + 1] = item
+			if not sector or sector.category ~= item.category then
+				sector = { category = item.category, firstSlot = slot, lastSlot = slot, count = 1 }
+				sectors[#sectors + 1] = sector
+			else
+				sector.lastSlot, sector.count = slot, sector.count + 1
+			end
+		end
+		pages[page] = { index = page, entries = entries, sectors = sectors, itemCount = #entries }
+	end
+	return pages
+end
+
 function Adapter:BuildBuildModel(sourceItems, context)
 	context = context or {}
 	local factory = context.isFactory == true
@@ -141,9 +228,9 @@ function Adapter:BuildBuildModel(sourceItems, context)
 		local key = stableBuildKey(source)
 		if key then
 			local item = shallowCopy(source)
-			local category = factory and "Factory" or item.category
-			if not category and classifier then category = classifier(item) end
-			category = tostring(category or "Special")
+			local category = item.category
+			if classifier then category = classifier(item, factory) end
+			category = tostring(category or (factory and "Utility" or "Utility"))
 			local vanillaPosition = tonumber(item.vanillaIndex or item.cell or item.index) or sourceIndex
 
 			item.stableKey = key
@@ -163,38 +250,27 @@ function Adapter:BuildBuildModel(sourceItems, context)
 	end
 
 	local categories = {}
-	if factory then
-		if categoriesSeen.Factory then categories[1] = "Factory" end
-	else
-		for _, category in ipairs(Adapter.BUILDER_CATEGORY_ORDER) do
-			if categoriesSeen[category] then categories[#categories + 1] = category end
-		end
-		local extras = {}
-		for category in pairs(categoriesSeen) do
-			local known = false
-			for _, expected in ipairs(Adapter.BUILDER_CATEGORY_ORDER) do
-				if category == expected then known = true; break end
-			end
-			if not known then extras[#extras + 1] = category end
-		end
-		table.sort(extras)
-		for _, category in ipairs(extras) do categories[#categories + 1] = category end
+	for _, category in ipairs(orderedCategories(factory)) do
+		if categoriesSeen[category] then categories[#categories + 1] = category end
 	end
 
 	-- The controller wheel is a compact projection of BAR's authoritative list,
 	-- not a second grid.  Preserve the source order inside every category while
 	-- packing only entries that actually exist into consecutive wheel slots.
-	local result, categoryCounts, pageCounts = {}, {}, {}
+	local result, categoryCounts = {}, {}
 	for _, category in ipairs(categories) do
 		local categoryItems = grouped[category] or {}
 		categoryCounts[category] = #categoryItems
-		pageCounts[category] = math.ceil(#categoryItems / Adapter.SLOT_COUNT)
 		for position, item in ipairs(categoryItems) do
 			item.canonicalPosition = position
-			item.radialPage = math.floor((position - 1) / Adapter.SLOT_COUNT) + 1
-			item.radialSlot = ((position - 1) % Adapter.SLOT_COUNT) + 1
-			item.slotException = false
 			result[#result + 1] = item
+		end
+	end
+	local pages = Adapter.PackCategories(result, Adapter.SLOT_COUNT)
+	for pageIndex, page in ipairs(pages) do
+		for slot, item in ipairs(page.entries) do
+			item.radialPage, item.globalPage, item.radialSlot = pageIndex, pageIndex, slot
+			item.slotException = false
 		end
 	end
 
@@ -214,7 +290,8 @@ function Adapter:BuildBuildModel(sourceItems, context)
 		slotCount = Adapter.SLOT_COUNT,
 		itemCount = #result,
 		categoryCounts = categoryCounts,
-		pageCounts = pageCounts,
+		pageCount = #pages,
+		pages = pages,
 		revision = tonumber(context.revision) or 0,
 	}
 end

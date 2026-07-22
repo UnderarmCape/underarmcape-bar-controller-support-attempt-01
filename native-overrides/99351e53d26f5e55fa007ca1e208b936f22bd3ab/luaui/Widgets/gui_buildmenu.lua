@@ -27,6 +27,7 @@ local spGetSpectatingState = Spring.GetSpectatingState
 
 include("keysym.h.lua")
 local unitBlocking = VFS.Include('luaui/Include/unitBlocking.lua')
+local ControllerNativeBuildCellRenderer = VFS.Include('luaui/Include/controller_native_build_cell_renderer.lua')
 
 local pairs = pairs
 local ipairs = ipairs
@@ -849,6 +850,24 @@ local function drawCell(cellRectID, usedZoom, cellColor, disabled, underConstruc
 	if not cellRect then
 		tracy.ZoneEnd()
 		return false
+	end
+	if ControllerNativeBuildCellRenderer then
+		local rendered = ControllerNativeBuildCellRenderer.Draw({
+			rect = cellRect, flow = WG.FlowUI, font = font2, unitDefID = uDefID,
+			texture = unitTexture, metalCost = units.unitMetalCost[uDefID],
+			energyCost = units.unitEnergyCost[uDefID], queueCount = tonumber(cmds[cellRectID].params[1]),
+			disabled = disabled, underConstruction = underConstruction, zoom = usedZoom,
+			padding = cellPadding, iconPadding = iconPadding, corner = cornerSize,
+			innerSize = cellInnerSize, fontSize = priceFontSize, selectedTint = cellColor,
+			showPrice = showPrice, costOverride = costOverrides and costOverrides[uDefID],
+			textureWarm = buildmenuUnitpicWarm.warmed,
+			radarTexture = showRadarIcon and units.unitIconType[uDefID]
+				and iconTypes[units.unitIconType[uDefID]] and (':l:' .. iconTypes[units.unitIconType[uDefID]]) or nil,
+			groupTexture = showGroupIcon and groups[units.unitGroup[uDefID]]
+				and (':l:' .. groups[units.unitGroup[uDefID]]) or nil,
+		})
+		tracy.ZoneEnd()
+		return rendered
 	end
 	local iconX1 = cellRect[1] + cellPadding + iconPadding
 	local iconY1 = cellRect[2] + cellPadding + iconPadding
@@ -2062,6 +2081,10 @@ function widget:Initialize()
 					disabled = units.unitRestricted[unitDefID] == true,
 					metalCost = units.unitMetalCost[unitDefID],
 					energyCost = units.unitEnergyCost[unitDefID],
+					radarTexture = showRadarIcon and units.unitIconType[unitDefID]
+						and iconTypes[units.unitIconType[unitDefID]] and (':l:' .. iconTypes[units.unitIconType[unitDefID]]) or nil,
+					groupTexture = showGroupIcon and groups[units.unitGroup[unitDefID]]
+						and (':l:' .. groups[units.unitGroup[unitDefID]]) or nil,
 					health = unitDef and unitDef.health,
 					iconTexture = "#" .. tostring(unitDefID),
 					selected = activeCmd and cmd.name == activeCmd or false,
