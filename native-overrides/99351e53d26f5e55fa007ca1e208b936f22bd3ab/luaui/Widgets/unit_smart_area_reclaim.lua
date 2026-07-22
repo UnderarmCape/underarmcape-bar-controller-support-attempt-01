@@ -143,6 +143,33 @@ function widget:Initialize()
 	end
 
 	WG['smartareareclaim'] = WG['smartareareclaim'] or {}
+	WG['smartareareclaim'].controllerCompleteArea = function(descriptor, mode, targetID, x, y, z, radius, options, dispatchMode)
+		local api = WG and WG.ordermenu
+		if not (api and type(api.controllerCompleteTargetShape) == "function") then
+			return false, "Order Menu hybrid dispatcher unavailable"
+		end
+		mode = mode == "same" and "same" or (mode == "single" and "single" or "any")
+		local params, shape
+		if mode == "single" then
+			if not tonumber(targetID) then return false, "target unavailable" end
+			params, shape = { tonumber(targetID) }, "point"
+		elseif mode == "same" then
+			if not tonumber(targetID) or not tonumber(x) or not tonumber(z) or not tonumber(radius) then
+				return false, "incomplete same-type area"
+			end
+			params, shape = {
+				tonumber(targetID), tonumber(x), tonumber(y) or Spring.GetGroundHeight(x, z),
+				tonumber(z), math.max(1, tonumber(radius)),
+			}, "area"
+		else
+			if not tonumber(x) or not tonumber(z) or not tonumber(radius) then return false, "incomplete area" end
+			params, shape = {
+				tonumber(x), tonumber(y) or Spring.GetGroundHeight(x, z), tonumber(z),
+				math.max(1, tonumber(radius)),
+			}, "area"
+		end
+		return api.controllerCompleteTargetShape(descriptor, shape, params, options, dispatchMode)
+	end
 	WG['smartareareclaim'].controllerBegin = function(mode, targetID, x, y, z, radius)
 		if #selectedReclaimers() == 0 then
 			return false
@@ -398,6 +425,10 @@ end
 function widget:CommandNotify(id, params, options)
 	-- early exit if criteria does not match
 	if id ~= RECLAIM then return false end
+	-- Recoil's five-parameter reclaim form is the native same-type semantic:
+	-- { targetID, x, y, z, radius }.  It must bypass the four-parameter smart
+	-- feature transform and reach the engine unchanged.
+	if #params == 5 then return false end
 	if not params[4] then return false end
 
 	local x, y, z, r = params[1], params[2], params[3], params[4]

@@ -323,9 +323,22 @@ local function updateList(force)
 	for unitDefID, _ in pairs(idleList) do
 		numIcons = numIcons + 1
 		existingIcons[numIcons] = unitDefID
+		table.sort(idleList[unitDefID])
 	end
 
 	table.sort(existingIcons, function (a,b) return a < b end)
+	-- Keep controller focus on the same live entry whenever possible.  If that
+	-- unit stops being idle, repair to another currently-idle unit of the same
+	-- type; never retain an identity outside the authoritative idle list.
+	if controllerCursorUnitID then
+		local repaired
+		for _, unitID in ipairs(idleList[controllerCursorTypeID] or {}) do
+			if unitID == controllerCursorUnitID then repaired = unitID break end
+		end
+		if not repaired then repaired = (idleList[controllerCursorTypeID] or {})[1] end
+		controllerCursorUnitID = repaired
+		if not repaired then controllerCursorTypeID = nil end
+	end
 	controllerRevision = controllerRevision + 1
 
 	local prevhoveredIcon = hoveredIcon
@@ -456,50 +469,90 @@ local function controllerSnapshot()
 	}
 end
 
-local function controllerSelect(unitID, unitDefID, label)
-	if not unitID or not spValidUnitID(unitID) or spGetUnitIsDead(unitID) then
-		controllerLastResult = "invalid"
-		return false
+local function activateIdleEntry(unitDefID, options)
+	options = type(options) == "table" and options or {}
+	updateList(true)
+	unitDefID = tonumber(unitDefID)
+	local live = unitDefID and idleList[unitDefID] or nil
+	if not live or #live == 0 then
+		controllerLastResult = "idle entry unavailable"
+		return false, controllerSnapshot()
 	end
-	controllerCursorUnitID, controllerCursorTypeID = unitID, unitDefID
-	Spring.SelectUnitArray({ unitID })
-	Spring.SendCommands("viewselection")
-	if playSounds then Spring.PlaySoundFile(rightclick, soundVolume, 'ui') end
+	local chosen = tonumber(options.unitID)
+	if chosen then
+		local found = false
+		for _, unitID in ipairs(live) do if unitID == chosen then found = true break end end
+		if not found then chosen = nil end
+	end
+	if not chosen then
+		if options.cycle then
+			clicks[unitDefID] = (clicks[unitDefID] or 0) + 1
+			chosen = live[(clicks[unitDefID] % #live) + 1]
+		else
+			chosen = live[1]
+		end
+	end
+	controllerCursorUnitID, controllerCursorTypeID = chosen, unitDefID
+	local selected = options.selectAll and live or { chosen }
+	Spring.SelectUnitArray(selected)
+	if options.focusCamera then Spring.SendCommands("viewselection") end
+	if playSounds then
+		Spring.PlaySoundFile(options.focusCamera and rightclick or leftclick, soundVolume, 'ui')
+	end
 	doUpdateForce = true
-	controllerLastResult = label or "selected"
-	return true
+	controllerRevision = controllerRevision + 1
+	controllerLastResult = options.label or (options.selectAll and "selected focused idle type" or "selected idle entry")
+	return true, controllerSnapshot()
 end
 
-local function controllerCycle(delta, byType)
+local function controllerActivateAdjacent(delta)
 	updateList(true)
 	local snapshot = controllerSnapshot()
-	delta = tonumber(delta) or 1
-	if byType then
-		if #snapshot.types == 0 then
-			controllerLastResult = "no idle types"
-			return false, controllerSnapshot()
-		end
-		local current = 0
-		for i, bucket in ipairs(snapshot.types) do
-			if bucket.unitDefID == controllerCursorTypeID then current = i break end
-		end
-		local index = ((current - 1 + delta) % #snapshot.types) + 1
-		local bucket = snapshot.types[index]
-		return controllerSelect(bucket.units[1], bucket.unitDefID,
-			"idle type " .. tostring(index) .. "/" .. tostring(#snapshot.types)), controllerSnapshot()
-	end
 	if #snapshot.units == 0 then
 		controllerLastResult = "no idle units"
 		return false, controllerSnapshot()
 	end
-	local current = 0
+	local current = delta < 0 and 1 or 0
 	for i, unitID in ipairs(snapshot.units) do
 		if unitID == controllerCursorUnitID then current = i break end
 	end
 	local index = ((current - 1 + delta) % #snapshot.units) + 1
 	local unitID = snapshot.units[index]
-	return controllerSelect(unitID, Spring.GetUnitDefID(unitID),
-		"idle unit " .. tostring(index) .. "/" .. tostring(#snapshot.units)), controllerSnapshot()
+	return activateIdleEntry(Spring.GetUnitDefID(unitID), {
+		unitID = unitID, focusCamera = true,
+		label = "idle entry " .. tostring(index) .. "/" .. tostring(#snapshot.units),
+	})
+end
+
+local function controllerActivateAdjacentType(delta)
+	updateList(true)
+	local snapshot = controllerSnapshot()
+	if #snapshot.types == 0 then
+		controllerLastResult = "no idle types"
+		return false, controllerSnapshot()
+	end
+	local current = delta < 0 and 1 or 0
+	for i, bucket in ipairs(snapshot.types) do
+		if bucket.unitDefID == controllerCursorTypeID then current = i break end
+	end
+	local index = ((current - 1 + delta) % #snapshot.types) + 1
+	local bucket = snapshot.types[index]
+	return activateIdleEntry(bucket.unitDefID, {
+		unitID = bucket.units[1], focusCamera = true,
+		label = "idle type " .. tostring(index) .. "/" .. tostring(#snapshot.types),
+	})
+end
+
+local function controllerActivateFocused(selectAll)
+	updateList(true)
+	if not controllerCursorTypeID then
+		controllerLastResult = "no focused idle entry"
+		return false, controllerSnapshot()
+	end
+	return activateIdleEntry(controllerCursorTypeID, {
+		unitID = controllerCursorUnitID, selectAll = selectAll == true,
+		focusCamera = true,
+	})
 end
 
 local function checkUnitGroupsPos(isViewresize)
@@ -629,19 +682,27 @@ function widget:Initialize()
 	WG['idlebuilders'].getPosition = function()
 		return posX, posY, backgroundRect and backgroundRect[3] or posX, backgroundRect and backgroundRect[4] or posY + usedHeight
 	end
-	WG['idlebuilders'].controllerCycle = controllerCycle
-	WG['idlebuilders'].controllerPreviousIdleUnit = function()
-		return controllerCycle(-1, false)
+	WG['idlebuilders'].controllerActivatePreviousEntry = function()
+		return controllerActivateAdjacent(-1)
 	end
-	WG['idlebuilders'].controllerNextIdleUnit = function()
-		return controllerCycle(1, false)
+	WG['idlebuilders'].controllerActivateNextEntry = function()
+		return controllerActivateAdjacent(1)
 	end
-	WG['idlebuilders'].controllerPreviousIdleType = function()
-		return controllerCycle(-1, true)
+	WG['idlebuilders'].controllerActivateFocusedEntry = function()
+		return controllerActivateFocused(false)
 	end
-	WG['idlebuilders'].controllerNextIdleType = function()
-		return controllerCycle(1, true)
+	WG['idlebuilders'].controllerActivateAllFocusedType = function()
+		return controllerActivateFocused(true)
 	end
+	-- Compatibility aliases now route through the same internal action as the
+	-- icon's real mouse click rather than maintaining a controller-only list.
+	WG['idlebuilders'].controllerCycle = function(delta, byType)
+		return byType and controllerActivateAdjacentType(delta) or controllerActivateAdjacent(delta)
+	end
+	WG['idlebuilders'].controllerPreviousIdleUnit = WG['idlebuilders'].controllerActivatePreviousEntry
+	WG['idlebuilders'].controllerNextIdleUnit = WG['idlebuilders'].controllerActivateNextEntry
+	WG['idlebuilders'].controllerPreviousIdleType = function() return controllerActivateAdjacentType(-1) end
+	WG['idlebuilders'].controllerNextIdleType = function() return controllerActivateAdjacentType(1) end
 	WG['idlebuilders'].controllerGetSnapshot = function()
 		updateList(true)
 		return controllerSnapshot()
@@ -799,28 +860,12 @@ function widget:MousePress(x, y, button)
 				if math_isInRect(x, y, iconButtons[i][1], iconButtons[i][2], iconButtons[i][3], iconButtons[i][4]) then
 					local unitDefID = existingIcons[i]
 					if unitDefID then
-						local units = {}
-						if shift then
-							units = idleList[unitDefID]
-						else
-							local num = 1
-							if #idleList[unitDefID] > 1 then
-								if clicks[unitDefID] then
-									clicks[unitDefID] = clicks[unitDefID] + 1
-								else
-									clicks[unitDefID] = 1
-								end
-								num = (clicks[unitDefID]) % (#idleList[unitDefID]) + 1
-							end
-							units = { idleList[unitDefID][num] }
-						end
-						Spring.SelectUnitArray(units)
-					end
-					if button == 3 then
-						Spring.SendCommands("viewselection")
-					end
-					if playSounds then
-						Spring.PlaySoundFile((button == 3 and rightclick or leftclick), soundVolume, 'ui')
+						activateIdleEntry(unitDefID, {
+							selectAll = shift,
+							cycle = not shift,
+							focusCamera = button == 3,
+							label = button == 3 and "right-click idle entry" or "left-click idle entry",
+						})
 					end
 					return true
 				end

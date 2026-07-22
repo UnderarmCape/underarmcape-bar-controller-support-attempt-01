@@ -370,7 +370,12 @@ local function GetCmdOpts(alt, ctrl, meta, shift, right)
 end
 
 
+local controllerCompletedShapeDispatch = false
 local function GiveNotifyingOrder(cmdID, cmdParams, cmdOpts)
+    if controllerCompletedShapeDispatch then
+        spGiveOrder(cmdID, cmdParams, cmdOpts.coded)
+        return
+    end
     if widgetHandler:CommandNotify(cmdID, cmdParams, cmdOpts) then
         return
     end
@@ -1528,7 +1533,7 @@ function widget:Initialize()
 				end
 				alt, ctrl, meta, shift = enabled("alt"), enabled("ctrl"), enabled("meta"), enabled("shift")
 			end
-			if isFirstPathCommand then
+			if isFirstPathCommand and type(controllerOptions) ~= "table" then
 				-- This is effectively a single click or very short drag - use raw shift
 				_, _, _, shift = spGetModKeyState()
 				if spGetInvertQueueKey() then shift = not shift end
@@ -1631,6 +1636,34 @@ function widget:Initialize()
 
 	WG.customformations.GetSelectedUnitsCount = function()
 		return selectedUnitsCount
+	end
+
+	-- Controller-owned front/rectangle gesture completion.  Do not enter the
+	-- mouse formation lifecycle here: the native six-coordinate descriptor is
+	-- validated and dispatched once through Order Menu's normal notify boundary.
+	WG.customformations.controllerCompleteShape = function(descriptor, shape, params, options, dispatchMode)
+		local api = WG and WG.ordermenu
+		if not (api and type(api.controllerCompleteTargetShape) == "function") then
+			return false, "Order Menu hybrid dispatcher unavailable"
+		end
+		if type(params) ~= "table" or #params < 6 then return false, "incomplete shape" end
+		local function finishNativeFormation(cmdID, completed, notifyOptions)
+			local began = WG.customformations.StartFormation(
+				{ completed[1], completed[2], completed[3] }, cmdID, false)
+			if not began then return false, "formation start rejected" end
+			pathCandidate = false
+			WG.customformations.AddFormationNode({ completed[4], completed[5], completed[6] })
+			controllerCompletedShapeDispatch = true
+			local ok, issued = pcall(WG.customformations.EndFormation, nil, cmdID, notifyOptions)
+			controllerCompletedShapeDispatch = false
+			if not ok then
+				WG.customformations.CancelFormation()
+				return false, "formation finalizer failed"
+			end
+			return issued == true, issued and "customformations" or "formation rejected"
+		end
+		return api.controllerCompleteTargetShape(descriptor, shape or "front", params,
+			options, dispatchMode, finishNativeFormation)
 	end
 
 	controllerFormationOwner = ControllerNativeCommandOwner.New({

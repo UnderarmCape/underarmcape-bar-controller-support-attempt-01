@@ -49,6 +49,18 @@ function widget:Initialize()
 	WG['areamex'].setAreaMexType = function(uDefID)
 		setAreaMexType(uDefID)
 	end
+	WG['areamex'].controllerCompleteArea = function(descriptor, x, y, z, radius, options, dispatchMode)
+		local api = WG and WG.ordermenu
+		if not (api and type(api.controllerCompleteTargetShape) == "function") then
+			return false, "Order Menu hybrid dispatcher unavailable"
+		end
+		if not tonumber(x) or not tonumber(y) or not tonumber(z) or not tonumber(radius) then
+			return false, "incomplete area"
+		end
+		return api.controllerCompleteTargetShape(descriptor, "area",
+			{ tonumber(x), tonumber(y), tonumber(z), math.max(1, tonumber(radius)) },
+			options, dispatchMode)
+	end
 	areaMexControllerOwner = ControllerNativeCommandOwner.New({
 		name = "Area Mex",
 		types = CMDTYPE,
@@ -241,13 +253,15 @@ function widget:CommandNotify(id, params, options)
 		selectedMex = WG['resource_spot_builder'].GetBestExtractorFromBuilders(selectedUnits, mexConstructors, mexBuildings)
 	end
 
-	local alt, ctrl, meta, shift = Spring.GetModKeyState()
+	local _, _, _, keyShift = Spring.GetModKeyState()
+	local shift = keyShift
+	if type(options) == "table" and options.shift ~= nil then shift = options.shift == true end
 	local cmds = getCmdsForValidSpots(spots, shift)
 	local sortedCmds = calculateCmdOrder(cmds, spots, shift)
 
 	-- WG["build_split"] has to be guarded because it can be disabled in settings
 	local isBuildSplitActive = WG["build_split"] and WG["build_split"].isActive()
-	if options.shift and isBuildSplitActive and #sortedCmds > 0 then
+	if shift and isBuildSplitActive and #sortedCmds > 0 then
 		WG["build_split"].splitBuildings(getSelectedBuilderIDs(), mapCommandsToBuildingInfos(sortedCmds), { "shift" })
 	else
 		WG['resource_spot_builder'].ApplyPreviewCmds(sortedCmds, mexConstructors, shift)
@@ -255,7 +269,7 @@ function widget:CommandNotify(id, params, options)
 
 	selectedMex = nil
 
-	if not options.shift then
+	if not shift then
 		if WG["gridmenu"] then WG["gridmenu"].clearCategory() end
 	end
 	return true

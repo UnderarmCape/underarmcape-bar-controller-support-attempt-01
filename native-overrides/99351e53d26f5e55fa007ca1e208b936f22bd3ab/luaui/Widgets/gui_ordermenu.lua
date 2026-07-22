@@ -867,8 +867,12 @@ function widget:Initialize()
 			end
 		end
 	end
+	-- Hybrid controller targeting deliberately captures a live descriptor before
+	-- clearing Spring's active mouse command.  This lookup is therefore keyed by
+	-- command identity, not by GetActiveCommand state.
+	WG['ordermenu'].controllerGetCommandDescriptor = controllerDescriptor
 
-	local function controllerDispatchCommand(cmdID, params, options, dispatchMode)
+	local function controllerDispatchCommand(cmdID, params, options, dispatchMode, nativeFinalizer)
 		cmdID = tonumber(cmdID)
 		if not controllerDescriptor(cmdID) or type(params) ~= "table" then
 			return false, "live command unavailable"
@@ -880,6 +884,13 @@ function widget:Initialize()
 		if handled then
 			controllerTargetTrace("COMMAND_NOTIFY HANDLED", cmdID)
 			return true, "widget"
+		end
+		if type(nativeFinalizer) == "function" then
+			local finalOK, accepted, route = pcall(nativeFinalizer,
+				cmdID, params, notifyOptions, optionList, dispatchMode)
+			if not finalOK then return false, "native finalizer failed" end
+			if accepted == true then controllerTargetTrace("NATIVE FINALIZER HANDLED", cmdID) end
+			return accepted == true, route or (accepted and "native-finalizer" or "native finalizer rejected")
 		end
 		local issuedOK, accepted
 		if dispatchMode == "insert-front" then
@@ -917,6 +928,27 @@ function widget:Initialize()
 		end
 		return controllerDispatchCommand(expectedCmdID, params, options, dispatchMode)
 	end
+
+	-- Final boundary for controller-owned shapes.  Geometry collection remains
+	-- outside the native mouse lifecycle; BAR still owns descriptor validation,
+	-- CommandNotify transforms, and the single unhandled engine fallback.
+	WG['ordermenu'].controllerCompleteTargetShape = function(descriptor, shape, params, options, dispatchMode, nativeFinalizer)
+		local cmdID = type(descriptor) == "table" and tonumber(descriptor.cmdID or descriptor.id) or nil
+		local liveDescriptor = cmdID and controllerDescriptor(cmdID) or nil
+		if not liveDescriptor or type(params) ~= "table" then
+			return false, "live descriptor unavailable"
+		end
+		local expectedShape = tostring(shape or "point")
+		local typeID = tonumber(liveDescriptor.type)
+		if expectedShape == "area" and #params < 4 then return false, "incomplete area" end
+		if (expectedShape == "front" or expectedShape == "rectangle") and #params < 6 then
+			return false, "incomplete shape"
+		end
+		controllerTargetTrace("NATIVE TRANSFORM CALLED", cmdID)
+		controllerTargetTrace("SHAPE: " .. expectedShape, typeID)
+		return controllerDispatchCommand(cmdID, params, options, dispatchMode, nativeFinalizer)
+	end
+	WG['ordermenu'].controllerHybridTargetingAPIVersion = 1
 
 	-- Immediate native shortcut boundary.  Disabled or selection-ineligible
 	-- descriptors are rejected before CommandNotify is entered.
