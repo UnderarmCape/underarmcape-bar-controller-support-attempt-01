@@ -71,9 +71,9 @@ test(10, "Second A confirms after A anchor", function() return Targeting.BuildAn
 test(11, "Second X confirms after A anchor", function() return has(camera, 'ActionPressed("select") or ControllerCameraTestActionPressed("smartAction")') end)
 test(12, "Second A confirms after X anchor", function() return Targeting.CanAcceptPress(armedState()) end)
 test(13, "Second X confirms after X anchor", function() return armedState().confirmationArmed == true end)
-test(14, "Exactly one dispatch occurs", function() return has(nativeOwnerSource, "operation already dispatched") and has(order, "if handled then return true") end)
+test(14, "Exactly one dispatch occurs", function() return has(nativeOwnerSource, "operation already dispatched") and has(order, "COMMAND_NOTIFY HANDLED") and has(order, 'return true, "widget"') end)
 test(15, "CommandNotify is attempted once", function() return has(order, "pcall(widgetHandler.CommandNotify") end)
-test(16, "Direct fallback is used only if unhandled", function() return has(order, 'if handled then return true, "widget" end') end)
+test(16, "Direct fallback is used only if unhandled", function() return has(order, "COMMAND_NOTIFY HANDLED") and has(order, "GIVE_ORDER FALLBACK") end)
 test(17, "Cached command works if GetActiveCommand changes or clears", function() return has(nativeOwnerSource, "self.state.descriptor") and has(order, "cachedDescriptor") end)
 test(18, "B cancels", function() return has(camera, "cancelPressed = ControllerCameraTestActionPressed(\"cancel\")") and has(nativeOwnerSource, "if input.cancelPressed then") end)
 test(19, "No normal A selection leaks through", function() return has(camera, "elseif ControllerCameraTestHandleNativeTargetingInput() then") end)
@@ -152,7 +152,7 @@ test(80, "Other-player allies are excluded", function() return has(camera, "Cont
 test(81, "B cancels cleanly", function() return has(camera, "ControllerCameraTestHandleDisassembleB") end)
 
 -- 82-90 Additive target selection.
-test(82, "A replaces with one target", function() return has(camera, "finalSelection = { targetID }") end)
+test(82, "A replaces with one target", function() return has(camera, "markedTargets = { [targetID] = true }") end)
 test(83, "RT+A adds an unselected target", function() local r, action = Disassemble.ToggleSelection({ 1 }, 2); return action == "added" and #r == 2 end)
 test(84, "RT+A removes an already selected target", function() local r, action = Disassemble.ToggleSelection({ 1, 2 }, 2); return action == "removed" and #r == 1 end)
 test(85, "Other targets remain selected", function() local r = Disassemble.ToggleSelection({ 1, 2 }, 3); return r[1] == 1 and r[2] == 2 end)

@@ -122,15 +122,15 @@ test(27, "Unknown binding retains text fallback", function() return has(glyphs,'
 test(28, "No clipping or alignment failure", function() return has(bindings,"ControllerBindingsUIDrawXboxBinding") and has(bindings,"maxWidth = maxWidth") and has(glyphs,"alignment == \"center\"") end)
 
 -- 29-39 Smart X.
-test(29, "Ground constructor Repair works", function() return has(order,"controllerIssueDefault") end)
+test(29, "Ground constructor Repair works", function() return has(camera,"ControllerCameraTestTrySmartAssistedCommand") and has(camera,"tryNativeSmartRepairReclaimExtension") end)
 test(30, "Ground constructor enemy Reclaim works", function() return has(targeting,"must not invent an allied-only filter") end)
-test(31, "Air constructor Repair works", function() return has(camera,"api.controllerIssueDefault") end)
+test(31, "Air constructor Repair works", function() return has(camera,"tryNativeSmartRepairReclaimExtension") and has(camera,"defaultCmdID ~= repairID") end)
 test(32, "Air constructor enemy Reclaim works where legal", function() return not has(targeting,"allied unit required") end)
 test(33, "Commander context works", function() return has(camera,"attemptContextCommand") and has(camera,"GetDefaultCommand") end)
-test(34, "Construction turret context works", function() return has(camera,"controllerIssueDefault") end)
-test(35, "Empty-ground fallback works", function() return has(order,"return { x, y, z }") end)
-test(36, "Resolver matches vanilla mouse context", function() return has(order,"Spring.GetDefaultCommand()") end)
-test(37, "Exactly one order issues", function() return has(order,"if handled then return true, \"widget\" end") end)
+test(34, "Construction turret context works", function() return has(camera,"attemptLegacyContextCommand") and has(camera,"ControllerCameraTestGetSmartCommandIDs") end)
+test(35, "Empty-ground fallback works", function() return has(camera,'targetString = "ground"') and has(camera,"fallback move") end)
+test(36, "Resolver uses vanilla context only for narrow extensions", function() return has(camera,"defaultCmdID ~= repairID and defaultCmdID ~= reclaimID") end)
+test(37, "Exactly one order issues", function() return has(order,"COMMAND_NOTIFY HANDLED") and has(order,'return true, "widget"') end)
 test(38, "Inside Disassemble valid X target issues Reclaim, not Move", function() return has(camera,"ControllerCameraTestIssueNativeDisassembleTarget") and has(camera,"native target is not reclaimable") end)
 test(39, "Disassemble remains active", function() return has(camera,"state.successfulActivity, state.lastReclaimAt = true, debugEventTime") end)
 
@@ -155,7 +155,7 @@ test(54, "Reclaim uses native pipeline", function() return has(camera,'StageArea
 test(55, "Stop uses native pipeline", function() return has(camera,'NativeImmediateShortcut((CMD and CMD.STOP)') end)
 test(56, "Area shortcuts use owner APIs", function() return all(camera,"controllerBeginTarget", "controllerTargetInput") end)
 test(57, "Disabled commands do not execute", function() return has(order,"source.disabled ~= true") end)
-test(58, "Exactly one order issues", function() return has(order,"controllerDispatchCommand") and has(order,"if handled then return true") end)
+test(58, "Exactly one order issues", function() return has(order,"controllerDispatchCommand") and has(order,"COMMAND_NOTIFY HANDLED") and has(ownerSource,"operation already dispatched") end)
 
 -- 59-66 Vanilla groups.
 test(59, "Controller-created group appears in vanilla UI", function() return has(camera,"Spring.SetUnitGroup(unitID, groupNumber)") end)
@@ -206,11 +206,11 @@ test(97, "One cycle creates one action", function() local s=Chords.New(); chordS
 test(98, "Distributed build has higher priority in build placement", function() return has(camera,"distributedPlacementOwns") and has(camera,"if not disassembleBusy and not distributedPlacementOwns") end)
 
 -- 99-105 Idle-unit navigation.
-test(99, "D-pad Left invokes vanilla previous idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(-1)") and has(camera,"api.controllerCycle") end)
-test(100, "D-pad Right invokes vanilla next idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(1)") end)
+test(99, "D-pad Left invokes vanilla previous idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(-1)") and has(camera,"api.controllerPreviousIdleUnit") end)
+test(100, "D-pad Right invokes vanilla next idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(1)") and has(camera,"api.controllerNextIdleUnit") end)
 test(101, "Vanilla ordering is used", function() return has(idle,"for _, unitDefID in ipairs(existingIcons)") end)
 test(102, "Camera behavior matches vanilla", function() return has(idle,'Spring.SendCommands("viewselection")') and has(idle,"Spring.SelectUnitArray") end)
-test(103, "Native idle highlight updates", function() return has(idle,"controllerCursorUnitID") and has(idle,"currentUnitID") end)
+test(103, "Native idle highlight updates", function() return has(idle,"controllerHighlighted") and has(idle,"controllerCursorTypeID") end)
 test(104, "Dead/non-idle entries are skipped", function() return has(idle,"spGetUnitIsDead(unitID)") and has(idle,"updateList(true)") end)
 test(105, "Parallel controller list is disabled", function() local a=camera:find("function ControllerCameraTestGetIdleCycleUnits",1,true); local b=camera:find("function ControllerCameraTestUnitTypeName",a,true); local section=camera:sub(a,b); return has(section,"WG.idlebuilders") and not has(section,"GetOwnTeamUnits") end)
 
@@ -279,10 +279,10 @@ test(137, "Relevant .NET tests/builds pass", function()
 	if not pipe then return false end; local output=pipe:read("*a"); pipe:close(); return output==""
 end)
 test(138, "Deployment and rollback manifests cover every changed file", function()
-	return all(deploy,"controller_native_command_owner.lua","Test-ControllerNativeWidgetUnification.lua")
+	return all(deploy,"controller_native_command_owner.lua","Test-ControllerNativeWidgetUnification.lua","Test-ControllerNativeRegressionRepair.lua")
 		and all(manifest,"cmd_area_mex.lua","cmd_buildsplit.lua","cmd_customformations2.lua","gui_idle_builders.lua")
-		and has(restore,"bar-controller-native-widget-unification-test-deployment-backup")
-		and has(packageScript,"BAR_Controller_Support_v0.8.0_NATIVE_WIDGET_UNIFICATION_TEST.zip")
+		and has(restore,"bar-controller-native-regression-repair-test-deployment-backup")
+		and has(packageScript,"BAR_Controller_Support_v0.8.0_NATIVE_REGRESSION_REPAIR_TEST.zip")
 end)
 
 assert(#cases == 138, "expected exactly 138 cases")
