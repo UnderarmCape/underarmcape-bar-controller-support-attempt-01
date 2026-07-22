@@ -579,7 +579,21 @@ local function drawBuildRadial(args, cx, cy, radius, accent, values)
 		gl.Rect(x - size * 0.5 - 2, y - size * 0.5 - 2, x + size * 0.5 + 2, y + size * 0.5 + 2)
 		local border = selected and { typography.selectedBorderR, typography.selectedBorderG, typography.selectedBorderB, typography.selectedBorderOpacity * opacity }
 			or entry.disabled and { 0.68, 0.22, 0.22, 0.55 * opacity } or { 0.8, 0.8, 0.8, 0.9 * opacity }
-		outline(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5, border, selected and values.selectedBorderThickness or 1)
+		if selected then
+			local selectedThickness = clamp(values.selectedBorderThickness, 1, 18)
+			-- A low-alpha outside pass makes high scale values unmistakable without
+			-- shrinking the unit icon.  This branch is exclusive to build/factory
+			-- radials; tactical buttons never consume this setting.
+			local halo = { border[1], border[2], border[3], border[4] * 0.28 }
+			local spread = max(0, floor(selectedThickness * 0.45))
+			if spread > 0 then
+				outline(x - size * 0.5 - spread, y - size * 0.5 - spread,
+					x + size * 0.5 + spread, y + size * 0.5 + spread, halo, spread)
+			end
+			outline(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5, border, selectedThickness)
+		else
+			outline(x - size * 0.5, y - size * 0.5, x + size * 0.5, y + size * 0.5, border, 1)
+		end
 		if entry.texture then
 			gl.Texture(entry.texture)
 			local iconOpacity = entry.disabled and typography.unavailableIconOpacity or selected and typography.selectedIconOpacity or 1
@@ -645,11 +659,19 @@ local function drawTacticalRadial(args, cx, cy, radius, accent, values)
 	for index, entry in ipairs(entries) do
 		local angle = entryAngle(index, n, typography); local x, y = cx + radius * values.itemSpacing * cos(angle), cy - radius * values.itemSpacing * sin(angle)
 		local selected = index == (model.selectedIndex or 1); local w, h = itemW * (selected and values.selectedScale or 1), itemH * (selected and values.selectedScale or 1)
-		color(selected and { typography.selectedBackgroundR, typography.selectedBackgroundG, typography.selectedBackgroundB, typography.selectedBackgroundOpacity * opacity } or { fill[1] * 0.5, fill[2] * 0.5, fill[3] * 0.5, 0.85 * opacity })
-		gl.Rect(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5); outline(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5,
-			selected and { typography.selectedBorderR, typography.selectedBorderG, typography.selectedBorderB, typography.selectedBorderOpacity * opacity } or { accent[1], accent[2], accent[3], 0.64 * opacity }, selected and values.selectedBorderThickness or 1)
-		drawRoleText(entry.disabled and "unavailableText" or "metadata", entry.label or "Command", entry.disabled and typography.unavailableText or typography.metadata, x, y - 6,
-			values.fontScale * (selected and 1.18 or 1), opacity, roles, selected and { typography.selectedLabelR, typography.selectedLabelG, typography.selectedLabelB, typography.selectedLabelOpacity } or nil)
+		local handled = false
+		if type(args.entryRenderer) == "function" then
+			local ok, result = pcall(args.entryRenderer, entry,
+				{ x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5 }, selected, index)
+			handled = ok and result == true
+		end
+		if not handled then
+			color(selected and { typography.selectedBackgroundR, typography.selectedBackgroundG, typography.selectedBackgroundB, typography.selectedBackgroundOpacity * opacity } or { fill[1] * 0.5, fill[2] * 0.5, fill[3] * 0.5, 0.85 * opacity })
+			gl.Rect(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5); outline(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5,
+				selected and { typography.selectedBorderR, typography.selectedBorderG, typography.selectedBorderB, typography.selectedBorderOpacity * opacity } or { accent[1], accent[2], accent[3], 0.64 * opacity }, selected and values.selectedBorderThickness or 1)
+			drawRoleText(entry.disabled and "unavailableText" or "metadata", entry.label or "Command", entry.disabled and typography.unavailableText or typography.metadata, x, y - 6,
+				values.fontScale * (selected and 1.18 or 1), opacity, roles, selected and { typography.selectedLabelR, typography.selectedLabelG, typography.selectedLabelB, typography.selectedLabelOpacity } or nil)
+		end
 	end
 	local panelRadius = radius * 0.42 * typography.innerRadiusScale * typography.centerPanelScale
 	color({ fill[1] * 0.7, fill[2] * 0.7, fill[3] * 0.7, 0.88 * opacity }); circle(cx, cy, panelRadius, 30); ring(cx, cy, panelRadius, { accent[1] * 0.5, accent[2] * 0.5, accent[3] * 0.5, 0.64 * opacity }, 1.5, 30)

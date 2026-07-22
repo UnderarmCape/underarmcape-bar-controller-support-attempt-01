@@ -108,6 +108,7 @@ local buildmenuRenderedCells = 0
 local math_isInRect = math.isInRect
 
 local buildmenuShows = false
+local controllerPanelVisible = true
 local refreshBuildmenu = true
 local delayRefresh
 
@@ -795,7 +796,7 @@ function widget:Update(dt)
 	end
 
 	if WG['guishader'] and prevBuildmenuShows ~= buildmenuShows and dlistGuishader then
-		if buildmenuShows then
+		if buildmenuShows and controllerPanelVisible then
 			WG['guishader'].InsertDlist(dlistGuishader, 'buildmenu')
 		else
 			WG['guishader'].RemoveDlist('buildmenu')
@@ -1236,6 +1237,30 @@ end
 
 function widget:DrawScreen()
 	tracy.ZoneBeginN("W:BuildMenu:DrawScreen")
+	if not controllerPanelVisible then
+		-- Keep cells, revisions, queue counts, and activation APIs authoritative
+		-- while suppressing only the native panel's pixels and mouse ownership.
+		local previous = activeCmd
+		if spGetGameFrame() == 0 and WG['pregame-build'] then
+			activeCmd = WG["pregame-build"].getPreGameDefID()
+			if activeCmd then activeCmd = unitName[activeCmd] end
+		else
+			activeCmd = select(4, spGetActiveCommand())
+		end
+		if activeCmd ~= previous then doUpdate = true end
+		if raceConditionUpdateCountdown > 0 then
+			raceConditionUpdateCountdown = raceConditionUpdateCountdown - 1
+			if raceConditionUpdateCountdown == 0 then doUpdate = true end
+		end
+		if doUpdate or refreshBuildmenu then
+			RefreshCommands()
+			doUpdate = nil
+			refreshBuildmenu = false
+		end
+		if WG['guishader'] and dlistGuishader then WG['guishader'].RemoveDlist('buildmenu') end
+		tracy.ZoneEnd()
+		return
+	end
 	glBlending(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
 	if WG['buildmenu'] then
@@ -1618,6 +1643,7 @@ local function changeQuotas(uDefID, quantity)
 end
 
 function widget:MousePress(x, y, button)
+	if not controllerPanelVisible then return false end
 	if Spring.IsGUIHidden() then
 		return
 	end
@@ -2193,6 +2219,14 @@ function widget:Initialize()
 	WG['buildmenu'].controllerGetInputActive = function()
 		return controllerInputActive
 	end
+	WG['buildmenu'].controllerSetPanelVisible = function(visible)
+		controllerPanelVisible = visible ~= false
+		if not controllerPanelVisible and WG['guishader'] and dlistGuishader then
+			WG['guishader'].RemoveDlist('buildmenu')
+		end
+		return controllerPanelVisible
+	end
+	WG['buildmenu'].controllerGetPanelVisible = function() return controllerPanelVisible end
 	WG['buildmenu'].controllerApiVersion = 2
 end
 
