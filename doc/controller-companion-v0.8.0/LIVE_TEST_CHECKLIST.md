@@ -1,30 +1,70 @@
-# v0.8.0 Native Hybrid Targeting Live Checklist
+# v0.8.0 Native Input and Disassemble Live Checklist
 
-**EXPERIMENTAL — NATIVE CONTROLLER TARGETING AND COMPACT RADIAL TEST**
+**EXPERIMENTAL — INPUT STATE, FACTORY SHORTCUT, AND VANILLA DISASSEMBLE TEST**
 
-1. Select Guard from Tactical Radial and place it with A.
-2. Repeat using X.
-3. Test Repair, Reclaim, Attack, Capture, and Set Target.
-4. Select an area command.
-5. Press A to anchor.
-6. Release A and confirm nothing issues.
-7. Move the cursor to resize the anchored radius.
-8. Press A again and confirm exactly one operation.
-9. Repeat using X, then mixed A/X presses.
-10. Press B during point and area targeting; confirm selection remains and no order issues.
-11. Enter build placement with one constructor, several constructors, a commander, and a construction turret where valid.
-12. Place several queued and non-queued buildings; verify A and X both keep placement active.
-13. Press B after valid, invalid, shoreline, and water previews; confirm constructors remain selected, Grid resets, and controls return immediately after B release.
-14. Press X afterward and confirm normal Smart X works on the next clean press.
-15. Test Build Radial categories with several constructors.
-16. Confirm no empty categories, empty pages, or trailing pages.
-17. Confirm absent commands create no holes before later items.
-18. Confirm unaffordable and disabled but present commands remain visible.
-19. Test multiple factories and labs; queue with A and dequeue with X.
-20. Confirm vanilla cell 1 is top radial slot 1 and later present cells are consecutive.
-21. Move both stick and mouse focus; confirm radial focus and the blue vanilla focus stroke match without flicker.
-22. Verify Fire State, Move State, Visible/Cloak, Stop, Disassemble, LB+B, and RT+A; switch to Legacy fallback and back while preserving selection.
-23. Check `infolog.txt` for Lua errors, invalid target paths, or focus mismatch.
-24. Watch for duplicate orders, stuck A/X/B ownership, repeated resize/layout calls, or frame-time spikes.
+## Tactical area command
 
-Report a mismatch with the selected builder/factory, command name and type, target kind, radial category/page/slot, blue-focused vanilla cell, and relevant `infolog.txt` lines.
+1. Select an area command.
+2. Move cursor to center.
+3. Press A to anchor.
+4. Release A.
+5. Move cursor.
+6. Confirm center remains fixed and only radius changes.
+7. Press A to confirm.
+8. Repeat A anchor → X confirm.
+9. Repeat X anchor → A confirm.
+10. Press B during resize and verify cancellation.
+
+## Build placement
+
+11. Enter placement with one constructor.
+12. Press B once.
+13. Confirm placement closes immediately.
+14. Confirm constructor remains selected.
+15. Repeat with multiple constructors.
+16. Repeat in Grid mode.
+17. Reenter and confirm Single mode.
+
+## Factory/Lab Radial
+
+18. A adds one.
+19. X removes one.
+20. RT+A adds five.
+21. RT+X removes five.
+22. Remove-five at low count clamps to zero.
+23. Hold LB+RB to toggle Queue Mode.
+24. Confirm radial stays open.
+25. Confirm toast and native state match.
+
+## Move State
+
+26. Select units in mixed Move States.
+27. Hold LB and tap RB.
+28. Confirm all capable units converge to the next state.
+29. Confirm toast.
+30. Confirm unsupported units are unaffected.
+
+## Disassemble
+
+31. Attempt entry with combat units only; verify rejection.
+32. Enter with constructor plus combat units.
+33. Hold A to area-select friendly targets.
+34. Confirm real vanilla selection outlines.
+35. Confirm cached constructors are not included.
+36. Hold LB and tap A.
+37. Confirm every selected target receives reclaim.
+38. Confirm constructors become selected again.
+39. Hold LB+A over one target.
+40. Resize same-type reclaim radius.
+41. Press A or X to confirm.
+42. Verify only matching target types are reclaimed.
+43. Press B during another attempt and verify cancellation.
+44. Confirm Disassemble remains active.
+
+## General
+
+45. Verify radial compaction remains correct.
+46. Verify vanilla blue focus stays synchronized.
+47. Test Legacy fallback.
+48. Check `infolog.txt`.
+49. Watch for duplicate commands, stuck inputs, or frame-time spikes.

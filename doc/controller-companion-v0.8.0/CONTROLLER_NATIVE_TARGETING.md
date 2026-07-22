@@ -1,64 +1,44 @@
 # Controller Native Targeting
 
-Status: **EXPERIMENTAL — NATIVE CONTROLLER TARGETING AND COMPACT RADIAL TEST**
+Status: **EXPERIMENTAL — INPUT STATE, FACTORY SHORTCUT, AND VANILLA DISASSEMBLE TEST**
 
-## Root cause
+## Root cause and repair
 
-The hybrid Tactical Radial correctly called BAR's Order Menu activation API, which selected a real Recoil command descriptor with `Spring.SetActiveCommand`. The remaining confirmation path was engine mouse input: Recoil's C++ `GuiHandler::MousePress`/`MouseRelease` resolves a target, constructs command-type-specific parameters, calls LuaUI `CommandNotify`, gives the command, and finishes or persists the active command. Controller A/X never entered that mouse path, so the native cursor was active but no target could be placed.
+BAR's Tactical Radial correctly activated a real Recoil command descriptor. The controller bridge, however, modeled target geometry without modeling input ownership. The same A/X edge domain selected the radial command, anchored an area, and confirmed it. There was no proof that the radial-confirm press had been released and no explicit neutral transition after anchoring. Consequently the active command could inherit stale A/X ownership and the second press was never reliably armed. The area preview also relied only on a mutable anchor table, which made the fixed-center contract difficult to verify.
 
-Recoil does not expose `GuiHandler::GetCommand` or safe synthetic engine mouse presses to Lua. This experiment therefore does not emulate an operating-system mouse. It uses the real active descriptor, mirrors Recoil's documented command parameter shapes, preserves the LuaUI `CommandNotify` boundary, and lets the synchronized unit command AI remain the final authority on target acceptance.
+The repaired state machine separates command mode from input phase:
 
-## Architecture
+- `WAITING_FOR_FRESH_INPUT` rejects the radial-confirm cycle until both A and X are observed neutral.
+- `WAITING_FOR_ANCHOR_PRESS` accepts the first fresh A or X press.
+- `WAITING_FOR_ANCHOR_RELEASE` stores immutable `anchorX`, `anchorY`, and `anchorZ` and rejects confirmation.
+- `RESIZING_ARMED` is entered only after neither A nor X is held.
+- `POINT_TARGETING` handles fresh point, unit, and feature presses.
+- `BUILD_PLACEMENT` remains delegated to the existing placement owner.
 
-The production path has three owners:
+This is **Press-to-Anchor, Press-to-Confirm Controller Targeting**. Release is only a state transition; it never dispatches.
 
-1. BAR's patched Order Menu activates a real descriptor and exports the descriptor returned by `Spring.GetActiveCommand`/`Spring.GetActiveCmdDesc`. The export is reconciled against the current non-disabled Order Menu command list.
-2. `controller_native_targeting.lua` is a Spring-independent state machine. It classifies the descriptor and builds point, unit, feature, area, front, or rectangle parameters from the controller reticle.
-3. The camera widget owns A/X/B only while that targetable descriptor is active. It asks the Order Menu to dispatch once. The Order Menu first calls `widgetHandler:CommandNotify`; a handling widget such as Area Mex or Smart Area Reclaim prevents engine fall-through. Otherwise it calls `Spring.GiveOrder` once.
+## Fixed-anchor semantics
 
-This keeps vanilla availability, descriptor identity, cursor state, command widgets, Commands FX, selected units, and synchronized command AI authoritative. The active descriptor is refreshed on `ActiveCommandChanged` and explicit activation, not reconstructed every frame.
+The first fresh A/X press copies the current controller-cursor world coordinates once. Preview radius is always the distance from those stored coordinates to the current cursor. Camera motion may move the cursor and therefore resize the radius, but cannot translate the stored center. The preview and eventual command parameters read the same anchor and radius fields.
 
-## States and controls
+After anchoring, both buttons must be neutral once. A new A or X edge may then confirm, independent of which button anchored. A→A, A→X, X→X, and X→A are equivalent. One accepted confirmation passes through the Order Menu dispatch boundary exactly once.
 
-- `IDLE`: normal A selection, Smart X, and normal B clear-selection behavior.
-- `POINT_TARGETING`: A or X confirms the current unit, feature, or ground target. B cancels without altering selection.
-- `CONTROLLER_AREA_TARGETING`: the first A/X press latches the ground center; cursor distance updates the radius; the second A/X press confirms. Button release never confirms.
-- `FRONT_TARGETING`: the first A/X press latches point one and the second emits two XYZ points.
-- `BUILD_PLACEMENT`: delegated to the existing v0.7 placement flow.
+## Native dispatch boundary
 
-For unit-or-map and unit-or-area descriptors, a real unit hit keeps the unit-ID form. Unit-feature-area descriptors use Recoil's feature-ID convention selected by the live engine capability. Guard and Repair reject non-allied direct unit hits before dispatch. Other command-specific rules are enforced by the command widget or synchronized command AI.
+The patched Order Menu exports the descriptor reconciled from `Spring.GetActiveCommand`, `Spring.GetActiveCmdDesc`, and the authoritative visible command list. `controller_native_targeting.lua` builds the native point, unit, feature, area, front, or rectangle parameter form. Dispatch first calls `widgetHandler:CommandNotify`; a handling widget prevents engine fall-through. Otherwise one `Spring.GiveOrder` is issued.
 
-## Area targeting
+Recoil does not expose the internal C++ `GuiHandler::GetCommand` resolver to Lua, so the bridge performs structural and alliance checks while BAR command widgets and synced command AI remain authoritative. It never uses OS mouse emulation.
 
-The workflow is **Press-to-Anchor, Press-to-Confirm Controller Targeting**:
+## B and build-placement priority
 
-1. Select an area descriptor in Tactical with A or X.
-2. Move the native controller cursor to the center and press A or X once.
-3. Release the button; no command is emitted.
-4. Move the cursor. The anchor stays fixed and the sole controller-owned circle/line preview follows the exact stored radius/end point. The engine's active command cursor and native target highlights remain active.
-5. Press A or X again. One command reaches either its `CommandNotify` handler or Recoil.
+Active targeting and placement own B before generic selection clearing. Target cancellation clears the command, anchor, and preview, snapshots and verifies vanilla selection, and arms a B-release latch.
 
-For descriptors with one numeric parameter, the radius is capped at that descriptor maximum, matching Recoil's `ICON_AREA` construction rule. A zero-size area/front/rectangle is rejected and remains active. B clears the anchor, preview, and active descriptor while preserving the vanilla selection.
+The build-placement failure had a separate native cause: `Spring.SetActiveCommand(0)` treats zero as a real command-descriptor index, not a cancellation sentinel. Because that call succeeded, the fallback cancellation never ran. Placement now always calls `Spring.SetActiveCommand(nil)`, clears all preview/drag/rotation/Grid state, resets to Single, restores the constructor snapshot only if needed, and consumes the entire B cycle.
 
-## Persistence and modifiers
+## Persistence and mode exclusivity
 
-Without RT, a successful target clears the active descriptor and A/X ownership immediately. The next clean X press is Smart X. With RT append held, `shift` is passed to the command and the real descriptor remains active for repeated placement; releasing RT ends controller persistence. The existing insert modifier dispatches one `CMD.INSERT` order when no widget consumes the original command. A widget-consumed command remains single-dispatch and owns its native semantics.
+Without RT, successful targeting clears the active descriptor. With RT append held, the descriptor is rearmed behind a new fresh-input gate and remains active until RT release. Native Experimental alone owns this bridge. Switching to Legacy cancels targeting, resets A/X/B and LB/RB gates, closes radials, resets placement, clears stale anchors, and preserves selection.
 
-## B priority and selection
+## Command coverage and exceptions
 
-B is evaluated in this order: controller area target, native point/unit target, build placement, Tactical sub-radial, parent radial/menu, then normal selection clearing. Cancellation snapshots the safe vanilla selection, performs the cancellation, compares the resulting selection, and restores only if it changed. A shared release latch prevents one B cycle from both cancelling and later clearing selection.
-
-Build placement also snapshots selection. A and X both place while placement remains active; B exits, resets Grid to Single, restores constructors if necessary, and requires B release before normal clear-selection is eligible.
-
-## Native and Legacy modes
-
-The bridge runs only in `Native Experimental`. `Legacy Controller UI` retains the v0.7 path. Switching modes cancels the engine command and controller anchor, closes both radials, resets placement and input latches, and preserves selection, so the two paths cannot issue the same order.
-
-## Exceptions and limitations
-
-- Negative build descriptors stay in the existing build-placement adapter; the Order Menu bridge does not recreate build placement.
-- Immediate state commands (`ICON_MODE`, Fire State, Move State, Visible/Cloak) remain descriptor-owned Order Menu operations and never capture target input.
-- Recoil's C++ pre-command `GuiHandler::GetCommand` validator is not callable from Lua. Lua performs structural and obvious alliance validation; BAR `CommandNotify` widgets and synchronized command AI provide the authoritative final rejection. An invalid target leaves targeting active when it can be rejected before dispatch.
-- Front and unit-or-rectangle descriptor shapes are supported, but must be manually exercised if a live selected unit exposes them. No known vanilla command is intentionally left mouse-only.
-
-Engine references: [Recoil Lua API](https://recoilengine.org/docs/lua-api/), [Spring command types](https://springrts.com/wiki/Lua_CMDs).
+Attack, Guard, Repair, Reclaim, Restore, Capture, Set Target, Move, Patrol, Fight, Manual Fire, Area Mex, Smart Area Reclaim, and exposed point/unit/feature/area/front/rectangle descriptors retain native dispatch. Negative build descriptors remain in build placement. Immediate state commands such as Fire State, Move State, Queue Mode, and Visible/Cloak remain state-command operations and do not capture world targeting.
