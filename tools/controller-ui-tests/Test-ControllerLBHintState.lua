@@ -78,9 +78,9 @@ test("8 abandoned chord remains consumed", function()
 	behavior.UpdateLB(state, 3.05, 0.20); equal(behavior.ReleaseLB(state, 3.06, 0.20, 0.20), false, "abandoned chord")
 end)
 
-test("9 LB+RB with stick opens the filter radial", function()
-	contains(camera, 'ControllerDisassembleBehavior.UpdateToggleCharge(', "shared LB+RB state machine")
-	contains(camera, 'ControllerCameraTestOpenVisibleSelectionRadial(stickSector)', "stick sector opens radial")
+test("9 LB+RB uses the centralized short versus long owner", function()
+	contains(camera, 'ControllerInputChords.Update(', "shared LB+RB state machine")
+	contains(camera, 'event == "move-state"', "short chord cycles Move State")
 end)
 
 test("10 left-stick sectors map all four filters", function()

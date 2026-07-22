@@ -1,11 +1,11 @@
 {
   "packageName": "BAR Controller Companion",
-  "version": "0.8.0-native-hybrid-targeting-test",
+  "version": "0.8.0-native-input-disassemble-test",
   "stability": "EXPERIMENTAL",
-  "warning": "EXPERIMENTAL — NATIVE CONTROLLER TARGETING AND COMPACT RADIAL TEST",
+  "warning": "EXPERIMENTAL — INPUT STATE, FACTORY SHORTCUT, AND VANILLA DISASSEMBLE TEST",
   "repository": "UnderarmCape/underarmcape-bar-controller-support-attempt-01",
   "branch": "controller/v0.8.0-native-ui-integration-test",
-  "assetName": "BAR_Controller_Support_v0.8.0_NATIVE_HYBRID_TARGETING_TEST.zip",
+  "assetName": "BAR_Controller_Support_v0.8.0_NATIVE_INPUT_DISASSEMBLE_TEST.zip",
   "barBuild": "Beyond All Reason test-30725-99351e5",
   "barUpstreamCommit": "99351e53d26f5e55fa007ca1e208b936f22bd3ab",
   "publicRelease": false,
@@ -31,6 +31,8 @@
     "doc/controller-companion-v0.8.0/LEGACY_SUNSET_MAP.md",
     "doc/controller-companion-v0.8.0/NATIVE_OVERRIDE_MAINTENANCE.md",
     "doc/controller-companion-v0.8.0/CONTROLLER_NATIVE_TARGETING.md",
+    "doc/controller-companion-v0.8.0/FACTORY_CONTROLLER_SHORTCUTS.md",
+    "doc/controller-companion-v0.8.0/DISASSEMBLE_VANILLA_SELECTION.md",
     "doc/controller-companion-v0.8.0/RADIAL_COMPACTION.md",
     "doc/controller-companion-v0.8.0/LIVE_TEST_CHECKLIST.md"
   ]

@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) { $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
 $RepositoryRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-native-hybrid-targeting-test' }
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-native-input-disassemble-test' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 $stage = Join-Path $OutputDirectory ('.package-' + [guid]::NewGuid().ToString('N'))
@@ -19,6 +19,7 @@ try {
         'luaui\Widgets\gui_controller_ui_runtime.lua',
         'luaui\Widgets\gui_controller_ui_layout.lua',
         'luaui\Include\controller_disassemble_behavior.lua',
+        'luaui\Include\controller_input_chords.lua',
         'luaui\Include\controller_ui_runtime.lua',
         'luaui\Include\controller_ui_editor_workspace.lua',
         'luaui\Include\controller_ui_editor_input.lua',
@@ -45,11 +46,15 @@ try {
         'doc\controller-companion-v0.8.0\LEGACY_SUNSET_MAP.md',
         'doc\controller-companion-v0.8.0\NATIVE_OVERRIDE_MAINTENANCE.md',
         'doc\controller-companion-v0.8.0\CONTROLLER_NATIVE_TARGETING.md',
+        'doc\controller-companion-v0.8.0\FACTORY_CONTROLLER_SHORTCUTS.md',
+        'doc\controller-companion-v0.8.0\DISASSEMBLE_VANILLA_SELECTION.md',
         'doc\controller-companion-v0.8.0\RADIAL_COMPACTION.md',
         'doc\controller-companion-v0.8.0\LIVE_TEST_CHECKLIST.md',
         'tools\controller-ui-tests\Test-ControllerHybridRadials.lua',
         'tools\controller-ui-tests\Test-ControllerNativeUIIntegration.lua',
         'tools\controller-ui-tests\Test-ControllerNativeTargeting.lua',
+        'tools\controller-ui-tests\Test-ControllerDisassembleMode.lua',
+        'tools\controller-ui-tests\Test-ControllerInputDisassemble.lua',
         'tools\dev-scripts\Deploy_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Generate_Controller_Glyph_Atlases_v0.8.ps1'
@@ -75,7 +80,7 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $stage 'payload-sha256.json'), (($payload | ConvertTo-Json -Depth 6) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
 
-    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_NATIVE_HYBRID_TARGETING_TEST.zip'
+    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_NATIVE_INPUT_DISASSEMBLE_TEST.zip'
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()

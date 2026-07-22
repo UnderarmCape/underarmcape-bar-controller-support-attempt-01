@@ -1,8 +1,8 @@
-# BAR Controller Support v0.8.0 Native Hybrid Targeting Test
+# BAR Controller Support v0.8.0 Native Input and Disassemble Test
 
-**EXPERIMENTAL — NATIVE CONTROLLER TARGETING AND COMPACT RADIAL TEST**
+**EXPERIMENTAL — INPUT STATE, FACTORY SHORTCUT, AND VANILLA DISASSEMBLE TEST**
 
-This local test package targets `Beyond All Reason test-30725-99351e5` / upstream commit `99351e53d26f5e55fa007ca1e208b936f22bd3ab`. It adds controller confirmation for BAR's real active target command and packs the authoritative Build/Factory models into compact eight-slot wheels. It is not a stable release and must not replace v0.7.0.
+This local-only test package targets `Beyond All Reason test-30725-99351e5` / upstream commit `99351e53d26f5e55fa007ca1e208b936f22bd3ab`. It repairs fresh A/X area confirmation, one-press build cancellation, native factory quantities, Queue Mode and Move State shortcuts, and constructor-cached Disassemble with actual vanilla target selection. It is not a stable release and does not replace v0.7.0.
 
 Close BAR, then validate compatibility:
 
@@ -16,6 +16,6 @@ Install only after validation succeeds:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Install_v0.8.0_NATIVE_TEST.ps1
 ```
 
-The installer prints a timestamped backup root and exact rollback command. It refuses a running BAR process, an unrecognized BAR build, or an unrecognized loose vanilla widget. It enables BAR's patched Build Menu, disables the overlapping Grid Menu, and leaves native panels and their focus stroke visible for comparison. Rollback preserves and restores the exact pre-deployment `BYAR.lua`; the scripts never launch or force-kill BAR.
+The installer refuses running BAR/controller processes, unknown BAR builds, and unrecognized native overrides. It prints a timestamped backup root and exact strict rollback command. It preserves personal BAR/controller configuration, keeps Native Experimental enabled with Legacy fallback available, and never launches or force-kills BAR.
 
-Use `doc/controller-companion-v0.8.0/LIVE_TEST_CHECKLIST.md` for gameplay validation. Read `CONTROLLER_NATIVE_TARGETING.md` for command dispatch and limitation details and `RADIAL_COMPACTION.md` for the wheel invariants. Restore before rebasing onto a BAR update.
+Use `doc/controller-companion-v0.8.0/LIVE_TEST_CHECKLIST.md` for the 49-step gameplay pass. The targeting, factory-shortcut, and vanilla-selection Disassemble documents describe input ownership and remaining native boundaries.
