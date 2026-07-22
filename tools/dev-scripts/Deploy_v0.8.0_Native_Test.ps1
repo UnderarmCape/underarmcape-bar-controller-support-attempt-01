@@ -37,6 +37,10 @@ $GlyphFiles = @(
     'asset-manifest.json',
     'LICENSE.md'
 )
+$ControllerUIFiles = @(
+    'shipping-defaults.json',
+    'shipping-defaults-manifest.json'
+)
 
 function Write-Step([string]$Message) { Write-Host ('[native-test-deploy] ' + $Message) }
 function Get-Sha256([string]$Path) { (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant() }
@@ -157,6 +161,9 @@ foreach ($name in $IncludeFiles) {
 foreach ($name in $GlyphFiles) {
     $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ('luaui\images\controller-glyphs\' + $name)); destination = (Join-Path $BarDataPath ('LuaUI\Images\controller-glyphs\' + $name)); native = $false })
 }
+foreach ($name in $ControllerUIFiles) {
+    $deployMap.Add([pscustomobject]@{ source = (Join-Path $RepositoryRoot ('controller-ui\' + $name)); destination = (Join-Path $BarDataPath ('controller-ui\' + $name)); native = $false })
+}
 foreach ($entry in @($overrideManifest.entries)) {
     $previousPatchedSha256 = ''
     if ($null -ne $entry.PSObject.Properties['previousPatchedSha256']) {
@@ -187,6 +194,7 @@ Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerHybridRadials.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerNativeTargeting.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerDisassembleMode.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerInputDisassemble.lua'
+Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerInputPolish.lua'
 
 if ($ValidateOnly) {
     Write-Step "Validation passed for $($deployMap.Count) files; BAR build and native base policy are compatible."
@@ -194,7 +202,7 @@ if ($ValidateOnly) {
 }
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.0-native-input-disassemble-test-' + $timestamp)
+$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.0-native-input-polish-test-' + $timestamp)
 if (Test-Path -LiteralPath $backupRoot) { throw "Backup path already exists: $backupRoot" }
 New-Item -ItemType Directory -Path (Join-Path $backupRoot 'live-before') -Force | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -242,8 +250,8 @@ foreach ($record in $preserved) {
 }
 
 $manifest = [ordered]@{
-    kind = 'bar-controller-native-input-disassemble-test-deployment-backup'; schemaVersion = 1
-    experiment = ('EXPERIMENTAL ' + [char]0x2014 + ' INPUT STATE, FACTORY SHORTCUT, AND VANILLA DISASSEMBLE TEST'); deployedAt = (Get-Date).ToString('o')
+    kind = 'bar-controller-native-input-polish-test-deployment-backup'; schemaVersion = 1
+    experiment = ('EXPERIMENTAL ' + [char]0x2014 + ' AREA CONFIRMATION, DISASSEMBLE, AND HINT POLISH TEST'); deployedAt = (Get-Date).ToString('o')
     repositoryRoot = $RepositoryRoot; sourceCommit = $sourceCommit
     barDataPath = $BarDataPath; companionInstallPath = $CompanionInstallPath; backupRoot = $backupRoot
     expectedBarBuild = $ExpectedBuild; buildIdentityMatched = $buildMatches; explicitUnknownBaseOverride = [bool]$AllowUnknownBase
@@ -258,6 +266,6 @@ foreach ($record in $records) {
     if ((Get-Sha256 $record.destination) -ne $record.postSha256) { throw "Post-manifest verification failed: $($record.destination)" }
 }
 Stop-RuntimesSafely
-Write-Step 'Experimental input state, factory shortcuts, and vanilla-selection Disassemble deployed. BAR was not launched.'
+Write-Step 'Experimental area confirmation, Disassemble, and hint polish deployed. BAR was not launched.'
 Write-Output ('BACKUP_ROOT=' + $backupRoot)
 Write-Output ('ROLLBACK_COMMAND=powershell -NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $RepositoryRoot 'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1') + '" -BackupRoot "' + $backupRoot + '"')

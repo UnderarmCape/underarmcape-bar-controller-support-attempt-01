@@ -23,7 +23,7 @@ local service = Runtime.New()
 local api = service:PublicAPI()
 local fixture = Json.decode(read(root .. "/tools/controller-ui-tests/fixtures/controller-ui-v0.6.1-hints.json"))
 
-equal(service.activeVersion, "0.7.0-1", "shipping version")
+equal(service.activeVersion, "0.8.0-native-input-polish-test-1", "shipping version")
 for key, value in pairs(fixture.component) do equal(api.GetComponent("hints")[key], value, "v0.6.1 visual fixture " .. key) end
 for key, value in pairs(fixture.bindingsButton) do equal(api.GetComponent("bindingsButton")[key], value, "bindings fixture " .. key) end
 
@@ -36,6 +36,10 @@ equal(api.GetComponent("bindingsButton").y, personalY, "personal bindings y")
 local saved = service:GetConfigData()
 truthy(saved.authorData.favorites.preserved, "author data passthrough")
 equal(saved.editorChrome.tab, 4, "chrome passthrough")
+truthy(api.SetHintAppearance("scale", 1.5), "Bindings API changes hint scale")
+equal(api.Get("hints", "scale"), 1.5, "changed hint scale is live")
+truthy(api.ResetHintAppearance("scale"), "individual hint reset")
+equal(api.Get("hints", "scale"), 1.25, "hint reset restores shipping scale")
 
 local context = { disassembleToggleCharge = true }
 WG.BARControllerSupport = {
@@ -58,4 +62,4 @@ truthy(definitions["normal-visible-select"] ~= nil, "v0.6.1 quick visible-select
 
 local layout = read(root .. "/luaui/Widgets/gui_controller_ui_layout.lua")
 truthy(layout:find("enabled = false", 1, true) ~= nil, "authoring disabled")
-print("Controller UI runtime tests passed: v0.6.1 visual fixture parity, context stabilization, personal migration, hint ownership, and authoring retirement.")
+print("Controller UI runtime tests passed: readable hint fixture, live appearance controls, context stabilization, personal migration, and hint ownership.")

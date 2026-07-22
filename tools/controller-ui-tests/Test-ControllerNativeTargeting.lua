@@ -168,6 +168,6 @@ expect(contains(adapter, "item.queueCount = tonumber(item.queueCount) or 0"), "f
 expect(contains(targetingDoc, "Press-to-Anchor, Press-to-Confirm Controller Targeting"), "targeting workflow is documented")
 expect(contains(targetingDoc, "GuiHandler::GetCommand"), "unexposed C++ validation boundary is documented")
 expect(contains(compactionDoc, "No empty category is emitted"), "empty-category rule is documented")
-expect(contains(checklist, "49. Watch for duplicate commands"), "49-step live checklist covers duplicate/performance watch")
+expect(contains(checklist, "59. Watch for duplicate commands"), "59-step live checklist covers duplicate/performance watch")
 
 print(string.format("Controller Native Targeting tests passed: %d validations.", checks))
