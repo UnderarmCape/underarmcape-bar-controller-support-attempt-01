@@ -117,7 +117,8 @@ function Targeting.SetDescriptor(state, descriptor, types)
 	local cmdID = tonumber(descriptor.id or descriptor.cmdID)
 	local phase = Targeting.Classify(descriptor, types)
 	if phase == Targeting.IDLE then return Targeting.Reset(state, "active command is not targetable") end
-	if state.cmdID ~= cmdID or state.targetMode ~= phase then
+	if state.cmdID ~= cmdID or state.targetMode ~= phase
+			or tonumber(state.descriptor and state.descriptor.type) ~= tonumber(descriptor.type) then
 		Targeting.Reset(state, "active target command changed")
 		state.descriptor = shallowCopy(descriptor)
 		state.cmdID = cmdID
@@ -160,21 +161,17 @@ function Targeting.CanAcceptPress(state)
 		or phase == Targeting.RESIZING_ARMED
 end
 
-local function directTarget(descriptor, target, types, isAlliedUnit)
+local function directTarget(descriptor, target, types)
 	if type(target) ~= "table" then return nil, "reticle has no target" end
 	local targetType = target.targetType
 	local targetID = tonumber(target.targetID)
-	local text = descriptorText(descriptor)
 
 	if targetType == "unit" and targetID then
 		if hasType(descriptor, "ICON_MAP", types) or hasType(descriptor, "ICON_AREA", types)
 			or hasType(descriptor, "ICON_FRONT", types) then
 			return nil, "ground target required"
 		end
-		if (text:find("guard", 1, true) or text:find("repair", 1, true))
-			and type(isAlliedUnit) == "function" and not isAlliedUnit(targetID) then
-			return nil, "allied unit required"
-		end
+		local text = descriptorText(descriptor)
 		if text:find("resurrect", 1, true) then return nil, "feature target required" end
 		return { targetID }, "unit"
 	end
@@ -198,16 +195,26 @@ local function directTarget(descriptor, target, types, isAlliedUnit)
 	return params, "ground"
 end
 
-function Targeting.BeginOrBuildPoint(state, target, types, isAlliedUnit)
+function Targeting.BeginOrBuildPoint(state, target, types)
 	if type(state) ~= "table" or not state.descriptor then return nil, "no active target command" end
 	if state.phase ~= Targeting.POINT_TARGETING and state.phase ~= Targeting.WAITING_FOR_ANCHOR_PRESS then
 		return nil, "fresh target press required"
 	end
-	local params, result = directTarget(state.descriptor, target, types, isAlliedUnit)
-	if params then return params, result end
-	if result ~= "anchor" then return nil, result end
+	local params, result
+	if state.phase == Targeting.POINT_TARGETING then
+		-- Eligibility belongs to the engine/authoritative command owner.  In
+		-- particular, controller routing must not invent an allied-only filter.
+		params, result = directTarget(state.descriptor, target, types)
+		if params then return params, result end
+		if result ~= "anchor" then return nil, result end
+	elseif type(target) ~= "table" or tonumber(target.x) == nil
+			or tonumber(target.y) == nil or tonumber(target.z) == nil then
+		return nil, "ground target required"
+	end
 	-- The anchor is copied once and never derived from the moving reticle.
 	state.anchor = { x = tonumber(target.x), y = tonumber(target.y), z = tonumber(target.z) }
+	state.anchorTargetID = tonumber(target.commandID or target.targetID)
+	state.anchorTargetType = target.targetType
 	state.anchorX, state.anchorY, state.anchorZ = state.anchor.x, state.anchor.y, state.anchor.z
 	state.current = { x = state.anchor.x, y = state.anchor.y, z = state.anchor.z }
 	state.radius = 0

@@ -67,6 +67,10 @@ local controllerTargeting = {
 	z = nil,
 	radius = 120,
 }
+local ControllerNativeCommandOwner = VFS.Include("luaui/Include/controller_native_command_owner.lua")
+local smartControllerOwner
+local smartOwnerRegistered = false
+local controllerHighlightedTargets = {}
 
 local unitCanReclaim = {}
 local unitCanMove = {}
@@ -95,6 +99,18 @@ end
 
 function widget:PlayerChanged()
     maybeRemoveSelf()
+end
+
+function widget:Update()
+	if smartOwnerRegistered or not smartControllerOwner then return end
+	WG.ControllerNativeCommandOwners = WG.ControllerNativeCommandOwners or {}
+	WG.ControllerNativeCommandOwners[RECLAIM] = { api = smartControllerOwner, name = "Smart Area Reclaim" }
+	smartOwnerRegistered = true
+	local api = WG and WG.ordermenu
+	if api and type(api.controllerRegisterCommandOwner) == "function" then
+		smartOwnerRegistered = api.controllerRegisterCommandOwner(
+			RECLAIM, smartControllerOwner, "Smart Area Reclaim") == true
+	end
 end
 
 
@@ -191,8 +207,10 @@ function widget:Initialize()
 				controllerTargeting.radius,
 			}
 		end
-		local options = shift and { 'shift' } or {}
-		Spring.GiveOrderToUnitArray(reclaimers, RECLAIM, params, options)
+		local api = WG and WG.ordermenu
+		if not (api and type(api.controllerIssueCommand) == "function") then return false end
+		local accepted = api.controllerIssueCommand(RECLAIM, params, shift and { 'shift' } or {})
+		if accepted ~= true then return false end
 		cancelControllerTargeting()
 		return true
 	end
@@ -202,22 +220,54 @@ function widget:Initialize()
 		return controllerTargeting.active, controllerTargeting.mode, controllerTargeting.targetID,
 			controllerTargeting.x, controllerTargeting.y, controllerTargeting.z, controllerTargeting.radius
 	end
-	WG['smartareareclaim'].controllerApiVersion = 1
+	WG['smartareareclaim'].controllerSetHighlightedTargets = function(targets)
+		controllerHighlightedTargets = type(targets) == "table" and targets or {}
+	end
+	WG['smartareareclaim'].controllerClearHighlightedTargets = function()
+		controllerHighlightedTargets = {}
+	end
+	smartControllerOwner = ControllerNativeCommandOwner.New({
+		name = "Smart Area Reclaim", types = CMDTYPE,
+		dispatch = function(cmdID, params, options, dispatchMode)
+			local api = WG and WG.ordermenu
+			if not (api and type(api.controllerIssueCommand) == "function") then
+				return false, "Order Menu dispatcher unavailable"
+			end
+			return api.controllerIssueCommand(cmdID, params, options, dispatchMode)
+		end,
+	})
+	WG['smartareareclaim'].controllerOwner = smartControllerOwner
+	WG['smartareareclaim'].controllerApiVersion = 2
 end
 
 function widget:Shutdown()
+	local api = WG and WG.ordermenu
+	if smartOwnerRegistered and api and type(api.controllerUnregisterCommandOwner) == "function" then
+		api.controllerUnregisterCommandOwner(RECLAIM, smartControllerOwner)
+	end
+	if WG.ControllerNativeCommandOwners then WG.ControllerNativeCommandOwners[RECLAIM] = nil end
 	WG['smartareareclaim'] = nil
 end
 
 function widget:DrawWorld()
-	if not controllerTargeting.active or controllerTargeting.mode == 'single'
-			or not controllerTargeting.x or not controllerTargeting.z then
-		return
+	local ownerState = smartControllerOwner and smartControllerOwner:GetState() or nil
+	local hasLegacyArea = controllerTargeting.active and controllerTargeting.mode ~= 'single'
+		and controllerTargeting.x and controllerTargeting.z
+	if ownerState and ownerState.anchor and ownerState.current then
+		gl.Color(0.35, 1.0, 0.25, 0.82)
+		gl.LineWidth(2.25)
+		gl.DrawGroundCircle(ownerState.anchor.x, ownerState.anchor.y or 0,
+			ownerState.anchor.z, ownerState.radius or 0, 64)
+	elseif hasLegacyArea then
+		gl.Color(0.35, 1.0, 0.25, 0.82)
+		gl.LineWidth(2.25)
+		gl.DrawGroundCircle(controllerTargeting.x, controllerTargeting.y or 0,
+			controllerTargeting.z, controllerTargeting.radius, 64)
 	end
-	gl.Color(0.35, 1.0, 0.25, 0.82)
-	gl.LineWidth(2.25)
-	gl.DrawGroundCircle(controllerTargeting.x, controllerTargeting.y or 0,
-		controllerTargeting.z, controllerTargeting.radius, 64)
+	for unitID in pairs(controllerHighlightedTargets) do
+		local x, y, z = GetUnitPosition(unitID)
+		if x then gl.DrawGroundCircle(x, y or 0, z, 34, 24) end
+	end
 	gl.LineWidth(1)
 	gl.Color(1, 1, 1, 1)
 end

@@ -26,6 +26,7 @@ local spGetSpectatingState = Spring.GetSpectatingState
 local keyConfig = VFS.Include("luaui/configs/keyboard_layouts.lua")
 local CustomFirestateDefs = VFS.Include("modules/custom_firestate_defs.lua")
 local OrderMenuFirestate = VFS.Include("luaui/Include/ordermenu_firestate.lua")
+local ControllerNativeCommandOwner = VFS.Include("luaui/Include/controller_native_command_owner.lua")
 local CANCEL_TARGET_CMD_ID = 34924
 local currentLayout
 
@@ -139,7 +140,12 @@ local clickedCell, clickedCellTime, clickedCellDesiredState, cellWidth, cellHeig
 local buildmenuBottomPosition
 local activeCommand, previousActiveCommand, doUpdate, doUpdateClock
 local ordermenuShows = false
+local controllerPanelVisible = true
 local stateLightDisplayLists = {}
+local controllerTargetOwner
+local controllerCommandOwners = {}
+local controllerActiveTargetAPI
+local drawCell
 
 -- Cache for translations to avoid repeated Spring.I18N calls
 local translationCache = {}
@@ -829,6 +835,49 @@ function widget:Initialize()
 		end
 		return list, notify
 	end
+	local function controllerDescriptor(cmdID)
+		cmdID = tonumber(cmdID)
+		for i = 1, #commands do
+			local source = commands[i]
+			if source.id == cmdID and source.disabled ~= true then
+				local cmdIndex = Spring.GetCmdDescIndex(cmdID)
+				local engineDescriptor = cmdIndex and type(Spring.GetActiveCmdDesc) == "function"
+					and Spring.GetActiveCmdDesc(cmdIndex) or nil
+				return {
+					stableKey = "cmd:" .. tostring(cmdID), cmdIndex = cmdIndex,
+					id = cmdID, cmdID = cmdID,
+					type = tonumber(engineDescriptor and engineDescriptor.type) or source.type,
+					name = (engineDescriptor and engineDescriptor.name) or source.name,
+					action = (engineDescriptor and engineDescriptor.action) or source.action,
+					tooltip = (engineDescriptor and engineDescriptor.tooltip) or source.tooltip,
+					params = (engineDescriptor and engineDescriptor.params) or source.params,
+					disabled = false,
+					buildFacing = Spring.GetBuildFacing and Spring.GetBuildFacing() or nil,
+				}
+			end
+		end
+	end
+
+	local function controllerDispatchCommand(cmdID, params, options, dispatchMode)
+		cmdID = tonumber(cmdID)
+		if not controllerDescriptor(cmdID) or type(params) ~= "table" then
+			return false, "live command unavailable"
+		end
+		local optionList, notifyOptions = controllerCommandOptions(options)
+		local notifyOK, handled = pcall(widgetHandler.CommandNotify, widgetHandler,
+			cmdID, params, notifyOptions)
+		if not notifyOK then return false, "CommandNotify failed" end
+		if handled then return true, "widget" end
+		local issuedOK, accepted
+		if dispatchMode == "insert-front" then
+			local insertParams = { 0, cmdID, 0 }
+			for i = 1, #params do insertParams[#insertParams + 1] = params[i] end
+			issuedOK, accepted = pcall(Spring.GiveOrder, CMD.INSERT, insertParams, { "alt" })
+		else
+			issuedOK, accepted = pcall(Spring.GiveOrder, cmdID, params, optionList)
+		end
+		return issuedOK and accepted ~= false, issuedOK and "engine" or "GiveOrder failed"
+	end
 
 	-- Mirror the native mouse release boundary: LuaUI CommandNotify gets first
 	-- refusal (Area Mex and Smart Area Reclaim depend on this), then exactly one
@@ -852,22 +901,98 @@ function widget:Initialize()
 				or type(params) ~= "table" then
 			return false, "active and cached command unavailable"
 		end
-		local optionList, notifyOptions = controllerCommandOptions(options)
-		local notifyOK, handled = pcall(widgetHandler.CommandNotify, widgetHandler,
-			expectedCmdID, params, notifyOptions)
-		if not notifyOK then return false, "CommandNotify failed" end
-		if handled then return true, "widget" end
-		local issuedOK, accepted
-		if dispatchMode == "insert-front" then
-			local insertParams = { 0, expectedCmdID, 0 }
-			for i = 1, #params do insertParams[#insertParams + 1] = params[i] end
-			issuedOK, accepted = pcall(Spring.GiveOrder, CMD.INSERT, insertParams, { "alt" })
-		else
-			issuedOK, accepted = pcall(Spring.GiveOrder, expectedCmdID, params, optionList)
-		end
-		return issuedOK and accepted ~= false, issuedOK and "engine" or "GiveOrder failed"
+		return controllerDispatchCommand(expectedCmdID, params, options, dispatchMode)
 	end
-	WG['ordermenu'].controllerTargetingAPIVersion = 4
+
+	-- Immediate native shortcut boundary.  Disabled or selection-ineligible
+	-- descriptors are rejected before CommandNotify is entered.
+	WG['ordermenu'].controllerIssueCommand = controllerDispatchCommand
+	local function controllerParamsForTarget(descriptor, target)
+		if type(descriptor) ~= "table" or type(target) ~= "table" then return nil end
+		local targetType, targetID = target.targetType, tonumber(target.targetID)
+		local typeID = tonumber(descriptor.type)
+		if targetType == "unit" and targetID and typeID ~= CMDTYPE.ICON_MAP
+				and typeID ~= CMDTYPE.ICON_AREA and typeID ~= CMDTYPE.ICON_FRONT then
+			return { targetID }
+		end
+		if targetType == "feature" and targetID and typeID == CMDTYPE.ICON_UNIT_FEATURE_OR_AREA then
+			return { tonumber(target.commandID) or targetID + (tonumber(Game and Game.maxUnits) or 32000) }
+		end
+		local x, y, z = tonumber(target.x), tonumber(target.y), tonumber(target.z)
+		if not x or not y or not z then return nil end
+		if typeID == CMDTYPE.ICON_UNIT then return nil end
+		return { x, y, z }
+	end
+	WG['ordermenu'].controllerExecuteAtTarget = function(cmdID, target, options, dispatchMode)
+		local descriptor = controllerDescriptor(cmdID)
+		local params = controllerParamsForTarget(descriptor, target)
+		if not params then return false, "native target unavailable" end
+		return controllerDispatchCommand(cmdID, params, options, dispatchMode)
+	end
+	WG['ordermenu'].controllerIssueDefault = function(target, options, dispatchMode)
+		if type(Spring.GetDefaultCommand) ~= "function" then return false, "default command API unavailable" end
+		local _, cmdID = Spring.GetDefaultCommand()
+		local descriptor = controllerDescriptor(cmdID)
+		if not descriptor then return false, "default command unavailable" end
+		local params = controllerParamsForTarget(descriptor, target)
+		if not params then return false, "default target unavailable" end
+		local accepted, route = controllerDispatchCommand(cmdID, params, options, dispatchMode)
+		return accepted, route, cmdID
+	end
+
+	controllerTargetOwner = ControllerNativeCommandOwner.New({
+		name = "Order Menu generic fallback", types = CMDTYPE,
+		dispatch = controllerDispatchCommand,
+	})
+	WG['ordermenu'].controllerRegisterCommandOwner = function(cmdID, ownerAPI, ownerName)
+		cmdID = tonumber(cmdID)
+		if not cmdID or type(ownerAPI) ~= "table" or type(ownerAPI.Begin) ~= "function"
+				or type(ownerAPI.Input) ~= "function" or type(ownerAPI.GetState) ~= "function" then
+			return false
+		end
+		controllerCommandOwners[cmdID] = { api = ownerAPI, name = ownerName or "native widget" }
+		WG.ControllerNativeCommandOwners = WG.ControllerNativeCommandOwners or {}
+		WG.ControllerNativeCommandOwners[cmdID] = controllerCommandOwners[cmdID]
+		return true
+	end
+	WG['ordermenu'].controllerUnregisterCommandOwner = function(cmdID, ownerAPI)
+		cmdID = tonumber(cmdID)
+		local entry = controllerCommandOwners[cmdID]
+		if entry and (ownerAPI == nil or entry.api == ownerAPI) then
+			controllerCommandOwners[cmdID] = nil
+			if WG.ControllerNativeCommandOwners then WG.ControllerNativeCommandOwners[cmdID] = nil end
+		end
+	end
+	WG['ordermenu'].controllerGetCommandOwner = function(cmdID)
+		local entry = controllerCommandOwners[tonumber(cmdID)]
+			or (WG.ControllerNativeCommandOwners and WG.ControllerNativeCommandOwners[tonumber(cmdID)])
+		return entry and entry.name or "Order Menu generic fallback"
+	end
+	WG['ordermenu'].controllerBeginTarget = function(cmdID)
+		local descriptor = controllerDescriptor(cmdID)
+		if not descriptor then return false, "descriptor unavailable" end
+		local entry = controllerCommandOwners[tonumber(cmdID)]
+			or (WG.ControllerNativeCommandOwners and WG.ControllerNativeCommandOwners[tonumber(cmdID)])
+		controllerActiveTargetAPI = entry and entry.api or controllerTargetOwner
+		return controllerActiveTargetAPI:Begin(descriptor)
+	end
+	WG['ordermenu'].controllerTargetInput = function(input)
+		if not controllerActiveTargetAPI then return false, "inactive" end
+		local consumed, result = controllerActiveTargetAPI:Input(input)
+		local state = controllerActiveTargetAPI:GetState()
+		if not state or state.phase == "IDLE" then controllerActiveTargetAPI = nil end
+		return consumed, result
+	end
+	WG['ordermenu'].controllerGetTargetState = function()
+		return controllerActiveTargetAPI and controllerActiveTargetAPI:GetState()
+			or { phase = "IDLE", ownerName = "none", dispatchCount = 0 }
+	end
+	WG['ordermenu'].controllerCancelTarget = function(reason)
+		local active = controllerActiveTargetAPI
+		controllerActiveTargetAPI = nil
+		return active and active:Cancel(reason) or false
+	end
+	WG['ordermenu'].controllerTargetingAPIVersion = 5
 	WG['ordermenu'].controllerActivateState = function(cmdID, desiredState)
 		cmdID, desiredState = tonumber(cmdID), tonumber(desiredState)
 		local cmd
@@ -929,6 +1054,34 @@ function widget:Initialize()
 			WG['ordermenu'].setHighlight(ControllerOrderMenuHybridState.focusCmdID, { 0.35, 0.78, 1.0 })
 		end
 		return ControllerOrderMenuHybridState.focusVisible
+	end
+	WG['ordermenu'].controllerSetPanelVisible = function(visible)
+		controllerPanelVisible = visible ~= false
+		if not controllerPanelVisible and WG['guishader'] and displayListGuiShader then
+			WG['guishader'].RemoveDlist('ordermenu')
+		end
+		return controllerPanelVisible
+	end
+	WG['ordermenu'].controllerGetPanelVisible = function() return controllerPanelVisible end
+	-- Tactical Radial delegates its outer buttons here, so background, border,
+	-- state pips, disabled appearance, and text metrics are literally the Order
+	-- Menu renderer rather than a controller approximation.
+	WG['ordermenu'].controllerDrawCommandButton = function(cmdID, rect, selected)
+		if type(rect) ~= "table" or type(drawCell) ~= "function" or not font then return false end
+		local cell
+		for i = 1, #commands do if commands[i].id == tonumber(cmdID) then cell = i; break end end
+		if not cell then return false end
+		local savedRect, savedActive, savedCache = cellRects[cell], activeCommand, stateLightDisplayLists[cell]
+		cellRects[cell] = { rect[1], rect[2], rect[3], rect[4] }
+		activeCommand = selected == true and commands[cell].name or false
+		stateLightDisplayLists[cell] = nil
+		font:Begin(true)
+		drawCell(cell, 1)
+		font:End()
+		local temporaryCache = stateLightDisplayLists[cell]
+		if temporaryCache and temporaryCache.list then glDeleteList(temporaryCache.list) end
+		stateLightDisplayLists[cell], cellRects[cell], activeCommand = savedCache, savedRect, savedActive
+		return true
 	end
 	WG['ordermenu'].controllerSetRadialOpen = function(active, showFocus)
 		ControllerOrderMenuHybridState.radialOpen = active == true
@@ -1160,7 +1313,7 @@ local function drawStateLights(cell, leftMargin, rightMargin, bottomMargin, padd
 	end
 end
 
-local function drawCell(cell, zoom)
+drawCell = function(cell, zoom)
 	tracy.ZoneBeginN("W:OrderMenu:DrawCell")
 	if not zoom then
 		zoom = 1
@@ -1384,6 +1537,24 @@ end
 
 function widget:DrawScreen()
 	tracy.ZoneBeginN("W:OrderMenu:DrawScreen")
+	if not controllerPanelVisible then
+		-- Rendering is hidden, but this widget remains the authoritative live
+		-- descriptor/owner model for controller radials and shortcuts.
+		local now = os_clock()
+		if doUpdate or (doUpdateClock and now >= doUpdateClock) then
+			if now - lastCommandRefreshTime >= commandRefreshDelay then
+				if doUpdateClock and now >= doUpdateClock then doUpdateClock, doUpdate = nil, true end
+				lastCommandRefreshTime = now
+				refreshCommands()
+				if not commandsVisuallyChanged then doUpdate = nil end
+			elseif not doUpdateClock then
+				doUpdateClock = now + commandRefreshDelay
+			end
+		end
+		if WG['guishader'] and displayListGuiShader then WG['guishader'].RemoveDlist('ordermenu') end
+		tracy.ZoneEnd()
+		return
+	end
 	glBlending(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 	local x, y = Spring.GetMouseState()
 	local cellHovered
@@ -1638,6 +1809,7 @@ function widget:DrawScreen()
 end
 
 function widget:MousePress(x, y, button)
+	if not controllerPanelVisible then return false end
 	if Spring.IsGUIHidden() then
 		return
 	end
@@ -1756,6 +1928,34 @@ function widget:SelectionChanged(sel)
 	if not doUpdateClock or (now - lastCommandRefreshTime) > throttleDelay then
 		doUpdateClock = now + throttleDelay
 	end
+end
+
+-- Generic owner preview.  Registered command widgets draw their own native
+-- preview; this is used only when no more-specific owner registered the cmdID.
+function widget:DrawWorld()
+	if controllerActiveTargetAPI ~= controllerTargetOwner or not controllerTargetOwner then return end
+	local state = controllerTargetOwner:GetState()
+	if not state.anchor or not state.current then return end
+	gl.DepthTest(false)
+	gl.LineWidth(2.4)
+	gl.Color(0.30, 0.80, 1.0, 0.90)
+	if state.shape == "area" then
+		gl.DrawGroundCircle(state.anchor.x, state.anchor.y, state.anchor.z, math.max(1, state.radius or 0), 64)
+	else
+		gl.BeginEnd(GL.LINES, function()
+			gl.Vertex(state.anchor.x, state.anchor.y + 2, state.anchor.z)
+			gl.Vertex(state.current.x, state.current.y + 2, state.current.z)
+			if state.shape == "rectangle" then
+				gl.Vertex(state.anchor.x, state.anchor.y + 2, state.current.z)
+				gl.Vertex(state.current.x, state.current.y + 2, state.current.z)
+				gl.Vertex(state.current.x, state.current.y + 2, state.anchor.z)
+				gl.Vertex(state.anchor.x, state.anchor.y + 2, state.anchor.z)
+			end
+		end)
+	end
+	gl.LineWidth(1)
+	gl.Color(1, 1, 1, 1)
+	gl.DepthTest(false)
 end
 
 function widget:LanguageChanged()

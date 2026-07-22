@@ -239,6 +239,9 @@ ControllerCameraTestBuildPlacement = ControllerCameraTestBuildPlacement or {
 	patternHoldTriggered = false,
 	patternHoldSeconds = 0.25,
 	slowPanActive = false, -- toggled by Back during placement
+	distributedGridArmed = false,
+	distributedGridChordOwned = false,
+	distributedGridResult = "none",
 }
 ControllerCameraTestDragCommand = ControllerCameraTestDragCommand or {
 	active = false,
@@ -735,6 +738,8 @@ function ControllerCameraTestGetDefaultSettings()
 		disassembleUnusedTimeoutSeconds = 30.0,
 		lbTapMaxSeconds = 0.20,
 		lbTacticalHoldSeconds = 0.20,
+		rbTapMaxSeconds = 0.22,
+		rbChordGraceSeconds = 0.18,
 		visibleSelectionFilter = "Combat",
 		controlGroupAssignHoldSeconds = 0.35,
 		radialScale = 1,
@@ -761,6 +766,7 @@ function ControllerCameraTestGetDefaultSettings()
 		buildItemSpacing = 1.0,
 		showNativePanelWhileRadialOpen = true,
 		showNativeFocusStroke = true,
+		nativePanelsDebugVisible = false,
 	}
 end
 
@@ -867,6 +873,8 @@ function ControllerCameraTestClampSetting(name, value)
 		disassembleUnusedTimeoutSeconds = { 30.0, 30.0 },
 		lbTapMaxSeconds = { 0.08, 0.50 },
 		lbTacticalHoldSeconds = { 0.08, 0.50 },
+		rbTapMaxSeconds = { 0.08, 0.50 },
+		rbChordGraceSeconds = { 0.05, 0.40 },
 		controlGroupAssignHoldSeconds = { 0.05, 2.5 },
 		radialScale = { 0.5, 3.0 },
 		cameraSmoothing = { 0.0, 1.0 },
@@ -916,6 +924,8 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.disassembleUnusedTimeoutSeconds = 30.0
 	settings.lbTapMaxSeconds = ControllerCameraTestClampSetting("lbTapMaxSeconds", settings.lbTapMaxSeconds or defaults.lbTapMaxSeconds)
 	settings.lbTacticalHoldSeconds = ControllerCameraTestClampSetting("lbTacticalHoldSeconds", settings.lbTacticalHoldSeconds or defaults.lbTacticalHoldSeconds)
+	settings.rbTapMaxSeconds = ControllerCameraTestClampSetting("rbTapMaxSeconds", settings.rbTapMaxSeconds or defaults.rbTapMaxSeconds)
+	settings.rbChordGraceSeconds = ControllerCameraTestClampSetting("rbChordGraceSeconds", settings.rbChordGraceSeconds or defaults.rbChordGraceSeconds)
 	if not ControllerSelectionBehavior or not ControllerSelectionBehavior.IsValidFilter(settings.visibleSelectionFilter) then
 		settings.visibleSelectionFilter = defaults.visibleSelectionFilter
 	end
@@ -942,6 +952,7 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.preferNativeBlueprint = settings.preferNativeBlueprint ~= false
 	settings.showNativePanelWhileRadialOpen = settings.showNativePanelWhileRadialOpen ~= false
 	settings.showNativeFocusStroke = settings.showNativeFocusStroke ~= false
+	settings.nativePanelsDebugVisible = settings.nativePanelsDebugVisible == true
 	if settings.nativeBarUIIntegration ~= "Legacy Controller UI" then
 		settings.nativeBarUIIntegration = "Native Experimental"
 	end
@@ -2572,11 +2583,14 @@ function ControllerCameraTestGetSettingsDefinitions()
 		aHoldSeconds = { 0.05, 2.0, 0.01, "number", 2 },
 		lbTapMaxSeconds = { 0.08, 0.50, 0.01, "number", 2 },
 		lbTacticalHoldSeconds = { 0.08, 0.50, 0.01, "number", 2 },
+		rbTapMaxSeconds = { 0.08, 0.50, 0.01, "number", 2 },
+		rbChordGraceSeconds = { 0.05, 0.40, 0.01, "number", 2 },
 		disassembleToggleHoldSeconds = { 0.15, 1.50, 0.01, "number", 2 },
 		nativeBarUIIntegration = { 0, 0, 0, "enum", 0 },
 		controllerGlyphStyle = { 0, 0, 0, "enum", 0 },
 		showNativePanelWhileRadialOpen = { 0, 1, 1, "boolean", 0 },
 		showNativeFocusStroke = { 0, 1, 1, "boolean", 0 },
+		nativePanelsDebugVisible = { 0, 1, 1, "boolean", 0 },
 		visibleSelectionFilter = { 0, 0, 0, "enum", 0 },
 		controlGroupAssignHoldSeconds = { 0.05, 2.5, 0.01, "number", 2 },
 		singlePathSpacing = { 16, 1024, 8, "number", 0 },
@@ -2647,6 +2661,8 @@ function ControllerCameraTestResetHybridRadials(reason)
 	placement.active, placement.option, placement.nativePreviewActive = false, nil, false
 	placement.placementMode, placement.placementPattern = "none", "single"
 	placement.patternPressActive, placement.patternHoldTriggered = false, false
+	placement.distributedGridArmed, placement.distributedGridChordOwned = false, false
+	placement.distributedGridResult = "reset"
 	if ControllerNativeTargeting then
 		ControllerNativeTargeting.Reset(ControllerCameraTestNativeTargeting, reason or "mode switch")
 	end
@@ -2735,9 +2751,7 @@ end
 function ControllerCameraTestGetContextSnapshot()
 	local selected = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	local hasBuilder, hasFactory, hasTransport = false, false, false
-	local selectedSet = {}
 	for _, unitID in ipairs(selected) do
-		selectedSet[unitID] = true
 		local unitDefID = Spring.GetUnitDefID(unitID)
 		local unitDef = unitDefID and UnitDefs and UnitDefs[unitDefID]
 		if unitDef then
@@ -2746,7 +2760,6 @@ function ControllerCameraTestGetContextSnapshot()
 			hasTransport = hasTransport or (tonumber(unitDef.transportCapacity) or 0) > 0
 		end
 	end
-	local hoverOwnedTarget = ControllerCameraTestGetReticleOwnedTarget and ControllerCameraTestGetReticleOwnedTarget() or nil
 	local markedCount = 0
 	if not ControllerCameraTestUsesNativeBARUI() then
 		for _ in pairs(ControllerCameraTestDisassemble.markedTargets or {}) do markedCount = markedCount + 1 end
@@ -2776,10 +2789,6 @@ function ControllerCameraTestGetContextSnapshot()
 			ControllerCameraTestGetNativeActiveCommandID() ~= nil or false,
 		controllerGlyphStyle = ControllerCameraTestSettings.controllerGlyphStyle,
 		controllerGlyphFamily = ControllerCameraTestGetControllerGlyphFamily(),
-		hoverFriendlyTarget = hoverOwnedTarget ~= nil,
-		disassembleTargetToggleAction = hoverOwnedTarget and
-			(ControllerCameraTestDisassemble.markedTargets[hoverOwnedTarget] and "Remove Target" or "Add Target") or nil,
-		hoverSelectionToggleAction = hoverOwnedTarget and (selectedSet[hoverOwnedTarget] and "Remove from Selection" or "Add to Selection") or nil,
 		selectionToggleModifier = ControllerCameraTestIsQueueModifierActive(),
 		areaSelection = ControllerCameraTestAreaSelect.active == true,
 		stagedTactical = type(ControllerCameraTestTacticalMenu.stagedOption) == "table",
@@ -2790,9 +2799,6 @@ function ControllerCameraTestGetContextSnapshot()
 		hasBuilder = hasBuilder,
 		hasFactory = hasFactory,
 		hasTransport = hasTransport,
-		hasWorldTarget = reticleHasWorldTarget == true,
-		hoverTargetType = reticleTargetType,
-		smartTargetType = ControllerCameraTestCommandDebug.smartExactTargetType,
 		commandLayer = commandLayerActive == true,
 		controlGroupLayer = ControllerCameraTestActionDown("controlGroupModifier"),
 		pitchLayer = ControllerCameraTestLBCycle.tactical == true,
@@ -2851,6 +2857,12 @@ function ControllerCameraTestInstallWGAPI()
 	WG.BARControllerSupport.GetBackStartHoldProgress = function()
 		return backStartChordActive and math.min(1, backStartHoldTime / BACK_START_EDITOR_HOLD_SECONDS) or 0
 	end
+	WG.BARControllerSupport.SyncNativeControlGroups = ControllerCameraTestSyncNativeControlGroups
+	WG.BARControllerSupport.ReplaceNativeControlGroup = ControllerCameraTestAssignControlGroup
+	WG.BARControllerSupport.AddSelectionToNativeControlGroup = ControllerCameraTestAddSelectionToControlGroup
+	WG.BARControllerSupport.RemoveSelectionFromNativeControlGroup = ControllerCameraTestRemoveSelectionFromControlGroup
+	WG.BARControllerSupport.SelectNativeControlGroup = ControllerCameraTestRecallControlGroup
+	WG.BARControllerSupport.ClearNativeControlGroup = ControllerCameraTestClearControlGroup
 end
 
 function ControllerCameraTestRemoveWGAPI()
@@ -2883,6 +2895,12 @@ function ControllerCameraTestRemoveWGAPI()
 	WG.BARControllerSupport.IsDebugPanelVisible = nil
 	WG.BARControllerSupport.GetShortcutBinding = nil
 	WG.BARControllerSupport.GetBackStartHoldProgress = nil
+	WG.BARControllerSupport.SyncNativeControlGroups = nil
+	WG.BARControllerSupport.ReplaceNativeControlGroup = nil
+	WG.BARControllerSupport.AddSelectionToNativeControlGroup = nil
+	WG.BARControllerSupport.RemoveSelectionFromNativeControlGroup = nil
+	WG.BARControllerSupport.SelectNativeControlGroup = nil
+	WG.BARControllerSupport.ClearNativeControlGroup = nil
 end
 
 --------------------------------------------------------------------------------
@@ -2908,6 +2926,8 @@ function ControllerCameraTestGetSettingsUICategories()
 			{ key = "aHoldSeconds", label = "A hold seconds", step = 0.01, decimals = 2 },
 			{ key = "lbTapMaxSeconds", label = "LB tap maximum", step = 0.01, decimals = 2 },
 			{ key = "lbTacticalHoldSeconds", label = "LB tactical hold", step = 0.01, decimals = 2 },
+			{ key = "rbTapMaxSeconds", label = "RB tap maximum", step = 0.01, decimals = 2 },
+			{ key = "rbChordGraceSeconds", label = "RB-first chord grace", step = 0.01, decimals = 2 },
 			{ key = "disassembleToggleHoldSeconds", label = "Disassemble Toggle Hold Duration", step = 0.01, decimals = 2 },
 			{ key = "nativeBarUIIntegration", label = "Native BAR UI Integration", type = "enum",
 				options = { "Native Experimental", "Legacy Controller UI" } },
@@ -2921,6 +2941,7 @@ function ControllerCameraTestGetSettingsUICategories()
 			{ key = "radialScale", label = "Radial scale", step = 0.05, decimals = 2 },
 			{ key = "showNativePanelWhileRadialOpen", label = "Show Native Panel While Radial Is Open", type = "bool" },
 			{ key = "showNativeFocusStroke", label = "Show Native Focus Stroke", type = "bool" },
+			{ key = "nativePanelsDebugVisible", label = "Debug: keep native panels visible", type = "bool" },
 			{ key = "compactSelectedStatus", label = "Compact status panel", type = "bool" },
 			{ key = "hideCompactStatusWhenRadialOpen", label = "Hide status with radial", type = "bool" },
 			-- TEMP BUILD RADIAL TUNING: remove after visual values are finalized.
@@ -4124,6 +4145,25 @@ local function ControllerCameraTestIssueBuildOrders(builders, unitDefID, buildPo
 	local firstOpts = useQueue and { "shift" } or {}
 	ControllerCameraTestCommandDebug.lastOptions = useQueueFront and "queue-front" or ControllerCameraTestCommandOptionsSummary(firstOpts)
 	local restOpts = { "shift" }
+	local placement = ControllerCameraTestBuildPlacement
+	if placement.distributedGridArmed and not useQueueFront then
+		local api = WG["build_split"]
+		if api and type(api.controllerDistribute) == "function" then
+			local ok, distributed, builderCount, positionCount = pcall(
+				api.controllerDistribute, -math.abs(unitDefID), buildPositions)
+			placement.distributedGridArmed = false
+			placement.distributedGridResult = ok and distributed
+				and ("distributed " .. tostring(positionCount) .. " positions across " .. tostring(builderCount) .. " constructors")
+				or (builderCount == 1 and "single constructor normal grid" or "native distribution unavailable")
+			if ok and distributed then
+				ControllerCameraTestCommandDebug.lastOptions = "distributed-shift"
+				return true
+			end
+		else
+			placement.distributedGridArmed = false
+			placement.distributedGridResult = "Build Split API unavailable"
+		end
+	end
 
 	if ControllerCameraTestSettings.debugPanelVisible and (useQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
 		Spring.Echo(string.format(
@@ -5645,7 +5685,7 @@ function ControllerCameraTestAttemptT2UpgradeSmartAction(targetUnitID)
 	return false
 end
 
-local function attemptContextCommand()
+local function attemptLegacyContextCommand()
 	local cmdID = 10 -- Fallback to Move (CMD.MOVE)
 	local cmdName = "Move"
 
@@ -5905,6 +5945,47 @@ local function attemptContextCommand()
 	end
 
 	issueOrderToSelection(cmdID, params, cmdName, targetString)
+end
+
+-- Smart X in Native Experimental is the same default-command decision that
+-- vanilla BAR makes at the cursor.  No controller transport/constructor/mex
+-- heuristics are allowed on this path; the live descriptor and normal
+-- CommandNotify boundary decide legality and ownership.
+local function attemptContextCommand()
+	ControllerCameraTestResetMexCommandDebug()
+	ControllerCameraTestResetSmartCommandDebug()
+	local api = WG and WG.ordermenu
+	if not ControllerCameraTestUsesNativeBARUI()
+			or not (api and type(api.controllerIssueDefault) == "function") then
+		return attemptLegacyContextCommand()
+	end
+	local target = ControllerCameraTestGetReticleTargetInfo()
+	if target.targetType == "feature" and target.targetID then
+		target.commandID = ControllerCameraTestFeatureCommandID(target.targetID)
+	end
+	local options = ControllerCameraTestGetCommandOptions()
+	local dispatchMode = ControllerCameraTestIsQueueFrontModifierActive() and "insert-front" or nil
+	local ok, accepted, route, cmdID = pcall(api.controllerIssueDefault, target, options, dispatchMode)
+	ControllerCameraTestCommandDebug.defaultCmdID = tostring(cmdID or "none")
+	ControllerCameraTestCommandDebug.issuedCmdID = tostring(cmdID or "none")
+	ControllerCameraTestCommandDebug.issuedParamsCount = target.targetType == "unit" and 1
+		or target.targetType == "feature" and 1 or (target.hasWorld and 3 or 0)
+	ControllerCameraTestCommandDebug.smartActionSource = "Spring.GetDefaultCommand via Order Menu"
+	ControllerCameraTestCommandDebug.smartExactTargetType = tostring(target.targetType or "none")
+	ControllerCameraTestCommandDebug.smartExactTargetID = tostring(target.targetID or "none")
+	ControllerCameraTestCommandDebug.lastResult = ok and accepted
+		and ("issued once via " .. tostring(route)) or tostring(route or accepted or "default command rejected")
+	if not ok or not accepted then
+		latchSelectionDebugMessage("Smart X: " .. ControllerCameraTestCommandDebug.lastResult)
+		return false
+	end
+	ControllerCameraTestCommandDebug.smartChosenAction = "vanilla default"
+	ControllerCameraTestShowHotkeyFeedback("SMART ACTION", "utility")
+	if target.hasWorld then
+		ControllerCameraTestSetCommandMarker(target.x, target.y or 0, target.z,
+			"Smart Action", "native-default")
+	end
+	return true
 end
 
 local function attemptAttackCommand()
@@ -6182,11 +6263,15 @@ end
 function ControllerCameraTestCancelActiveCommandTargeting(reason, armRelease)
 	local selectionBefore = ControllerCameraTestSafeSelectionSnapshot(
 		type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+	local api = WG and WG.ordermenu
+	if api and type(api.controllerCancelTarget) == "function" then
+		pcall(api.controllerCancelTarget, reason or "targeting cancelled")
+	end
 	if type(Spring.SetActiveCommand) == "function" then pcall(Spring.SetActiveCommand, nil) end
 	ControllerCameraTestClearNativeTargetPreview(reason or "targeting cancelled")
-	if ControllerNativeTargeting then
-		ControllerNativeTargeting.Reset(ControllerCameraTestNativeTargeting, reason or "targeting cancelled")
-	end
+	ControllerCameraTestNativeTargeting.phase = "IDLE"
+	ControllerCameraTestNativeTargeting.anchor = nil
+	ControllerCameraTestNativeTargeting.current = nil
 	ControllerCameraTestNativeTargeting.descriptorDirty = false
 	if armRelease then ControllerCameraTestArmCancelRelease(reason or "targeting cancelled by B") end
 	ControllerCameraTestRestoreSelectionIfChanged(selectionBefore, "Preserved after command cancel")
@@ -6197,146 +6282,98 @@ end
 
 function ControllerCameraTestRefreshNativeTargetingDescriptor(force)
 	local state = ControllerCameraTestNativeTargeting
-	if not ControllerCameraTestUsesNativeBARUI() or not ControllerNativeTargeting then
-		if ControllerNativeTargeting then ControllerNativeTargeting.Reset(state, "legacy controller UI") end
+	if not ControllerCameraTestUsesNativeBARUI() then
+		state.phase = "IDLE"
 		state.descriptorDirty = false
 		return nil
 	end
-	if not force and not state.descriptorDirty then return state.descriptor end
-	-- Once the controller owns an anchor, Spring.GetActiveCommand is no longer
-	-- authoritative: BAR may clear it as part of its mouse-oriented lifecycle.
-	-- Keep the already validated descriptor until confirm or explicit cancel.
-	if state.anchor and state.descriptor and state.cmdID then
+	local api = WG and WG.ordermenu
+	if not (api and type(api.controllerGetTargetState) == "function") then return nil end
+	local okOwner, ownerState = pcall(api.controllerGetTargetState)
+	if okOwner and type(ownerState) == "table" and ownerState.phase ~= "IDLE" then
+		for key, value in pairs(ownerState) do state[key] = value end
 		state.descriptorDirty = false
-		ControllerCameraTestTraceNativeTarget("descriptor-cached", "engine active command change ignored")
 		return state.descriptor
 	end
+	if not force and not state.descriptorDirty then return nil end
 	state.descriptorDirty = false
-	local api = WG and WG.ordermenu
 	local descriptor
-	if api and type(api.controllerGetActiveTargetDescriptor) == "function" then
+	if type(api.controllerGetActiveTargetDescriptor) == "function" then
 		local ok, value = pcall(api.controllerGetActiveTargetDescriptor)
 		if ok and type(value) == "table" then descriptor = value end
 	end
-	ControllerNativeTargeting.SetDescriptor(state, descriptor, CMDTYPE)
-	ControllerCameraTestTraceNativeTarget("descriptor-refresh", descriptor and "live descriptor" or "no descriptor")
+	if descriptor and type(api.controllerBeginTarget) == "function" then
+		local callOK, began = pcall(api.controllerBeginTarget, descriptor.cmdID or descriptor.id)
+		if callOK and began then
+			local stateOK, value = pcall(api.controllerGetTargetState)
+			if stateOK and type(value) == "table" then
+				for key, item in pairs(value) do state[key] = item end
+			end
+		end
+	else
+		state.phase, state.descriptor, state.cmdID = "IDLE", nil, nil
+	end
+	ControllerCameraTestTraceNativeTarget("owner-refresh", descriptor and tostring(state.ownerName) or "no descriptor")
 	return state.descriptor
 end
 
 function ControllerCameraTestShowNativeTargetPreview()
-	local state, drag = ControllerCameraTestNativeTargeting, ControllerCameraTestDragCommand
-	if not state.anchor or not state.current then return end
-	local isArea = state.shape == "area"
-	drag.active = true
-	drag.pressActive = false
-	drag.nativeControllerTargeting = true
-	drag.mode = isArea and "genericArea" or "fightLine"
-	drag.cmdID = state.cmdID
-	drag.option = {
-		name = state.descriptor and state.descriptor.name or "Command",
-		shortLabel = state.descriptor and state.descriptor.name or "Command",
-		kind = isArea and "drag_area" or "drag_line",
-		dragMode = drag.mode,
-		iconLabel = isArea and "AREA" or "TARGET",
-	}
-	drag.startX, drag.startY, drag.startZ = state.anchor.x, state.anchor.y, state.anchor.z
-	drag.endX, drag.endY, drag.endZ = state.current.x, state.current.y, state.current.z
+	-- Preview rendering belongs to the registered native command owner.  Kept as
+	-- a compatibility no-op for diagnostics and older test harnesses.
 end
 
 function ControllerCameraTestIssueNativeTarget(params)
-	local state = ControllerCameraTestNativeTargeting
-	local api = WG and WG.ordermenu
-	if not (api and type(api.controllerIssueActiveTarget) == "function") then
-		state.lastResult = "Order Menu targeting API unavailable"
-		return false
-	end
-	local queueActive = ControllerCameraTestIsQueueModifierActive()
-	local dispatchMode = ControllerCameraTestIsQueueFrontModifierActive() and "insert-front" or nil
-	local options = ControllerCameraTestGetCommandOptions()
-	ControllerCameraTestTraceNativeTarget("dispatch-attempt", "params=" .. tostring(#params))
-	local ok, accepted, route = pcall(api.controllerIssueActiveTarget,
-		state.cmdID, params, options, dispatchMode, state.descriptor)
-	if not ok or not accepted then
-		state.lastResult = tostring(route or "target rejected")
-		ControllerCameraTestTraceNativeTarget("dispatch-rejected", state.lastResult)
-		return false
-	end
-	state.lastResult = "issued once via " .. tostring(route or "engine")
-	ControllerCameraTestTraceNativeTarget("dispatch-accepted", tostring(route or "engine"))
-	local descriptor = state.descriptor
-	local cmdID = state.cmdID
-	ControllerCameraTestClearNativeTargetPreview()
-	if queueActive then
-		ControllerNativeTargeting.Reset(state, "queued target issued")
-		ControllerNativeTargeting.SetDescriptor(state, descriptor, CMDTYPE)
-		state.persistentUntilQueueRelease = true
-		state.descriptorDirty = false
-	else
-		if type(Spring.SetActiveCommand) == "function" then pcall(Spring.SetActiveCommand, nil) end
-		ControllerNativeTargeting.Reset(state, "target issued")
-		state.descriptorDirty = false
-	end
-	lastIssuedCommand = "Native target: " .. tostring(cmdID)
-	if #params >= 3 then
-		ControllerCameraTestSetCommandMarker(params[1], params[2], params[3],
-			descriptor and descriptor.name or "Command", "native-target")
-	end
-	return true
+	ControllerCameraTestNativeTargeting.lastResult = "final dispatch is owner-only"
+	return false
 end
 
 function ControllerCameraTestHandleNativeTargetingInput()
-	if not ControllerCameraTestUsesNativeBARUI() or not ControllerNativeTargeting then return false end
+	if not ControllerCameraTestUsesNativeBARUI() then return false end
 	local state = ControllerCameraTestNativeTargeting
-	local descriptor = ControllerCameraTestRefreshNativeTargetingDescriptor(false)
-	if not descriptor or state.phase == ControllerNativeTargeting.IDLE
-		or state.phase == ControllerNativeTargeting.BUILD_PLACEMENT then return false end
-
-	if state.persistentUntilQueueRelease and not ControllerCameraTestIsQueueModifierActive() then
-		ControllerCameraTestCancelActiveCommandTargeting("queue modifier released", false)
-		return true
-	end
-	if ControllerCameraTestActionPressed("cancel") then
-		return ControllerCameraTestCancelActiveCommandTargeting("targeting cancelled by B", true)
-	end
-	ControllerNativeTargeting.ObserveInput(state,
-		ControllerCameraTestActionDown("select"), ControllerCameraTestActionDown("smartAction"))
-
+	local api = WG and WG.ordermenu
+	if not (api and type(api.controllerTargetInput) == "function"
+			and type(api.controllerGetTargetState) == "function") then return false end
+	ControllerCameraTestRefreshNativeTargetingDescriptor(false)
+	local stateOK, before = pcall(api.controllerGetTargetState)
+	if not stateOK or type(before) ~= "table" or before.phase == "IDLE"
+			or before.phase == "BUILD_PLACEMENT" then return false end
 	local target = ControllerCameraTestGetReticleTargetInfo()
 	if target.targetType == "feature" and target.targetID then
 		target.commandID = ControllerCameraTestFeatureCommandID(target.targetID)
 	end
-	if state.anchor then
-		ControllerNativeTargeting.UpdatePreview(state, target)
-		ControllerCameraTestShowNativeTargetPreview()
+	local selectPressed = ControllerCameraTestActionPressed("select")
+	local smartPressed = ControllerCameraTestActionPressed("smartAction")
+	if selectPressed or smartPressed then state.routerPressSerial = (state.routerPressSerial or 0) + 1 end
+	local input = {
+		selectDown = ControllerCameraTestActionDown("select"),
+		smartDown = ControllerCameraTestActionDown("smartAction"),
+		selectPressed = selectPressed, smartPressed = smartPressed,
+		cancelPressed = ControllerCameraTestActionPressed("cancel"),
+		target = target, options = ControllerCameraTestGetCommandOptions(),
+		dispatchMode = ControllerCameraTestIsQueueFrontModifierActive() and "insert-front" or nil,
+		queueActive = ControllerCameraTestIsQueueModifierActive(), pressSerial = state.routerPressSerial,
+	}
+	local okInput, consumed, result = pcall(api.controllerTargetInput, input)
+	if not okInput then
+		state.lastResult = "native owner input failed: " .. tostring(consumed)
+		return true
 	end
-	if ControllerNativeTargeting.CanAcceptPress(state)
-			and (ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction")) then
-		local params, result
-		if state.anchor then
-			ControllerCameraTestTraceNativeTarget("confirm-press", "fresh A/X press")
-			params, result = ControllerNativeTargeting.BuildAnchoredParams(state)
-		else
-			ControllerCameraTestTraceNativeTarget("target-press", "anchor or point")
-			params, result = ControllerNativeTargeting.BeginOrBuildPoint(
-				state, target, CMDTYPE, ControllerCameraTestIsAlliedUnit)
-			if result == "anchor" then
-				ControllerCameraTestTraceNativeTarget("anchor-created", "waiting for release")
-				ControllerCameraTestShowNativeTargetPreview()
-				ControllerCameraTestShowHotkeyFeedback("ANCHOR", "utility")
-				return true
-			end
-		end
-		if params then
-			ControllerCameraTestIssueNativeTarget(params)
-		else
-			state.lastResult = tostring(result or "invalid target")
-			ControllerCameraTestShowHotkeyFeedback("INVALID TARGET", "utility")
-		end
+	local afterOK, after = pcall(api.controllerGetTargetState)
+	if afterOK and type(after) == "table" then for key, value in pairs(after) do state[key] = value end end
+	if input.cancelPressed then
+		ControllerCameraTestArmCancelRelease("targeting cancelled by B")
+		if type(Spring.SetActiveCommand) == "function" then pcall(Spring.SetActiveCommand, nil) end
+	elseif before.anchor == nil and state.anchor ~= nil then
+		ControllerCameraTestShowHotkeyFeedback("ANCHOR", "utility")
+	elseif before.phase ~= "IDLE" and state.phase == "IDLE" and tostring(result):find("engine", 1, true) then
+		lastIssuedCommand = "Native target: " .. tostring(before.cmdID)
+		if type(Spring.SetActiveCommand) == "function" then pcall(Spring.SetActiveCommand, nil) end
 	end
+	ControllerCameraTestTraceNativeTarget("owner-input", tostring(result))
 	activeButtonLayoutSummary = state.anchor
 		and "Native area target: move reticle, A/X confirm, B cancel, RT append"
 		or "Native command target: A/X confirm, B cancel, RT append"
-	return true
+	return consumed ~= false
 end
 
 function ControllerCameraTestGetVisibleAlliedUnits()
@@ -6630,7 +6667,8 @@ end
 function ControllerCameraTestPruneMarkedTargets()
 	local state = ControllerCameraTestDisassemble
 	for unitID in pairs(state.markedTargets or {}) do
-		if not ControllerCameraTestIsSafeSelectableUnit(unitID) then state.markedTargets[unitID] = nil end
+		if type(Spring.ValidUnitID) == "function" and not Spring.ValidUnitID(unitID) then state.markedTargets[unitID] = nil end
+		if type(Spring.GetUnitIsDead) == "function" and Spring.GetUnitIsDead(unitID) then state.markedTargets[unitID] = nil end
 	end
 end
 
@@ -6668,6 +6706,57 @@ function ControllerCameraTestIssueNativeDisassembleMove()
 		{ reticleWorldX, reticleWorldY or 0, reticleWorldZ }, "Move", "ground", {})
 	if ok then ControllerCameraTestShowHotkeyFeedback("MOVE", "utility") end
 	return ok == true
+end
+
+function ControllerCameraTestAppendDisassembleReclaimer(unitID)
+	if not ControllerCameraTestIsDisassembleConstructor(unitID) then return false end
+	local state = ControllerCameraTestDisassemble
+	for _, existing in ipairs(state.reclaimers or {}) do if existing == unitID then return true end end
+	state.reclaimers[#state.reclaimers + 1] = unitID
+	table.sort(state.reclaimers)
+	state.lastResult = "touched constructor joined reclaimers"
+	ControllerCameraTestRestoreDisassembleConstructors("Constructor joined reclaimers")
+	return true
+end
+
+function ControllerCameraTestIssueNativeDisassembleTarget()
+	local target = ControllerCameraTestGetReticleTargetInfo()
+	local state = ControllerCameraTestDisassemble
+	if target.targetType == "unit" and target.targetID then
+		local myTeam = type(Spring.GetMyTeamID) == "function" and Spring.GetMyTeamID() or nil
+		local targetTeam = type(Spring.GetUnitTeam) == "function" and Spring.GetUnitTeam(target.targetID) or nil
+		if myTeam ~= nil and targetTeam == myTeam and ControllerCameraTestAppendDisassembleReclaimer(target.targetID) then
+			ControllerCameraTestShowHotkeyFeedback("RECLAIMER ADDED", "reclaim")
+			return true
+		end
+	end
+	local params
+	if target.targetType == "unit" and tonumber(target.targetID) then
+		if not ControllerCameraTestConstructorSet()[target.targetID] then params = { target.targetID } end
+	elseif target.targetType == "feature" and tonumber(target.targetID) then
+		params = { ControllerCameraTestFeatureCommandID(target.targetID) }
+	end
+	if not params then
+		if target.targetType == "ground" or target.targetType == nil then
+			return ControllerCameraTestIssueNativeDisassembleMove()
+		end
+		state.lastResult = "native target is not reclaimable"
+		return false
+	end
+	ControllerCameraTestRestoreDisassembleConstructors("Constructors staged")
+	local api = WG and WG.ordermenu
+	if not (api and type(api.controllerIssueCommand) == "function") then return false end
+	local ok, accepted, route = pcall(api.controllerIssueCommand,
+		(CMD and CMD.RECLAIM) or 90, params, ControllerCameraTestGetCommandOptions(),
+		ControllerCameraTestIsQueueFrontModifierActive() and "insert-front" or nil)
+	if not ok or not accepted then
+		state.lastResult = tostring(route or "native reclaim rejected")
+		return false
+	end
+	state.successfulActivity, state.lastReclaimAt = true, debugEventTime
+	state.lastResult = "immediate native reclaim via " .. tostring(route)
+	ControllerCameraTestShowHotkeyFeedback("RECLAIM", "reclaim")
+	return true
 end
 
 function ControllerCameraTestIssueNativeDisassembleStop()
@@ -6761,8 +6850,12 @@ function ControllerCameraTestRestoreDisassembleConstructors(label)
 end
 
 function ControllerCameraTestNativeDisassembleTargets(units, unitDefID)
-	return ControllerDisassembleBehavior.FilterOwnedTargets(units, ControllerCameraTestConstructorSet(),
-		ControllerCameraTestIsSafeSelectableUnit, Spring.GetUnitDefID, unitDefID)
+	local function validTarget(unitID)
+		if type(Spring.ValidUnitID) == "function" and not Spring.ValidUnitID(unitID) then return false end
+		return type(Spring.GetUnitIsDead) ~= "function" or not Spring.GetUnitIsDead(unitID)
+	end
+	return ControllerDisassembleBehavior.FilterNativeTargets(units, ControllerCameraTestConstructorSet(),
+		validTarget, Spring.GetUnitDefID, unitDefID)
 end
 
 function ControllerCameraTestCancelNativeDisassembleGesture(reason)
@@ -6862,7 +6955,7 @@ function ControllerCameraTestUpdateNativeDisassembleInput(dt)
 	end
 
 	if ControllerCameraTestActionPressed("smartAction") then
-		ControllerCameraTestIssueNativeDisassembleMove()
+		ControllerCameraTestIssueNativeDisassembleTarget()
 		return true
 	end
 
@@ -6993,6 +7086,9 @@ function ControllerCameraTestExitDisassembleMode(toast, reason)
 		pcall(spSelectUnitArray, reclaimers, false)
 	end
 	state.active, state.markedTargets, state.highlightedTargets = false, {}, {}
+	if WG.smartareareclaim and type(WG.smartareareclaim.controllerClearHighlightedTargets) == "function" then
+		pcall(WG.smartareareclaim.controllerClearHighlightedTargets)
+	end
 	state.reclaimers, state.successfulActivity = {}, false
 	state.doubleB = ControllerDisassembleBehavior.NewDoubleBTap()
 	state.lastResult = tostring(reason or "disabled")
@@ -7004,24 +7100,35 @@ function ControllerCameraTestCollectOwnedTargetsInRadius(x, z, radius, typeFilte
 	local candidates = {}
 	if type(Spring.GetUnitsInCylinder) == "function" and x and z and radius then
 		local myTeam = type(Spring.GetMyTeamID) == "function" and Spring.GetMyTeamID() or nil
-		local ok, units = pcall(Spring.GetUnitsInCylinder, x, z, radius, myTeam)
-		if not ok or type(units) ~= "table" then ok, units = pcall(Spring.GetUnitsInCylinder, x, z, radius) end
+		local ok, units = pcall(Spring.GetUnitsInCylinder, x, z, radius)
 		if ok and type(units) == "table" then
 			for _, unitID in ipairs(units) do
 				local unitDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(unitID) or nil
-				if ControllerCameraTestIsSafeSelectableUnit(unitID)
-						and (type(typeFilter) ~= "table" or typeFilter[unitDefID] == true) then
+				local unitTeam = type(Spring.GetUnitTeam) == "function" and Spring.GetUnitTeam(unitID) or nil
+				if unitTeam == myTeam and ControllerCameraTestIsDisassembleConstructor(unitID) then
+					ControllerCameraTestAppendDisassembleReclaimer(unitID)
+				elseif (type(typeFilter) ~= "table" or typeFilter[unitDefID] == true) then
 					candidates[#candidates + 1] = unitID
 				end
 			end
 		end
 	end
-	if ControllerDisassembleBehavior then return ControllerDisassembleBehavior.OrderTargets(candidates) end
+	local ordered = ControllerDisassembleBehavior and ControllerDisassembleBehavior.OrderTargets(candidates) or candidates
+	local highlighted = {}
+	local myTeam = type(Spring.GetMyTeamID) == "function" and Spring.GetMyTeamID() or nil
+	for _, unitID in ipairs(ordered) do
+		if type(Spring.GetUnitTeam) == "function" and Spring.GetUnitTeam(unitID) ~= myTeam then highlighted[unitID] = true end
+	end
+	ControllerCameraTestDisassemble.highlightedTargets = highlighted
+	if WG.smartareareclaim and type(WG.smartareareclaim.controllerSetHighlightedTargets) == "function" then
+		pcall(WG.smartareareclaim.controllerSetHighlightedTargets, highlighted)
+	end
+	if ControllerDisassembleBehavior then return ordered end
 	table.sort(candidates); return candidates
 end
 
 function ControllerCameraTestMarkSingleTarget(unitID, additive)
-	if not ControllerCameraTestIsSafeSelectableUnit(unitID) then return false end
+	if type(Spring.ValidUnitID) == "function" and not Spring.ValidUnitID(unitID) then return false end
 	local state = ControllerCameraTestDisassemble
 	if additive then
 		if state.markedTargets[unitID] then state.markedTargets[unitID] = nil else state.markedTargets[unitID] = true end
@@ -7062,7 +7169,9 @@ function ControllerCameraTestIssueDisassembleReclaim(targets)
 	local validTargets = {}
 	local constructors = ControllerCameraTestConstructorSet()
 	for _, unitID in ipairs(type(ordered) == "table" and ordered or {}) do
-		if not constructors[unitID] and ControllerCameraTestIsSafeSelectableUnit(unitID) then
+		local valid = type(Spring.ValidUnitID) ~= "function" or Spring.ValidUnitID(unitID)
+		if valid and type(Spring.GetUnitIsDead) == "function" then valid = not Spring.GetUnitIsDead(unitID) end
+		if not constructors[unitID] and valid then
 			validTargets[#validTargets + 1] = unitID
 		end
 	end
@@ -7903,19 +8012,13 @@ function ControllerCameraTestIsIdleCycleCandidate(unitID)
 end
 
 function ControllerCameraTestGetIdleCycleUnits()
-	local builders, fallback = {}, {}
-	for _, unitID in ipairs(ControllerCameraTestGetOwnTeamUnits()) do
-		local ok, isBuilder = ControllerCameraTestIsIdleCycleCandidate(unitID)
-		if ok then
-			if isBuilder then
-				builders[#builders + 1] = unitID
-			else
-				fallback[#fallback + 1] = unitID
-			end
+	local units = {}
+	if WG.idlebuilders and type(WG.idlebuilders.controllerGetSnapshot) == "function" then
+		local ok, snapshot = pcall(WG.idlebuilders.controllerGetSnapshot)
+		if ok and type(snapshot) == "table" and type(snapshot.units) == "table" then
+			for _, unitID in ipairs(snapshot.units) do units[#units + 1] = unitID end
 		end
 	end
-	local units = (#builders > 0) and builders or fallback
-	table.sort(units)
 	ControllerCameraTestIdleCycle.lastCount = #units
 	return units
 end
@@ -7932,57 +8035,41 @@ end
 -- SECTION: Idle cycling
 --------------------------------------------------------------------------------
 function ControllerCameraTestCycleIdleUnit(delta)
-	local units = ControllerCameraTestGetIdleCycleUnits()
-	if #units == 0 then
+	local api = WG.idlebuilders
+	if not api or type(api.controllerCycle) ~= "function" then
 		ControllerCameraTestIdleCycle.lastResult = "no idle units"
 		ControllerCameraTestIdleCycle.currentUnitID = nil
-		latchSelectionDebugMessage("Idle cycle: no idle units")
+		latchSelectionDebugMessage("Idle cycle: vanilla idle widget unavailable")
 		return false
 	end
-
-	local currentIndex = 0
-	for i, unitID in ipairs(units) do
-		if unitID == ControllerCameraTestIdleCycle.currentUnitID then
-			currentIndex = i
-			break
-		end
-	end
-	local nextIndex = ((currentIndex - 1 + delta) % #units) + 1
-	local unitID = units[nextIndex]
-	local unitDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(unitID) or nil
-	ControllerCameraTestIdleCycle.currentIndex = nextIndex
-	ControllerCameraTestIdleCycle.currentUnitID = unitID
-	ControllerCameraTestIdleCycle.currentTypeKey = unitDefID
-	ControllerCameraTestIdleCycle.lastTypeName = ControllerCameraTestUnitTypeName(unitDefID)
-	if ControllerCameraTestFocusAndSelectUnit(unitID, "Idle unit") then
-		ControllerCameraTestIdleCycle.lastResult = "idle unit " .. tostring(nextIndex) .. "/" .. tostring(#units)
+	local ok, selected, snapshot = pcall(api.controllerCycle, delta, false)
+	if ok and selected and type(snapshot) == "table" then
+		ControllerCameraTestIdleCycle.currentUnitID = snapshot.currentUnitID
+		ControllerCameraTestIdleCycle.currentTypeKey = snapshot.currentTypeID
+		ControllerCameraTestIdleCycle.lastTypeName = ControllerCameraTestUnitTypeName(snapshot.currentTypeID)
+		ControllerCameraTestIdleCycle.lastCount = #(snapshot.units or {})
+		ControllerCameraTestIdleCycle.lastResult = snapshot.lastResult or "idle unit"
 		ControllerCameraTestLayerDebug.normalUtilityAction = "Idle cycle " .. ControllerCameraTestIdleCycle.lastResult
 		return true
 	end
+	ControllerCameraTestIdleCycle.lastResult = "no idle units"
 	return false
 end
 
 function ControllerCameraTestGetIdleUnitTypeBuckets()
-	local bucketsByDef = {}
 	local buckets = {}
-	for _, unitID in ipairs(ControllerCameraTestGetIdleCycleUnits()) do
-		local unitDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(unitID) or nil
-		if unitDefID then
-			local bucket = bucketsByDef[unitDefID]
-			if not bucket then
-				bucket = { unitDefID = unitDefID, name = ControllerCameraTestUnitTypeName(unitDefID), units = {} }
-				bucketsByDef[unitDefID] = bucket
-				buckets[#buckets + 1] = bucket
+	if WG.idlebuilders and type(WG.idlebuilders.controllerGetSnapshot) == "function" then
+		local ok, snapshot = pcall(WG.idlebuilders.controllerGetSnapshot)
+		if ok and type(snapshot) == "table" then
+			for _, nativeBucket in ipairs(snapshot.types or {}) do
+				buckets[#buckets + 1] = {
+					unitDefID = nativeBucket.unitDefID,
+					name = ControllerCameraTestUnitTypeName(nativeBucket.unitDefID),
+					units = nativeBucket.units,
+				}
 			end
-			bucket.units[#bucket.units + 1] = unitID
 		end
 	end
-	table.sort(buckets, function(a, b)
-		if a.name == b.name then
-			return a.unitDefID < b.unitDefID
-		end
-		return a.name < b.name
-	end)
 	return buckets
 end
 
@@ -7999,25 +8086,19 @@ function ControllerCameraTestSelectRepresentativeFromIdleTypeBucket(bucket)
 end
 
 function ControllerCameraTestCycleIdleUnitType(delta)
-	local buckets = ControllerCameraTestGetIdleUnitTypeBuckets()
-	if #buckets == 0 then
+	local api = WG.idlebuilders
+	if not api or type(api.controllerCycle) ~= "function" then
 		ControllerCameraTestIdleCycle.lastResult = "no idle type buckets"
-		latchSelectionDebugMessage("Idle type cycle: no idle units")
+		latchSelectionDebugMessage("Idle type cycle: vanilla idle widget unavailable")
 		return false
 	end
-	local currentIndex = 0
-	for i, bucket in ipairs(buckets) do
-		if bucket.unitDefID == ControllerCameraTestIdleCycle.currentTypeKey then
-			currentIndex = i
-			break
-		end
-	end
-	local nextIndex = ((currentIndex - 1 + delta) % #buckets) + 1
-	local bucket = buckets[nextIndex]
-	ControllerCameraTestIdleCycle.currentTypeIndex = nextIndex
-	if ControllerCameraTestSelectRepresentativeFromIdleTypeBucket(bucket) then
-		ControllerCameraTestIdleCycle.lastResult = "idle type " .. tostring(nextIndex) .. "/" .. tostring(#buckets)
-		ControllerCameraTestLayerDebug.normalUtilityAction = "Idle type " .. tostring(bucket.name) .. " x" .. tostring(#bucket.units)
+	local ok, selected, snapshot = pcall(api.controllerCycle, delta, true)
+	if ok and selected and type(snapshot) == "table" then
+		ControllerCameraTestIdleCycle.currentUnitID = snapshot.currentUnitID
+		ControllerCameraTestIdleCycle.currentTypeKey = snapshot.currentTypeID
+		ControllerCameraTestIdleCycle.lastTypeName = ControllerCameraTestUnitTypeName(snapshot.currentTypeID)
+		ControllerCameraTestIdleCycle.lastResult = snapshot.lastResult or "idle type"
+		ControllerCameraTestLayerDebug.normalUtilityAction = "Idle type " .. tostring(ControllerCameraTestIdleCycle.lastTypeName)
 		return true
 	end
 	return false
@@ -8631,6 +8712,108 @@ for _, direction in ipairs(TacticalCategories.Order) do
 	local category = TacticalCategories.ByDirection[direction]
 	category.direction = direction
 	TacticalCategories.ByKey[category.key] = category
+end
+
+function ControllerCameraTestNativeGroupNumber(slot)
+	return ControllerCameraTestNormalizeControlGroupSlot(slot) % 10
+end
+
+function ControllerCameraTestSyncNativeControlGroups()
+	local groups = ControllerCameraTestControlGroups
+	if type(Spring.GetGroupUnits) ~= "function" then return false end
+	for slot = 1, 10 do
+		local units = Spring.GetGroupUnits(ControllerCameraTestNativeGroupNumber(slot)) or {}
+		units = ControllerCameraTestFilterValidUnits(units)
+		table.sort(units)
+		if #units > 0 then
+			local unitDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(units[1]) or nil
+			groups.slots[slot] = {
+				units = units, count = #units, unitDefID = unitDefID,
+				typeName = unitDefID and ControllerCameraTestUnitTypeName(unitDefID) or "Native group",
+				native = true,
+			}
+		else
+			groups.slots[slot] = nil
+		end
+	end
+	groups.nativeAutogroupStatus = "engine groups 0-9 authoritative"
+	return true
+end
+
+function ControllerCameraTestPruneDeadUnitsFromControlGroup(slot)
+	ControllerCameraTestSyncNativeControlGroups()
+	local entry = ControllerCameraTestControlGroups.slots[ControllerCameraTestNormalizeControlGroupSlot(slot)]
+	return entry and entry.units or {}
+end
+
+function ControllerCameraTestAssignControlGroup(slot)
+	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
+	if type(Spring.SetUnitGroup) ~= "function" or type(Spring.GetGroupUnits) ~= "function" then return false end
+	local groupNumber = ControllerCameraTestNativeGroupNumber(slot)
+	local selected = ControllerCameraTestFilterValidUnits(type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+	if #selected == 0 then
+		ControllerCameraTestSetControlGroupAction("assign failed: no selected units", slot, 0)
+		return false
+	end
+	for _, unitID in ipairs(Spring.GetGroupUnits(groupNumber) or {}) do Spring.SetUnitGroup(unitID, -1) end
+	for _, unitID in ipairs(selected) do Spring.SetUnitGroup(unitID, groupNumber) end
+	ControllerCameraTestSyncNativeControlGroups()
+	ControllerCameraTestControlGroups.activeSlot = slot
+	ControllerCameraTestSetControlGroupAction("replaced native group x" .. tostring(#selected), slot, #selected)
+	return true
+end
+
+function ControllerCameraTestAddSelectionToControlGroup(slot)
+	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
+	if type(Spring.SetUnitGroup) ~= "function" then return false end
+	local selected = ControllerCameraTestFilterValidUnits(type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {})
+	for _, unitID in ipairs(selected) do Spring.SetUnitGroup(unitID, ControllerCameraTestNativeGroupNumber(slot)) end
+	ControllerCameraTestSyncNativeControlGroups()
+	ControllerCameraTestSetControlGroupAction("added selection", slot, #selected)
+	return #selected > 0
+end
+
+function ControllerCameraTestRemoveSelectionFromControlGroup(slot)
+	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
+	if type(Spring.SetUnitGroup) ~= "function" or type(Spring.GetUnitGroup) ~= "function" then return false end
+	local groupNumber, removed = ControllerCameraTestNativeGroupNumber(slot), 0
+	for _, unitID in ipairs(type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}) do
+		if Spring.GetUnitGroup(unitID) == groupNumber then Spring.SetUnitGroup(unitID, -1); removed = removed + 1 end
+	end
+	ControllerCameraTestSyncNativeControlGroups()
+	ControllerCameraTestSetControlGroupAction("removed selection", slot, removed)
+	return removed > 0
+end
+
+function ControllerCameraTestRecallControlGroup(slot)
+	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
+	local units = ControllerCameraTestPruneDeadUnitsFromControlGroup(slot)
+	ControllerCameraTestControlGroups.activeSlot = slot
+	if #units == 0 then ControllerCameraTestSetControlGroupAction("empty", slot, 0); return false end
+	if not ControllerCameraTestSelectUnits(units, "Native group " .. ControllerCameraTestGetControlGroupDisplaySlot(slot)) then return false end
+	ControllerCameraTestFocusUnitsCenter(units, "Native control group")
+	ControllerCameraTestSetControlGroupAction("recalled native group x" .. tostring(#units), slot, #units)
+	return true
+end
+
+function ControllerCameraTestClearControlGroup(slot)
+	slot = ControllerCameraTestNormalizeControlGroupSlot(slot)
+	if type(Spring.GetGroupUnits) ~= "function" or type(Spring.SetUnitGroup) ~= "function" then return false end
+	for _, unitID in ipairs(Spring.GetGroupUnits(ControllerCameraTestNativeGroupNumber(slot)) or {}) do Spring.SetUnitGroup(unitID, -1) end
+	ControllerCameraTestSyncNativeControlGroups()
+	ControllerCameraTestControlGroups.activeSlot = slot
+	ControllerCameraTestSetControlGroupAction("cleared native group", slot, 0)
+	return true
+end
+
+function ControllerCameraTestAutoAddFinishedUnitToGroups()
+	-- Native groups never auto-add future units; keyboard and controller group
+	-- membership remain one authoritative engine data set.
+	ControllerCameraTestSyncNativeControlGroups()
+end
+
+function ControllerCameraTestRemoveUnitFromControlGroups()
+	ControllerCameraTestSyncNativeControlGroups()
 end
 
 function TacticalCategories.AreaMexFallbackOption()
@@ -9382,6 +9565,30 @@ end
 function ControllerCameraTestStageAreaCommandShortcut(dragMode, label)
 	local option = ControllerCameraTestFindTacticalAreaOptionByMode(dragMode, true, "area shortcut")
 	if option then
+		local api = WG and WG.ordermenu
+		if ControllerCameraTestUsesNativeBARUI() and api
+				and type(api.controllerActivate) == "function"
+				and type(api.controllerBeginTarget) == "function"
+				and type(api.controllerTargetInput) == "function" then
+			local activated = api.controllerActivate(option.cmdID, 1)
+			if not activated then return false end
+			local began = api.controllerBeginTarget(option.cmdID)
+			if not began then return false end
+			local target = ControllerCameraTestGetReticleTargetInfo()
+			if target.targetType == "feature" and target.targetID then
+				target.commandID = ControllerCameraTestFeatureCommandID(target.targetID)
+			end
+			api.controllerTargetInput({ selectDown = false, smartDown = false, target = target })
+			ControllerCameraTestNativeTargeting.routerPressSerial =
+				(ControllerCameraTestNativeTargeting.routerPressSerial or 0) + 1
+			api.controllerTargetInput({ selectDown = true, selectPressed = true, smartDown = false,
+				target = target, options = ControllerCameraTestGetCommandOptions(),
+				queueActive = ControllerCameraTestIsQueueModifierActive(),
+				pressSerial = ControllerCameraTestNativeTargeting.routerPressSerial })
+			ControllerCameraTestRefreshNativeTargetingDescriptor(false)
+			ControllerCameraTestShowHotkeyFeedback(string.upper(tostring(label or option.name)), "utility")
+			return true
+		end
 		return ControllerCameraTestStageTacticalCommand(option)
 	end
 	local name = tostring(label or dragMode or "Area command")
@@ -9792,8 +9999,17 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted)
 		if ok and activated and not option.isState then
 			ControllerCameraTestTacticalMenu.open = false
 			if api and type(api.controllerSetRadialOpen) == "function" then pcall(api.controllerSetRadialOpen, false) end
-			ControllerCameraTestNativeTargeting.descriptorDirty = true
-			ControllerCameraTestRefreshNativeTargetingDescriptor(true)
+			local began, beginResult = false, "target owner unavailable"
+			if api and type(api.controllerBeginTarget) == "function" then
+				local callOK
+				callOK, began, beginResult = pcall(api.controllerBeginTarget, option.cmdID)
+				began = callOK and began == true
+			end
+			ControllerCameraTestNativeTargeting.descriptorDirty = not began
+			ControllerCameraTestRefreshNativeTargetingDescriptor(not began)
+			ControllerCameraTestTacticalMenu.lastResult = began
+				and ("target owned by " .. tostring((api.controllerGetCommandOwner and api.controllerGetCommandOwner(option.cmdID)) or "native widget"))
+				or tostring(beginResult or "activated immediate command")
 		elseif ok and activated then
 			ControllerCameraTestRebuildNativeTacticalModel("state cycled")
 		end
@@ -11018,6 +11234,9 @@ function ControllerCameraTestSetPlacementOption(option)
 	placement.patternPressActive = false
 	placement.patternPressStartTime = 0
 	placement.patternHoldTriggered = false
+	placement.distributedGridArmed = false
+	placement.distributedGridChordOwned = false
+	placement.distributedGridResult = "none"
 	placement.placementPattern = "single"
 	latchSelectionDebugMessage("Placement: " .. tostring(option.name))
 	return true
@@ -11045,6 +11264,9 @@ function ControllerCameraTestCancelPlacement(reason)
 	placement.queueFrontActive = false
 	placement.analogRotateArmed = false
 	placement.slowPanActive = false  -- reset pan speed on exit
+	placement.distributedGridArmed = false
+	placement.distributedGridChordOwned = false
+	placement.distributedGridResult = "cancelled"
 	latchSelectionDebugMessage("Placement cancelled")
 	ControllerCameraTestClearDragPreviewCache()
 	if tostring(reason or ""):find("B", 1, true) then
@@ -11153,6 +11375,10 @@ end
 
 function ControllerCameraTestHandlePlacementPatternInput()
 	local placement = ControllerCameraTestBuildPlacement
+	if placement.distributedGridArmed then
+		placement.placementPattern = "grid"
+		return false
+	end
 	local isDown = ControllerCameraTestActionDown("patternPrev")
 	local changed = false
 
@@ -11228,6 +11454,32 @@ function ControllerCameraTestUpdatePlacementAnalog()
 
 	-- Right stick remains camera control during placement; facing is explicit on D-pad L/R.
 	placement.analogRotateArmed = true
+end
+
+function ControllerCameraTestUpdateDistributedGridChord()
+	local placement = ControllerCameraTestBuildPlacement
+	if not placement.active then
+		placement.distributedGridChordOwned = false
+		return false
+	end
+	local owns = ControllerCameraTestActionDown("pitchModifier")
+		and ControllerCameraTestActionDown("buildRadial")
+		and ControllerCameraTestIsQueueModifierActive()
+	placement.distributedGridChordOwned = owns
+	if not owns then return false end
+	placement.distributedGridArmed = true
+	placement.placementPattern = "grid"
+	placement.patternPressActive = false
+	placement.patternHoldTriggered = false
+	placement.lastConstructionShortcut = "LB+RB+RT distributed grid"
+	placement.gridShortcutResult = "native distribution armed"
+	placement.distributedGridResult = "armed"
+	if ControllerInputChords and type(ControllerInputChords.Consume) == "function" then
+		ControllerCameraTestInputChord = ControllerInputChords.Consume(
+			ControllerCameraTestInputChord, "distributed-grid")
+	end
+	ControllerCameraTestShowPlacementPatternPopup("grid", "pattern")
+	return true
 end
 
 function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
@@ -11544,6 +11796,9 @@ function ControllerCameraTestEnterPlacementFromHighlight()
 			placement.queueFrontActive = false
 			placement.lastConstructionShortcut = "none"
 			placement.gridShortcutResult = "none"
+			placement.distributedGridArmed = false
+			placement.distributedGridChordOwned = false
+			placement.distributedGridResult = "none"
 			placement.slowPanActive = true
 			menu.lastAction = "entered native placement"
 			latchSelectionDebugMessage("Placement: " .. tostring(option.name) .. " (native)")
@@ -11585,9 +11840,14 @@ function ControllerCameraTestHandlePlacementInput(dt)
 	placement.queueActive = ControllerCameraTestIsQueueModifierActive()
 	placement.queueFrontActive = ControllerCameraTestIsQueueFrontModifierActive()
 	ControllerCameraTestUpdatePlacementAnalog()
+	local distributedOwns = ControllerCameraTestUpdateDistributedGridChord()
 
 	local drag = ControllerCameraTestDragCommand
-	if ControllerCameraTestHandleQueueRemovalInput() then
+	if distributedOwns and drag.active then
+		drag.mode = "buildGrid"
+		ControllerCameraTestUpdateDragPreview()
+	end
+	if not distributedOwns and ControllerCameraTestHandleQueueRemovalInput() then
 		return true
 	end
 
@@ -12627,12 +12887,19 @@ function ControllerCameraTestUpdateDisassembleController(dt)
 	event, ControllerCameraTestInputChord = ControllerInputChords.Update(
 		ControllerCameraTestInputChord, debugEventTime, lbDown, rbDown,
 		ControllerCameraTestActionPressed("buildRadial"), ControllerCameraTestActionReleased("buildRadial"),
-		ControllerCameraTestSettings.disassembleToggleHoldSeconds, longAction)
+		ControllerCameraTestSettings.disassembleToggleHoldSeconds, longAction, nil, {
+			lbPressed = ControllerCameraTestActionPressed("pitchModifier"),
+			lbReleased = ControllerCameraTestActionReleased("pitchModifier"),
+			graceSeconds = ControllerCameraTestSettings.rbChordGraceSeconds,
+			tapMaxSeconds = ControllerCameraTestSettings.rbTapMaxSeconds,
+		})
 	if event == "started" then
 		ControllerCameraTestConsumeLBCycle("LB+RB chord")
 		ControllerCameraTestResetLBHotkeys()
 	elseif event == "move-state" then
 		ControllerCameraTestCycleMoveStateFromSelection()
+	elseif event == "rb-tap" then
+		attemptBuildMenu()
 	elseif event == "factory-queue-mode" then
 		ControllerCameraTestToggleFactoryQueueMode()
 	elseif event == "enable-disassemble" then
@@ -13151,6 +13418,102 @@ function ControllerCameraTestExecuteLBHotkey(btn, tapCount)
 			end
 		end
 	end
+end
+
+function ControllerCameraTestNativeShortcutTarget()
+	local target = ControllerCameraTestGetReticleTargetInfo()
+	if target.targetType == "feature" and target.targetID then
+		target.commandID = ControllerCameraTestFeatureCommandID(target.targetID)
+	end
+	return target
+end
+
+function ControllerCameraTestNativeImmediateShortcut(cmdID, label, targetRequired, explicitParams)
+	local api = WG and WG.ordermenu
+	if not (api and type(api.controllerIssueCommand) == "function") then return false end
+	local accepted, route
+	if targetRequired then
+		if type(api.controllerExecuteAtTarget) ~= "function" then return false end
+		accepted, route = api.controllerExecuteAtTarget(cmdID, ControllerCameraTestNativeShortcutTarget(),
+			ControllerCameraTestGetCommandOptions(), ControllerCameraTestIsQueueFrontModifierActive() and "insert-front" or nil)
+	else
+		accepted, route = api.controllerIssueCommand(cmdID, explicitParams or {},
+			ControllerCameraTestGetCommandOptions(), ControllerCameraTestIsQueueFrontModifierActive() and "insert-front" or nil)
+	end
+	if accepted then
+		ControllerCameraTestShowHotkeyFeedback(string.upper(label), "utility")
+		ControllerCameraTestLayerDebug.commandLayerAction = label .. " via native " .. tostring(route)
+	end
+	return accepted == true
+end
+
+function ControllerCameraTestNativeRepeatShortcut()
+	local api = WG and WG.ordermenu
+	if not (api and type(api.controllerGetCommands) == "function"
+			and type(api.controllerActivateState) == "function") then return false end
+	local commands = api.controllerGetCommands()
+	for _, descriptor in ipairs(type(commands) == "table" and commands or {}) do
+		if tonumber(descriptor.cmdID) == tonumber((CMD and CMD.REPEAT) or 115) then
+			local nextState = (tonumber(descriptor.currentStateIndex) or 0) == 0 and 1 or 0
+			local accepted = api.controllerActivateState(descriptor.cmdID, nextState)
+			if accepted then ControllerCameraTestShowHotkeyFeedback("REPEAT", "utility") end
+			return accepted == true
+		end
+	end
+	return false
+end
+
+-- Native Experimental LB mapping.  The legacy dispatcher above remains only
+-- for Legacy UI mode; every native branch resolves the live Order Menu
+-- descriptor and shares its dispatch/owner boundary.
+ControllerCameraTestLegacyExecuteLBHotkey = ControllerCameraTestExecuteLBHotkey
+ControllerCameraTestExecuteLBHotkey = function(btn, tapCount)
+	if not ControllerCameraTestUsesNativeBARUI() then
+		return ControllerCameraTestLegacyExecuteLBHotkey(btn, tapCount)
+	end
+	local profile = ControllerCameraTestGetSelectionProfile()
+	if not profile then return false end
+	if btn == "B" then
+		return tapCount == 2 and ControllerCameraTestNativeRepeatShortcut()
+			or ControllerCameraTestNativeImmediateShortcut((CMD and CMD.STOP) or 0, "Stop", false)
+	end
+	if profile == "builder" then
+		if btn == "A" and tapCount == 1 then return ControllerCameraTestStageAreaCommandShortcut("repairArea", "Repair Area") end
+		if btn == "X" and tapCount == 1 then return ControllerCameraTestStageAreaCommandShortcut("reclaimArea", "Reclaim Area") end
+		if btn == "Y" and tapCount == 2 then return ControllerCameraTestStageAreaCommandShortcut("areaMex", "Area Mex") end
+		if btn == "Y" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.PATROL) or 15, "Patrol", true) end
+	elseif profile == "air_transport" then
+		if btn == "X" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.LOAD_UNITS) or 75, "Load Unit", true) end
+		if btn == "A" then
+			local selected = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+			local unloadID = GetTransportUnloadCommand(selected) or (CMD and CMD.UNLOAD_UNITS) or 80
+			return ControllerCameraTestNativeImmediateShortcut(unloadID, "Unload", true)
+		end
+	elseif profile == "factory" then
+		if btn == "A" or btn == "X" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.FIGHT) or 16, "Fight", true) end
+		if btn == "Y" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.PATROL) or 15, "Patrol", true) end
+	elseif profile == "combat" then
+		if btn == "A" then
+			local target = ControllerCameraTestNativeShortcutTarget()
+			local cmdID = target.targetType == "unit" and ((CMD and CMD.ATTACK) or 20) or ((CMD and CMD.FIGHT) or 16)
+			return ControllerCameraTestNativeImmediateShortcut(cmdID, cmdID == CMD.ATTACK and "Attack" or "Fight", true)
+		end
+		if btn == "X" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.ATTACK) or 20, "Attack", true) end
+		if btn == "Y" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.PATROL) or 15, "Patrol", true) end
+	end
+	return false
+end
+
+ControllerCameraTestLegacyExecuteLBFaceHoldAction = ControllerCameraTestExecuteLBFaceHoldAction
+ControllerCameraTestExecuteLBFaceHoldAction = function(btn)
+	if not ControllerCameraTestUsesNativeBARUI() then
+		return ControllerCameraTestLegacyExecuteLBFaceHoldAction(btn)
+	end
+	local profile = ControllerCameraTestGetSelectionProfile()
+	if btn == "B" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.WAIT) or 5, "Wait", false) end
+	if profile == "air_transport" and btn == "X" then return ControllerCameraTestStageAreaCommandShortcut("loadArea", "Load Area") end
+	if profile == "air_transport" and btn == "A" then return ControllerCameraTestStageAreaCommandShortcut("unloadArea", "Unload Area") end
+	return false
 end
 
 function ControllerCameraTestCanUseTuningControls()
@@ -13693,7 +14056,7 @@ function ControllerCameraTestUpdateControllerAxesAndButtons(state)
 	-- Possibly LB + A/B/X/Y, final mapping TBD.
 end
 
-local function ControllerCameraTestPointInRect(x, y, rect)
+function ControllerCameraTestPointInRect(x, y, rect)
 	return type(rect) == "table"
 		and type(rect[1]) == "number" and type(rect[2]) == "number"
 		and type(rect[3]) == "number" and type(rect[4]) == "number"
@@ -13701,7 +14064,7 @@ local function ControllerCameraTestPointInRect(x, y, rect)
 		and y > rect[2] and y < rect[4]
 end
 
-local function ControllerCameraTestTryPregamePrimaryAction(mx, my)
+function ControllerCameraTestTryPregamePrimaryAction(mx, my)
 	if Spring.GetGameFrame() > 0 then
 		return false
 	end
@@ -13728,7 +14091,7 @@ local function ControllerCameraTestTryPregamePrimaryAction(mx, my)
 	return true
 end
 
-local function ControllerCameraTestTryLuaUIClick(mx, my)
+function ControllerCameraTestTryLuaUIClick(mx, my)
 	if type(widgetHandler) ~= "table"
 		or type(widgetHandler.MousePress) ~= "function"
 		or type(widgetHandler.MouseRelease) ~= "function"
@@ -13745,7 +14108,7 @@ local function ControllerCameraTestTryLuaUIClick(mx, my)
 	return true
 end
 
-local function ControllerCameraTestTryRmlClick(mx, my)
+function ControllerCameraTestTryRmlClick(mx, my)
 	if not RmlUi or type(RmlUi.contexts) ~= "function" then
 		return false
 	end
@@ -13779,7 +14142,7 @@ local function ControllerCameraTestTryRmlClick(mx, my)
 	return false
 end
 
-local function ControllerCameraTestTryPregamePlacement(mx, my)
+function ControllerCameraTestTryPregamePlacement(mx, my)
 	if Spring.GetGameFrame() > 0 then
 		return false
 	end
@@ -13894,8 +14257,13 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	end
 
 	ControllerCameraTestUpdateLBTapState()
-	local disassembleBusy = ControllerCameraTestUpdateDisassembleController(dt)
-	if not disassembleBusy then ControllerCameraTestUpdateLBFaceButtonDispatcher(dt) end
+	local distributedPlacementOwns = ControllerCameraTestBuildPlacement.active
+		and ControllerCameraTestUpdateDistributedGridChord()
+	local disassembleBusy = not distributedPlacementOwns
+		and ControllerCameraTestUpdateDisassembleController(dt)
+	if not disassembleBusy and not distributedPlacementOwns then
+		ControllerCameraTestUpdateLBFaceButtonDispatcher(dt)
+	end
 	updateSelectionTestActive()
 
 	if disassembleBusy then
@@ -13960,11 +14328,6 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 				end
 			end
 
-			if not areaBusy and not xBusy and ControllerCameraTestActionPressed("buildRadial") then
-				if not (ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestCanUseLBHotkeys()) then
-					attemptBuildMenu()
-				end
-			end
 			if not areaBusy and not xBusy then
 				ControllerCameraTestHandleNormalUtilityInput()
 			end
@@ -14298,9 +14661,17 @@ function ControllerCameraTestUpdateNativeInputMode()
 	local delay = desired and 0.15 or 0.35
 	if state.controllerStable ~= desired and debugEventTime - (state.pendingSince or 0) >= delay then
 		state.controllerStable = desired
-		if WG.buildmenu and type(WG.buildmenu.controllerSetInputActive) == "function" then
-			pcall(WG.buildmenu.controllerSetInputActive, desired)
+	end
+	local hideNative = state.controllerStable == true and ControllerCameraTestSettings.nativePanelsDebugVisible ~= true
+	local panelVisible = not hideNative
+	for _, api in ipairs({ (WG and WG.buildmenu) or false, (WG and WG.ordermenu) or false }) do
+		if api and type(api.controllerSetPanelVisible) == "function" then pcall(api.controllerSetPanelVisible, panelVisible) end
+		if api and type(api.controllerSetFocusVisible) == "function" then
+			pcall(api.controllerSetFocusVisible, panelVisible and ControllerCameraTestSettings.showNativeFocusStroke == true)
 		end
+	end
+	if WG.buildmenu and type(WG.buildmenu.controllerSetInputActive) == "function" then
+		pcall(WG.buildmenu.controllerSetInputActive, state.controllerStable == true)
 	end
 end
 
@@ -14611,7 +14982,8 @@ function ControllerCameraTestDrawTacticalRadial()
 		local radius = math.min(520, math.max(220, minView * 0.28 * radialScale))
 		local entries = {}
 		for index, command in ipairs(commands) do
-			entries[index] = { label = command.shortLabel or command.name or "Command", disabled = command.disabled == true }
+			entries[index] = { label = command.shortLabel or command.name or "Command",
+				disabled = command.disabled == true, cmdID = command.cmdID }
 		end
 		local current = commands[menu.selectedIndex]
 		local chips = {}
@@ -14620,6 +14992,7 @@ function ControllerCameraTestDrawTacticalRadial()
 			chips[#chips + 1] = { direction = direction, label = item.shortLabel,
 				selected = item.key == category.key, color = TacticalCategories.Colors[item.key] }
 		end
+		local orderApi = WG and WG.ordermenu
 		ControllerUISharedRenderers.DrawRadial({
 			bounds = { x1 = cx - radius * 1.45, y1 = cy - radius * 1.45, x2 = cx + radius * 1.45, y2 = cy + radius * 1.45 },
 			model = { style = "tactical", title = category.label, categoryLabel = category.label, selectedTitle = true,
@@ -14631,6 +15004,10 @@ function ControllerCameraTestDrawTacticalRadial()
 				accentR = categoryColor[1], accentG = categoryColor[2], accentB = categoryColor[3] },
 			opacity = ControllerCameraTestGetControllerUIOpacity("tacticalRadial"),
 			settings = ControllerCameraTestGetRadialRendererSettings("tacticalRadial"),
+			entryRenderer = orderApi and type(orderApi.controllerDrawCommandButton) == "function"
+				and function(entry, rect, selected)
+					return orderApi.controllerDrawCommandButton(entry.cmdID, rect, selected)
+				end or nil,
 		})
 		return
 	end
@@ -15213,6 +15590,7 @@ function ControllerCameraTestDrawCompactSelectedStatusPanel()
 end
 
 function ControllerCameraTestDrawControlGroupOverlayLegacy()
+	ControllerCameraTestSyncNativeControlGroups()
 	local groups = ControllerCameraTestControlGroups
 	if not (ControllerCameraTestActionDown("controlGroupModifier") or (groups.visibleUntil or 0) > debugEventTime) then
 		return
@@ -15295,6 +15673,7 @@ function ControllerCameraTestDrawControlGroupOverlayLegacy()
 end
 
 function ControllerCameraTestDrawControlGroupOverlay()
+	ControllerCameraTestSyncNativeControlGroups()
 	local groups = ControllerCameraTestControlGroups
 	if not ControllerCameraTestControllerUIVisible("hotSlots", false)
 		or not (ControllerCameraTestActionDown("controlGroupModifier") or (groups.visibleUntil or 0) > debugEventTime)
@@ -16996,6 +17375,8 @@ function widget:GetConfigData()
 		debugSections = savedSections,
 		debugCompact = ControllerCameraTestDebugCompact,
 		bindings = ControllerCameraTestBindings.actions,
+		nativeGroupMigrationComplete = ControllerCameraTestControlGroups.nativeMigrationComplete == true,
+		nativeGroupMigrationStatus = ControllerCameraTestControlGroups.nativeMigrationStatus,
 	}
 end
 
@@ -17019,6 +17400,28 @@ function widget:SetConfigData(data)
 				ControllerCameraTestSettings[key] = val
 			end
 		end
+	end
+	ControllerCameraTestControlGroups.nativeMigrationComplete = data.nativeGroupMigrationComplete == true
+	ControllerCameraTestControlGroups.nativeMigrationStatus = data.nativeGroupMigrationStatus or "not required"
+	if not ControllerCameraTestControlGroups.nativeMigrationComplete and type(data.controllerGroups) == "table"
+			and type(Spring.GetGroupUnits) == "function" and type(Spring.SetUnitGroup) == "function" then
+		local migrated = 0
+		for rawSlot, entry in pairs(data.controllerGroups) do
+			local slot = ControllerCameraTestNormalizeControlGroupSlot(rawSlot)
+			local groupNumber = ControllerCameraTestNativeGroupNumber(slot)
+			if #(Spring.GetGroupUnits(groupNumber) or {}) == 0 and type(entry) == "table" then
+				for _, unitID in ipairs(ControllerCameraTestFilterValidUnits(entry.units or {})) do
+					Spring.SetUnitGroup(unitID, groupNumber)
+					migrated = migrated + 1
+				end
+			end
+		end
+		ControllerCameraTestControlGroups.nativeMigrationComplete = true
+		ControllerCameraTestControlGroups.nativeMigrationStatus = "migrated " .. tostring(migrated) .. " legacy memberships into empty native groups"
+	end
+	if not ControllerCameraTestControlGroups.nativeMigrationComplete then
+		ControllerCameraTestControlGroups.nativeMigrationComplete = true
+		ControllerCameraTestControlGroups.nativeMigrationStatus = "no legacy controller memberships found"
 	end
 	ControllerCameraTestApplySettingsDefaults()
 	ControllerCameraTestSettings.debugPanelVisible = false
