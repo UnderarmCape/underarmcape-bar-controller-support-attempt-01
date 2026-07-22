@@ -269,6 +269,6 @@ foreach ($record in $records) {
     if ((Get-Sha256 $record.destination) -ne $record.postSha256) { throw "Post-manifest verification failed: $($record.destination)" }
 }
 Stop-RuntimesSafely
-Write-Step 'Experimental native widget, Smart Action, and UI unification test deployed. BAR was not launched.'
+Write-Step 'Experimental Smart X, radial routing, enemy Disassemble, and area confirmation repair deployed. BAR was not launched.'
 Write-Output ('BACKUP_ROOT=' + $backupRoot)
 Write-Output ('ROLLBACK_COMMAND=powershell -NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $RepositoryRoot 'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1') + '" -BackupRoot "' + $backupRoot + '"')
