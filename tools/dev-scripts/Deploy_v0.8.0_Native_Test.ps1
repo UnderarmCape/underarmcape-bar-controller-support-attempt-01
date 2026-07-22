@@ -26,6 +26,7 @@ $IncludeFiles = @(
     'controller_ui_editor_input.lua',
     'controller_ui_shared_renderers.lua',
     'controller_native_radial_adapter.lua',
+    'controller_native_targeting.lua',
     'controller_glyphs.lua'
 )
 $GlyphFiles = @(
@@ -182,6 +183,7 @@ foreach ($item in $deployMap) {
 
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerNativeUIIntegration.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerHybridRadials.lua'
+Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerNativeTargeting.lua'
 
 if ($ValidateOnly) {
     Write-Step "Validation passed for $($deployMap.Count) files; BAR build and native base policy are compatible."
@@ -189,7 +191,7 @@ if ($ValidateOnly) {
 }
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.0-native-hybrid-test-' + $timestamp)
+$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.0-native-hybrid-targeting-test-' + $timestamp)
 if (Test-Path -LiteralPath $backupRoot) { throw "Backup path already exists: $backupRoot" }
 New-Item -ItemType Directory -Path (Join-Path $backupRoot 'live-before') -Force | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -237,8 +239,8 @@ foreach ($record in $preserved) {
 }
 
 $manifest = [ordered]@{
-    kind = 'bar-controller-native-hybrid-test-deployment-backup'; schemaVersion = 1
-    experiment = 'v0.8.0 Native Hybrid Radial Test'; deployedAt = (Get-Date).ToString('o')
+    kind = 'bar-controller-native-hybrid-targeting-test-deployment-backup'; schemaVersion = 1
+    experiment = ('EXPERIMENTAL ' + [char]0x2014 + ' NATIVE CONTROLLER TARGETING AND COMPACT RADIAL TEST'); deployedAt = (Get-Date).ToString('o')
     repositoryRoot = $RepositoryRoot; sourceCommit = $sourceCommit
     barDataPath = $BarDataPath; companionInstallPath = $CompanionInstallPath; backupRoot = $backupRoot
     expectedBarBuild = $ExpectedBuild; buildIdentityMatched = $buildMatches; explicitUnknownBaseOverride = [bool]$AllowUnknownBase
@@ -253,6 +255,6 @@ foreach ($record in $records) {
     if ((Get-Sha256 $record.destination) -ne $record.postSha256) { throw "Post-manifest verification failed: $($record.destination)" }
 }
 Stop-RuntimesSafely
-Write-Step 'Experimental native hybrid radials deployed. BAR was not launched.'
+Write-Step 'Experimental native controller targeting and compact radials deployed. BAR was not launched.'
 Write-Output ('BACKUP_ROOT=' + $backupRoot)
 Write-Output ('ROLLBACK_COMMAND=powershell -NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $RepositoryRoot 'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1') + '" -BackupRoot "' + $backupRoot + '"')
