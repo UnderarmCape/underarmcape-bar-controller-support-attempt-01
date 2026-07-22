@@ -332,4 +332,3 @@ function widget:Shutdown()
 	if WG.ControllerNativeCommandOwners then WG.ControllerNativeCommandOwners[CMD_AREA_MEX] = nil end
 	WG.areamex = nil
 end
-

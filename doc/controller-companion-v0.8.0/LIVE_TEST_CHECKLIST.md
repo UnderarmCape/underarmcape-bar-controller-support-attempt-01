@@ -1,6 +1,6 @@
-# v0.8.0 Native Input Polish Live Checklist
+# v0.8.0 Native Widget Unification Live Checklist
 
-**EXPERIMENTAL — AREA CONFIRMATION, DISASSEMBLE, AND HINT POLISH TEST**
+**EXPERIMENTAL — NATIVE WIDGET, SMART ACTION, AND UI UNIFICATION TEST**
 
 ## Tactical area command
 
@@ -84,3 +84,27 @@
 57. Test Legacy fallback.
 58. Check `infolog.txt`.
 59. Watch for duplicate commands or frame-time spikes.
+
+## Native widget unification addendum
+
+60. Test A→A, A→X, X→A, and X→X for Reclaim, Repair, Area Mex, and a Front command.
+61. Confirm each final action produces exactly one order and B produces none.
+62. Test ground and air-constructor Smart X Repair.
+63. Test Smart X Reclaim on enemy mobile units and structures.
+64. In Disassemble, X-reclaim an enemy unit and feature; X on empty ground moves.
+65. Brush over another own mobile constructor and confirm it joins reclaimers.
+66. Confirm factories do not join and enemy area candidates highlight.
+67. Exercise every mapping in `LB_NATIVE_COMMAND_MAPPING.md` with RT append.
+68. Create groups with keyboard and controller, then recall them from both paths.
+69. Hover several targets without changing the hint model revision.
+70. Select a different unit and confirm one debounced hint update.
+71. With three constructors, arm LB+RB+RT and preview nine Grid positions.
+72. Confirm the nine positions are distributed, not duplicated to each constructor.
+73. Tap RB to open the radial; hold RB alone and confirm no action.
+74. Hold LB and repeat RB taps; confirm one Move State step per release.
+75. Test RB-first LB join inside and outside the configured grace window.
+76. D-pad-cycle idle units and compare order/focus with the Idle Builders widget.
+77. Confirm Build/Order panels hide in controller mode and return in mouse mode.
+78. While hidden, change selection and confirm native radial models remain current.
+79. Compare Tactical outer buttons with the corresponding vanilla Order Menu cells.
+80. Recheck Legacy Controller UI, `infolog.txt`, duplicate orders, and frame time.

@@ -2,10 +2,10 @@
   "kind": "bar-controller-ui-defaults-manifest",
   "manifestVersion": 1,
   "schemaVersion": 3,
-  "revision": 6,
-  "defaultsVersion": "0.8.0-native-input-polish-test-1",
+  "revision": 7,
+  "defaultsVersion": "0.8.0-native-widget-unification-test-1",
   "defaultsFile": "shipping-defaults.json",
-  "sha256": "7ad507643884abf2916d16007de851916caa0d294bac9fef80dcc469be903ad2",
+  "sha256": "61c15a5e1698a11270c9b7776b7d51b1521de5bfeea615cf8c88dda2a5b786c8",
   "generatedAt": "2026-07-22T00:00:00Z",
   "publishedAt": "2026-07-22T00:00:00Z",
   "minimumCompanionVersion": "0.7.0",
@@ -13,6 +13,6 @@
   "maximumModVersion": "0.8.x-experimental",
   "sourceBranch": "controller/v0.8.0-native-ui-integration-test",
   "sourceCommit": "9e9f18916779b791eed89566dd92fe3ef5637017",
-  "changeSummary": "Restored readable controller hints and added compact Bindings UI appearance controls for the native input polish test.",
+  "changeSummary": "Unifies controller commands, native widget owners, native panels, idle navigation, glyph presentation, and shoulder arbitration for the native widget test.",
   "releaseChannel": "experimental"
 }

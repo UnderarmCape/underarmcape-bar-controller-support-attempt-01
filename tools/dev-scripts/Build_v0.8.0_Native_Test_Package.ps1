@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) { $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
 $RepositoryRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-native-input-polish-test' }
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-native-widget-unification-test' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 $stage = Join-Path $OutputDirectory ('.package-' + [guid]::NewGuid().ToString('N'))
@@ -26,6 +26,7 @@ try {
         'luaui\Include\controller_ui_shared_renderers.lua',
         'luaui\Include\controller_native_radial_adapter.lua',
         'luaui\Include\controller_native_targeting.lua',
+        'luaui\Include\controller_native_command_owner.lua',
         'luaui\Include\controller_glyphs.lua',
         'luaui\images\controller-glyphs\controller_glyph_atlas.png',
         'luaui\images\controller-glyphs\controller_glyph_atlas_xbox.png',
@@ -39,6 +40,10 @@ try {
         'native-overrides\99351e53d26f5e55fa007ca1e208b936f22bd3ab\luaui\Widgets\unit_smart_area_reclaim.lua',
         'native-overrides\99351e53d26f5e55fa007ca1e208b936f22bd3ab\luaui\Widgets\gui_ordermenu.lua',
         'native-overrides\99351e53d26f5e55fa007ca1e208b936f22bd3ab\luaui\Widgets\gui_buildmenu.lua',
+        'native-overrides\99351e53d26f5e55fa007ca1e208b936f22bd3ab\luaui\Widgets\cmd_area_mex.lua',
+        'native-overrides\99351e53d26f5e55fa007ca1e208b936f22bd3ab\luaui\Widgets\cmd_buildsplit.lua',
+        'native-overrides\99351e53d26f5e55fa007ca1e208b936f22bd3ab\luaui\Widgets\cmd_customformations2.lua',
+        'native-overrides\99351e53d26f5e55fa007ca1e208b936f22bd3ab\luaui\Widgets\gui_idle_builders.lua',
         'doc\controller-companion-v0.8.0\NATIVE_UI_INTEGRATION_AUDIT.md',
         'doc\controller-companion-v0.8.0\HYBRID_RADIAL_REPAIR_DESIGN.md',
         'doc\controller-companion-v0.8.0\RADIAL_VANILLA_MAPPING.md',
@@ -54,12 +59,25 @@ try {
         'doc\controller-companion-v0.8.0\DISASSEMBLE_RECLAIM_ORDERING.md',
         'doc\controller-companion-v0.8.0\RADIAL_COMPACTION.md',
         'doc\controller-companion-v0.8.0\LIVE_TEST_CHECKLIST.md',
+        'doc\controller-companion-v0.8.0\NATIVE_AREA_COMMAND_OWNERS.md',
+        'doc\controller-companion-v0.8.0\BUILD_FACTORY_SELECTED_BORDER.md',
+        'doc\controller-companion-v0.8.0\BINDINGS_XBOX_GLYPHS.md',
+        'doc\controller-companion-v0.8.0\VANILLA_DEFAULT_COMMAND.md',
+        'doc\controller-companion-v0.8.0\DISASSEMBLE_TARGET_MODEL.md',
+        'doc\controller-companion-v0.8.0\LB_NATIVE_COMMAND_MAPPING.md',
+        'doc\controller-companion-v0.8.0\VANILLA_CONTROL_GROUPS.md',
+        'doc\controller-companion-v0.8.0\DISTRIBUTED_GRID_BUILD.md',
+        'doc\controller-companion-v0.8.0\CONTROLLER_SHOULDER_ARBITRATION.md',
+        'doc\controller-companion-v0.8.0\VANILLA_IDLE_UNIT_NAVIGATION.md',
+        'doc\controller-companion-v0.8.0\CONTROLLER_MODE_PANEL_VISIBILITY.md',
+        'doc\controller-companion-v0.8.0\TACTICAL_NATIVE_BUTTON_RENDERER.md',
         'tools\controller-ui-tests\Test-ControllerHybridRadials.lua',
         'tools\controller-ui-tests\Test-ControllerNativeUIIntegration.lua',
         'tools\controller-ui-tests\Test-ControllerNativeTargeting.lua',
         'tools\controller-ui-tests\Test-ControllerDisassembleMode.lua',
         'tools\controller-ui-tests\Test-ControllerInputDisassemble.lua',
         'tools\controller-ui-tests\Test-ControllerInputPolish.lua',
+        'tools\controller-ui-tests\Test-ControllerNativeWidgetUnification.lua',
         'tools\dev-scripts\Deploy_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Generate_Controller_Glyph_Atlases_v0.8.ps1'
@@ -85,7 +103,7 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $stage 'payload-sha256.json'), (($payload | ConvertTo-Json -Depth 6) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
 
-    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_NATIVE_INPUT_POLISH_TEST.zip'
+    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_NATIVE_WIDGET_UNIFICATION_TEST.zip'
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()

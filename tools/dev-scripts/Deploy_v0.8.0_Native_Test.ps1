@@ -28,6 +28,7 @@ $IncludeFiles = @(
     'controller_ui_shared_renderers.lua',
     'controller_native_radial_adapter.lua',
     'controller_native_targeting.lua',
+    'controller_native_command_owner.lua',
     'controller_glyphs.lua'
 )
 $GlyphFiles = @(
@@ -195,6 +196,7 @@ Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerNativeTargeting.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerDisassembleMode.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerInputDisassemble.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerInputPolish.lua'
+Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerNativeWidgetUnification.lua'
 
 if ($ValidateOnly) {
     Write-Step "Validation passed for $($deployMap.Count) files; BAR build and native base policy are compatible."
@@ -202,7 +204,7 @@ if ($ValidateOnly) {
 }
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.0-native-input-polish-test-' + $timestamp)
+$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.0-native-widget-unification-test-' + $timestamp)
 if (Test-Path -LiteralPath $backupRoot) { throw "Backup path already exists: $backupRoot" }
 New-Item -ItemType Directory -Path (Join-Path $backupRoot 'live-before') -Force | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -250,8 +252,8 @@ foreach ($record in $preserved) {
 }
 
 $manifest = [ordered]@{
-    kind = 'bar-controller-native-input-polish-test-deployment-backup'; schemaVersion = 1
-    experiment = ('EXPERIMENTAL ' + [char]0x2014 + ' AREA CONFIRMATION, DISASSEMBLE, AND HINT POLISH TEST'); deployedAt = (Get-Date).ToString('o')
+    kind = 'bar-controller-native-widget-unification-test-deployment-backup'; schemaVersion = 1
+    experiment = ('EXPERIMENTAL ' + [char]0x2014 + ' NATIVE WIDGET, SMART ACTION, AND UI UNIFICATION TEST'); deployedAt = (Get-Date).ToString('o')
     repositoryRoot = $RepositoryRoot; sourceCommit = $sourceCommit
     barDataPath = $BarDataPath; companionInstallPath = $CompanionInstallPath; backupRoot = $backupRoot
     expectedBarBuild = $ExpectedBuild; buildIdentityMatched = $buildMatches; explicitUnknownBaseOverride = [bool]$AllowUnknownBase
@@ -266,6 +268,6 @@ foreach ($record in $records) {
     if ((Get-Sha256 $record.destination) -ne $record.postSha256) { throw "Post-manifest verification failed: $($record.destination)" }
 }
 Stop-RuntimesSafely
-Write-Step 'Experimental area confirmation, Disassemble, and hint polish deployed. BAR was not launched.'
+Write-Step 'Experimental native widget, Smart Action, and UI unification test deployed. BAR was not launched.'
 Write-Output ('BACKUP_ROOT=' + $backupRoot)
 Write-Output ('ROLLBACK_COMMAND=powershell -NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $RepositoryRoot 'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1') + '" -BackupRoot "' + $backupRoot + '"')
