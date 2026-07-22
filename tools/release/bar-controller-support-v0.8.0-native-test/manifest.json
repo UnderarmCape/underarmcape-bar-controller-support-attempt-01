@@ -6,8 +6,8 @@
   "repository": "UnderarmCape/underarmcape-bar-controller-support-attempt-01",
   "branch": "controller/v0.8.0-native-ui-integration-test",
   "assetName": "BAR_Controller_Support_v0.8.0_NATIVE_HYBRID_TEST.zip",
-  "barBuild": "Beyond All Reason test-30714-2a9339d",
-  "barUpstreamCommit": "2a9339d0c587c1444b2b839ba29dc954f1a13b17",
+  "barBuild": "Beyond All Reason test-30725-99351e5",
+  "barUpstreamCommit": "99351e53d26f5e55fa007ca1e208b936f22bd3ab",
   "publicRelease": false,
   "requiredTopLevelFiles": [
     "Install_v0.8.0_NATIVE_TEST.ps1",
@@ -18,10 +18,10 @@
   ],
   "nativeOverrideManifest": "native-overrides/native-override-manifest.json",
   "nativeOverrides": [
-    "native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/unit_smart_select.lua",
-    "native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/unit_smart_area_reclaim.lua",
-    "native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/gui_ordermenu.lua",
-    "native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/gui_buildmenu.lua"
+    "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/unit_smart_select.lua",
+    "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/unit_smart_area_reclaim.lua",
+    "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_ordermenu.lua",
+    "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_buildmenu.lua"
   ],
   "documentation": [
     "doc/controller-companion-v0.8.0/HYBRID_RADIAL_REPAIR_DESIGN.md",

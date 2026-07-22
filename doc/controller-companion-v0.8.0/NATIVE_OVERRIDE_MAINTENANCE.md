@@ -1,6 +1,6 @@
 # Native override maintenance
 
-This experiment installs four loose LuaUI files over BAR's Rapid-packed production files. Loose VFS files win over the packed copies. Every override is pinned to BAR upstream commit `2a9339d0c587c1444b2b839ba29dc954f1a13b17`, live identity `Beyond All Reason test-30714-2a9339d`, and Recoil `2026.06.12`.
+This experiment installs four loose LuaUI files over BAR's Rapid-packed production files. Loose VFS files win over the packed copies. Every override is pinned to BAR upstream commit `99351e53d26f5e55fa007ca1e208b936f22bd3ab`, live identity `Beyond All Reason test-30725-99351e5`, and Recoil `2026.06.12`.
 
 `native-overrides/native-override-manifest.json` is authoritative for base hashes, patched hashes, source paths, and purpose.
 
@@ -8,8 +8,8 @@ This experiment installs four loose LuaUI files over BAR's Rapid-packed producti
 |---|---|---|
 | `LuaUI/Widgets/unit_smart_select.lua` | `b0442a5549a8a74bffba7c77be536b90b81a6d77d2551664ce796235ce3d39e7` | Native selection/toggle/filter API |
 | `LuaUI/Widgets/unit_smart_area_reclaim.lua` | `53241a515f92f73f061e253b49dff76e0327994178833067802b4409b434ef73` | Single/any-area/same-type-area reclaim API and controller radius |
-| `LuaUI/Widgets/gui_ordermenu.lua` | `cac5b7ba1a224fd104662c3a39dd7132ec6a48d4f9e1e4b5076a430225be5892` | Actual descriptor export, activation, state cycling, focus |
-| `LuaUI/Widgets/gui_buildmenu.lua` | `fc2056fc99bf7f49ab0eeb18f23308850b35380359331d61948361638017de5a` | Actual build cell navigation, activation, focus and stable gamepad grid |
+| `LuaUI/Widgets/gui_ordermenu.lua` | `445053a54056dd82d5d348e43cbb6b0f534b6af3ef03cd2b479eca7eeef2caf3` | Actual descriptor export, activation, state cycling, focus |
+| `LuaUI/Widgets/gui_buildmenu.lua` | `082298c94eb24c17db180d5be34ed4a79bccb7751450f76d685f44cf346a12dd` | Actual build cell navigation, activation, focus and stable gamepad grid |
 
 ## Deployment safety
 

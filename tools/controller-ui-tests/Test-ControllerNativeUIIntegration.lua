@@ -35,7 +35,7 @@ expect(contains(camera, 'ControllerCameraTestUpdateRadialStickSelection()'), "v0
 expect(contains(camera, 'WG.buildmenu.controllerActivate'), "native build activation")
 expect(contains(camera, 'local delay = desired and 0.15 or 0.35'), "input hysteresis")
 
-local smartSelect = read("native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/unit_smart_select.lua")
+local smartSelect = read("native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/unit_smart_select.lua")
 expect(contains(smartSelect, "controllerApplyUnits"), "SmartSelect application API")
 expect(contains(smartSelect, "controllerSelectUnit"), "SmartSelect unit API")
 expect(contains(smartSelect, "spGetUnitTeam(unitID) ~= myTeamID"), "enemy rejection")
@@ -43,7 +43,7 @@ expect(contains(smartSelect, "spGetUnitNoSelect(unitID)"), "invalid/no-select re
 expect(contains(smartSelect, "spSelectUnitArray(result)"), "engine selection authority")
 expect(not contains(smartSelect, "Spring.GiveOrder"), "selection helper does not emit commands")
 
-local reclaim = read("native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/unit_smart_area_reclaim.lua")
+local reclaim = read("native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/unit_smart_area_reclaim.lua")
 expect(contains(reclaim, "controllerBegin"), "native reclaim begin")
 expect(contains(reclaim, "controllerUpdate"), "native reclaim radius update")
 expect(contains(reclaim, "controllerConfirm"), "native reclaim confirm")
@@ -54,14 +54,14 @@ expect(contains(reclaim, "Spring.GiveOrderToUnitArray(reclaimers, RECLAIM, param
 expect(contains(reclaim, "gl.DrawGroundCircle"), "shared widget controller radius")
 expect(not contains(reclaim, "markedTargets"), "no parallel target set")
 
-local orders = read("native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/gui_ordermenu.lua")
+local orders = read("native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_ordermenu.lua")
 expect(contains(orders, "controllerGetCommands"), "native command model")
 expect(contains(orders, "cmd.disabled == true"), "native command availability")
 expect(contains(orders, "OrderMenuFirestate.nextCycledVirtualIndex"), "BAR firestate helper")
 expect(contains(orders, "Spring.GetCmdDescIndex(cmd.id)"), "actual descriptor lookup")
 expect(contains(orders, "button == 1, button == 3"), "left/right activation parity")
 
-local build = read("native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/gui_buildmenu.lua")
+local build = read("native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_buildmenu.lua")
 expect(contains(build, "controllerGetItems"), "native build model")
 expect(contains(build, "units.unitRestricted[unitDefID]"), "native build restrictions")
 expect(contains(build, "units.unitMetalCost[unitDefID]"), "native metal costs")

@@ -59,8 +59,8 @@ expect(tactical.byCategory.utility[3].isBinaryState, "Visible/Cloak is a native 
 
 local camera = read("luaui/Widgets/gui_controller_camera_test.lua")
 local renderer = read("luaui/Include/controller_ui_shared_renderers.lua")
-local buildMenu = read("native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/gui_buildmenu.lua")
-local orderMenu = read("native-overrides/2a9339d0c587c1444b2b839ba29dc954f1a13b17/luaui/Widgets/gui_ordermenu.lua")
+local buildMenu = read("native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_buildmenu.lua")
+local orderMenu = read("native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_ordermenu.lua")
 
 expect(contains(camera, "ControllerCameraTestRebuildNativeBuildModel"), "shared build adapter production path")
 expect(contains(camera, "ControllerCameraTestRebuildNativeTacticalModel"), "shared tactical adapter production path")

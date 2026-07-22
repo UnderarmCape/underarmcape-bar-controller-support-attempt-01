@@ -1,13 +1,15 @@
 # Native BAR UI integration audit
 
-Status: v0.8.0 experimental implementation basis  
-BAR game: `Beyond All Reason test-30714-2a9339d`  
-BAR upstream commit: `2a9339d0c587c1444b2b839ba29dc954f1a13b17` (`Release 2026.07-20-2`)  
+Status: v0.8.0 experimental implementation basis
+BAR game: `Beyond All Reason test-30725-99351e5`
+BAR upstream commit: `99351e53d26f5e55fa007ca1e208b936f22bd3ab` (`Release 2026.07-21-2`)
 Recoil: `2026.06.12`
+
+The live archive advanced from test-30714 during the hybrid repair. Deployment stopped before writes; all four native sources were compared with the new Rapid package, and the changed Build/Order sources were rebased before validation resumed.
 
 ## Runtime source of truth
 
-The live game is supplied by Rapid package `8e6cde29c0b28e0fa2c4c97789382bb7.sdp`; the production LuaUI files are inside that package, not ordinary loose files. A loose file below `data/LuaUI` has higher VFS priority and is therefore an override. The v0.8.0 deployment must only install tracked, base-hash-pinned overrides and must remove or restore them on rollback.
+The live game is supplied by Rapid package `7e3cf896d7cdfbd2e580c62a55b0b0bd.sdp`; the production LuaUI files are inside that package, not ordinary loose files. A loose file below `data/LuaUI` has higher VFS priority and is therefore an override. The v0.8.0 deployment must only install tracked, base-hash-pinned overrides and must remove or restore them on rollback.
 
 The exact official GitHub sources at the commit above were compared with the Rapid build identity. Relevant base SHA-256 values are:
 
@@ -18,9 +20,9 @@ The exact official GitHub sources at the commit above were compared with the Rap
 | `luaui/Include/user_firestate_commands.lua` | `9681f5210c7ddda205ac3ec5978d996b51b3fab6537b711f63535726f1b86bdb` |
 | `luaui/Widgets/unit_smart_area_reclaim.lua` | `53241a515f92f73f061e253b49dff76e0327994178833067802b4409b434ef73` |
 | `luaui/Widgets/unit_area_reclaim_enemy.lua` | `4cee1d83121bc6ccdbb7d67fb103007633f137f2415042d83db1bb99ef93d071` |
-| `luaui/Widgets/gui_ordermenu.lua` | `cac5b7ba1a224fd104662c3a39dd7132ec6a48d4f9e1e4b5076a430225be5892` |
+| `luaui/Widgets/gui_ordermenu.lua` | `445053a54056dd82d5d348e43cbb6b0f534b6af3ef03cd2b479eca7eeef2caf3` |
 | `luaui/Widgets/gui_gridmenu.lua` | `8e843226250995cb20a9b6ec1f79a71040e6624ca45e41fc546f003780699be5` |
-| `luaui/Widgets/gui_buildmenu.lua` | `fc2056fc99bf7f49ab0eeb18f23308850b35380359331d61948361638017de5a` |
+| `luaui/Widgets/gui_buildmenu.lua` | `082298c94eb24c17db180d5be34ed4a79bccb7751450f76d685f44cf346a12dd` |
 | `luaui/Widgets/gui_selectionbox.lua` | `365e281398d5c66135904d6fedb8512a25372a6896a7232daec3850ff7812595` |
 | `luaui/Widgets/gui_selectedunits_gl4.lua` | `56a3a86176765e294d2ee42de31d43ff89a5d44062056436090bf5098ccb73e2` |
 | `luaui/Widgets/gui_controller_test.lua` | `bb4b4fb55064bef731cf68e297ba5f12562d37b9dfec7fc60d3a9c5a4e648c2` |

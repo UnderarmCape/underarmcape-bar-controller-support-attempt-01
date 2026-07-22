@@ -2,7 +2,7 @@
 
 **EXPERIMENTAL — NATIVE PANELS AND FOCUS VISIBLE FOR VALIDATION**
 
-This local test package targets `Beyond All Reason test-30714-2a9339d` / upstream commit `2a9339d0c587c1444b2b839ba29dc954f1a13b17`. It restores the v0.7 controller radial presentation over authoritative vanilla Build Menu and Order Menu state. It is not a stable release and must not replace v0.7.0.
+This local test package targets `Beyond All Reason test-30725-99351e5` / upstream commit `99351e53d26f5e55fa007ca1e208b936f22bd3ab`. It restores the v0.7 controller radial presentation over authoritative vanilla Build Menu and Order Menu state. It is not a stable release and must not replace v0.7.0.
 
 Close BAR, then validate compatibility:
 
