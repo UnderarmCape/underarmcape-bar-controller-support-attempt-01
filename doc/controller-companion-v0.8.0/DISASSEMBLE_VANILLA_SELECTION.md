@@ -1,28 +1,27 @@
 # Disassemble with Vanilla Selection
 
-Status: **EXPERIMENTAL — INPUT STATE, FACTORY SHORTCUT, AND VANILLA DISASSEMBLE TEST**
+Disassemble entry caches only alive, owned, reclaim-capable non-factory builders. Commanders, mobile constructors, construction aircraft, scavenger constructors, and construction turrets qualify when BAR exposes those properties. Factories, labs, combat units, enemies, and other-player allies do not. Unsupported entry is silent.
 
-## Eligibility and constructor cache
+## Shared Hold-A brush
 
-Disassemble entry filters the current selection using BAR builder properties (`isBuilder`, `canBuild`, or build options), excludes factories, and verifies reclaim command capability. Commanders, mobile constructors, and construction turrets qualify when BAR classifies them as builders. A reclaim-capable non-builder does not. Mixed selections are accepted, but only valid constructors enter the internal cache. Rejection leaves selection unchanged and shows `Select a Constructor`.
+Native Disassemble calls `ControllerCameraTestHandleNormalAInput(dt, true)`, the same live moving brush used by normal Hold-A selection. It uses the same hold threshold, current-reticle center, RS/D-pad radius adjustment, visible-unit scan, touch accumulation, and vanilla `Spring.SelectUnitArray` result. There is no native fixed anchor and no tactical-targeting geometry. The normal circle is blue; the same circle is green when its owner is Disassemble.
 
-The cache is pruned for death, transfer, or lost capability. Target selection never replaces the cache. If it becomes empty, the mode exits safely.
+The Disassemble filter admits owned units and structures and excludes cached constructors. Normal selection filters remain unchanged.
 
-## Workflow A: actual vanilla target selection
+## Additive selection
 
-Hold A without LB to capture a fixed ground anchor. Moving the cursor resizes the circle from that anchor; no full-map scan runs per frame. Releasing A queries owned-team units once, filters dead/invalid units, excludes cached constructors, sorts and deduplicates the result, and calls `Spring.SelectUnitArray`. BAR's normal selection outlines are the only target outlines; the Native path does not populate or render the legacy marked-target table.
+- A replaces the actual vanilla selection with the owned hovered target.
+- RT+A toggles that target while retaining other valid selected targets.
+- Hold A replaces with accumulated brush targets.
+- RT+Hold A seeds the brush with the existing valid target selection and adds results.
+- An empty additive brush leaves the sanitized target selection unchanged.
 
-An empty result or B cancellation restores the valid cached constructors and keeps Disassemble active.
+Constructors remain in the cache even while target outlines are selected. B cancellation and mode exit restore valid constructors.
 
-Hold LB and tap A before the same-type threshold to reclaim the actual vanilla-selected target set. Invalid, transferred, enemy/allied-other-team, duplicate, and cached-constructor targets are excluded. If no valid set exists, the captured owned hover target is the single-target fallback. Cached constructors issue the first reclaim immediately and subsequent deterministic targets with Shift as one logical batch. Constructors are immediately restored as vanilla selection, successful use is recorded, and the mode remains active.
+## Lifetime and exit
 
-## Workflow B: same-type native area reclaim
+The 30-second inactivity clock starts on entry and resets only after at least one reclaim command succeeds. Highlighting, selection, radius opening, cancellation, and Stop do not reset it. Timeout cancels substates, restores constructors, clears temporary state, exits, and shows one concise toast.
 
-Hold LB+A over an owned non-constructor target. Crossing the hold threshold suppresses tap reclaim, captures its UnitDefID and fixed world position, restores the constructor command source, and starts the Smart Area Reclaim native controller API for eligible-target feedback. Cursor distance changes only the radius.
+The first B cancels an active sub-operation or registers an idle tap without falling through to normal clear-selection. After B release, a second B within 0.35 seconds exits and restores constructors. LB+B Stop has priority.
 
-Releasing LB or A sets a neutral gate and never confirms. After A and X are both observed released, a fresh A or X press performs one owned-team cylinder query, filters to the captured UnitDefID, excludes constructors, issues the reclaim batch, restores constructors, and exits only the area substate. B cancels the substate, restores constructors, consumes its cycle, and leaves Disassemble active.
-
-## Priorities and performance
-
-Active same-type confirmation/cancel owns input first, followed by active A-area selection, LB+A tap/hold, ordinary A-area selection, X Move, LB+B Stop, and B target restoration. The centralized LB/RB chord remains the outer owner for mode exit. Descriptor models are cached, target scans occur only at release/confirmation, held buttons do not repeat queue actions, and Native/Legacy paths never render or dispatch simultaneously.
-
+Legacy Controller UI retains its legacy marked-target path. Native and Legacy owners are mutually exclusive and mode switches reset brushes, reclaim targeting, chords, double-B, active descriptors, and placement state.
