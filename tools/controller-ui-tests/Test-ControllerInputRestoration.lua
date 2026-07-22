@@ -263,7 +263,7 @@ test(128, "Upvalue limits pass", function()
 	return ok ~= nil and maximum <= 60
 end)
 test(129, "Relevant .NET builds and tests pass", function()
-	local command = 'dotnet run --project "' .. root .. '/tools/controller-companion/Tests/BARControllerCompanionUpdateTests.csproj" -c Release --no-restore >NUL'
+	local command = 'dotnet run --project "' .. root .. '/tools/controller-companion/Tests/BARControllerCompanionUpdateTests.csproj" -c Release >NUL'
 	local ok, _, code = os.execute(command)
 	return ok == true or ok == 0 or code == 0
 end)
