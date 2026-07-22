@@ -1,6 +1,6 @@
 # Native override maintenance
 
-This experiment installs four loose LuaUI files over BAR's Rapid-packed production files. Loose VFS files win over the packed copies. Every override is pinned to BAR upstream commit `99351e53d26f5e55fa007ca1e208b936f22bd3ab`, live identity `Beyond All Reason test-30725-99351e5`, and Recoil `2026.06.12`.
+This experiment installs eight loose LuaUI files over BAR's Rapid-packed production files. Loose VFS files win over the packed copies. Every override is pinned to BAR upstream commit `99351e53d26f5e55fa007ca1e208b936f22bd3ab`, live identity `Beyond All Reason test-30725-99351e5`, and Recoil `2026.06.12`.
 
 `native-overrides/native-override-manifest.json` is authoritative for base hashes, patched hashes, source paths, and purpose.
 
@@ -10,6 +10,10 @@ This experiment installs four loose LuaUI files over BAR's Rapid-packed producti
 | `LuaUI/Widgets/unit_smart_area_reclaim.lua` | `53241a515f92f73f061e253b49dff76e0327994178833067802b4409b434ef73` | Single/any-area/same-type-area reclaim API and controller radius |
 | `LuaUI/Widgets/gui_ordermenu.lua` | `445053a54056dd82d5d348e43cbb6b0f534b6af3ef03cd2b479eca7eeef2caf3` | Actual descriptor export, activation, state cycling, focus |
 | `LuaUI/Widgets/gui_buildmenu.lua` | `082298c94eb24c17db180d5be34ed4a79bccb7751450f76d685f44cf346a12dd` | Actual build cell navigation, activation, focus and stable gamepad grid |
+| `LuaUI/Widgets/cmd_area_mex.lua` | `da9c8e0a6c7075225bce53c460116c9a90f5bdf21af881cc9e9f24d5ed3c3316` | Native Area Mex anchor, preview, and exactly-once execution |
+| `LuaUI/Widgets/cmd_buildsplit.lua` | `56f643d3eefa48c54dd82cf44e98b83fbd5366011c550163992abce2db1863cf` | Native Build Orders distribution for controller Grid placement |
+| `LuaUI/Widgets/cmd_customformations2.lua` | `a39442766698a33492d24718a2eb368c35479b617982b83f38c7afac549c86bc` | Native Front preview and formation assignment |
+| `LuaUI/Widgets/gui_idle_builders.lua` | `766e9afa7d33cad7a19006d174cdcc4c2b5c00c4e0e61dd4903cec0cac7c4f09` | Live idle-list cycling, selection, focus, and native sound semantics |
 
 ## Deployment safety
 
@@ -34,7 +38,7 @@ Leaving an old loose override installed after a BAR update can mask the updated 
 1. Close BAR and the companion.
 2. Run the recorded restore command and verify pre-deployment hashes.
 3. Identify the new BAR build, Rapid package, Recoil version, and exact upstream commit.
-4. Download/extract the four new upstream files without modifying them; record SHA-256 values.
+4. Download/extract the eight new upstream files without modifying them; record SHA-256 values.
 5. Reapply only the marked `CONTROLLER NATIVE UI INTEGRATION` blocks, adapting to new native helpers rather than carrying old surrounding code.
 6. Update the override directory name, manifest identities, base hashes, patched hashes, and audit.
 7. Parse every Lua file, run all harnesses and .NET tests, and exercise deploy/actual restore/deploy in a sandbox or closed live installation.

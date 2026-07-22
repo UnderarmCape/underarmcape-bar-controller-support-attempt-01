@@ -1,6 +1,6 @@
 # Controller Native Targeting
 
-Status: **EXPERIMENTAL — AREA CONFIRMATION, DISASSEMBLE, AND HINT POLISH TEST**
+Status: **EXPERIMENTAL — NATIVE WIDGET, SMART ACTION, AND UI UNIFICATION TEST**
 
 ## Proven failure
 
@@ -8,7 +8,7 @@ The surviving area-confirmation failure was not another A/X release-latch proble
 
 ## Authoritative owner and cached descriptor
 
-While an area operation is anchored, the camera targeting bridge is the highest-priority A/X owner. `ActiveCommandChanged` is recorded but cannot replace the already validated controller descriptor. Final A/X calls Order Menu once with the cached descriptor and encoded parameters. Order Menu accepts that cache only when its current authoritative command model still contains the same enabled command ID.
+While a target operation is active, its registered command widget is the highest-priority A/X owner. Smart Area Reclaim owns Reclaim, Area Mex owns Area Mex, and Custom Formations owns its formation-capable commands; Order Menu is the explicit generic fallback. The camera only forwards buttons and the reticle hit. `ActiveCommandChanged` cannot replace an already validated owner descriptor.
 
 Dispatch has one boundary:
 
@@ -16,7 +16,7 @@ Dispatch has one boundary:
 2. If handled, dispatch stops.
 3. Otherwise one `Spring.GiveOrder` (or one `CMD.INSERT`) fallback is attempted.
 
-The anchor is copied once. Cursor and camera movement update only the endpoint/radius. Release only changes phase; it never issues. This remains **Press-to-Anchor, Press-to-Confirm Controller Targeting**.
+The owner copies the anchor once. Cursor and camera movement update only the endpoint/radius. Release only changes phase; it never issues. A→A, A→X, X→A, and X→X share the same release barriers and exactly-once dispatch guard. This remains **Press-to-Anchor, Press-to-Confirm Controller Targeting**.
 
 ## Transition trace
 
@@ -24,4 +24,4 @@ When Controller Debug is explicitly enabled, `ControllerCameraTestTraceNativeTar
 
 ## Remaining native boundary
 
-Target validation still depends on BAR/Recoil command descriptors and the Order Menu command model. Recoil's deeper `GuiHandler::GetCommand` validation remains an engine boundary rather than a Lua API. A command removed or disabled after anchoring is rejected safely. OS mouse emulation is not used. Point/unit/feature, area, front, rectangle, queue, and queue-front forms retain their existing encodings.
+Target validation depends on BAR/Recoil command descriptors and the registered native owner. Controller routing applies no allegiance filter; engine/widget legality is authoritative. A command removed or disabled after anchoring is rejected safely. OS mouse emulation is not used. Point/unit/feature, area, front, rectangle, queue, and queue-front forms retain their native encodings.

@@ -30,6 +30,10 @@ The exact official GitHub sources at the commit above were compared with the Rap
 | `luaui/Widgets/gui_commands_fx.lua` | `f3ff2458d2d81ff12567bf988363899629582f79e43d09bc7072c69366f62e93` |
 | `luaui/Widgets/unit_stateprefs.lua` | `baab22045eed7f9bfa14c52a74ffef8c2b33eb0bb9efc8ce3cf5210f69f6b9e0` |
 | `luaui/Widgets/unit_smart_select.lua` | `b0442a5549a8a74bffba7c77be536b90b81a6d77d2551664ce796235ce3d39e7` |
+| `luaui/Widgets/cmd_area_mex.lua` | `da9c8e0a6c7075225bce53c460116c9a90f5bdf21af881cc9e9f24d5ed3c3316` |
+| `luaui/Widgets/cmd_buildsplit.lua` | `56f643d3eefa48c54dd82cf44e98b83fbd5366011c550163992abce2db1863cf` |
+| `luaui/Widgets/cmd_customformations2.lua` | `a39442766698a33492d24718a2eb368c35479b617982b83f38c7afac549c86bc` |
+| `luaui/Widgets/gui_idle_builders.lua` | `766e9afa7d33cad7a19006d174cdcc4c2b5c00c4e0e61dd4903cec0cac7c4f09` |
 
 ## Integration map
 
@@ -48,6 +52,10 @@ The exact official GitHub sources at the commit above were compared with the Rap
 | Build radial | Vanilla Build Menu cells | Expose current page/cells, native focus highlight, navigation and native activation; retain icon/cost/availability/tooltip ownership | `gui_buildmenu.lua` | v0.7 build radial |
 | Alternate Grid Menu | Vanilla Grid Menu | Documented future conversion; Build Menu is the enabled production path and disables Grid Menu | `gui_gridmenu.lua` | v0.7 build radial |
 | Controller UI state | BAR shared `WG` APIs | Camera widget is only an input/context layer; native widgets own focus and command data | patched widgets plus `api_shared_state.lua` | Native/legacy setting |
+| Area Mex | Area Mex widget | Register the command owner, retain native preview/execution, and commit exactly once | `cmd_area_mex.lua` | Direct command path only when native mode is disabled |
+| Front/formation | Custom Formations 2 | Register the command owner and feed controller preview/final points to the native assignment implementation | `cmd_customformations2.lua` | Direct command path only when native mode is disabled |
+| Distributed Grid | Build Split plus Build Orders API | Convert preview placements to native `BuildingInfo` and call `splitBuildOrders` | `cmd_buildsplit.lua`, `api_build_orders.lua` | Normal one-builder queue behavior |
+| Idle unit navigation | Idle Builders widget | Cycle the live `idleList` and invoke its selection/view behavior | `gui_idle_builders.lua` | Camera-local scan only in Legacy mode |
 
 ## Selection findings
 
@@ -71,4 +79,4 @@ The inspected live profile had `Grid menu = 165` and `Build menu = 0`. This expe
 
 ## Candidate systems not overridden
 
-`gui_selectionbox.lua`, `gui_selectedunits_gl4.lua`, `gui_commands_fx.lua`, `select_api.lua`, `ordermenu_firestate.lua`, `user_firestate_commands.lua`, `gui_gridmenu.lua`, `unit_area_reclaim_enemy.lua`, `api_shared_state.lua`, and `unit_stateprefs.lua` remain unmodified. They were audited to establish ownership and are reached through engine/native state. Keeping the override set small reduces BAR-update risk.
+`gui_selectionbox.lua`, `gui_selectedunits_gl4.lua`, `gui_commands_fx.lua`, `select_api.lua`, `ordermenu_firestate.lua`, `user_firestate_commands.lua`, `gui_gridmenu.lua`, `unit_area_reclaim_enemy.lua`, `api_shared_state.lua`, `api_build_orders.lua`, and `unit_stateprefs.lua` remain unmodified. They were audited to establish ownership and are reached through engine/native state. The eight tracked overrides are the minimum set needed for the authoritative command, panel, allocator, and idle-list owners.
