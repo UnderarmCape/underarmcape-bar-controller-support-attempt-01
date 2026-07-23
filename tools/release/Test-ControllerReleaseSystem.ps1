@@ -100,7 +100,7 @@ Check 81 'historical publication sequence is oldest to newest'
 $spec = Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot 'tools\release\controller-release-payloads.json') | ConvertFrom-Json
 Require ([long]$spec.release.releaseSequence -gt [long]$historical[-1].sequence) 'Current release is not sequenced last.'
 Check 82 'current release is sequenced after all historical milestones'
-Require ($spec.release.tag -eq 'controller-support-v0.8.1-disassemble-idle-hints-polish') 'Current Latest identity is wrong.'
+Require ($spec.release.tag -eq 'controller-support-v0.8.2-tactical-insert-idle-repair') 'Current Latest identity is wrong.'
 Check 83 'current release is designated as the Latest candidate'
 Require ($historicalScript -match '-Prerelease\s+-Historical' -and $historicalScript -notmatch '-Latest') 'Historical release flags could alter Latest.'
 Check 84 'historical releases are prerelease recovery data and never Latest'
@@ -140,12 +140,13 @@ Check 92 'future mandatory-release policy is durable and documented'
 
 $companionTests = Invoke-Checked 'dotnet' @('run','--project',(Join-Path $RepositoryRoot 'tools\controller-companion\Tests\BARControllerCompanionUpdateTests.csproj'),'-c','Release')
 $companionText = $companionTests -join "`n"
-Require ($companionText -match 'central v0.8.1 Experimental metadata') 'Bridge version regression failed.'
-Check 93 'bridge version remains v0.8.1 Experimental'
+Require ($companionText -match 'central v0.8.2 Experimental metadata') 'Bridge version regression failed.'
+Check 93 'bridge version remains v0.8.2 Experimental'
 Require ($companionText -match 'attach/wait/transition/exit lifecycle') 'Bridge session tracking regression failed.'
 Check 94 'bridge session tracking lifecycle passes'
 
 $luaCases = @(
+    # v0.8.1 remains available through Recovery Mode and continues to have a focused regression harness.
     @{ number=95; path='tools\controller-ui-tests\Test-ControllerV06InputRestore.lua'; label='tactical restoration' },
     @{ number=96; path='tools\controller-ui-tests\Test-ControllerHybridAreaIdleRepair.lua'; label='Area Mex route' },
     @{ number=97; path='tools\controller-ui-tests\Test-ControllerInputRestoration.lua'; label='selection tap' },
@@ -157,7 +158,8 @@ $luaCases = @(
     @{ number=103; path='tools\controller-ui-tests\Test-ControllerLBHintState.lua'; label='hint stability' },
     @{ number=104; path='tools\controller-ui-tests\Test-ControllerNativeRegressionRepair.lua'; label='panel hiding' },
     @{ number=105; path='tools\controller-ui-tests\Test-ControllerNativeUIIntegration.lua'; label='legacy fallback' },
-    @{ number=106; path='tools\controller-ui-tests\Test-ControllerV081DisassembleIdleHints.lua'; label='v0.8.1 disassemble/idle/hints' }
+    @{ number=106; path='tools\controller-ui-tests\Test-ControllerV081DisassembleIdleHints.lua'; label='v0.8.1 recovery regression remains available' },
+    @{ number=107; path='tools\controller-ui-tests\Test-ControllerV082TacticalInsertIdleRepair.lua'; label='v0.8.2 tactical insert idle repair' }
 )
 foreach ($case in $luaCases) {
 	$null = Invoke-Checked 'lua' @((Join-Path $RepositoryRoot $case.path), $RepositoryRoot)
@@ -165,11 +167,17 @@ foreach ($case in $luaCases) {
 }
 
 $changedLua = @(& git -C $RepositoryRoot diff --name-only $luaRegressionBaseCommit HEAD -- '*.lua')
+$maximumUpvalues = 0
 foreach ($relative in $changedLua) {
     $null = Invoke-Checked 'luac' @('-p',(Join-Path $RepositoryRoot $relative))
+    $listing = Invoke-Checked 'luac' @('-l','-p',(Join-Path $RepositoryRoot $relative))
+    foreach ($line in $listing) {
+        if ($line -match '(\d+) upvalues?') { $maximumUpvalues = [Math]::Max($maximumUpvalues, [int]$matches[1]) }
+    }
 }
 Require ($changedLua.Count -gt 0) 'No changed Lua files were found for parse validation.'
-Check 107 'all changed Lua files parse'
+Require ($maximumUpvalues -le 60) "Changed Lua upvalue limit exceeded: $maximumUpvalues"
+Check 108 'all changed Lua files parse and stay within 60 upvalues'
 
 $projects = @(
     'tools\controller-companion\BarControllerCompanion.csproj',
@@ -183,7 +191,7 @@ $projects = @(
 foreach ($project in $projects) {
     $null = Invoke-Checked 'dotnet' @('build',(Join-Path $RepositoryRoot $project),'-c','Release','--nologo','-warnaserror')
 }
-Check 108 'all seven .NET projects build with zero errors and warnings'
+Check 109 'all seven .NET projects build with zero errors and warnings'
 
 $deployArguments = @{
     PackagePath=$PackagePath; ManifestPath=$ManifestPath; PayloadInventoryPath=$PayloadInventoryPath
@@ -191,23 +199,23 @@ $deployArguments = @{
     ValidateOnly=$true; AllowUnknownBase=[bool]$AllowUnknownBase
 }
 $null = & (Join-Path $PSScriptRoot 'Deploy-ControllerPublicRelease.ps1') @deployArguments
-Check 109 'manifest-driven deployment validator passes'
+Check 110 'manifest-driven deployment validator passes'
 
 $installedUpdater = Join-Path $CompanionInstallPath 'BARControllerUpdater.exe'
 $null = Invoke-Checked $installedUpdater @('--validate-backup',$BackupRoot)
-Check 110 'strict rollback validator passes'
+Check 111 'strict rollback validator passes'
 
 $packageOutput = @(& (Join-Path $PSScriptRoot 'Test-ControllerRelease.ps1') -PackagePath $PackagePath -ManifestPath $ManifestPath -PayloadInventoryPath $PayloadInventoryPath)
 Require (($packageOutput -join "`n") -match 'PAYLOAD_HASHES_VERIFIED=' -and ($packageOutput -join "`n") -match 'RELEASE_COMPONENTS_VERIFIED=') 'Final package inventory did not validate.'
-Check 111 'final package inventory and component hashes pass'
+Check 112 'final package inventory and component hashes pass'
 
-Require ($passed -eq 111) "Expected exactly 111 checks, got $passed."
+Require ($passed -eq 112) "Expected exactly 112 checks, got $passed."
 $manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath $ManifestPath | ConvertFrom-Json
 $stamp = [ordered]@{
     kind = 'bar-controller-release-validation'
     schemaVersion = 1
     passed = $true
-    checksPassed = 111
+    checksPassed = 112
     commitSha = (& git -C $RepositoryRoot rev-parse HEAD).Trim()
     releaseTag = [string]$manifest.releaseTag
     packageSha256 = Get-Sha256 $PackagePath
@@ -217,5 +225,5 @@ $stamp = [ordered]@{
 }
 [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($StampPath)) | Out-Null
 [IO.File]::WriteAllText($StampPath, (($stamp | ConvertTo-Json -Depth 8) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
-Write-Output 'CONTROLLER_RELEASE_TESTS=111/111'
+Write-Output 'CONTROLLER_RELEASE_TESTS=112/112'
 Write-Output "VALIDATION_STAMP=$StampPath"

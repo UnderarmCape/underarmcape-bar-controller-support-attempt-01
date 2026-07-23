@@ -11,8 +11,8 @@ $versionDefinitionPath = Join-Path $RepositoryRoot 'tools\controller-companion\D
 [xml]$versionDefinition = Get-Content -Raw -Encoding UTF8 $versionDefinitionPath
 $semanticVersion = [string]$versionDefinition.Project.PropertyGroup.ControllerCompanionSemanticVersion
 $releaseChannel = [string]$versionDefinition.Project.PropertyGroup.ControllerCompanionChannel
-if ($semanticVersion -ne '0.8.1' -or $releaseChannel -ne 'Experimental') { throw 'Unexpected central experimental version metadata.' }
-if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.1-disassemble-idle-hints-polish-test' }
+if ($semanticVersion -ne '0.8.2' -or $releaseChannel -ne 'Experimental') { throw 'Unexpected central experimental version metadata.' }
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.2-tactical-insert-idle-repair-test' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 $stage = Join-Path $OutputDirectory ('.package-' + [guid]::NewGuid().ToString('N'))
@@ -113,6 +113,15 @@ try {
         'doc\controller-companion-v0.8.0\RADIAL_MIXED_PAGE_PRESENTATION.md',
         'doc\controller-companion-v0.8.0\BRIDGE_CONSOLE_PRESENTATION.md',
         'doc\controller-companion-v0.8.0\LUA_WIDGET_REFACTOR.md',
+        'doc\controller-companion-v0.8.2\Y_REPAIR_MODIFIER.md',
+        'doc\controller-companion-v0.8.2\TACTICAL_STATE_AND_WAIT_BEHAVIOR.md',
+        'doc\controller-companion-v0.8.2\INSERT_QUEUE_CONTROLS.md',
+        'doc\controller-companion-v0.8.2\DISASSEMBLE_MODE_CONTROLS.md',
+        'doc\controller-companion-v0.8.2\DOUBLE_TAP_VISIBLE_SELECTION.md',
+        'doc\controller-companion-v0.8.2\V060_IDLE_NAVIGATION_RESTORE.md',
+        'doc\controller-companion-v0.8.2\TACTICAL_SELF_DESTRUCT.md',
+        'doc\controller-companion-v0.8.2\CONTROLLER_INPUT_PRIORITY.md',
+        'doc\controller-companion-v0.8.2\LIVE_TEST_CHECKLIST.md',
         'tools\controller-ui-tests\Test-ControllerHybridRadials.lua',
         'tools\controller-ui-tests\Test-ControllerNativeUIIntegration.lua',
         'tools\controller-ui-tests\Test-ControllerNativeTargeting.lua',
@@ -125,6 +134,7 @@ try {
         'tools\controller-ui-tests\Test-ControllerInputRestoration.lua',
         'tools\controller-ui-tests\Test-ControllerV06InputRestore.lua',
         'tools\controller-ui-tests\Test-ControllerV081DisassembleIdleHints.lua',
+        'tools\controller-ui-tests\Test-ControllerV082TacticalInsertIdleRepair.lua',
         'tools\dev-scripts\Build_v0.8.0_Native_Test_Package.ps1',
         'tools\dev-scripts\Deploy_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1',
@@ -173,7 +183,7 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $stage 'payload-sha256.json'), (($payload | ConvertTo-Json -Depth 6) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
 
-    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.1_DISASSEMBLE_IDLE_HINT_REPAIR_TEST.zip'
+    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.2_TACTICAL_INSERT_IDLE_REPAIR_TEST.zip'
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()

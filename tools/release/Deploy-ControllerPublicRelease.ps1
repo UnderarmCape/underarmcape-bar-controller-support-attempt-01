@@ -108,7 +108,7 @@ try {
 
     Stop-ControllerRuntimesSafely
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $backupRoot = Join-Path $CompanionInstallPath ('recovery-backups\public-v0.8.1-' + $timestamp)
+    $backupRoot = Join-Path $CompanionInstallPath ('recovery-backups\public-v0.8.2-' + $timestamp)
     $updater = Join-Path $stagingRoot 'BARControllerUpdater.exe'
     if (-not (Test-Path -LiteralPath $updater -PathType Leaf)) { throw 'Validated external updater helper is missing.' }
     $updaterArguments = @(
