@@ -66,7 +66,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Release-package validation gate failed.' }
 & gh auth status | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'GitHub authentication gate failed.' }
 
-$localTag = ([string](& git -C $RepositoryRoot show-ref --tags --verify --hash ('refs/tags/' + $Tag) 2>$null)).Trim()
+$localMatches = @(& git -C $RepositoryRoot tag --list $Tag)
+$localTag = if ($localMatches.Count -eq 1) { ([string](& git -C $RepositoryRoot rev-parse ('refs/tags/' + $Tag))).Trim() } else { '' }
 $remoteRows = @(& git -C $RepositoryRoot ls-remote --tags origin ('refs/tags/' + $Tag) ('refs/tags/' + $Tag + '^{}'))
 $tagCommit = ''
 if ($localTag) { $tagCommit = (& git -C $RepositoryRoot rev-list -n 1 $Tag).Trim() }
@@ -80,10 +81,14 @@ if ($tagCommit -and $tagCommit -ne $Commit) { throw "Tag $Tag points at $tagComm
 
 $releaseExists = $false
 $existing = $null
-& gh release view $Tag --repo $Repository --json tagName,name,isDraft,isPrerelease,assets | Out-Null
-if ($LASTEXITCODE -eq 0) {
+$savedErrorAction = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$releaseProbe = @(& gh release view $Tag --repo $Repository --json tagName,name,isDraft,isPrerelease,assets 2>$null)
+$releaseProbeExit = $LASTEXITCODE
+$ErrorActionPreference = $savedErrorAction
+if ($releaseProbeExit -eq 0) {
     $releaseExists = $true
-    $existing = gh release view $Tag --repo $Repository --json tagName,name,isDraft,isPrerelease,assets | ConvertFrom-Json
+    $existing = ($releaseProbe -join [Environment]::NewLine) | ConvertFrom-Json
     if ($existing.tagName -ne $Tag) { throw 'Existing release identity conflict.' }
     if ([bool]$existing.isDraft -ne [bool]$Draft -or [bool]$existing.isPrerelease -ne [bool]$Prerelease) {
         throw 'Existing release type conflicts with requested publication.'

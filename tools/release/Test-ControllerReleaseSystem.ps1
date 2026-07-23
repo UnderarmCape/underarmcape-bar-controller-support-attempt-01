@@ -72,7 +72,8 @@ Check 76 'existing v0.7.0 release is preserved and unique'
 
 foreach ($item in $historical) {
     Require ((& git -C $RepositoryRoot cat-file -t $item.commit 2>$null) -eq 'commit') "Historical commit missing: $($item.commit)"
-    $local = ([string](& git -C $RepositoryRoot rev-list -n 1 $item.tag 2>$null)).Trim()
+    $localMatches = @(& git -C $RepositoryRoot tag --list $item.tag)
+    $local = if ($localMatches.Count -eq 1) { ([string](& git -C $RepositoryRoot rev-list -n 1 $item.tag)).Trim() } else { '' }
     $remoteRows = @(& git -C $RepositoryRoot ls-remote --tags origin ('refs/tags/' + $item.tag) ('refs/tags/' + $item.tag + '^{}'))
     $peeled = @($remoteRows | Where-Object { $_ -match '\^\{\}$' })
     $remote = if ($peeled.Count) { ($peeled[0] -split '\s+')[0] } elseif ($remoteRows.Count) { ($remoteRows[0] -split '\s+')[0] } else { '' }
