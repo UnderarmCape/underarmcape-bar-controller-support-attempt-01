@@ -40,7 +40,7 @@ internal static class UpdateService
     };
     private static readonly HashSet<string> Commands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "check", "defaults", "update", "status", "reload", "help",
+        "check", "defaults", "update", "recover", "catalog", "status", "reload", "help",
     };
     private static readonly HashSet<string> KnownComponents = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -76,12 +76,28 @@ internal static class UpdateService
             {
                 case "check":
                     CheckNowAsync(options, syncDefaults: true, checkRelease: true).GetAwaiter().GetResult();
+                    try
+                    {
+                        ControllerUpdateCoordinator.CheckAndPromptAsync(null, interactive: !options.Quiet).GetAwaiter().GetResult();
+                    }
+                    catch (Exception exception)
+                    {
+                        if (!options.Quiet)
+                            Console.WriteLine("[updates] GitHub catalog unavailable; installed files and cached defaults remain active: " + exception.Message);
+                    }
                     return 0;
                 case "defaults":
                     CheckNowAsync(options, syncDefaults: true, checkRelease: false).GetAwaiter().GetResult();
                     return 0;
                 case "update":
-                    return UpdateApplicationAsync(options).GetAwaiter().GetResult();
+                    ControllerUpdateCoordinator.UpdateLatestAsync(null, options.Yes).GetAwaiter().GetResult();
+                    return 0;
+                case "recover":
+                    ControllerUpdateCoordinator.RunRecoveryModeAsync(null).GetAwaiter().GetResult();
+                    return 0;
+                case "catalog":
+                    ControllerUpdateCoordinator.PrintCatalogAsync().GetAwaiter().GetResult();
+                    return 0;
                 case "status":
                     PrintStatus(options);
                     return 0;
@@ -100,20 +116,21 @@ internal static class UpdateService
         }
     }
 
-    public static void StartBackgroundStartupCheck()
+    public static void StartBackgroundStartupCheck(Action requestCompanionExit)
     {
         Task.Run(async () =>
         {
             try
             {
                 var options = new CommandOptions { TimeoutMilliseconds = StartupTimeoutMilliseconds, Quiet = true };
-                await CheckNowAsync(options, syncDefaults: true, checkRelease: true).ConfigureAwait(false);
+                await CheckNowAsync(options, syncDefaults: true, checkRelease: false).ConfigureAwait(false);
             }
             catch (Exception exception)
             {
                 Console.WriteLine("[updates] Offline or unavailable; cached defaults remain active: " + exception.Message);
             }
         });
+        ControllerUpdateCoordinator.StartPeriodicCheck(requestCompanionExit);
     }
 
     private static async Task CheckNowAsync(CommandOptions options, bool syncDefaults, bool checkRelease)
@@ -609,11 +626,13 @@ internal static class UpdateService
         Console.WriteLine("BAR Controller Companion update/defaults commands:");
         Console.WriteLine("  check                 Sync defaults and check the latest public release");
         Console.WriteLine("  defaults              Sync only controller UI shipping defaults");
-        Console.WriteLine("  update [--yes] [--apply]  Approve a hash-verified application download/apply");
+        Console.WriteLine("  update [--yes]        Approve a manifest/hash-verified update and external handoff");
+        Console.WriteLine("  recover              Open Recovery Mode (versions through verified v0.6.0)");
+        Console.WriteLine("  catalog              Print compatible GitHub release identities and indicators");
         Console.WriteLine("  status                Show cached defaults, release, and offline state");
         Console.WriteLine("  reload                Request a running UI layout widget to reload its cache");
         Console.WriteLine("Options: --bar-data path --timeout-ms N");
-        Console.WriteLine("Startup checks are short, fail soft, preserve valid caches, and never apply releases.");
+        Console.WriteLine("Startup then six-hour checks are asynchronous, cached, and never force installation.");
     }
 
     internal sealed class CommandOptions

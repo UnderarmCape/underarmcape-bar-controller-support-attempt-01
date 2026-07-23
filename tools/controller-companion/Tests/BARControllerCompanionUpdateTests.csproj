@@ -7,8 +7,14 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\UpdateService.cs" Link="UpdateService.cs" />
+    <Compile Include="..\ControllerGitHubReleases.cs" Link="ControllerGitHubReleases.cs" />
+    <Compile Include="..\ControllerUpdateCoordinator.cs" Link="ControllerUpdateCoordinator.cs" />
     <Compile Include="..\Shared\ProductMetadata.cs" Link="ProductMetadata.cs" />
     <Compile Include="..\Shared\EngineSessionTracker.cs" Link="EngineSessionTracker.cs" />
     <Compile Include="..\Shared\BridgeConsole.cs" Link="BridgeConsole.cs" />
+    <Compile Include="..\Shared\ControllerReleaseModels.cs" Link="ControllerReleaseModels.cs" />
+    <Compile Include="..\Shared\ControllerReleaseSecurity.cs" Link="ControllerReleaseSecurity.cs" />
+    <Compile Include="..\Shared\ControllerReleaseTransaction.cs" Link="ControllerReleaseTransaction.cs" />
+    <Compile Include="..\Shared\ControllerUpdatePolicy.cs" Link="ControllerUpdatePolicy.cs" />
   </ItemGroup>
 </Project>

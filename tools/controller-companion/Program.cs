@@ -80,7 +80,7 @@ internal static class Program
             return cameraSetting.Status == CameraSettingStatus.Failed ? 1 : 0;
         }
 
-        UpdateService.StartBackgroundStartupCheck();
+        UpdateService.StartBackgroundStartupCheck(() => keepRunning = false);
 
         using var udp = new UdpClient(AddressFamily.InterNetwork);
         var destination = new IPEndPoint(IPAddress.Loopback, port);
