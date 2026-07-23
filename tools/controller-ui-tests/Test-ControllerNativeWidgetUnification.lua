@@ -131,8 +131,8 @@ test(34, "Construction turret context works", function() return has(camera,"atte
 test(35, "Empty-ground fallback works", function() return has(camera,'targetString = "ground"') and has(camera,"fallback move") end)
 test(36, "Resolver uses vanilla context only for narrow extensions", function() return has(camera,"defaultCmdID ~= repairID and defaultCmdID ~= reclaimID") end)
 test(37, "Exactly one order issues", function() return has(order,"COMMAND_NOTIFY HANDLED") and has(order,'return true, "widget"') end)
-test(38, "Inside Disassemble valid X target issues Reclaim, not Move", function() return has(camera,"ControllerCameraTestIssueNativeDisassembleTarget") and has(camera,"native target is not reclaimable") end)
-test(39, "Disassemble remains active", function() return has(camera,"state.successfulActivity, state.lastReclaimAt = true, debugEventTime") end)
+test(38, "Inside Disassemble valid X target issues Reclaim, not Move", function() return has(camera,"if pending.targetInfo then") and has(camera,"ControllerCameraTestIssueDisassembleSingleReclaim(pending.targetInfo") end)
+test(39, "Disassemble remains active", function() return has(camera,"state.successfulActivity = true") and has(camera,"state.lastReclaimAt = debugEventTime") end)
 
 -- 40-48 Disassemble brush.
 test(40, "Local eligible constructors join reclaimer set", function() return has(camera,"ControllerCameraTestAppendDisassembleReclaimer") end)
@@ -143,7 +143,7 @@ test(44, "Own targets are represented correctly", function() return has(camera,"
 test(45, "Enemy targets use native highlight fallback where selection is impossible", function() return has(camera,"controllerSetHighlightedTargets") and has(reclaim,"controllerHighlightedTargets") end)
 test(46, "No teammate-specific exclusion code exists", function() return not has(disassemble,"GetUnitAllyTeam") and not has(disassemble,"GetMyAllyTeamID") end)
 test(47, "RT additive behavior still works", function() return has(camera,"area.additive") and has(camera,"ControllerCameraTestIsQueueModifierActive") end)
-test(48, "Successful X Reclaim resets timer", function() return has(camera,"state.lastReclaimAt = true, debugEventTime") or has(camera,"state.successfulActivity, state.lastReclaimAt = true, debugEventTime") end)
+test(48, "Successful X Reclaim resets timer", function() return has(camera,"state.lastReclaimAt = debugEventTime") end)
 
 -- 49-58 LB shortcuts.
 test(49, "All shortcuts use restored v0.6 dispatch", function() return has(camera,"ControllerCameraTestLegacyExecuteLBHotkey") and has(camera,"ControllerCameraTestIssueOrderToSelectedUnits") end)
@@ -282,7 +282,7 @@ test(138, "Deployment and rollback manifests cover every changed file", function
 	return all(deploy,"controller_native_command_owner.lua","controller_native_build_cell_renderer.lua","Test-ControllerInputRestoration.lua")
 		and all(manifest,"cmd_area_mex.lua","cmd_buildsplit.lua","cmd_customformations2.lua","gui_idle_builders.lua","gui_buildmenu.lua")
 		and has(restore,"bar-controller-v06-input-restore-ui-polish-test-deployment-backup")
-		and has(packageScript,"BAR_Controller_Support_v0.8.0_V06_INPUT_RESTORE_UI_POLISH_TEST.zip")
+		and has(packageScript,"BAR_Controller_Support_v0.8.1_DISASSEMBLE_IDLE_HINT_REPAIR_TEST.zip")
 end)
 
 assert(#cases == 138, "expected exactly 138 cases")

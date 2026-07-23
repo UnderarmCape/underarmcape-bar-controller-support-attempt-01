@@ -100,7 +100,7 @@ Check 81 'historical publication sequence is oldest to newest'
 $spec = Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot 'tools\release\controller-release-payloads.json') | ConvertFrom-Json
 Require ([long]$spec.release.releaseSequence -gt [long]$historical[-1].sequence) 'Current release is not sequenced last.'
 Check 82 'current release is sequenced after all historical milestones'
-Require ($spec.release.tag -eq 'controller-support-v0.8.0-v06-input-restore-ui-polish') 'Current Latest identity is wrong.'
+Require ($spec.release.tag -eq 'controller-support-v0.8.1-disassemble-idle-hints-polish') 'Current Latest identity is wrong.'
 Check 83 'current release is designated as the Latest candidate'
 Require ($historicalScript -match '-Prerelease\s+-Historical' -and $historicalScript -notmatch '-Latest') 'Historical release flags could alter Latest.'
 Check 84 'historical releases are prerelease recovery data and never Latest'
@@ -140,8 +140,8 @@ Check 92 'future mandatory-release policy is durable and documented'
 
 $companionTests = Invoke-Checked 'dotnet' @('run','--project',(Join-Path $RepositoryRoot 'tools\controller-companion\Tests\BARControllerCompanionUpdateTests.csproj'),'-c','Release')
 $companionText = $companionTests -join "`n"
-Require ($companionText -match 'central v0.8 Experimental metadata') 'Bridge version regression failed.'
-Check 93 'bridge version remains v0.8.0 Experimental'
+Require ($companionText -match 'central v0.8.1 Experimental metadata') 'Bridge version regression failed.'
+Check 93 'bridge version remains v0.8.1 Experimental'
 Require ($companionText -match 'attach/wait/transition/exit lifecycle') 'Bridge session tracking regression failed.'
 Check 94 'bridge session tracking lifecycle passes'
 
@@ -156,10 +156,11 @@ $luaCases = @(
     @{ number=102; path='tools\controller-ui-tests\Test-ControllerV06InputRestore.lua'; label='control groups' },
     @{ number=103; path='tools\controller-ui-tests\Test-ControllerLBHintState.lua'; label='hint stability' },
     @{ number=104; path='tools\controller-ui-tests\Test-ControllerNativeRegressionRepair.lua'; label='panel hiding' },
-    @{ number=105; path='tools\controller-ui-tests\Test-ControllerNativeUIIntegration.lua'; label='legacy fallback' }
+    @{ number=105; path='tools\controller-ui-tests\Test-ControllerNativeUIIntegration.lua'; label='legacy fallback' },
+    @{ number=106; path='tools\controller-ui-tests\Test-ControllerV081DisassembleIdleHints.lua'; label='v0.8.1 disassemble/idle/hints' }
 )
 foreach ($case in $luaCases) {
-    $null = Invoke-Checked 'lua' @((Join-Path $RepositoryRoot $case.path), $RepositoryRoot)
+	$null = Invoke-Checked 'lua' @((Join-Path $RepositoryRoot $case.path), $RepositoryRoot)
     Check $case.number ($case.label + ' regression passes')
 }
 
@@ -168,7 +169,7 @@ foreach ($relative in $changedLua) {
     $null = Invoke-Checked 'luac' @('-p',(Join-Path $RepositoryRoot $relative))
 }
 Require ($changedLua.Count -gt 0) 'No changed Lua files were found for parse validation.'
-Check 106 'all changed Lua files parse'
+Check 107 'all changed Lua files parse'
 
 $projects = @(
     'tools\controller-companion\BarControllerCompanion.csproj',
@@ -182,7 +183,7 @@ $projects = @(
 foreach ($project in $projects) {
     $null = Invoke-Checked 'dotnet' @('build',(Join-Path $RepositoryRoot $project),'-c','Release','--nologo','-warnaserror')
 }
-Check 107 'all seven .NET projects build with zero errors and warnings'
+Check 108 'all seven .NET projects build with zero errors and warnings'
 
 $deployArguments = @{
     PackagePath=$PackagePath; ManifestPath=$ManifestPath; PayloadInventoryPath=$PayloadInventoryPath
@@ -190,23 +191,23 @@ $deployArguments = @{
     ValidateOnly=$true; AllowUnknownBase=[bool]$AllowUnknownBase
 }
 $null = & (Join-Path $PSScriptRoot 'Deploy-ControllerPublicRelease.ps1') @deployArguments
-Check 108 'manifest-driven deployment validator passes'
+Check 109 'manifest-driven deployment validator passes'
 
 $installedUpdater = Join-Path $CompanionInstallPath 'BARControllerUpdater.exe'
 $null = Invoke-Checked $installedUpdater @('--validate-backup',$BackupRoot)
-Check 109 'strict rollback validator passes'
+Check 110 'strict rollback validator passes'
 
 $packageOutput = @(& (Join-Path $PSScriptRoot 'Test-ControllerRelease.ps1') -PackagePath $PackagePath -ManifestPath $ManifestPath -PayloadInventoryPath $PayloadInventoryPath)
 Require (($packageOutput -join "`n") -match 'PAYLOAD_HASHES_VERIFIED=' -and ($packageOutput -join "`n") -match 'RELEASE_COMPONENTS_VERIFIED=') 'Final package inventory did not validate.'
-Check 110 'final package inventory and component hashes pass'
+Check 111 'final package inventory and component hashes pass'
 
-Require ($passed -eq 110) "Expected exactly 110 checks, got $passed."
+Require ($passed -eq 111) "Expected exactly 111 checks, got $passed."
 $manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath $ManifestPath | ConvertFrom-Json
 $stamp = [ordered]@{
     kind = 'bar-controller-release-validation'
     schemaVersion = 1
     passed = $true
-    checksPassed = 110
+    checksPassed = 111
     commitSha = (& git -C $RepositoryRoot rev-parse HEAD).Trim()
     releaseTag = [string]$manifest.releaseTag
     packageSha256 = Get-Sha256 $PackagePath
@@ -216,5 +217,5 @@ $stamp = [ordered]@{
 }
 [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($StampPath)) | Out-Null
 [IO.File]::WriteAllText($StampPath, (($stamp | ConvertTo-Json -Depth 8) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
-Write-Output 'CONTROLLER_RELEASE_TESTS=110/110'
+Write-Output 'CONTROLLER_RELEASE_TESTS=111/111'
 Write-Output "VALIDATION_STAMP=$StampPath"

@@ -80,7 +80,7 @@ test(30, "Queue semantics remain", function() return has(areaMex, "SpotHasExtrac
 test(31, "Enemy Disassemble anchor works", function() return has(camera, "ControllerCameraTestGetReticleNativeReclaimTarget") and has(camera, "state.lbA.targetID") end)
 
 -- A selection
-test(32, "Single A selects exactly one unit", function() return has(camera, "attemptReticleSelection()") and has(camera, "single exact unit") end)
+test(32, "Single A selects exactly one unit", function() return has(camera, "attemptReticleSelection(targetID)") and has(camera, "single exact unit") end)
 test(33, "100 repeated single taps never expand", function()
 	local state = Taps.New(0.35)
 	for index = 1, 100 do if Taps.ResolveRelease(state, index, 11, 22, false) ~= "single" then return false end end

@@ -110,9 +110,9 @@ test(38, "Missing API is safe", function()
 end)
 
 -- 39-52 Enemy Disassemble.
-test(39, "X immediately reclaims enemy unit", function() return has(camera, "ControllerCameraTestIssueNativeDisassembleTarget") and has(camera, "params = { target.targetID }") end)
+test(39, "X target release reclaims enemy unit", function() return has(camera, "ControllerCameraTestIssueDisassembleSingleReclaim(pending.targetInfo") and has(camera, "params = { target.targetID }") end)
 test(40, "X immediately reclaims enemy structure", function() return has(camera, "ControllerCameraTestGetReticleTargetInfo") and not has(camera, "enemy structures unsupported") end)
-test(41, "X does not Move over reclaim target", function() return has(camera, "if not params then") and has(camera, "IssueNativeDisassembleMove") end)
+test(41, "X does not Move over reclaim target", function() return has(camera, "if pending.targetInfo then") and has(camera, "ControllerCameraTestIssueNativeDisassembleMove(pending.groundInfo)") end)
 test(42, "LB+A tap accepts enemy target", function() return has(camera, "ControllerCameraTestGetReticleNativeReclaimTarget") end)
 test(43, "Enemy target anchors same-type reclaim", function() return has(camera, "StartNativeSameTypeReclaim") and has(camera, "unitDefID") end)
 test(44, "Same-type collection includes enemy", function() return has(camera, "GetUnitsInCylinder") and not has(disassemble, "GetMyAllyTeamID") end)
@@ -121,9 +121,9 @@ test(46, "RT+Hold-A adds enemy", function() return has(camera, "area.initialSele
 test(47, "Own constructor joins reclaimers", function() return has(camera, "ControllerCameraTestAppendDisassembleReclaimer") end)
 test(48, "Own constructor is excluded", function() return has(disassemble, "not constructorSet[unitID]") end)
 test(49, "Factory never joins reclaimer set", function() return has(disassemble, "unitDef.isFactory ~= true") end)
-test(50, "Combined own/enemy batch deduplicates", function() return has(disassemble, "seenTargets") and has(camera, "local combined = {}") end)
+test(50, "LB+A no longer combines own/enemy batches", function() return has(disassemble, "seenTargets") and not has(camera, "local combined = {}") end)
 test(51, "Timer resets only after accepted reclaim", function() return has(camera, "if issuedTargets > 0 then") end)
-test(52, "Disassemble remains active", function() return has(camera, "state.successfulActivity, state.lastReclaimAt = true") end)
+test(52, "Disassemble remains active", function() return has(camera, "state.successfulActivity = true") and has(camera, "state.lastReclaimAt = debugEventTime") end)
 
 -- 53-72 runtime-equivalent area owner route.
 test(53, "LB Tactical activation begins restored v0.6 state", function()

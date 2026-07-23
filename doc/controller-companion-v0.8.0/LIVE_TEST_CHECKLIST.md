@@ -49,5 +49,5 @@ Record BAR build, map, unit selections, controller model, pass/fail notes, scree
 - [ ] Verify a rate-limited API response uses cache without repeated errors.
 - [ ] Verify `NO_COLOR` output and redirected output remain readable/nonblocking.
 - [ ] Confirm the session bridge still exits after the tracked Spring/Recoil process closes.
-- [ ] Verify GitHub Latest resolves to `controller-support-v0.8.0-v06-input-restore-ui-polish`.
+- [ ] Verify GitHub Latest resolves to `controller-support-v0.8.1-disassemble-idle-hints-polish`.
 - [ ] Verify every historical release asset digest against `HISTORICAL_RELEASE_CATALOG.md` and its detached manifest.

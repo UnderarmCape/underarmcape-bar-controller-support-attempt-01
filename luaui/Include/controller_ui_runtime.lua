@@ -256,6 +256,10 @@ function Runtime.New()
 	local function normal(c) return not c.bindingsOpen and not modal(c) and not c.commandLayer and not c.controlGroupLayer
 		and not c.pitchLayer and not c.lbTacticalLayer and not c.disassembleMode and not c.disassembleToggleCharge end
 	local function context(field) return function(c) return c[field] and not c.disassembleToggleCharge end end
+	local function anyCapability(c, ...)
+		for _, key in ipairs({ ... }) do if c[key] then return true end end
+		return false
+	end
 
 	bind("select", "Edit Binding", bindings, 1); bind("cancel", "Close Bindings", bindings, 2)
 	bind("radialPrevPage", "Previous Category", bindings, 3); bind("radialNextPage", "Next Category", bindings, 4)
@@ -299,32 +303,37 @@ function Runtime.New()
 	bind("appendQueueModifier", "Repeat / Append", staged, 3)
 	bind("select", "Release to Select Area", area, 1); bind("cancel", "Cancel Area Selection", area, 2)
 	add({ id = "area-radius", inputs = { "rightStick" }, label = "Adjust Radius / Filter", when = area, priority = 3, group = "Selection" })
-	bind("commandUp", "Guard / Patrol", command, 1); bind("commandDown", "Reclaim", command, 2)
-	bind("smartAction", "Attack / Attack-Move", command, 3); bind("cancel", "Stop Selected", command, 4)
 	bind("buildRadial", "Tactical Radial", command, 5)
 	bind("groupSlotUp", "Next Group Slot", groups, 1); bind("groupSlotDown", "Previous Group Slot", groups, 2)
 	bind("groupRecallOrAssign", "Recall Group", groups, 3); bind("groupAssign", "Assign Type / Future Units", groups, 4)
 	bind("groupClear", "Clear Group", groups, 5)
 	bind("idlePrev", "Previous Idle Unit Type", pitch, 1); bind("idleNext", "Next Idle Unit Type", pitch, 2)
 	bind("pitchModifier", "Camera Pitch Modifier", pitch, 3)
-	add({ id = "lb-tactical-stop", action = "cancel", chordActions = { "pitchModifier", "cancel" }, label = "Stop", when = lbTactical, priority = 1, group = "Tactical" })
+	add({ id = "lb-tactical-stop", action = "cancel", chordActions = { "pitchModifier", "cancel" }, label = "Stop",
+		when = function(c) return lbTactical(c) and c.canStopCommand end, priority = 1, group = "Tactical" })
 	add({ id = "lb-tactical-primary", action = "select", chordActions = { "pitchModifier", "select" }, label = "Tactical Primary",
 		labelResolver = function(c) if c.selectionProfile == "builder" then return "Repair Area" end; if c.selectionProfile == "air_transport" then return "Unload Unit / Hold for Area" end; if c.selectionProfile == "factory" then return "Fight" end; return "Attack / Fight" end,
-		when = lbTactical, priority = 2, group = "Tactical" })
+		when = function(c) return lbTactical(c) and (c.selectionProfile == "air_transport"
+			or (c.selectionProfile == "builder" and c.canRepairCommand)
+			or (c.selectionProfile == "factory" and c.canFightCommand)
+			or anyCapability(c, "canAttackCommand", "canFightCommand")) end, priority = 2, group = "Tactical" })
 	add({ id = "lb-tactical-smart", action = "smartAction", chordActions = { "pitchModifier", "smartAction" }, label = "Tactical Smart",
 		labelResolver = function(c) if c.selectionProfile == "builder" then return "Reclaim Area" end; if c.selectionProfile == "air_transport" then return "Load Unit / Hold for Area" end; if c.selectionProfile == "factory" then return "Fight" end; return "Attack" end,
-		when = lbTactical, priority = 3, group = "Tactical" })
+		when = function(c) return lbTactical(c) and (c.selectionProfile == "air_transport"
+			or (c.selectionProfile == "builder" and c.canReclaimCommand)
+			or (c.selectionProfile == "factory" and c.canFightCommand)
+			or c.canAttackCommand) end, priority = 3, group = "Tactical" })
 	add({ id = "lb-tactical-utility", action = "insertNextCommandModifier", chordActions = { "pitchModifier", "insertNextCommandModifier" },
-		label = "Patrol", when = function(c) return lbTactical(c) and c.selectionProfile ~= "air_transport" end, priority = 4, group = "Tactical" })
+		label = "Patrol", when = function(c) return lbTactical(c) and c.selectionProfile ~= "air_transport" and c.canPatrolCommand end, priority = 4, group = "Tactical" })
 	add({ id = "lb-tactical-wait", action = "cancel", chordActions = { "pitchModifier", "cancel" }, label = "Wait", hold = true, when = lbTactical, priority = 5, group = "Tactical" })
-	bind("select", "Select Unit", normal, 1); bind("smartAction", "Smart Action", function(c) return normal(c) and not c.hasTransport end, 3)
-	bind("smartAction", "Load / Move Transport", function(c) return normal(c) and c.hasTransport end, 3, { id = "normal-transport-smart" })
-	bind("smartAction", "Draw Move / Build Path", function(c) return normal(c) and c.hasSelection end, 4, { hold = true, id = "normal-smart-hold" })
+	bind("select", "Select Unit", normal, 1); bind("smartAction", "Smart Action", function(c) return normal(c) and not c.hasTransport and c.canSmartAction end, 3)
+	bind("smartAction", "Load / Move Transport", function(c) return normal(c) and c.hasTransport and c.canSmartAction end, 3, { id = "normal-transport-smart" })
+	bind("smartAction", "Draw Move / Build Path", function(c) return normal(c) and c.hasSelection and c.canMoveCommand end, 4, { hold = true, id = "normal-smart-hold" })
 	add({ id = "normal-selection-toggle", inputs = { "RT", "A" }, label = "Add / Remove Selection", priority = 2, group = "Selection",
 		when = function(c) return normal(c) and c.selectionToggleModifier end })
 	bind("cancel", "Clear Selection", function(c) return normal(c) and c.hasSelection end, 5)
-	bind("buildRadial", "Build / Factory Radial", function(c) return normal(c) and (c.hasBuilder or c.hasFactory) end, 6)
-	bind("commandLayer", "Tactical Command Layer", function(c) return normal(c) and c.hasSelection end, 7)
+	bind("buildRadial", "Build / Factory Radial", function(c) return normal(c) and c.canBuildCommand end, 6)
+	bind("commandLayer", "Tactical Command Layer", function(c) return normal(c) and c.hasSelection and c.canTacticalCommand end, 7)
 	add({ id = "normal-visible-select", action = "pitchModifier", label = "Select Visible Combat",
 		labelResolver = function(c) local behavior = self.renderers and self.renderers.SelectionBehavior; return behavior and behavior.FilterShortLabel(c.visibleSelectionFilter) or "Select Visible Combat" end,
 		when = normal, priority = 8, group = "Selection" })
@@ -394,12 +403,16 @@ function Runtime.New()
 			"dgunMode", "commandLayer", "controlGroupLayer", "pitchLayer",
 			"lbTacticalLayer", "visibleSelectionFilter", "selectionToggleModifier",
 			"disassembleMode", "disassembleToggleCharge", "disassembleAreaMarking", "disassembleAreaReclaim", "disassembleMarkedCount",
-			"nativeBarUI", "nativeCommandActive", "controllerGlyphStyle", "controllerGlyphFamily" }
+			"nativeBarUI", "nativeCommandActive", "controllerGlyphStyle", "controllerGlyphFamily",
+			"canSmartAction", "canTacticalCommand", "canMoveCommand", "canStopCommand", "canPatrolCommand", "canGuardCommand",
+			"canReclaimCommand", "canRepairCommand", "canAttackCommand", "canFightCommand", "canBuildCommand" }
 		local values = {}; for i, key in ipairs(keys) do values[i] = tostring(context[key]) end; return table.concat(values, "|")
 	end
 	function self:SelectionSignature(context)
 		local keys = { "selectionRevision", "selectedCount", "hasSelection", "multipleSelection",
-			"hasBuilder", "hasFactory", "hasTransport", "selectionProfile" }
+			"hasBuilder", "hasFactory", "hasTransport", "selectionProfile",
+			"canSmartAction", "canTacticalCommand", "canMoveCommand", "canStopCommand", "canPatrolCommand", "canGuardCommand",
+			"canReclaimCommand", "canRepairCommand", "canAttackCommand", "canFightCommand", "canBuildCommand" }
 		local values = {}; for i, key in ipairs(keys) do values[i] = tostring(context[key]) end
 		return table.concat(values, "|")
 	end

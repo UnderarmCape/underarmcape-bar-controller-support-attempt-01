@@ -14,7 +14,7 @@ The publisher hard-stops on dirty state, failed/missing validation, wrong tag co
 Current release command (run first with `-DryRun`, then remove it):
 
 ```powershell
-tools/release/Publish-ControllerRelease.ps1 -Commit $commit -Version 0.8.0 -DisplayVersion 'v0.8.0 Experimental' -Tag controller-support-v0.8.0-v06-input-restore-ui-polish -Slug v06-input-restore-ui-polish -Title 'BAR Controller Support v0.8.0 — v0.6 Input Restore & UI Polish' -Channel experimental -ReleaseNotesPath artifacts/v0.8.0-public-release/RELEASE_NOTES_v0.8.0.md -PackagePath artifacts/v0.8.0-public-release/BAR_Controller_Support_v0.8.0_V06_INPUT_RESTORE_UI_POLISH.zip -ManifestPath artifacts/v0.8.0-public-release/controller-release-manifest.json -PayloadInventoryPath artifacts/v0.8.0-public-release/payload-sha256.json -ExpectedPackageSha256 $packageSha256 -ValidationStampPath artifacts/v0.8.0-public-release/controller-release-validation.json -Latest -DryRun
+tools/release/Publish-ControllerRelease.ps1 -Commit $commit -Version 0.8.1 -DisplayVersion 'v0.8.1 Experimental' -Tag controller-support-v0.8.1-disassemble-idle-hints-polish -Slug disassemble-idle-hints-polish -Title 'BAR Controller Support v0.8.1 — Disassemble, Idle & Hint Repair' -Channel experimental -ReleaseNotesPath artifacts/v0.8.1-public-release/RELEASE_NOTES_v0.8.1.md -PackagePath artifacts/v0.8.1-public-release/BAR_Controller_Support_v0.8.1_DISASSEMBLE_IDLE_HINT_REPAIR.zip -ManifestPath artifacts/v0.8.1-public-release/controller-release-manifest.json -PayloadInventoryPath artifacts/v0.8.1-public-release/payload-sha256.json -ExpectedPackageSha256 $packageSha256 -ValidationStampPath artifacts/v0.8.1-public-release/controller-release-validation.json -Latest -DryRun
 ```
 
 Historical exact-artifact command (run first with `-DryRun`, then remove it):
@@ -26,6 +26,6 @@ tools/release/Publish-HistoricalControllerReleases.ps1 -DryRun
 Manifest-driven live deployment and validation commands:
 
 ```powershell
-tools/release/Deploy-ControllerPublicRelease.ps1 -PackagePath artifacts/v0.8.0-public-release/BAR_Controller_Support_v0.8.0_V06_INPUT_RESTORE_UI_POLISH.zip -ManifestPath artifacts/v0.8.0-public-release/controller-release-manifest.json -PayloadInventoryPath artifacts/v0.8.0-public-release/payload-sha256.json
-tools/release/Test-ControllerReleaseSystem.ps1 -PackagePath artifacts/v0.8.0-public-release/BAR_Controller_Support_v0.8.0_V06_INPUT_RESTORE_UI_POLISH.zip -ManifestPath artifacts/v0.8.0-public-release/controller-release-manifest.json -PayloadInventoryPath artifacts/v0.8.0-public-release/payload-sha256.json -BackupRoot $backupRoot
+tools/release/Deploy-ControllerPublicRelease.ps1 -PackagePath artifacts/v0.8.1-public-release/BAR_Controller_Support_v0.8.1_DISASSEMBLE_IDLE_HINT_REPAIR.zip -ManifestPath artifacts/v0.8.1-public-release/controller-release-manifest.json -PayloadInventoryPath artifacts/v0.8.1-public-release/payload-sha256.json
+tools/release/Test-ControllerReleaseSystem.ps1 -PackagePath artifacts/v0.8.1-public-release/BAR_Controller_Support_v0.8.1_DISASSEMBLE_IDLE_HINT_REPAIR.zip -ManifestPath artifacts/v0.8.1-public-release/controller-release-manifest.json -PayloadInventoryPath artifacts/v0.8.1-public-release/payload-sha256.json -BackupRoot $backupRoot
 ```

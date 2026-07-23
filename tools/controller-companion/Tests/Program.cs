@@ -70,14 +70,14 @@ internal static class Program
             Assert(UpdateService.RunCommand(new[] { "check", "--bar-data", barData, "--timeout-ms", "2000" }) == 0, "combined check");
             string statusPath = Path.Combine(testRoot, "program-data", "update-status.json");
             using JsonDocument status = JsonDocument.Parse(File.ReadAllText(statusPath));
-            Assert(status.RootElement.GetProperty("ReleaseAvailable").GetBoolean(), "newer release reported, not applied");
+            Assert(!status.RootElement.GetProperty("ReleaseAvailable").GetBoolean(), "current release discovered, not re-applied");
             Assert(status.RootElement.GetProperty("LatestRelease").GetString() == "0.8.1", "release version parsed");
 
             Assert(UpdateService.RunCommand(new[] { "reload", "--bar-data", barData }) == 0, "reload marker");
             using JsonDocument reload = JsonDocument.Parse(File.ReadAllText(Path.Combine(cacheDirectory, "reload-request.json")));
             Assert(reload.RootElement.GetProperty("kind").GetString() == "bar-controller-ui-reload-request", "reload handoff format");
 
-            Console.WriteLine("Companion tests passed: central v0.8 Experimental metadata, attach/wait/transition/exit lifecycle, valid/newer defaults pair, known-good backup, downgrade prevention, malformed JSON, hash/ID failure, timeout/offline cache, release report, reload handoff.");
+            Console.WriteLine("Companion tests passed: central v0.8.1 Experimental metadata, attach/wait/transition/exit lifecycle, valid/newer defaults pair, known-good backup, downgrade prevention, malformed JSON, hash/ID failure, timeout/offline cache, current release report, reload handoff.");
             return 0;
         }
         catch (Exception exception)
@@ -96,10 +96,10 @@ internal static class Program
 
     private static void TestProductMetadataAndSessionLifecycle()
     {
-        Assert(ProductMetadata.SemanticVersion == "0.8.0", "central semantic version");
+        Assert(ProductMetadata.SemanticVersion == "0.8.1", "central semantic version");
         Assert(ProductMetadata.Channel == "Experimental", "central channel");
-        Assert(ProductMetadata.DisplayVersion == "v0.8.0 Experimental", "central display version");
-        Assert(ProductMetadata.BridgeBanner == "BAR Controller Bridge v0.8.0 Experimental", "bridge banner");
+        Assert(ProductMetadata.DisplayVersion == "v0.8.1 Experimental", "central display version");
+        Assert(ProductMetadata.BridgeBanner == "BAR Controller Bridge v0.8.1 Experimental", "bridge banner");
 
         DateTime start = new DateTime(2026, 7, 23, 0, 0, 0, DateTimeKind.Utc);
         var tracker = new EngineSessionTracker(TimeSpan.FromSeconds(3));

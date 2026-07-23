@@ -584,12 +584,16 @@ local function drawBuildRadial(args, cx, cy, radius, accent, values)
 				end
 			end)
 			local middle = (startAngle + endAngle) * 0.5
-			local chipColor = sector.accent or accent
-			color({ chipColor[1], chipColor[2], chipColor[3], 0.96 * opacity })
+			local chipColor = sector.labelColor or sector.accent or accent
 			local sectorLabelSize = sector.count == 1 and 8 or 9
-			gl.Text(string.upper(tostring(sector.label or sector.category or "")),
-				cx + radius * 0.67 * cos(middle), cy - radius * 0.67 * sin(middle),
-				max(8, sectorLabelSize * values.fontScale), "oc")
+			local labelText = string.upper(tostring(sector.label or sector.category or ""))
+			local labelX = cx + radius * 0.67 * cos(middle)
+			local labelY = cy - radius * 0.67 * sin(middle)
+			local labelSize = max(8, sectorLabelSize * values.fontScale)
+			color({ 0, 0, 0, 0.72 * opacity })
+			gl.Text(labelText, labelX + 1.2 * values.fontScale, labelY - 1.2 * values.fontScale, labelSize, "oc")
+			color({ chipColor[1], chipColor[2], chipColor[3], 0.98 * opacity })
+			gl.Text(labelText, labelX, labelY, labelSize, "oc")
 		end
 		for index = 2, #sectors do
 			local angle = ((sectors[index].firstSlot - 1.5) * pi * 2 / slotCount) - pi * 0.5

@@ -36,7 +36,7 @@ function New-Component(
 
 if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) { $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path }
 $RepositoryRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-if ([string]::IsNullOrWhiteSpace($OutputRoot)) { $OutputRoot = Join-Path $RepositoryRoot 'artifacts\v0.8.0-public-release' }
+if ([string]::IsNullOrWhiteSpace($OutputRoot)) { $OutputRoot = Join-Path $RepositoryRoot 'artifacts\v0.8.1-public-release' }
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $branch = (& git -C $RepositoryRoot branch --show-current).Trim()
 if ($branch -ne 'controller/v0.8.0-native-ui-integration-test') { throw "Unexpected branch: $branch" }
@@ -100,7 +100,7 @@ try {
     }
 
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'native-overrides') -Destination (Join-Path $stageRoot 'native-overrides') -Recurse
-    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'doc\controller-companion-v0.8.0') -Destination (Join-Path $stageRoot 'doc\controller-companion-v0.8.0') -Recurse
+    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'doc\controller-companion-v0.8.1') -Destination (Join-Path $stageRoot 'doc\controller-companion-v0.8.1') -Recurse
     $companionSourceRoot = Join-Path $RepositoryRoot 'tools\controller-companion'
     foreach ($sourceFile in Get-ChildItem -LiteralPath $companionSourceRoot -Recurse -File | Where-Object {
         $_.FullName -notmatch '[\\/](bin|obj)[\\/]' -and $_.Extension -in @('.cs', '.csproj', '.props', '.md')
@@ -119,8 +119,8 @@ try {
         }
     }
     Copy-Payload (Join-Path $RepositoryRoot 'LICENSE.md') (Join-Path $stageRoot 'LICENSE.md')
-    Copy-Payload (Join-Path $RepositoryRoot 'tools\release\bar-controller-support-v0.8.0\README.md') (Join-Path $stageRoot 'README.md')
-    Copy-Payload (Join-Path $RepositoryRoot 'tools\release\bar-controller-support-v0.8.0\RELEASE_NOTES_v0.8.0.md') (Join-Path $stageRoot 'RELEASE_NOTES_v0.8.0.md')
+    Copy-Payload (Join-Path $RepositoryRoot 'tools\release\bar-controller-support-v0.8.1\README.md') (Join-Path $stageRoot 'README.md')
+    Copy-Payload (Join-Path $RepositoryRoot 'tools\release\bar-controller-support-v0.8.1\RELEASE_NOTES_v0.8.1.md') (Join-Path $stageRoot 'RELEASE_NOTES_v0.8.1.md')
 
     $manifest = [ordered]@{
         kind = 'bar-controller-release-manifest'; schemaVersion = 1
@@ -133,7 +133,7 @@ try {
         barCompatibility = [ordered]@{ buildManifest = 'Beyond All Reason test-30735-bf9c7bf'; upstreamCommit = 'bf9c7bfdba26704832157bba47f3653ba8bdd8d2'; nativeOverrideRebaseMayBeRequired = $true }
         compatibilityNotes = 'Experimental native overrides are build-specific and may require rebasing after BAR updates.'
         requiresLuaUiReset = $true
-        releaseSummary = 'v0.6.1 tactical and idle restoration, deterministic selection, UI polish, automatic updates, Recovery Mode, and transactional self-update.'
+        releaseSummary = 'Disassemble one-shot reclaim repair, stable idle navigation, capability-aware hints, radial label polish, automatic updates, Recovery Mode, and transactional self-update.'
         releaseNotesAsset = [string]$spec.release.releaseNotesAsset
         configurationPreservation = @($spec.configurationPreservation)
         installLifecycle = [ordered]@{ backupBeforeInstall = $true; transactionalRollback = $true; allowWhileBarRunning = $true; restartCompanion = $true; reloadInstruction = '/luaui reset' }
@@ -154,7 +154,7 @@ try {
     Write-JsonUtf8 (Join-Path $stageRoot 'installed-release-bootstrap.json') $installedBootstrap
 
     $compatibility = [ordered]@{
-        packageName = 'BAR Controller Companion'; version = '0.8.0'; repository = 'UnderarmCape/underarmcape-bar-controller-support-attempt-01'
+        packageName = 'BAR Controller Companion'; version = [string]$spec.release.semanticVersion; repository = 'UnderarmCape/underarmcape-bar-controller-support-attempt-01'
         requiredLuaFiles = @(); requiredBarDataFiles = @($components | Where-Object { $_.destinationRoot -eq 'bar-data' } | ForEach-Object { $_.sourcePath })
         requiredCompanionFiles = @($components | Where-Object { $_.destinationRoot -eq 'companion' } | ForEach-Object { $_.sourcePath })
         requiredPublicFiles = @('README.md','LICENSE.md','controller-release-manifest.json','installed-release-bootstrap.json')
@@ -164,10 +164,10 @@ try {
     $installScript = @'
 [CmdletBinding()]
 param([string]$BarDataPath=(Join-Path $env:LOCALAPPDATA 'Programs\Beyond-All-Reason\data'),[string]$InstallRoot=(Join-Path $env:LOCALAPPDATA 'Programs\BARControllerCompanion'))
-& (Join-Path $PSScriptRoot 'BAR_Controller_Companion_Installer_v0.8.0_Experimental.exe') --package-root $PSScriptRoot --bar-data $BarDataPath --install-root $InstallRoot --no-pause
+& (Join-Path $PSScriptRoot 'BAR_Controller_Companion_Installer_v0.8.1_Experimental.exe') --package-root $PSScriptRoot --bar-data $BarDataPath --install-root $InstallRoot --no-pause
 exit $LASTEXITCODE
 '@
-    [IO.File]::WriteAllText((Join-Path $stageRoot 'Install_v0.8.0.ps1'), $installScript, (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText((Join-Path $stageRoot 'Install_v0.8.1.ps1'), $installScript, (New-Object Text.UTF8Encoding($false)))
 
     $inventory = @(
         Get-ChildItem -LiteralPath $stageRoot -Recurse -File | Sort-Object FullName | ForEach-Object {
@@ -191,7 +191,7 @@ exit $LASTEXITCODE
     [IO.File]::WriteAllText(($packagePath + '.sha256'), ($packageHash + '  ' + [IO.Path]::GetFileName($packagePath) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
     [IO.File]::WriteAllText(($manifestPath + '.sha256'), ($manifestHash + '  controller-release-manifest.json' + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
     [IO.File]::Copy((Join-Path $stageRoot 'payload-sha256.json'), (Join-Path $OutputRoot 'payload-sha256.json'), $true)
-    [IO.File]::Copy((Join-Path $stageRoot 'RELEASE_NOTES_v0.8.0.md'), (Join-Path $OutputRoot 'RELEASE_NOTES_v0.8.0.md'), $true)
+    [IO.File]::Copy((Join-Path $stageRoot 'RELEASE_NOTES_v0.8.1.md'), (Join-Path $OutputRoot 'RELEASE_NOTES_v0.8.1.md'), $true)
 
     & (Join-Path $RepositoryRoot 'tools\release\Test-ControllerRelease.ps1') -PackagePath $packagePath -ManifestPath $manifestPath -PayloadInventoryPath (Join-Path $OutputRoot 'payload-sha256.json') -ExpectedPackageSha256 $packageHash
     if ($LASTEXITCODE -ne 0) { throw 'Public release validation failed.' }

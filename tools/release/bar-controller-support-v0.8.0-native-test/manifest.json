@@ -1,11 +1,11 @@
 {
   "packageName": "BAR Controller Companion",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "stability": "EXPERIMENTAL",
   "warning": "EXPERIMENTAL — V0.6 TACTICAL/IDLE RESTORE, SELECTION TAPS, AND UI POLISH TEST",
   "repository": "UnderarmCape/underarmcape-bar-controller-support-attempt-01",
   "branch": "controller/v0.8.0-native-ui-integration-test",
-  "assetName": "BAR_Controller_Support_v0.8.0_V06_INPUT_RESTORE_UI_POLISH_TEST.zip",
+  "assetName": "BAR_Controller_Support_v0.8.1_DISASSEMBLE_IDLE_HINT_REPAIR_TEST.zip",
   "barBuild": "Beyond All Reason test-30735-bf9c7bf",
   "barUpstreamCommit": "bf9c7bfdba26704832157bba47f3653ba8bdd8d2",
   "publicRelease": false,
@@ -50,7 +50,8 @@
   "includedSourceFiles": [
     "luaui/Include/controller_selection_taps.lua",
     "tools/controller-companion/Shared/BridgeConsole.cs",
-    "tools/controller-ui-tests/Test-ControllerV06InputRestore.lua"
+    "tools/controller-ui-tests/Test-ControllerV06InputRestore.lua",
+    "tools/controller-ui-tests/Test-ControllerV081DisassembleIdleHints.lua"
   ],
   "requiredPublicFiles": [
     "README_EXPERIMENTAL.md",

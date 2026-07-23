@@ -11,8 +11,8 @@ $versionDefinitionPath = Join-Path $RepositoryRoot 'tools\controller-companion\D
 [xml]$versionDefinition = Get-Content -Raw -Encoding UTF8 $versionDefinitionPath
 $semanticVersion = [string]$versionDefinition.Project.PropertyGroup.ControllerCompanionSemanticVersion
 $releaseChannel = [string]$versionDefinition.Project.PropertyGroup.ControllerCompanionChannel
-if ($semanticVersion -ne '0.8.0' -or $releaseChannel -ne 'Experimental') { throw 'Unexpected central experimental version metadata.' }
-if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-v06-input-restore-ui-polish-test' }
+if ($semanticVersion -ne '0.8.1' -or $releaseChannel -ne 'Experimental') { throw 'Unexpected central experimental version metadata.' }
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.1-disassemble-idle-hints-polish-test' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 $stage = Join-Path $OutputDirectory ('.package-' + [guid]::NewGuid().ToString('N'))
@@ -121,9 +121,10 @@ try {
         'tools\controller-ui-tests\Test-ControllerInputPolish.lua',
         'tools\controller-ui-tests\Test-ControllerNativeWidgetUnification.lua',
         'tools\controller-ui-tests\Test-ControllerNativeRegressionRepair.lua',
-		'tools\controller-ui-tests\Test-ControllerHybridAreaIdleRepair.lua',
+        'tools\controller-ui-tests\Test-ControllerHybridAreaIdleRepair.lua',
         'tools\controller-ui-tests\Test-ControllerInputRestoration.lua',
         'tools\controller-ui-tests\Test-ControllerV06InputRestore.lua',
+        'tools\controller-ui-tests\Test-ControllerV081DisassembleIdleHints.lua',
         'tools\dev-scripts\Build_v0.8.0_Native_Test_Package.ps1',
         'tools\dev-scripts\Deploy_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1',
@@ -172,7 +173,7 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $stage 'payload-sha256.json'), (($payload | ConvertTo-Json -Depth 6) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
 
-    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_V06_INPUT_RESTORE_UI_POLISH_TEST.zip'
+    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.1_DISASSEMBLE_IDLE_HINT_REPAIR_TEST.zip'
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()

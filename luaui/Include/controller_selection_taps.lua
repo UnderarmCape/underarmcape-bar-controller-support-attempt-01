@@ -40,6 +40,7 @@ end
 function Taps.ObserveTarget(state, unitID, unitDefID)
 	if type(state) ~= "table" or state.lastUnitDefID == nil then return false end
 	unitID, unitDefID = tonumber(unitID), tonumber(unitDefID)
+	if not unitID or not unitDefID then return false end
 	if unitID and unitDefID == state.lastUnitDefID then return false end
 	Taps.Reset(state, "incompatible cursor target")
 	return true

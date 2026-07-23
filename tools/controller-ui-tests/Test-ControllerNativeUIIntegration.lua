@@ -21,7 +21,7 @@ expect(contains(camera, 'options = { "Auto", "Xbox", "PlayStation" }'), "glyph s
 expect(contains(camera, 'spSelectUnitArray, { unitID }, false'), "A/RT+A direct exact selection")
 expect(contains(camera, 'pcall(spSelectUnitArray, finalSelection, false)'), "area selection uses engine authority directly")
 expect(contains(camera, 'ControllerCameraTestCancelNativeTargeting()'), "native cancellation")
-expect(contains(camera, 'ControllerCameraTestIssueNativeDisassembleMove()'), "X native Move")
+expect(contains(camera, 'ControllerCameraTestIssueNativeDisassembleMove(pending.groundInfo)'), "X native Move")
 expect(contains(camera, 'ControllerCameraTestIssueNativeDisassembleStop()'), "LB+B native Stop")
 expect(contains(camera, "ControllerCameraTestStartNativeSameTypeReclaim"), "same-type reclaim binding")
 expect(contains(camera, 'ControllerCameraTestBeginNativeReclaim("single"'), "single reclaim binding")
