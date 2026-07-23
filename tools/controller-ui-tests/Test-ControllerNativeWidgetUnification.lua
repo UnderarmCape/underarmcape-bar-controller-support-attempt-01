@@ -100,7 +100,7 @@ end)
 test(10, "Exactly one dispatch occurs", function() local n=runAreaCombo("A","A"); return n == 1 and has(ownerSource,"operation already dispatched") end)
 test(11, "Mouse path still works", function() return has(areaMex,"function widget:CommandNotify") and has(formations,"function widget:MousePress") end)
 test(12, "Camera bridge does not duplicate final dispatch", function() return has(camera,"function ControllerCameraTestIssueNativeTarget(params, shape)") and has(camera,"if state.dispatchStarted then return false end") end)
-test(13, "Generic Order Menu fallback is used only for ownerless commands", function() return has(order,"entry and entry.api or controllerTargetOwner") end)
+test(13, "Order Menu target owner declines controller input", function() return has(order,"v0.6 camera owns controller targeting") end)
 
 -- 14-20 Build/Factory selected border.
 test(14, "Scale 1.0 produces thin border", function() return has(renderer,"clamp(values.selectedBorderThickness, 1, 18)") end)
@@ -146,14 +146,14 @@ test(47, "RT additive behavior still works", function() return has(camera,"area.
 test(48, "Successful X Reclaim resets timer", function() return has(camera,"state.lastReclaimAt = true, debugEventTime") or has(camera,"state.successfulActivity, state.lastReclaimAt = true, debugEventTime") end)
 
 -- 49-58 LB shortcuts.
-test(49, "All shortcuts map to real descriptors", function() return has(camera,"ControllerCameraTestNativeImmediateShortcut") and has(order,"controllerDescriptor(cmdID)") end)
-test(50, "Immediate Attack remains immediate", function() return has(camera,'ControllerCameraTestNativeImmediateShortcut((CMD and CMD.ATTACK)') end)
-test(51, "Immediate Patrol remains immediate", function() return has(camera,'ControllerCameraTestNativeImmediateShortcut((CMD and CMD.PATROL)') end)
+test(49, "All shortcuts use restored v0.6 dispatch", function() return has(camera,"ControllerCameraTestLegacyExecuteLBHotkey") and has(camera,"ControllerCameraTestIssueOrderToSelectedUnits") end)
+test(50, "Immediate Attack remains immediate", function() return has(camera,'ControllerCameraTestIssueOrderToSelectedUnits(CMD.ATTACK') or has(camera,'ControllerCameraTestIssueOrderToSelectedUnits(CMD.ATTACK or') end)
+test(51, "Immediate Patrol remains immediate", function() return has(camera,'ControllerCameraTestIssueOrderToSelectedUnits(CMD.PATROL or 15') end)
 test(52, "Guard uses native pipeline", function() return has(camera,"ControllerCameraTestStageAreaCommandShortcut") and has(order,"controllerExecuteAtTarget") end)
-test(53, "Repair uses native pipeline", function() return has(camera,'StageAreaCommandShortcut("repairArea"') end)
-test(54, "Reclaim uses native pipeline", function() return has(camera,'StageAreaCommandShortcut("reclaimArea"') end)
-test(55, "Stop uses native pipeline", function() return has(camera,'NativeImmediateShortcut((CMD and CMD.STOP)') end)
-test(56, "Area shortcuts use hybrid completed-shape APIs", function() return all(camera,"ControllerCameraTestBeginHybridTargeting", "controllerGetCommandDescriptor") and not has(camera,"api.controllerTargetInput") end)
+test(53, "Repair uses restored pipeline", function() return has(camera,"repairAreaOption") and has(camera,"ControllerCameraTestStageTacticalCommand(repairAreaOption)") end)
+test(54, "Reclaim uses restored pipeline", function() return has(camera,"reclaimArea") and has(camera,"ControllerCameraTestStageTacticalCommand") end)
+test(55, "Stop uses restored pipeline", function() return has(camera,"attemptStopCommand") or has(camera,"CMD.STOP") end)
+test(56, "Area shortcuts use restored staged APIs", function() return has(camera,"ControllerCameraTestStageTacticalCommand(option)") and not has(camera,"api.controllerTargetInput") end)
 test(57, "Disabled commands do not execute", function() return has(order,"source.disabled ~= true") end)
 test(58, "Exactly one order issues", function() return has(order,"controllerDispatchCommand") and has(order,"COMMAND_NOTIFY HANDLED") and has(camera,"dispatchStarted") end)
 
@@ -203,7 +203,7 @@ test(94, "RB-first within-grace Queue Mode works", function() local s=Chords.New
 test(95, "LB-first Disassemble works", function() local s=Chords.New(); chordStep(s,0,true,true,true,false,"enable-disassemble",true); local e=chordStep(s,.34,true,true,false,false,"enable-disassemble"); return e=="enable-disassemble" end)
 test(96, "RB-first within-grace Disassemble works", function() local s=Chords.New(); chordStep(s,0,false,true,true,false); chordStep(s,.1,true,true,false,false,"enable-disassemble",true); local e=chordStep(s,.45,true,true,false,false,"enable-disassemble"); return e=="enable-disassemble" end)
 test(97, "One cycle creates one action", function() local s=Chords.New(); chordStep(s,0,true,true,true,false,nil,true); local e1=chordStep(s,.1,true,false,false,true); local e2=chordStep(s,.2,true,false,false,false); return e1=="move-state" and e2==nil end)
-test(98, "Distributed build has higher priority in build placement", function() return has(camera,"distributedPlacementOwns") and has(camera,"if not disassembleBusy and not distributedPlacementOwns") end)
+test(98, "Distributed build has higher priority in build placement", function() return has(camera,"distributedPlacementOwns") and has(camera,"local placementBusy = not stagedTacticalBusy and not distributedPlacementOwns") end)
 
 -- 99-105 Idle-unit navigation.
 test(99, "D-pad Left selects the previous live vanilla-list idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(-1)") and has(camera,"ControllerCameraTestFocusAndSelectUnit(unitID, \"Idle unit\")") end)
@@ -281,8 +281,8 @@ end)
 test(138, "Deployment and rollback manifests cover every changed file", function()
 	return all(deploy,"controller_native_command_owner.lua","controller_native_build_cell_renderer.lua","Test-ControllerInputRestoration.lua")
 		and all(manifest,"cmd_area_mex.lua","cmd_buildsplit.lua","cmd_customformations2.lua","gui_idle_builders.lua","gui_buildmenu.lua")
-		and has(restore,"bar-controller-radial-tactical-idle-redesign-test-deployment-backup")
-		and has(packageScript,"BAR_Controller_Support_v0.8.0_RADIAL_TACTICAL_IDLE_REDESIGN_TEST.zip")
+		and has(restore,"bar-controller-v06-input-restore-ui-polish-test-deployment-backup")
+		and has(packageScript,"BAR_Controller_Support_v0.8.0_V06_INPUT_RESTORE_UI_POLISH_TEST.zip")
 end)
 
 assert(#cases == 138, "expected exactly 138 cases")

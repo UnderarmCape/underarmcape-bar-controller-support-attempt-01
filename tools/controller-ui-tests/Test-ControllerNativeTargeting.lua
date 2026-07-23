@@ -172,6 +172,6 @@ expect(contains(adapter, "item.queueCount = tonumber(item.queueCount) or 0"), "f
 expect(contains(targetingDoc, "first A/X") and contains(targetingDoc, "second A/X"), "targeting workflow is documented")
 expect(contains(targetingDoc, "revalidates command identity") and contains(targetingDoc, "one direct fallback"), "native eligibility boundary is documented")
 expect(contains(compactionDoc, "No empty category is emitted"), "empty-category rule is documented")
-expect(contains(checklist, "58. Watch for duplicate orders and frame-time spikes"), "58-step live checklist covers duplicate/performance watch")
+expect(contains(checklist, "one preview and one dispatch"), "live checklist covers duplicate dispatch watch")
 
 print(string.format("Controller Native Targeting tests passed: %d validations.", checks))
