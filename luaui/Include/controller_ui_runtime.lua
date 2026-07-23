@@ -214,7 +214,7 @@ function Runtime.New()
 	end
 
 	local categories = { select = "Selection", cancel = "Selection", smartAction = "Commands", commandLayer = "Commands",
-		insertNextCommandModifier = "Commands", appendQueueModifier = "Commands", pitchModifier = "Camera",
+		repairModifier = "Commands", insertNextCommandModifier = "Commands", appendQueueModifier = "Commands", pitchModifier = "Camera",
 		buildRadial = "Building", removeQueuedCommand = "Factory", removeLastQueuedCommand = "Factory",
 		radialSelect = "Radials", radialCancel = "Radials", radialQuick = "Radials", radialClose = "Radials",
 		radialPrevPage = "Radials", radialNextPage = "Radials", place = "Placement", placeStay = "Placement",
@@ -275,7 +275,10 @@ function Runtime.New()
 	bind("spacingDown", "Decrease Spacing", placement, 7); bind("patternPrev", "Cycle Pattern", placement, 8)
 	bind("patternPrev", "Force Grid Pattern", placement, 9, { hold = true, id = "placement-pattern-hold" })
 	bind("patternNext", "Next Pattern", placement, 9, { id = "placement-pattern-next" })
-	bind("appendQueueModifier", "Append to Queue", placement, 10); bind("insertNextCommandModifier", "Insert Next", placement, 11)
+	bind("appendQueueModifier", "Append to Queue", placement, 10)
+	add({ id = "placement-insert-order", action = "insertNextCommandModifier",
+		chordActions = { "insertNextCommandModifier", "place" }, label = "Insert Order",
+		when = placement, priority = 11, group = "Placement" })
 	bind("radialSelect", "Choose / Place", constructor, 1); bind("radialQuick", "Quick Place", constructor, 2)
 	bind("radialCancel", "Close Build Radial", constructor, 3); bind("radialPrevPage", "Previous Page", constructor, 4)
 	bind("radialNextPage", "Next Page", constructor, 5)
@@ -288,9 +291,11 @@ function Runtime.New()
 	bind("radialClose", "Close Factory Radial", factory, 7, { id = "factory-close-alt" })
 	bind("removeQueuedCommand", "Remove Current / Next Queue Item", factory, 8)
 	bind("removeLastQueuedCommand", "Remove Last Queue Item", factory, 9)
+	add({ id = "factory-insert-queue", inputs = { "LT", "A" }, label = "Insert Queue",
+		when = factory, priority = 2, group = "Factory" })
 	bind("tacticalSelect", "Choose Command", tactical, 1); bind("tacticalCancel", "Close Tactical Radial", tactical, 2)
 	bind("tacticalClose", "Close Tactical Radial", tactical, 3); bind("commandUp", "Guard / Patrol", tactical, 4)
-	bind("commandDown", "Reclaim", tactical, 5); bind("commandLeft", "Previous Tactical Command", tactical, 6)
+	bind("commandDown", "Next Category", tactical, 5); bind("commandLeft", "Previous Tactical Command", tactical, 6)
 	bind("commandRight", "Next Tactical Command", tactical, 7)
 	bind("radialSelect", "Choose Selection Filter", selectionRadial, 1); bind("radialCancel", "Cancel Selection", selectionRadial, 2)
 	bind("radialPrevPage", "Previous Filter", selectionRadial, 3); bind("radialNextPage", "Next Filter", selectionRadial, 4)
@@ -301,6 +306,9 @@ function Runtime.New()
 	bind("cancel", "Exit DGUN", dgun, 2); add({ id = "dgun-aim", inputs = { "rightStick" }, label = "Aim", when = dgun, priority = 3, group = "Commands" })
 	bind("place", "Confirm Tactical Target", staged, 1); bind("cancelPlacement", "Cancel Tactical Target", staged, 2)
 	bind("appendQueueModifier", "Repeat / Append", staged, 3)
+	add({ id = "staged-insert-order", action = "insertNextCommandModifier",
+		chordActions = { "insertNextCommandModifier", "place" }, label = "Insert Order",
+		when = staged, priority = 2, group = "Commands" })
 	bind("select", "Release to Select Area", area, 1); bind("cancel", "Cancel Area Selection", area, 2)
 	add({ id = "area-radius", inputs = { "rightStick" }, label = "Adjust Radius / Filter", when = area, priority = 3, group = "Selection" })
 	bind("buildRadial", "Tactical Radial", command, 5)
@@ -323,10 +331,14 @@ function Runtime.New()
 			or (c.selectionProfile == "builder" and c.canReclaimCommand)
 			or (c.selectionProfile == "factory" and c.canFightCommand)
 			or c.canAttackCommand) end, priority = 3, group = "Tactical" })
-	add({ id = "lb-tactical-utility", action = "insertNextCommandModifier", chordActions = { "pitchModifier", "insertNextCommandModifier" },
+	add({ id = "lb-tactical-utility", action = "repairModifier", chordActions = { "pitchModifier", "repairModifier" },
 		label = "Patrol", when = function(c) return lbTactical(c) and c.selectionProfile ~= "air_transport" and c.canPatrolCommand end, priority = 4, group = "Tactical" })
 	add({ id = "lb-tactical-wait", action = "cancel", chordActions = { "pitchModifier", "cancel" }, label = "Wait", hold = true, when = lbTactical, priority = 5, group = "Tactical" })
 	bind("select", "Select Unit", normal, 1); bind("smartAction", "Smart Action", function(c) return normal(c) and not c.hasTransport and c.canSmartAction end, 3)
+	add({ id = "normal-repair-a", action = "repairModifier", chordActions = { "repairModifier", "select" },
+		label = "Repair", when = function(c) return normal(c) and c.canRepairCommand end, priority = 2, group = "Commands" })
+	add({ id = "normal-repair-x", action = "repairModifier", chordActions = { "repairModifier", "smartAction" },
+		label = "Repair / Smart Action", when = function(c) return normal(c) and c.canRepairCommand end, priority = 3, group = "Commands" })
 	bind("smartAction", "Load / Move Transport", function(c) return normal(c) and c.hasTransport and c.canSmartAction end, 3, { id = "normal-transport-smart" })
 	bind("smartAction", "Draw Move / Build Path", function(c) return normal(c) and c.hasSelection and c.canMoveCommand end, 4, { hold = true, id = "normal-smart-hold" })
 	add({ id = "normal-selection-toggle", inputs = { "RT", "A" }, label = "Add / Remove Selection", priority = 2, group = "Selection",

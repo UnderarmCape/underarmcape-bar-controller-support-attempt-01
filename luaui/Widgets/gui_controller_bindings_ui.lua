@@ -222,8 +222,9 @@ local ControllerBindingsUIDescriptions = {
 	cancel = "Cancel current modes, close menus, or clear selection in normal play.",
 	smartAction = "Context-sensitive action. Tap for smart action, hold for path or line behavior.",
 	buildRadial = "Open constructor build options or factory radial controls.",
-	commandLayer = "Hold Back/View in the v0.4.1 presets to open the tactical command layer for move, fight, reclaim, repair, and related commands.",
-	insertNextCommandModifier = "Hold to insert the next issued command at the front of the selected unit's queue without clearing the rest.",
+	commandLayer = "Hold Back/View to open the tactical command layer for guard, attack, stop, tactical radial, and selection cycling commands.",
+	repairModifier = "Hold to make A or X issue Repair when a valid allied repair target is under the cursor.",
+	insertNextCommandModifier = "Hold to insert the next compatible order at the front of the selected unit's queue without clearing the rest.",
 	appendQueueModifier = "Hold to append commands and build placements to the end of the queue, like Shift. This does not interrupt the current build.",
 	controlGroupModifier = "Hold Start/Menu to use the controller group layer with D-pad and L3 inputs.",
 	pitchModifier = "Hold LB to access camera pitch / tilt behavior.",
@@ -640,6 +641,8 @@ local function ControllerBindingsUIDisplayGroup(def)
 		return "Camera"
 	elseif def.action == "commandLayer" then
 		return "Tactical"
+	elseif def.action == "repairModifier" then
+		return "Commands"
 	elseif def.action == "insertNextCommandModifier" then
 		return "Queue"
 	elseif def.action == "appendQueueModifier" then

@@ -26,7 +26,7 @@ internal static class Program
     };
     private static readonly HashSet<string> KnownActions = new(StringComparer.Ordinal)
     {
-        "select", "cancel", "smartAction", "buildRadial", "commandLayer", "insertNextCommandModifier",
+        "select", "cancel", "smartAction", "buildRadial", "commandLayer", "repairModifier", "insertNextCommandModifier",
         "appendQueueModifier", "controlGroupModifier", "pitchModifier", "removeQueuedCommand",
         "removeLastQueuedCommand", "radialSelect", "radialCancel", "radialQuick", "radialClose",
         "radialPrevPage", "radialNextPage", "place", "placeStay", "cancelPlacement", "rotateBuildingLeft",

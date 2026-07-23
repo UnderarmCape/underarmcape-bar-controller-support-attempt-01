@@ -31,6 +31,14 @@ local function outline(x1, y1, x2, y2, value, thickness)
 	end
 end
 
+local function verticalGradientRect(x1, y1, x2, y2, top, bottom)
+	top = rgba(top); bottom = rgba(bottom)
+	gl.BeginEnd(GL.QUADS, function()
+		gl.Color(top[1], top[2], top[3], top[4]); gl.Vertex(x1, y2); gl.Vertex(x2, y2)
+		gl.Color(bottom[1], bottom[2], bottom[3], bottom[4]); gl.Vertex(x2, y1); gl.Vertex(x1, y1)
+	end)
+end
+
 local function textWidth(text, size)
 	if gl.GetTextWidth then
 		local ok, width = pcall(gl.GetTextWidth, tostring(text or ""))
@@ -725,11 +733,21 @@ local function drawTacticalRadial(args, cx, cy, radius, accent, values)
 			handled = ok and result == true
 		end
 		if not handled then
-			color(selected and { typography.selectedBackgroundR, typography.selectedBackgroundG, typography.selectedBackgroundB, typography.selectedBackgroundOpacity * opacity } or { fill[1] * 0.5, fill[2] * 0.5, fill[3] * 0.5, 0.85 * opacity })
-			gl.Rect(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5); outline(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5,
-				selected and { typography.selectedBorderR, typography.selectedBorderG, typography.selectedBorderB, typography.selectedBorderOpacity * opacity } or { accent[1], accent[2], accent[3], 0.64 * opacity }, selected and values.selectedBorderThickness or 1)
+			local danger = entry.colorProfile == "danger" or entry.kind == "self_destruct"
+			if danger then
+				verticalGradientRect(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5,
+					selected and { 0.92, 0.08, 0.06, 0.96 * opacity } or { 0.50, 0.03, 0.03, 0.86 * opacity },
+					selected and { 0.25, 0.00, 0.00, 0.94 * opacity } or { 0.12, 0.00, 0.00, 0.84 * opacity })
+			else
+				color(selected and { typography.selectedBackgroundR, typography.selectedBackgroundG, typography.selectedBackgroundB, typography.selectedBackgroundOpacity * opacity } or { fill[1] * 0.5, fill[2] * 0.5, fill[3] * 0.5, 0.85 * opacity })
+				gl.Rect(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5)
+			end
+			outline(x - w * 0.5, y - h * 0.5, x + w * 0.5, y + h * 0.5,
+				danger and (selected and { 1.0, 0.36, 0.26, 1.0 * opacity } or { 0.94, 0.16, 0.12, 0.76 * opacity })
+					or (selected and { typography.selectedBorderR, typography.selectedBorderG, typography.selectedBorderB, typography.selectedBorderOpacity * opacity } or { accent[1], accent[2], accent[3], 0.64 * opacity }),
+				selected and values.selectedBorderThickness or 1)
 			drawRoleText(entry.disabled and "unavailableText" or "metadata", entry.label or "Command", entry.disabled and typography.unavailableText or typography.metadata, x, y - 6,
-				values.fontScale * (selected and 1.18 or 1), opacity, roles, selected and { typography.selectedLabelR, typography.selectedLabelG, typography.selectedLabelB, typography.selectedLabelOpacity } or nil)
+				values.fontScale * (selected and 1.18 or 1), opacity, roles, danger and { 1, 1, 1, 1 } or (selected and { typography.selectedLabelR, typography.selectedLabelG, typography.selectedLabelB, typography.selectedLabelOpacity } or nil))
 		end
 	end
 	local panelRadius = radius * 0.42 * typography.innerRadiusScale * typography.centerPanelScale

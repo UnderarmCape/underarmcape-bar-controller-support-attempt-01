@@ -354,7 +354,7 @@ for _, prefix in ipairs({ "textShadow", "glyphShadow", "textGlow", "glyphGlow", 
 end
 
 local ACTION_IDS = {
-	"select", "cancel", "smartAction", "buildRadial", "commandLayer", "insertNextCommandModifier", "appendQueueModifier",
+	"select", "cancel", "smartAction", "buildRadial", "commandLayer", "repairModifier", "insertNextCommandModifier", "appendQueueModifier",
 	"controlGroupModifier", "pitchModifier", "removeQueuedCommand", "removeLastQueuedCommand", "radialSelect", "radialCancel",
 	"radialQuick", "radialClose", "radialPrevPage", "radialNextPage", "place", "placeStay", "cancelPlacement",
 	"rotateBuildingLeft", "rotateBuildingRight", "spacingUp", "spacingDown", "patternPrev", "patternNext", "tacticalSelect",
@@ -1131,7 +1131,7 @@ local DEFAULT_HINT_CATEGORIES = {
 
 local ACTION_CATEGORIES = {
 	select = "Selection", cancel = "Selection", smartAction = "Commands", commandLayer = "Commands",
-	insertNextCommandModifier = "Commands", appendQueueModifier = "Commands", pitchModifier = "Camera",
+	repairModifier = "Commands", insertNextCommandModifier = "Commands", appendQueueModifier = "Commands", pitchModifier = "Camera",
 	buildRadial = "Building", removeQueuedCommand = "Factory", removeLastQueuedCommand = "Factory",
 	radialSelect = "Radials", radialCancel = "Radials", radialQuick = "Radials", radialClose = "Radials",
 	radialPrevPage = "Radials", radialNextPage = "Radials", place = "Placement", placeStay = "Placement",
@@ -1220,7 +1220,9 @@ bind("patternPrev", "Cycle Pattern", isPlacement, 8)
 bind("patternPrev", "Force Grid Pattern", isPlacement, 9, { hold = true, id = "placement-pattern-hold" })
 bind("patternNext", "Next Pattern", isPlacement, 9, { id = "placement-pattern-next" })
 bind("appendQueueModifier", "Append to Queue", isPlacement, 10)
-bind("insertNextCommandModifier", "Insert Next", isPlacement, 11)
+addHint({ id = "placement-insert-order", action = "insertNextCommandModifier",
+	chordActions = { "insertNextCommandModifier", "place" }, label = "Insert Order",
+	when = isPlacement, priority = 11, group = "Placement" })
 bind("radialSelect", "Choose / Place", isConstructorBuild, 1)
 bind("radialQuick", "Quick Place", isConstructorBuild, 2)
 bind("radialCancel", "Close Build Radial", isConstructorBuild, 3)
@@ -1235,11 +1237,13 @@ bind("radialNextPage", "Next Page", isFactoryBuild, 6, { id = "factory-next" })
 bind("radialClose", "Close Factory Radial", isFactoryBuild, 7, { id = "factory-close-alt" })
 bind("removeQueuedCommand", "Remove Current / Next Queue Item", isFactoryBuild, 8)
 bind("removeLastQueuedCommand", "Remove Last Queue Item", isFactoryBuild, 9)
+addHint({ id = "factory-insert-queue", inputs = { "LT", "A" }, label = "Insert Queue",
+	when = isFactoryBuild, priority = 2, group = "Factory" })
 bind("tacticalSelect", "Choose Command", isTactical, 1)
 bind("tacticalCancel", "Close Tactical Radial", isTactical, 2)
 bind("tacticalClose", "Close Tactical Radial", isTactical, 3)
 bind("commandUp", "Guard / Patrol", isTactical, 4)
-bind("commandDown", "Reclaim", isTactical, 5)
+bind("commandDown", "Next Category", isTactical, 5)
 bind("commandLeft", "Previous Tactical Command", isTactical, 6)
 bind("commandRight", "Next Tactical Command", isTactical, 7)
 bind("radialSelect", "Choose Selection Filter", isSelectionRadial, 1)
@@ -1257,11 +1261,13 @@ addHint({ id = "dgun-aim", inputs = { "rightStick" }, label = "Aim", when = isDg
 bind("place", "Confirm Tactical Target", isStaged, 1)
 bind("cancelPlacement", "Cancel Tactical Target", isStaged, 2)
 bind("appendQueueModifier", "Repeat / Append", isStaged, 3)
+addHint({ id = "staged-insert-order", action = "insertNextCommandModifier",
+	chordActions = { "insertNextCommandModifier", "place" }, label = "Insert Order",
+	when = isStaged, priority = 2, group = "Commands" })
 bind("select", "Release to Select Area", isAreaSelection, 1)
 bind("cancel", "Cancel Area Selection", isAreaSelection, 2)
 addHint({ id = "area-radius", inputs = { "rightStick" }, label = "Adjust Radius / Filter", when = isAreaSelection, priority = 3, group = "Selection" })
 bind("commandUp", "Guard / Patrol", isCommandLayer, 1)
-bind("commandDown", "Reclaim", isCommandLayer, 2)
 bind("smartAction", "Attack / Attack-Move", isCommandLayer, 3)
 bind("cancel", "Stop Selected", isCommandLayer, 4)
 bind("buildRadial", "Tactical Radial", isCommandLayer, 5)
@@ -1289,13 +1295,17 @@ addHint({ id = "lb-tactical-smart", action = "smartAction", chordActions = { "pi
 		if c.selectionProfile == "factory" then return "Fight" end
 		return "Attack"
 	end, when = isLBTacticalLayer, priority = 3, group = "Tactical" })
-addHint({ id = "lb-tactical-utility", action = "insertNextCommandModifier",
-	chordActions = { "pitchModifier", "insertNextCommandModifier" }, label = "Patrol",
-	when = function(c) return isLBTacticalLayer(c) and c.selectionProfile ~= "air_transport" end,
+addHint({ id = "lb-tactical-utility", action = "repairModifier",
+	chordActions = { "pitchModifier", "repairModifier" }, label = "Patrol",
+	when = function(c) return isLBTacticalLayer(c) and c.selectionProfile ~= "air_transport" and c.canPatrolCommand end,
 	priority = 4, group = "Tactical" })
 addHint({ id = "lb-tactical-wait", action = "cancel", chordActions = { "pitchModifier", "cancel" },
 	label = "Wait", hold = true, when = isLBTacticalLayer, priority = 5, group = "Tactical" })
 bind("select", "Select Unit", isNormal, 1)
+addHint({ id = "normal-repair-a", action = "repairModifier", chordActions = { "repairModifier", "select" },
+	label = "Repair", when = function(c) return isNormal(c) and c.canRepairCommand end, priority = 2, group = "Commands" })
+addHint({ id = "normal-repair-x", action = "repairModifier", chordActions = { "repairModifier", "smartAction" },
+	label = "Repair / Smart Action", when = function(c) return isNormal(c) and c.canRepairCommand end, priority = 3, group = "Commands" })
 bind("smartAction", "Smart Action", function(c) return isNormal(c) and not c.hasTransport end, 3)
 bind("smartAction", "Load / Move Transport", function(c) return isNormal(c) and c.hasTransport end, 3, { id = "normal-transport-smart" })
 bind("smartAction", "Draw Move / Build Path", function(c) return isNormal(c) and c.hasSelection end, 4, { hold = true, id = "normal-smart-hold" })
