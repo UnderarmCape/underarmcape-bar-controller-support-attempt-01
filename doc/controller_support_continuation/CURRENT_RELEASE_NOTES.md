@@ -1,4 +1,8 @@
-# BAR Xbox Controller Support v0.4.6 - Current Release
+# Durable controller-release handoff
+
+Every successful controller-support milestone must now be published through `tools/release/Publish-ControllerRelease.ps1` as a public GitHub release with schema-v1 manifest/checksum/inventory sidecars. The newest milestone becomes GitHub Latest unless publishing historical Recovery Mode data. Do not report completion after deployment alone; publication and verification are mandatory. See `doc/controller-companion-v0.8.0/GITHUB_RELEASE_POLICY.md`.
+
+# BAR Xbox Controller Support v0.4.6 - Historical release notes
 
 v0.4.6 is the current stable source of truth and supersedes v0.4.5.
 
