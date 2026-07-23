@@ -121,7 +121,7 @@ try {
 
     if ($PayloadInventoryPath) {
         $PayloadInventoryPath = (Resolve-Path -LiteralPath $PayloadInventoryPath).Path
-        $inventory = @(Get-Content -Raw -Encoding UTF8 -LiteralPath $PayloadInventoryPath | ConvertFrom-Json)
+        $inventory = Get-Content -Raw -Encoding UTF8 -LiteralPath $PayloadInventoryPath | ConvertFrom-Json
         foreach ($record in $inventory) {
             Assert-RelativePath ([string]$record.path) 'inventory'
             $target = Join-Path $extractRoot ([string]$record.path).Replace('/', '\')
@@ -131,7 +131,7 @@ try {
                 throw "Payload inventory mismatch: $($record.path)"
             }
         }
-        Write-Output "PAYLOAD_HASHES_VERIFIED=$($inventory.Count)"
+        Write-Output "PAYLOAD_HASHES_VERIFIED=$(@($inventory).Count)"
     }
     Write-Output "RELEASE_MANIFEST_SCHEMA=$($manifest.schemaVersion)"
     Write-Output "RELEASE_COMPONENTS_VERIFIED=$(@($manifest.components).Count)"
