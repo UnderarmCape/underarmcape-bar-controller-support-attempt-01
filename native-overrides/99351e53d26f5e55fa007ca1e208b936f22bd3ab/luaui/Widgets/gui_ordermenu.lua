@@ -986,20 +986,12 @@ function widget:Initialize()
 		return accepted, route, cmdID
 	end
 
-	controllerTargetOwner = ControllerNativeCommandOwner.New({
-		name = "Order Menu generic fallback", types = CMDTYPE,
-		dispatch = controllerDispatchCommand,
-	})
+	-- v0.6 restore: the controller camera is the sole point/area gesture owner.
+	-- Descriptor, focus, state cycling, and immediate-command APIs remain, but
+	-- the failed native owner-session broker is intentionally dormant.
+	controllerTargetOwner = nil
 	WG['ordermenu'].controllerRegisterCommandOwner = function(cmdID, ownerAPI, ownerName)
-		cmdID = tonumber(cmdID)
-		if not cmdID or type(ownerAPI) ~= "table" or type(ownerAPI.Begin) ~= "function"
-				or type(ownerAPI.Input) ~= "function" or type(ownerAPI.GetState) ~= "function" then
-			return false
-		end
-		controllerCommandOwners[cmdID] = { api = ownerAPI, name = ownerName or "native widget" }
-		WG.ControllerNativeCommandOwners = WG.ControllerNativeCommandOwners or {}
-		WG.ControllerNativeCommandOwners[cmdID] = controllerCommandOwners[cmdID]
-		return true
+		return false, "v0.6 camera owns controller targeting"
 	end
 	WG['ordermenu'].controllerUnregisterCommandOwner = function(cmdID, ownerAPI)
 		cmdID = tonumber(cmdID)
@@ -1015,44 +1007,13 @@ function widget:Initialize()
 		return entry and entry.name or "Order Menu generic fallback"
 	end
 	WG['ordermenu'].controllerBeginTarget = function(cmdID)
-		local descriptor = controllerDescriptor(cmdID)
-		if not descriptor then return false, "descriptor unavailable" end
-		local entry = controllerCommandOwners[tonumber(cmdID)]
-			or (WG.ControllerNativeCommandOwners and WG.ControllerNativeCommandOwners[tonumber(cmdID)])
-		controllerActiveTargetAPI = entry and entry.api or controllerTargetOwner
-		local began, result = controllerActiveTargetAPI:Begin(descriptor)
-		if began then
-			controllerTargetDiagnostics.events = {}
-			controllerTargetTrace("SESSION CREATED", cmdID)
-			controllerTargetTrace("OWNER: " .. tostring(entry and entry.name or "ORDER_MENU"))
-		end
-		return began, result
+		return false, "v0.6 camera owns controller targeting"
 	end
 	WG['ordermenu'].controllerTargetInput = function(input)
-		if not controllerActiveTargetAPI then return false, "inactive" end
-		local before = controllerActiveTargetAPI:GetState()
-		if before and before.anchor and before.confirmationArmed
-				and (input.selectPressed or input.smartPressed) then
-			controllerTargetTrace(input.selectPressed and "A CONFIRM RECEIVED" or "X CONFIRM RECEIVED")
-			controllerTargetTrace("OWNER CONFIRM CALLED", before.ownerName)
-		end
-		local consumed, result = controllerActiveTargetAPI:Input(input)
-		local state = controllerActiveTargetAPI:GetState()
-		if before and not before.anchor and state and state.anchor then controllerTargetTrace("ANCHORED") end
-		if before and before.phase == "WAITING_FOR_ANCHOR_RELEASE"
-				and state and state.phase == "RESIZING_ARMED" then
-			controllerTargetTrace("BUTTONS NEUTRAL")
-			controllerTargetTrace("CONFIRM ARMED")
-		end
-		if not state or state.phase == "IDLE" then
-			controllerTargetTrace("SESSION CLOSED", result)
-			controllerActiveTargetAPI = nil
-		end
-		return consumed, result
+		return false, "inactive: v0.6 camera owns controller targeting"
 	end
 	WG['ordermenu'].controllerGetTargetState = function()
-		return controllerActiveTargetAPI and controllerActiveTargetAPI:GetState()
-			or { phase = "IDLE", ownerName = "none", dispatchCount = 0 }
+		return { phase = "IDLE", ownerName = "v0.6 camera", dispatchCount = 0 }
 	end
 	WG['ordermenu'].controllerCancelTarget = function(reason)
 		local active = controllerActiveTargetAPI

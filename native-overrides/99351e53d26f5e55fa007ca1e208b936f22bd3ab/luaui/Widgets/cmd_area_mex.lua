@@ -30,7 +30,6 @@ local mexBuildings
 local metalSpots
 
 local metalMap = false
-local ControllerNativeCommandOwner = VFS.Include("luaui/Include/controller_native_command_owner.lua")
 local areaMexControllerOwner
 local areaMexOwnerRegistered = false
 
@@ -49,41 +48,30 @@ function widget:Initialize()
 	WG['areamex'].setAreaMexType = function(uDefID)
 		setAreaMexType(uDefID)
 	end
-	WG['areamex'].controllerCompleteArea = function(descriptor, x, y, z, radius, options, dispatchMode)
-		local api = WG and WG.ordermenu
-		if not (api and type(api.controllerCompleteTargetShape) == "function") then
-			return false, "Order Menu hybrid dispatcher unavailable"
-		end
-		if not tonumber(x) or not tonumber(y) or not tonumber(z) or not tonumber(radius) then
-			return false, "incomplete area"
-		end
-		return api.controllerCompleteTargetShape(descriptor, "area",
-			{ tonumber(x), tonumber(y), tonumber(z), math.max(1, tonumber(radius)) },
-			options, dispatchMode)
-	end
-	areaMexControllerOwner = ControllerNativeCommandOwner.New({
-		name = "Area Mex",
-		types = CMDTYPE,
-		dispatch = function(cmdID, params, options, dispatchMode)
-			local api = WG and WG.ordermenu
-			if not (api and type(api.controllerIssueCommand) == "function") then
-				return false, "Order Menu dispatcher unavailable"
+	-- Restored v0.6 controller API: the camera supplies a completed center and
+	-- radius; this widget retains spot discovery, extractor choice, preview
+	-- command creation, order sorting, and ApplyPreviewCmds ownership.
+	WG.controllerAreaMex = WG.controllerAreaMex or {}
+	WG.controllerAreaMex.issueArea = function(x, y, z, radius, options)
+		local params = type(x) == "table" and x or { x, y, z, radius }
+		options = type(x) == "table" and y or options
+		for index = 1, 4 do
+			local value = tonumber(params[index])
+			if not value or value ~= value or value == math.huge or value == -math.huge then
+				return false, "invalid completed area"
 			end
-			return api.controllerIssueCommand(cmdID, params, options, dispatchMode)
-		end,
-	})
+			params[index] = value
+		end
+		if params[4] <= 0 then return false, "invalid radius" end
+		local ok, accepted = pcall(widget.CommandNotify, widget, CMD_AREA_MEX, params, options or {})
+		return ok and accepted == true, ok and (accepted == true and "resource_spot_builder" or "rejected") or tostring(accepted)
+	end
 end
 
 local function registerControllerOwner()
-	if areaMexOwnerRegistered or not areaMexControllerOwner then return end
-	WG.ControllerNativeCommandOwners = WG.ControllerNativeCommandOwners or {}
-	WG.ControllerNativeCommandOwners[CMD_AREA_MEX] = { api = areaMexControllerOwner, name = "Area Mex" }
-	areaMexOwnerRegistered = true
-	local api = WG and WG.ordermenu
-	if api and type(api.controllerRegisterCommandOwner) == "function" then
-		areaMexOwnerRegistered = api.controllerRegisterCommandOwner(
-			CMD_AREA_MEX, areaMexControllerOwner, "Area Mex") == true
-	end
+	-- The restored camera is the sole controller target owner. Kept as a no-op
+	-- call site so upstream Update layout remains easy to rebase.
+	areaMexOwnerRegistered = false
 end
 
 
@@ -345,5 +333,9 @@ function widget:Shutdown()
 		api.controllerUnregisterCommandOwner(CMD_AREA_MEX, areaMexControllerOwner)
 	end
 	if WG.ControllerNativeCommandOwners then WG.ControllerNativeCommandOwners[CMD_AREA_MEX] = nil end
+	if WG.controllerAreaMex then
+		WG.controllerAreaMex.issueArea = nil
+		if next(WG.controllerAreaMex) == nil then WG.controllerAreaMex = nil end
+	end
 	WG.areamex = nil
 end

@@ -67,7 +67,6 @@ local controllerTargeting = {
 	z = nil,
 	radius = 120,
 }
-local ControllerNativeCommandOwner = VFS.Include("luaui/Include/controller_native_command_owner.lua")
 local smartControllerOwner
 local smartOwnerRegistered = false
 local controllerHighlightedTargets = {}
@@ -102,15 +101,9 @@ function widget:PlayerChanged()
 end
 
 function widget:Update()
-	if smartOwnerRegistered or not smartControllerOwner then return end
-	WG.ControllerNativeCommandOwners = WG.ControllerNativeCommandOwners or {}
-	WG.ControllerNativeCommandOwners[RECLAIM] = { api = smartControllerOwner, name = "Smart Area Reclaim" }
-	smartOwnerRegistered = true
-	local api = WG and WG.ordermenu
-	if api and type(api.controllerRegisterCommandOwner) == "function" then
-		smartOwnerRegistered = api.controllerRegisterCommandOwner(
-			RECLAIM, smartControllerOwner, "Smart Area Reclaim") == true
-	end
+	-- The restored v0.6 camera owns the controller gesture. Smart Area Reclaim
+	-- remains the native mouse command transformer and highlight provider only.
+	smartOwnerRegistered = false
 end
 
 
@@ -253,18 +246,8 @@ function widget:Initialize()
 	WG['smartareareclaim'].controllerClearHighlightedTargets = function()
 		controllerHighlightedTargets = {}
 	end
-	smartControllerOwner = ControllerNativeCommandOwner.New({
-		name = "Smart Area Reclaim", types = CMDTYPE,
-		dispatch = function(cmdID, params, options, dispatchMode)
-			local api = WG and WG.ordermenu
-			if not (api and type(api.controllerIssueCommand) == "function") then
-				return false, "Order Menu dispatcher unavailable"
-			end
-			return api.controllerIssueCommand(cmdID, params, options, dispatchMode)
-		end,
-	})
-	WG['smartareareclaim'].controllerOwner = smartControllerOwner
-	WG['smartareareclaim'].controllerApiVersion = 2
+	WG['smartareareclaim'].controllerOwner = nil
+	WG['smartareareclaim'].controllerApiVersion = 3
 end
 
 function widget:Shutdown()

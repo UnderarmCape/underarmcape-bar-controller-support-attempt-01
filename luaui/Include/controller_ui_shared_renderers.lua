@@ -673,14 +673,30 @@ local function drawBuildRadial(args, cx, cy, radius, accent, values)
 		drawWrappedRole("availabilityText", model.availabilityText, typography.availabilityText, cx, availabilityY,
 			centerScale, opacity, roles, panelRadius * 1.5)
 	end
+	local pageIndicatorY = cy - panelRadius * 0.72
+	local metadataFloor = pageIndicatorY + (typography.pageIndicator.size + typography.metadata.lineSpacing + 3) * centerScale
 	local metadata = model.metadata or {}; if #metadata == 0 then for index = 2, #details do metadata[#metadata + 1] = details[index] end end
-	for index = 1, min(4, #metadata) do drawRoleText("metadata", metadata[index], typography.metadata, cx,
-		availabilityY - (model.availabilityText and 13 or 0) * centerScale - (index - 1) * (typography.metadata.size + typography.metadata.lineSpacing) * centerScale, centerScale, opacity, roles) end
-	if values.pageStatusVisible then
-		drawRoleText("categoryLabel", string.upper(model.categoryLabel or "BUILD"), typography.categoryLabel, cx, cy + radius * 0.65, values.fontScale, opacity, roles)
-		if model.pageLabel then drawRoleText("pageIndicator", model.pageLabel, typography.pageIndicator, cx, cy - radius * 0.68, values.fontScale, opacity, roles) end
+	local metadataDrawn = 0
+	for index = 1, min(4, #metadata) do
+		local metadataY = availabilityY - (model.availabilityText and 13 or 0) * centerScale
+			- (index - 1) * (typography.metadata.size + typography.metadata.lineSpacing) * centerScale
+		if not (values.pageStatusVisible and model.pageLabel) or metadataY > metadataFloor then
+			drawRoleText("metadata", metadata[index], typography.metadata, cx, metadataY, centerScale, opacity, roles)
+			metadataDrawn = metadataDrawn + 1
+		end
 	end
-	return { iconSize = iconSize, panelRadius = panelRadius, roles = roles }
+	local mainCategoryVisible = false
+	if values.pageStatusVisible then
+		if #sectors <= 1 then
+			drawRoleText("categoryLabel", string.upper(model.categoryLabel or "BUILD"), typography.categoryLabel, cx, cy + radius * 0.65, values.fontScale, opacity, roles)
+			mainCategoryVisible = true
+		end
+		if model.pageLabel then drawRoleText("pageIndicator", model.pageLabel, typography.pageIndicator,
+			cx, pageIndicatorY, values.fontScale, opacity, roles) end
+	end
+	return { iconSize = iconSize, panelRadius = panelRadius, roles = roles,
+		mainCategoryVisible = mainCategoryVisible, pageIndicatorY = pageIndicatorY,
+		pageIndicatorInsidePanel = pageIndicatorY > cy - panelRadius, metadataDrawn = metadataDrawn }
 end
 
 local function drawTacticalRadial(args, cx, cy, radius, accent, values)

@@ -1253,30 +1253,56 @@ local function refreshBuildmenuTexture()
 	tracy.ZoneEnd()
 end
 
+function ControllerBuildMenuRefreshHiddenPanel()
+	-- Keep cells, revisions, queue counts, and activation APIs authoritative
+	-- while suppressing only the native panel's pixels and mouse ownership.
+	local previous = activeCmd
+	if spGetGameFrame() == 0 and WG['pregame-build'] then
+		activeCmd = WG["pregame-build"].getPreGameDefID()
+		if activeCmd then activeCmd = unitName[activeCmd] end
+	else
+		activeCmd = select(4, spGetActiveCommand())
+	end
+	if activeCmd ~= previous then doUpdate = true end
+	if raceConditionUpdateCountdown > 0 then
+		raceConditionUpdateCountdown = raceConditionUpdateCountdown - 1
+		if raceConditionUpdateCountdown == 0 then doUpdate = true end
+	end
+	if doUpdate or refreshBuildmenu then
+		RefreshCommands()
+		doUpdate = nil
+		refreshBuildmenu = false
+	end
+	if WG['guishader'] and dlistGuishader then WG['guishader'].RemoveDlist('buildmenu') end
+end
+
+function ControllerBuildMenuRefreshVisiblePanel()
+	local previous = activeCmd
+	if spGetGameFrame() == 0 and WG['pregame-build'] then
+		activeCmd = WG["pregame-build"].getPreGameDefID()
+		if activeCmd then activeCmd = unitName[activeCmd] end
+	else
+		activeCmd = select(4, spGetActiveCommand())
+	end
+	if activeCmd ~= previous then doUpdate = true end
+	if raceConditionUpdateCountdown > 0 then
+		raceConditionUpdateCountdown = raceConditionUpdateCountdown - 1
+		if raceConditionUpdateCountdown == 0 then doUpdate = true end
+	end
+	if doUpdate or refreshBuildmenu then
+		tracy.ZoneBeginN("W:BuildMenu:DrawScreen:RefreshCommands")
+		RefreshCommands()
+		doUpdate = nil
+		refreshBuildmenu = true
+		tracy.ZoneEnd()
+	end
+	refreshBuildmenuTexture()
+end
 
 function widget:DrawScreen()
 	tracy.ZoneBeginN("W:BuildMenu:DrawScreen")
 	if not controllerPanelVisible then
-		-- Keep cells, revisions, queue counts, and activation APIs authoritative
-		-- while suppressing only the native panel's pixels and mouse ownership.
-		local previous = activeCmd
-		if spGetGameFrame() == 0 and WG['pregame-build'] then
-			activeCmd = WG["pregame-build"].getPreGameDefID()
-			if activeCmd then activeCmd = unitName[activeCmd] end
-		else
-			activeCmd = select(4, spGetActiveCommand())
-		end
-		if activeCmd ~= previous then doUpdate = true end
-		if raceConditionUpdateCountdown > 0 then
-			raceConditionUpdateCountdown = raceConditionUpdateCountdown - 1
-			if raceConditionUpdateCountdown == 0 then doUpdate = true end
-		end
-		if doUpdate or refreshBuildmenu then
-			RefreshCommands()
-			doUpdate = nil
-			refreshBuildmenu = false
-		end
-		if WG['guishader'] and dlistGuishader then WG['guishader'].RemoveDlist('buildmenu') end
+		ControllerBuildMenuRefreshHiddenPanel()
 		tracy.ZoneEnd()
 		return
 	end
@@ -1291,41 +1317,8 @@ function widget:DrawScreen()
 		return
 	end
 
-	-- refresh buildmenu if active cmd changed
-	local prevActiveCmd = activeCmd
-
-	if spGetGameFrame() == 0 and WG['pregame-build'] then
-		activeCmd = WG["pregame-build"] and WG["pregame-build"].getPreGameDefID()
-		if activeCmd then
-			activeCmd = unitName[activeCmd]
-		end
-	else
-		activeCmd = select(4, spGetActiveCommand())
-	end
-	if activeCmd ~= prevActiveCmd then
-		doUpdate = true
-	end
-
 	local x, y, b, b2, b3 = spGetMouseState()
-	-- Handle the frame-based counter for race conditions
-	if raceConditionUpdateCountdown > 0 then
-		raceConditionUpdateCountdown = raceConditionUpdateCountdown - 1
-		if raceConditionUpdateCountdown == 0 then
-			doUpdate = true
-		end
-	end
-
-	-- The main refresh condition check
-	if doUpdate or refreshBuildmenu then
-		tracy.ZoneBeginN("W:BuildMenu:DrawScreen:RefreshCommands")
-		RefreshCommands()
-		doUpdate = nil
-		refreshBuildmenu = true
-		tracy.ZoneEnd()
-	end
-
-	-- create buildmenu
-	refreshBuildmenuTexture()
+	ControllerBuildMenuRefreshVisiblePanel()
 
 	-- draw buildmenu background
 	tracy.ZoneBeginN("W:BuildMenu:DrawScreen:BlendBackground")

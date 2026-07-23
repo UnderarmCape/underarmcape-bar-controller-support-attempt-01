@@ -77,6 +77,8 @@ local function tacticalCategory(item)
 		or text:find("wait", 1, true)
 		or text:find("stop", 1, true)
 		or text:find("clear queue", 1, true)
+		or text:find("self destruct", 1, true)
+		or text:find("self-destruct", 1, true)
 	then
 		return "utility"
 	end
@@ -86,6 +88,8 @@ end
 local function tacticalKind(item)
 	local action = normalizedText(item.action)
 	local text = normalizedText(item.name) .. " " .. action
+	if text:find("self destruct", 1, true) or text:find("self-destruct", 1, true)
+			or action == "selfd" or action == "selfdestruct" then return "self_destruct" end
 	if text:find("reclaim", 1, true) then return "reclaim" end
 	if text:find("repair", 1, true) then return "repair" end
 	if text:find("guard", 1, true) then return "alliedUnit" end

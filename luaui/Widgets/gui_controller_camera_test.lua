@@ -63,6 +63,11 @@ do
 	local ok, module = pcall(VFS.Include, "LuaUI/Include/controller_input_chords.lua")
 	if ok and type(module) == "table" then ControllerInputChords = module end
 end
+ControllerSelectionTaps = ControllerSelectionTaps or nil
+do
+	local ok, module = pcall(VFS.Include, "LuaUI/Include/controller_selection_taps.lua")
+	if ok and type(module) == "table" then ControllerSelectionTaps = module end
+end
 
 function serializeTable(t)
 	if type(t) ~= "table" then return tostring(t) end
@@ -423,6 +428,9 @@ ControllerCameraTestAreaSelect = ControllerCameraTestAreaSelect or {
 	lastResult = "none",
 	filterMode = "units-only",
 }
+ControllerCameraTestSelectionTaps = ControllerCameraTestSelectionTaps
+	or (ControllerSelectionTaps and ControllerSelectionTaps.New(0.35))
+	or { windowSeconds = 0.35, lastTapAt = -math.huge, lastUnitID = nil, lastUnitDefID = nil }
 ControllerCameraTestTacticalMenu = ControllerCameraTestTacticalMenu or {
 	open = false,
 	selectedIndex = 1,
@@ -843,6 +851,8 @@ ControllerCameraTestQuickGroups = ControllerCameraTestQuickGroups or {
 }
 ControllerCameraTestSelfDestruct = ControllerCameraTestSelfDestruct or {
 	chordActive = false,
+	tacticalArmed = false,
+	tacticalArmedAt = 0,
 	holdStartTime = 0,
 	holdSeconds = 0.75,
 	holdTime = 0,
@@ -2263,7 +2273,19 @@ function ControllerCameraTestTraceSingleSelection(event, details)
 	Spring.Echo("[Controller Single-A] " .. tostring(event) .. " " .. tostring(details or ""))
 end
 
+function ControllerCameraTestResetSelectionTap(reason)
+	if ControllerSelectionTaps then
+		ControllerSelectionTaps.Reset(ControllerCameraTestSelectionTaps, reason)
+	else
+		ControllerCameraTestSelectionTaps.lastTapAt = -math.huge
+		ControllerCameraTestSelectionTaps.lastUnitID = nil
+		ControllerCameraTestSelectionTaps.lastUnitDefID = nil
+		ControllerCameraTestSelectionTaps.resetReason = tostring(reason or "reset")
+	end
+end
+
 local function attemptClearSelection()
+	ControllerCameraTestResetSelectionTap("selection cancelled")
 	if commandLayerActive then
 		lastBButtonResult = "RT active"
 		latchSelectionDebugMessage("B ignored: command layer active")
@@ -5096,6 +5118,25 @@ function ControllerCameraTestIssueSelfDestruct()
 	return false
 end
 
+function ControllerCameraTestArmProtectedSelfDestruct()
+	local state = ControllerCameraTestSelfDestruct
+	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
+	state.selectedCount = type(selectedUnits) == "table" and #selectedUnits or 0
+	if state.selectedCount == 0 or not ControllerCameraTestFindSelfDestructCommandID() then
+		state.tacticalArmed = false
+		state.lastResult = "unavailable: no valid selected units"
+		latchSelectionDebugMessage("Self Destruct unavailable")
+		return false
+	end
+	state.tacticalArmed = true
+	state.tacticalArmedAt = debugEventTime
+	state.lastResult = "armed: hold Back/View + R3 + L3"
+	ControllerCameraTestTacticalMenu.open = false
+	ControllerCameraTestResetSelectionTap("protected Self Destruct armed")
+	latchSelectionDebugMessage("Self Destruct armed: hold Back/View + R3 + L3")
+	return true
+end
+
 function ControllerCameraTestHandleSelfDestructChord()
 	local state = ControllerCameraTestSelfDestruct
 	-- Chord: Back/View + R3 (rightStickClick) + L3 (leftStickClick)
@@ -5104,6 +5145,16 @@ function ControllerCameraTestHandleSelfDestructChord()
 	local chordActive = IsButtonDown("back")
 		and IsButtonDown("rightStickClick")
 		and IsButtonDown("leftStickClick")
+	if state.tacticalArmed and not chordActive and ControllerCameraTestActionPressed("cancel") then
+		state.tacticalArmed = false
+		state.lastResult = "tactical arm cancelled"
+		latchSelectionDebugMessage("Self Destruct cancelled")
+		return true
+	end
+	if state.tacticalArmed and debugEventTime - (state.tacticalArmedAt or 0) > 10 then
+		state.tacticalArmed = false
+		state.lastResult = "tactical arm expired"
+	end
 	if not chordActive then
 		if state.chordActive and not state.attempted then
 			state.lastResult = "cancelled before safety hold"
@@ -5129,6 +5180,7 @@ function ControllerCameraTestHandleSelfDestructChord()
 	if not state.attempted and elapsed >= (state.holdSeconds or 0.75) then
 		state.attempted = true
 		state.issued = ControllerCameraTestIssueSelfDestruct()
+		state.tacticalArmed = false
 	elseif not state.attempted then
 		state.lastResult = string.format("holding %.2f / %.2f s (%d units)", elapsed, state.holdSeconds or 0.75, state.selectedCount or 0)
 	end
@@ -6673,6 +6725,43 @@ function ControllerCameraTestGetAllOwnedUnitsOfType(unitDefID)
 	return ControllerCameraTestFilterValidUnits(units)
 end
 
+-- v0.6.1 double-tap semantics, narrowed to the local player's units.  The
+-- historical camera test used the visible list plus an explicit screen test;
+-- retaining both guards prevents an off-camera or fog-hidden match from being
+-- pulled into the selection.
+function ControllerCameraTestCollectVisibleOwnedSameType(unitDefID)
+	local visibleSet, hasVisibleList = {}, false
+	if type(Spring.GetVisibleUnits) == "function" then
+		local ok, visible = pcall(Spring.GetVisibleUnits)
+		if ok and type(visible) == "table" then
+			hasVisibleList = true
+			for _, unitID in ipairs(visible) do visibleSet[unitID] = true end
+		end
+	end
+	local units = {}
+	for _, unitID in ipairs(ControllerCameraTestGetOwnTeamUnits()) do
+		local ok, candidateDefID = pcall(Spring.GetUnitDefID, unitID)
+		if ok and candidateDefID == unitDefID
+				and (not hasVisibleList or visibleSet[unitID])
+				and ControllerCameraTestUnitIsOnScreen(unitID) then
+			units[#units + 1] = unitID
+		end
+	end
+	table.sort(units)
+	return ControllerCameraTestFilterValidUnits(units)
+end
+
+function ControllerCameraTestSelectVisibleSameTypeUnderReticle(targetID, unitDefID)
+	if not targetID or not unitDefID or not ControllerCameraTestIsOwnedUnit(targetID) then return false end
+	local units = ControllerCameraTestCollectVisibleOwnedSameType(unitDefID)
+	if #units == 0 then return false end
+	local selected = ControllerCameraTestSelectUnits(units, "A double-tap visible same type")
+	ControllerCameraTestAreaSelect.doubleTapAction = selected and "visible same type selected" or "selection failed"
+	ControllerCameraTestAreaSelect.sameTypeUnitDefID = tostring(unitDefID)
+	ControllerCameraTestAreaSelect.sameTypeSelectedCount = selected and #units or 0
+	return selected
+end
+
 function ControllerCameraTestGetReticleAlliedUnitAndDef()
 	local target = ControllerCameraTestGetReticleTargetInfo()
 	if target.targetType ~= "unit" or not target.targetID or not ControllerCameraTestIsAlliedUnit(target.targetID) then
@@ -6985,27 +7074,12 @@ function ControllerCameraTestStartNativeSameTypeReclaim(targetID, unitDefID)
 	local x, y, z = spGetUnitPosition(targetID)
 	if not x or not z then return false end
 	ControllerCameraTestRestoreDisassembleConstructors("Constructors staged")
-	local api = WG and WG.ordermenu
-	local descriptor = api and type(api.controllerGetCommandDescriptor) == "function"
-		and api.controllerGetCommandDescriptor((CMD and CMD.RECLAIM) or 90) or nil
-	local began = descriptor and ControllerCameraTestBeginHybridTargeting(
-		descriptor, { cmdID = (CMD and CMD.RECLAIM) or 90, name = "Same-type Reclaim",
-			dragMode = "reclaimArea", kind = "drag_area" }, "disassemble-same-type", true)
-	if not began then return false end
-	local target = { targetType = "unit", targetID = targetID, commandID = targetID,
-		x = x, y = y or 0, z = z, hasWorld = true }
-	local _, anchorResult = ControllerNativeTargeting.BeginOrBuildPoint(
-		ControllerCameraTestNativeTargeting, target, CMDTYPE)
-	if anchorResult ~= "anchor" then
-		ControllerCameraTestCancelActiveCommandTargeting("same-type anchor rejected", false)
-		return false
-	end
-	ControllerCameraTestNativeTargeting.anchorUnitDefID = unitDefID
 	local area = ControllerCameraTestDisassemble.areaReclaim
 	area.active, area.anchorUnitID, area.unitDefID = true, targetID, unitDefID
 	area.x, area.y, area.z = x, y or 0, z
 	area.radius = ControllerDisassembleBehavior.MIN_TARGET_RADIUS
-	area.confirmArmed, area.waitingForNeutral, area.releasedThisFrame = false, false, false
+	area.candidates = {}
+	area.confirmArmed, area.waitingForNeutral, area.releasedThisFrame = false, true, false
 	ControllerCameraTestDisassemble.lastResult = "same-type area anchored"
 	ControllerCameraTestShowHotkeyFeedback("SAME-TYPE AREA", "reclaim")
 	return true
@@ -7027,12 +7101,7 @@ function ControllerCameraTestUpdateNativeDisassembleInput(dt)
 	if ControllerCameraTestHandleDisassembleB() then return true end
 
 	if state.areaReclaim.active then
-		-- The root update loop services the hybrid state before entering this
-		-- function. Reaching here means the controller state vanished, so repair
-		-- locally instead of reviving the native mouse-owner session.
-		state.areaReclaim.active, state.areaReclaim.candidates = false, {}
-		ControllerCameraTestRestoreDisassembleConstructors("Constructors restored")
-		return true
+		return ControllerCameraTestUpdateAreaReclaimTargeting()
 	end
 
 	if ControllerCameraTestActionPressed("smartAction") then
@@ -7323,7 +7392,8 @@ function ControllerCameraTestStartAreaReclaim(targetID, unitDefID)
 	local state = ControllerCameraTestDisassemble
 	state.areaReclaim = { active = true, anchorUnitID = targetID, unitDefID = unitDefID,
 		x = x, y = y or (type(spGetGroundHeight) == "function" and spGetGroundHeight(x, z) or 0), z = z,
-		radius = ControllerDisassembleBehavior and ControllerDisassembleBehavior.MIN_TARGET_RADIUS or 120, candidates = {} }
+		radius = ControllerDisassembleBehavior and ControllerDisassembleBehavior.MIN_TARGET_RADIUS or 120,
+		candidates = {}, waitingForNeutral = true, confirmArmed = false }
 	state.lbA.pressActive, state.lbA.holdFired = false, true
 	state.lastResult = "area reclaim targeting"
 	ControllerCameraTestShowHotkeyFeedback("AREA RECLAIM TARGETING", "reclaim")
@@ -7348,12 +7418,21 @@ function ControllerCameraTestUpdateAreaReclaimTargeting()
 	end
 	if ControllerCameraTestActionPressed("cancel") then
 		area.active, area.candidates, state.lastResult = false, {}, "area reclaim cancelled"
+		ControllerCameraTestRestoreDisassembleConstructors("Constructors restored")
 		return true
 	end
-	if ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction") then
+	if area.waitingForNeutral then
+		if not ControllerCameraTestActionDown("select") and not ControllerCameraTestActionDown("smartAction") then
+			area.waitingForNeutral, area.confirmArmed = false, true
+			state.lastResult = "area reclaim armed after neutral"
+		end
+		return true
+	end
+	if area.confirmArmed and (ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction")) then
 		local targets = area.candidates
-		area.active, area.candidates = false, {}
+		area.active, area.confirmArmed, area.candidates = false, false, {}
 		ControllerCameraTestIssueDisassembleReclaim(targets)
+		ControllerCameraTestRestoreDisassembleConstructors("Constructors restored")
 		return true
 	end
 	return true
@@ -8041,23 +8120,17 @@ function ControllerCameraTestCycleIdleUnit(delta)
 		latchSelectionDebugMessage("Idle cycle: vanilla idle widget unavailable")
 		return false
 	end
-	local current = delta < 0 and 1 or 0
+	local current = 0
 	for index, unitID in ipairs(units) do
 		if unitID == ControllerCameraTestIdleCycle.currentUnitID then current = index break end
 	end
-	if current == (delta < 0 and 1 or 0) and ControllerCameraTestIdleCycle.currentTypeKey then
-		for index, unitID in ipairs(units) do
-			if Spring.GetUnitDefID(unitID) == ControllerCameraTestIdleCycle.currentTypeKey then
-				current = index - delta
-				break
-			end
-		end
-	end
 	local index = ((current - 1 + delta) % #units) + 1
 	local unitID, unitDefID = units[index], Spring.GetUnitDefID(units[index])
+	-- Record the live-list position before focus so a removed unit repairs to the
+	-- first/last entry on the next press instead of consulting a stale type bucket.
+	ControllerCameraTestIdleCycle.currentUnitID = unitID
+	ControllerCameraTestIdleCycle.currentTypeKey = unitDefID
 	if ControllerCameraTestFocusAndSelectUnit(unitID, "Idle unit") then
-		ControllerCameraTestIdleCycle.currentUnitID = unitID
-		ControllerCameraTestIdleCycle.currentTypeKey = unitDefID
 		ControllerCameraTestIdleCycle.lastTypeName = ControllerCameraTestUnitTypeName(unitDefID)
 		ControllerCameraTestIdleCycle.lastCount = #units
 		ControllerCameraTestIdleCycle.lastResult = "idle entry " .. tostring(index) .. "/" .. tostring(#units)
@@ -9581,22 +9654,8 @@ end
 function ControllerCameraTestStageAreaCommandShortcut(dragMode, label)
 	local option = ControllerCameraTestFindTacticalAreaOptionByMode(dragMode, true, "area shortcut")
 	if option then
-		local api = WG and WG.ordermenu
-		if ControllerCameraTestUsesNativeBARUI() and api
-				and type(api.controllerActivate) == "function"
-				and type(api.controllerGetCommandDescriptor) == "function" then
-			local activated = api.controllerActivate(option.cmdID, 1)
-			if not activated then return false end
-			local descriptor = api.controllerGetCommandDescriptor(option.cmdID)
-			-- The LB shortcut press only chooses the command.  The controller-owned
-			-- target state must observe neutral before accepting a fresh A/X anchor;
-			-- otherwise the shortcut-selection edge leaks into area placement.
-			local began = ControllerCameraTestBeginHybridTargeting(descriptor, option, "area-shortcut", false)
-			if not began then return false end
-			ControllerCameraTestTacticalMenu.lastResult = tostring(label or option.name) .. " awaiting fresh area anchor"
-			ControllerCameraTestShowHotkeyFeedback(string.upper(tostring(label or option.name)), "utility")
-			return true
-		end
+		-- Native descriptors supply the menu data, but v0.6 owns the complete
+		-- neutral -> anchor -> resize -> fresh-confirm controller lifecycle.
 		return ControllerCameraTestStageTacticalCommand(option)
 	end
 	local name = tostring(label or dragMode or "Area command")
@@ -9789,12 +9848,14 @@ function ControllerCameraTestStageTacticalCommand(option)
 		menu.lastResult = "stage failed: no option"
 		return false
 	end
+	ControllerCameraTestResetSelectionTap("tactical targeting began")
 	menu.stagedOption = ControllerCameraTestCopyTacticalOption(option)
 	menu.stagedName = tostring(option.name or "Command")
 	menu.stagedKind = tostring(option.kind or "none")
 	menu.stagedState = ControllerCameraTestIsAreaTacticalOption(option) and "staged waiting for center" or "staged"
 	menu.repeatPlacementActive = false
 	menu.repeatPlacementState = "none"
+	menu.stagedWaitForNeutral = true
 	menu.open = false
 	menu.lastAction = "staged " .. menu.stagedName
 	menu.lastResult = "staged: move reticle, A confirm, B cancel"
@@ -9815,6 +9876,7 @@ function ControllerCameraTestClearStagedTacticalCommand(reason)
 	menu.stagedState = reason or "none"
 	menu.repeatPlacementActive = false
 	menu.repeatPlacementState = reason or "none"
+	menu.stagedWaitForNeutral = false
 	ControllerCameraTestAreaCancelReason = reason or "none"
 	ControllerCameraTestUpdateAreaCommandDebug(reason or "none", nil, nil, nil, reason or "cleared")
 	if reason then
@@ -9904,8 +9966,26 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 		return true
 	end
 
+	local buttonsNeutral = not ControllerCameraTestActionDown("select")
+		and not ControllerCameraTestActionDown("smartAction")
+	if menu.stagedWaitForNeutral then
+		if buttonsNeutral then
+			menu.stagedWaitForNeutral = false
+			if drag.active then drag.waitingForNeutral = false end
+			menu.stagedState = drag.active and "resizing armed" or "waiting for fresh confirm"
+		end
+		return true
+	end
+
 	if (isAreaCmd or isLineCmd) and drag.active then
 		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
+		if drag.waitingForNeutral then
+			if buttonsNeutral then
+				drag.waitingForNeutral = false
+				menu.stagedState = "resizing armed"
+			end
+			return true
+		end
 	end
 
 	if ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction") then
@@ -9918,6 +9998,7 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 					drag.mode = option.dragMode
 					drag.cmdID = option.cmdID
 					drag.option = option
+					drag.waitingForNeutral = true
 					menu.stagedState = "dragging radius"
 					if isLineCmd then
 						ControllerCameraTestShowHotkeyFeedback("FIGHT LINE", "attack")
@@ -9959,7 +10040,22 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted, state
 		ControllerCameraTestTacticalMenu.lastResult = "no tactical option"
 		return false
 	end
-	if ControllerCameraTestUsesNativeBARUI() then
+	if option.disabled then
+		ControllerCameraTestTacticalMenu.lastResult = tostring(option.name or "Command") .. " disabled"
+		return false
+	end
+	if option.kind == "self_destruct" then
+		return ControllerCameraTestArmProtectedSelfDestruct()
+	end
+	-- The v0.6 controller state machine owns all targeted commands, including
+	-- descriptors sourced from the current native Order Menu. Native data and
+	-- rendering remain authoritative; its failed mouse/owner target lifecycle
+	-- is deliberately not entered.
+	if stageTargeted and ControllerCameraTestTacticalCommandNeedsTarget(option) then
+		return ControllerCameraTestStageTacticalCommand(option)
+	end
+	if ControllerCameraTestUsesNativeBARUI()
+			and not ControllerCameraTestTacticalCommandNeedsTarget(option) then
 		if option.disabled then
 			ControllerCameraTestTacticalMenu.lastResult = tostring(option.name) .. " disabled by vanilla"
 			return false
@@ -9985,22 +10081,12 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted, state
 		if ok and activated and not option.isState then
 			ControllerCameraTestTacticalMenu.open = false
 			if api and type(api.controllerSetRadialOpen) == "function" then pcall(api.controllerSetRadialOpen, false) end
-			local descriptor = api and type(api.controllerGetCommandDescriptor) == "function"
-				and api.controllerGetCommandDescriptor(option.cmdID) or nil
-			local began = ControllerCameraTestBeginHybridTargeting(descriptor, option, "tactical-radial", false)
-			ControllerCameraTestNativeTargeting.descriptorDirty = not began
-			ControllerCameraTestTacticalMenu.lastResult = began
-				and "controller shape armed; native completion retained"
-				or "activated immediate command"
+			ControllerCameraTestTacticalMenu.lastResult = "activated immediate command"
 		elseif ok and activated then
 			ControllerCameraTestRebuildNativeTacticalModel("state cycled")
 		end
 		return ok and activated
 	end
-	if stageTargeted and ControllerCameraTestTacticalCommandNeedsTarget(option) then
-		return ControllerCameraTestStageTacticalCommand(option)
-	end
-
 	if option.kind == "drag_line" or option.kind == "drag_area" then
 		local drag = ControllerCameraTestDragCommand
 		local wasAlreadyAnchored = drag.active and (drag.startX ~= nil) and (option.kind == "drag_area")
@@ -10057,12 +10143,6 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted, state
 			ok, count = ControllerCameraTestIssueOrderToSelectedUnits(TacticalCategories.CmdMoveState, { nextVal }, "Move State", tostring(nextVal), {})
 			ControllerCameraTestTacticalMenu.lastResult = ok and ("move state for " .. tostring(count)) or "failed"
 		end
-		ControllerCameraTestTacticalMenu.open = false
-		return ok
-	elseif option.kind == "self_destruct" then
-		local ok = ControllerCameraTestIssueSelfDestruct()
-		ControllerCameraTestTacticalMenu.lastResult = ControllerCameraTestSelfDestruct.lastResult
-		ControllerCameraTestLayerDebug.commandLayerAction = "Self Destruct " .. tostring(ControllerCameraTestSelfDestruct.lastResult or "")
 		ControllerCameraTestTacticalMenu.open = false
 		return ok
 	elseif option.kind == "fire_state_cycle" then
@@ -12493,6 +12573,9 @@ function ControllerCameraTestHandleNormalAInput(dt, disassembleMode)
 	local HOLD_SECONDS = ControllerCameraTestSettings.aHoldSeconds or 0.38
 
 	if ControllerCameraTestActionPressed("select") then
+		if not disassembleMode and ControllerSelectionTaps then
+			ControllerSelectionTaps.Expire(ControllerCameraTestSelectionTaps, debugEventTime)
+		end
 		area.selectionEdgeID = (area.selectionEdgeID or 0) + 1
 		area.pressActive = true
 		area.active = false
@@ -12543,6 +12626,7 @@ function ControllerCameraTestHandleNormalAInput(dt, disassembleMode)
 	if area.pressActive and ControllerCameraTestActionDown("select") then
 		if not area.active and (debugEventTime - area.pressStartTime) >= HOLD_SECONDS then
 			area.active = true
+			if not disassembleMode then ControllerCameraTestResetSelectionTap("Hold-A threshold crossed") end
 			area.lastResult = "active"
 			ControllerCameraTestLayerDebug.areaSelect = "active radius " .. tostring(math.floor(area.radius))
 			latchSelectionDebugMessage(disassembleMode and "Disassemble area select active" or "Area select active")
@@ -12707,7 +12791,20 @@ function ControllerCameraTestHandleNormalAInput(dt, disassembleMode)
 				area.lastResult = "Disassemble additive target unchanged"
 			end
 		else
+			local targetID, unitDefID = ControllerCameraTestGetReticleOwnedTarget()
 			attemptReticleSelection()
+			local tapResult = "single"
+			if ControllerSelectionTaps then
+				tapResult = ControllerSelectionTaps.ResolveRelease(
+					ControllerCameraTestSelectionTaps, debugEventTime, targetID, unitDefID, area.additive)
+			elseif area.additive then
+				ControllerCameraTestResetSelectionTap("RT+A exact toggle")
+			end
+			if tapResult == "double" then
+				ControllerCameraTestSelectVisibleSameTypeUnderReticle(targetID, unitDefID)
+			elseif tapResult == "single" then
+				area.doubleTapAction = "single exact unit"
+			end
 		end
 		local final = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 		ControllerCameraTestTraceSingleSelection("UP#" .. tostring(area.selectionEdgeID or 0),
@@ -13566,57 +13663,18 @@ function ControllerCameraTestNativeRepeatShortcut()
 	return false
 end
 
--- Native Experimental LB mapping.  The legacy dispatcher above remains only
--- for Legacy UI mode; every native branch resolves the live Order Menu
--- descriptor and shares its dispatch/owner boundary.
+-- Restore the v0.6.1 LB dispatcher for both UI modes. Current native command
+-- data still feeds the radials, but immediate Fight/Patrol/Attack and the
+-- historical area shortcuts must sample the controller cursor and issue/stage
+-- exactly once without entering the failed descriptor target session.
 ControllerCameraTestLegacyExecuteLBHotkey = ControllerCameraTestExecuteLBHotkey
 ControllerCameraTestExecuteLBHotkey = function(btn, tapCount)
-	if not ControllerCameraTestUsesNativeBARUI() then
-		return ControllerCameraTestLegacyExecuteLBHotkey(btn, tapCount)
-	end
-	local profile = ControllerCameraTestGetSelectionProfile()
-	if not profile then return false end
-	if btn == "B" then
-		return tapCount == 2 and ControllerCameraTestNativeRepeatShortcut()
-			or ControllerCameraTestNativeImmediateShortcut((CMD and CMD.STOP) or 0, "Stop", false)
-	end
-	if profile == "builder" then
-		if btn == "A" and tapCount == 1 then return ControllerCameraTestStageAreaCommandShortcut("repairArea", "Repair Area") end
-		if btn == "X" and tapCount == 1 then return ControllerCameraTestStageAreaCommandShortcut("reclaimArea", "Reclaim Area") end
-		if btn == "Y" and tapCount == 2 then return ControllerCameraTestStageAreaCommandShortcut("areaMex", "Area Mex") end
-		if btn == "Y" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.PATROL) or 15, "Patrol", true) end
-	elseif profile == "air_transport" then
-		if btn == "X" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.LOAD_UNITS) or 75, "Load Unit", true) end
-		if btn == "A" then
-			local selected = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
-			local unloadID = GetTransportUnloadCommand(selected) or (CMD and CMD.UNLOAD_UNITS) or 80
-			return ControllerCameraTestNativeImmediateShortcut(unloadID, "Unload", true)
-		end
-	elseif profile == "factory" then
-		if btn == "A" or btn == "X" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.FIGHT) or 16, "Fight", true) end
-		if btn == "Y" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.PATROL) or 15, "Patrol", true) end
-	elseif profile == "combat" then
-		if btn == "A" then
-			local target = ControllerCameraTestNativeShortcutTarget()
-			local cmdID = target.targetType == "unit" and ((CMD and CMD.ATTACK) or 20) or ((CMD and CMD.FIGHT) or 16)
-			return ControllerCameraTestNativeImmediateShortcut(cmdID, cmdID == CMD.ATTACK and "Attack" or "Fight", true)
-		end
-		if btn == "X" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.ATTACK) or 20, "Attack", true) end
-		if btn == "Y" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.PATROL) or 15, "Patrol", true) end
-	end
-	return false
+	return ControllerCameraTestLegacyExecuteLBHotkey(btn, tapCount)
 end
 
 ControllerCameraTestLegacyExecuteLBFaceHoldAction = ControllerCameraTestExecuteLBFaceHoldAction
 ControllerCameraTestExecuteLBFaceHoldAction = function(btn)
-	if not ControllerCameraTestUsesNativeBARUI() then
-		return ControllerCameraTestLegacyExecuteLBFaceHoldAction(btn)
-	end
-	local profile = ControllerCameraTestGetSelectionProfile()
-	if btn == "B" then return ControllerCameraTestNativeImmediateShortcut((CMD and CMD.WAIT) or 5, "Wait", false) end
-	if profile == "air_transport" and btn == "X" then return ControllerCameraTestStageAreaCommandShortcut("loadArea", "Load Area") end
-	if profile == "air_transport" and btn == "A" then return ControllerCameraTestStageAreaCommandShortcut("unloadArea", "Unload Area") end
-	return false
+	return ControllerCameraTestLegacyExecuteLBFaceHoldAction(btn)
 end
 
 function ControllerCameraTestCanUseTuningControls()
@@ -14276,6 +14334,7 @@ end
 
 function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	if Spring.GetGameFrame() <= 0 or controllerMouseModeActive then
+		ControllerCameraTestResetSelectionTap(Spring.GetGameFrame() <= 0 and "pregame input" or "mouse mode input")
 		if Spring.GetGameFrame() <= 0 then
 			ControllerCameraTestLayerDebug.modeSummary = "pregame"
 			activeButtonLayoutSummary = "Pregame: RS cursor | LB+RS rotate/tilt | LB+LT+RS Y zoom | A/X Click/Place"
@@ -14327,6 +14386,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 	end
 	if ControllerCameraTestSettingsUI.open then
+		ControllerCameraTestResetSelectionTap("settings modal")
 		commandLayerActive = false
 		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		ControllerCameraTestHandleSettingsUIInput()
@@ -14335,6 +14395,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		return
 	end
 	if ControllerCameraTestIsGameplayInputBlocked() then
+		ControllerCameraTestResetSelectionTap("external UI modal")
 		commandLayerActive = false
 		ControllerCameraTestTuning.backCommandLayerATapTime = -10
 		ControllerCameraTestLayerDebug.modeSummary = "external binding UI"
@@ -14363,25 +14424,58 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	end
 
 	ControllerCameraTestUpdateLBTapState()
-	-- A live hybrid target owns A/X/B before mode-local gestures or radial
-	-- toggles.  This is what makes the second confirm independent of the native
-	-- mouse-owner lifecycle, including while Disassemble remains active.
-	local nativeTargetBusy = ControllerCameraTestHandleNativeTargetingInput()
-	local priorityTacticalToggle = not nativeTargetBusy and ControllerCameraTestHandlePriorityTacticalToggle()
-	local distributedPlacementOwns = not priorityTacticalToggle and ControllerCameraTestBuildPlacement.active
+	local selectionTapModal = ControllerCameraTestBuildMenu.open
+		or ControllerCameraTestBuildPlacement.active
+		or ControllerCameraTestTacticalMenu.open
+		or type(ControllerCameraTestTacticalMenu.stagedOption) == "table"
+		or ControllerCameraTestDisassemble.active
+		or ControllerCameraTestVisibleSelection.radial.open
+		or ControllerCameraTestActionDown("pitchModifier")
+		or ControllerCameraTestActionDown("commandLayer")
+		or ControllerCameraTestActionDown("controlGroupModifier")
+		or ControllerCameraTestIsQueueModifierActive()
+	if selectionTapModal then
+		ControllerCameraTestResetSelectionTap("modal or modifier context")
+	elseif ControllerSelectionTaps then
+		local observedUnitID, observedUnitDefID = ControllerCameraTestGetReticleOwnedTarget()
+		ControllerSelectionTaps.ObserveTarget(
+			ControllerCameraTestSelectionTaps, observedUnitID, observedUnitDefID)
+		ControllerSelectionTaps.Expire(ControllerCameraTestSelectionTaps, debugEventTime)
+	end
+
+	-- v0.6 input ownership is explicit: an already-staged target wins first,
+	-- then active build placement, Tactical Radial, Disassemble, and finally
+	-- ordinary gameplay. The dormant native mouse-target broker is never polled.
+	local stagedTacticalBusy = ControllerCameraTestHandleStagedTacticalCommandInput()
+	local distributedPlacementOwns = not stagedTacticalBusy and ControllerCameraTestBuildPlacement.active
 		and ControllerCameraTestUpdateDistributedGridChord()
-	local disassembleBusy = nativeTargetBusy or priorityTacticalToggle or (not distributedPlacementOwns
+	local placementBusy = not stagedTacticalBusy and not distributedPlacementOwns
+		and ControllerCameraTestHandlePlacementInput(dt)
+	local priorityTacticalToggle = not stagedTacticalBusy and not distributedPlacementOwns
+		and not placementBusy and ControllerCameraTestHandlePriorityTacticalToggle()
+	local disassembleBusy = not stagedTacticalBusy and not distributedPlacementOwns
+		and not placementBusy and not priorityTacticalToggle
 		and ControllerCameraTestUpdateDisassembleController(dt)
-	)
-	if not disassembleBusy and not distributedPlacementOwns then
+	if not stagedTacticalBusy and not distributedPlacementOwns and not placementBusy
+			and not priorityTacticalToggle and not disassembleBusy then
 		ControllerCameraTestUpdateLBFaceButtonDispatcher(dt)
 	end
 	updateSelectionTestActive()
 
-	if nativeTargetBusy then
+	if stagedTacticalBusy then
 		commandLayerActive = false
 		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
-			ControllerCameraTestCancelAreaSelect("cancelled by native command targeting")
+			ControllerCameraTestCancelAreaSelect("cancelled by tactical stage")
+		end
+	elseif distributedPlacementOwns or placementBusy then
+		commandLayerActive = false
+		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
+			ControllerCameraTestCancelAreaSelect("cancelled by placement")
+		end
+	elseif priorityTacticalToggle then
+		commandLayerActive = false
+		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
+			ControllerCameraTestCancelAreaSelect("cancelled by tactical radial")
 		end
 	elseif disassembleBusy then
 		commandLayerActive = false
@@ -14391,14 +14485,6 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		end
 	elseif ControllerCameraTestHandleCancelReleaseLatch() then
 		commandLayerActive = false
-	elseif ControllerCameraTestHandlePlacementInput(dt) then
-		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
-			ControllerCameraTestCancelAreaSelect("cancelled by placement")
-		end
-	elseif ControllerCameraTestHandleStagedTacticalCommandInput() then
-		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
-			ControllerCameraTestCancelAreaSelect("cancelled by tactical stage")
-		end
 	elseif commandLayerActive then
 		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
 			ControllerCameraTestCancelAreaSelect("cancelled by RT layer")
@@ -14460,11 +14546,6 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	elseif commandLayerActive then
 		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.open and "Tactical: D-pad category, LS choose, A/X confirm, B/Y cancel"
 			or XboxController.commandLayoutSummary
-	elseif ControllerCameraTestNativeTargeting.anchor ~= nil then
-		activeButtonLayoutSummary = "Native area target: move reticle, A/X confirm, B cancel, RT append"
-	elseif ControllerCameraTestNativeTargeting.phase ~= (ControllerNativeTargeting and ControllerNativeTargeting.IDLE)
-			and ControllerCameraTestNativeTargeting.phase ~= (ControllerNativeTargeting and ControllerNativeTargeting.BUILD_PLACEMENT) then
-		activeButtonLayoutSummary = "Native command target: A/X confirm, B cancel, RT append"
 	elseif type(ControllerCameraTestTacticalMenu.stagedOption) == "table" then
 		activeButtonLayoutSummary = ControllerCameraTestTacticalMenu.repeatPlacementActive
 			and "Tactical repeat: move reticle, A place again, release RT clear, B cancel"

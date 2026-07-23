@@ -1,7 +1,7 @@
 {
   "kind": "bar-controller-native-override-manifest",
   "schemaVersion": 1,
-  "experiment": "EXPERIMENTAL — V0.7 TACTICAL RESTORE, MIXED RADIAL SECTORS, NATIVE CELLS, AND IDLE CONTROL TEST",
+  "experiment": "EXPERIMENTAL — V0.6 TACTICAL/IDLE RESTORE, SELECTION TAPS, AND UI POLISH TEST",
   "barBuild": "Beyond All Reason test-30735-bf9c7bf",
   "recoilVersion": "2026.06.12",
   "upstreamRepository": "https://github.com/beyond-all-reason/Beyond-All-Reason",
@@ -22,33 +22,33 @@
       "livePath": "LuaUI/Widgets/unit_smart_area_reclaim.lua",
       "sourcePath": "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/unit_smart_area_reclaim.lua",
       "baseSha256": "53241a515f92f73f061e253b49dff76e0327994178833067802b4409b434ef73",
-      "previousPatchedSha256": "02473ecc3974a2b0c662506a076d70fb5e26d5a22d718089436964942e09f6fc",
-      "patchedSha256": "c87095893903008a0ae1c308bf515395a7c9329990369a03e75f53957a0764ad",
-      "purpose": "Accept completed controller area shapes, preserve Smart Area Reclaim transforms, and pass Recoil's five-parameter same-type reclaim form through unchanged."
+      "previousPatchedSha256": "c87095893903008a0ae1c308bf515395a7c9329990369a03e75f53957a0764ad",
+      "patchedSha256": "cc327b22ac9cfd50d38116ec0013c82a17336152e024682bd19c32ecb4298dd6",
+      "purpose": "Preserve Smart Area Reclaim transforms while disabling the superseded controller owner-session broker; v0.6 camera input owns controller radius confirmation."
     },
     {
       "livePath": "LuaUI/Widgets/gui_ordermenu.lua",
       "sourcePath": "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_ordermenu.lua",
       "baseSha256": "445053a54056dd82d5d348e43cbb6b0f534b6af3ef03cd2b479eca7eeef2caf3",
-      "previousPatchedSha256": "92fc6159d9485db23bfcf66d3f0cb5f097f2bef465d9f6b7b2ab83bb23366c2a",
-      "patchedSha256": "38b4238650d0324e88fcf7914e3e8e90e27299c7afdd867d18ab953e881ab056",
-      "purpose": "Expose live descriptors by command ID and provide exactly-once completed-shape CommandNotify dispatch with an optional native unhandled finalizer."
+      "previousPatchedSha256": "38b4238650d0324e88fcf7914e3e8e90e27299c7afdd867d18ab953e881ab056",
+      "patchedSha256": "d921ab5cce2ea38eec067ec3bab6ebe7652fbd6d4300ba1dbf1b3336caec88eb",
+      "purpose": "Expose live descriptors and vanilla state activation while declining controller target ownership; the restored v0.6 camera state machine owns target input."
     },
     {
       "livePath": "LuaUI/Widgets/gui_buildmenu.lua",
       "sourcePath": "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_buildmenu.lua",
       "baseSha256": "082298c94eb24c17db180d5be34ed4a79bccb7751450f76d685f44cf346a12dd",
-      "previousPatchedSha256": "9e65edcac8e71a21288a8b08eb7762062412b3f4e6bba243944d9e641612803c",
-      "patchedSha256": "544b1884aabe7a226601f9a16f59bd204cb39e2da94a1881e140c1ae7a887c3a",
-      "purpose": "Export authoritative build/factory cells and reuse the exact shared vanilla cell renderer for both the grid and controller radials."
+      "previousPatchedSha256": "544b1884aabe7a226601f9a16f59bd204cb39e2da94a1881e140c1ae7a887c3a",
+      "patchedSha256": "2f9d65082d1ef52b0f25a3a1ea11700d101315c5a1feb943fada2e9ba710012b",
+      "purpose": "Export authoritative build/factory cells, hide only native pixels, and split visible/hidden refresh responsibilities to keep DrawScreen at practical upvalue headroom."
     },
     {
       "livePath": "LuaUI/Widgets/cmd_area_mex.lua",
       "sourcePath": "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/cmd_area_mex.lua",
       "baseSha256": "da9c8e0a6c7075225bce53c460116c9a90f5bdf21af881cc9e9f24d5ed3c3316",
-      "previousPatchedSha256": "6c8a0f1c16ec683931f3e702e3c677547c19abe43e3aece0e5745362d1792449",
-      "patchedSha256": "d69ed185adf0253be725906d6773a2f893dc3bd8cb2e7a9c8e65e57ca8950ff4",
-      "purpose": "Accept completed center/radius shapes and retain native metal-spot discovery, filtering, build splitting, queue options, and final construction batches."
+      "previousPatchedSha256": "d69ed185adf0253be725906d6773a2f893dc3bd8cb2e7a9c8e65e57ca8950ff4",
+      "patchedSha256": "f9d81b77a48b2788591f32d38d91f8483f4451780ce6edcce4b8e3d3251ad990",
+      "purpose": "Expose WG.controllerAreaMex.issueArea for completed v0.6 center/radius input while retaining native metal-spot discovery, filtering, queue semantics, and final construction batches."
     },
     {
       "livePath": "LuaUI/Widgets/cmd_buildsplit.lua",
