@@ -93,7 +93,7 @@ try {
         requiresLuaUiReset=$true; releaseSummary=$Summary; releaseNotesAsset='RELEASE_NOTES.md'
         configurationPreservation=$preservation
         installLifecycle=[ordered]@{ backupBeforeInstall=$true; transactionalRollback=$true; allowWhileBarRunning=$true; restartCompanion=$false; reloadInstruction='/luaui reset' }
-        components=@($components)
+        components=$components.ToArray()
     }
     $manifestPath = Join-Path $OutputRoot 'controller-release-manifest.json'
     Write-JsonUtf8 $manifestPath $manifest

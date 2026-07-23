@@ -137,7 +137,7 @@ try {
         releaseNotesAsset = [string]$spec.release.releaseNotesAsset
         configurationPreservation = @($spec.configurationPreservation)
         installLifecycle = [ordered]@{ backupBeforeInstall = $true; transactionalRollback = $true; allowWhileBarRunning = $true; restartCompanion = $true; reloadInstruction = '/luaui reset' }
-        components = @($components)
+        components = $components.ToArray()
     }
     Write-JsonUtf8 (Join-Path $stageRoot 'controller-release-manifest.json') $manifest
 
