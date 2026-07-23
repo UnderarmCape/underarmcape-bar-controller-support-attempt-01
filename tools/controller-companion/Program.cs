@@ -43,7 +43,7 @@ internal static class Program
             out bool ownsMutex);
         if (!ownsMutex)
         {
-            Console.WriteLine("BARControllerBridge.exe is already running.");
+            BridgeConsole.WriteStatus("Bridge", "BARControllerBridge.exe is already running.", BridgeTone.Warning);
             return 0;
         }
 
@@ -55,20 +55,25 @@ internal static class Program
 
         CameraSettingResult cameraSetting =
             CameraSettings.EnsureCardinalDirectionLockDisabled(settingsPath);
-        Console.WriteLine(ProductMetadata.BridgeBanner);
-        Console.WriteLine("Camera setting: " + GetCameraStatus(cameraSetting.Status));
+        BridgeConsole.WriteHeader(
+            ProductMetadata.BridgeBanner,
+            GetCameraStatus(cameraSetting.Status),
+            configureOnly ? "configure-only" : $"127.0.0.1:{port}",
+            configureOnly ? "not started" : "waiting for controller",
+            standalone ? "standalone mode" : "waiting for Spring/Recoil");
         if (verbose)
         {
-            Console.WriteLine(cameraSetting.Message);
+            BridgeConsole.WriteStatus("Camera detail", cameraSetting.Message);
             if (cameraSetting.BackupPath != null)
             {
-                Console.WriteLine("Camera settings backup: " + cameraSetting.BackupPath);
+                BridgeConsole.WriteStatus("Camera backup", cameraSetting.BackupPath);
             }
         }
         if (cameraSetting.WasModified && CameraSettings.IsBarRunning())
         {
-            Console.WriteLine(
-                "BAR must be restarted for CamSpringLockCardinalDirections = 0 to take effect.");
+            BridgeConsole.WriteStatus("Camera",
+                "BAR must be restarted for CamSpringLockCardinalDirections = 0 to take effect.",
+                BridgeTone.Warning);
         }
         if (configureOnly)
         {
@@ -79,10 +84,6 @@ internal static class Program
 
         using var udp = new UdpClient(AddressFamily.InterNetwork);
         var destination = new IPEndPoint(IPAddress.Loopback, port);
-
-        Console.WriteLine($"UDP: 127.0.0.1:{port}");
-        Console.WriteLine("Status: waiting for controller");
-        Console.WriteLine("Press Ctrl+C to stop.");
 
         uint sequence = 0;
         bool? lastConnected = null;
@@ -104,7 +105,8 @@ internal static class Program
                 string sessionStatus = sessionTracker.Observe(DateTime.UtcNow, GetEngineProcesses());
                 if (!string.Equals(sessionStatus, lastSessionStatus, StringComparison.Ordinal))
                 {
-                    Console.WriteLine("Session: " + sessionStatus);
+                    BridgeConsole.WriteStatus("Engine", sessionStatus,
+                        sessionTracker.TrackedProcessId.HasValue ? BridgeTone.Good : BridgeTone.Warning);
                     lastSessionStatus = sessionStatus;
                 }
                 if (sessionTracker.ShouldStop)
@@ -119,12 +121,13 @@ internal static class Program
             {
                 if (connected)
                 {
-                    Console.WriteLine(hasConnected ? "Controller reconnected" : "Controller connected");
+                    BridgeConsole.WriteStatus("Controller",
+                        hasConnected ? "reconnected" : "connected", BridgeTone.Good);
                     hasConnected = true;
                 }
                 else if (lastConnected == true)
                 {
-                    Console.WriteLine("Controller disconnected");
+                    BridgeConsole.WriteStatus("Controller", "disconnected", BridgeTone.Warning);
                 }
                 lastConnected = connected;
             }
@@ -137,7 +140,7 @@ internal static class Program
                 packetsThisSecond++;
                 if (sendErrorReported)
                 {
-                    Console.WriteLine("UDP packet sending resumed.");
+                    BridgeConsole.WriteStatus("UDP", "packet sending resumed", BridgeTone.Good);
                     sendErrorReported = false;
                 }
             }
@@ -145,8 +148,8 @@ internal static class Program
             {
                 if (!sendErrorReported)
                 {
-                    Console.WriteLine(
-                        "UDP send is temporarily unavailable; retrying: " + exception.Message);
+                    BridgeConsole.WriteStatus("UDP",
+                        "send temporarily unavailable; retrying: " + exception.Message, BridgeTone.Bad);
                     sendErrorReported = true;
                 }
             }
@@ -173,7 +176,9 @@ internal static class Program
             }
         }
 
-        Console.WriteLine(sessionTracker.ShouldStop ? "Stopped after tracked game session." : "Stopped.");
+        BridgeConsole.WriteStatus("Bridge",
+            sessionTracker.ShouldStop ? "stopped after tracked game session" : "stopped",
+            BridgeTone.Neutral);
         Console.Out.Flush();
         Console.Error.Flush();
         return 0;

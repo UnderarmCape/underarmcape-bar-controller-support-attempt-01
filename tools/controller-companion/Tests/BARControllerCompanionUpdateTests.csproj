@@ -9,5 +9,6 @@
     <Compile Include="..\UpdateService.cs" Link="UpdateService.cs" />
     <Compile Include="..\Shared\ProductMetadata.cs" Link="ProductMetadata.cs" />
     <Compile Include="..\Shared\EngineSessionTracker.cs" Link="EngineSessionTracker.cs" />
+    <Compile Include="..\Shared\BridgeConsole.cs" Link="BridgeConsole.cs" />
   </ItemGroup>
 </Project>

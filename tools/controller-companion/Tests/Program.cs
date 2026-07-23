@@ -19,6 +19,7 @@ internal static class Program
         {
             string repositoryRoot = FindRepositoryRoot();
             TestProductMetadataAndSessionLifecycle();
+            TestBridgeConsolePresentation();
             byte[] defaults = File.ReadAllBytes(Path.Combine(repositoryRoot, "controller-ui", "shipping-defaults.json"));
             byte[] manifest = File.ReadAllBytes(Path.Combine(repositoryRoot, "controller-ui", "shipping-defaults-manifest.json"));
             using var server = new FixtureServer(defaults, manifest);
@@ -115,6 +116,22 @@ internal static class Program
         tracker.Observe(start.AddSeconds(4), Array.Empty<EngineProcessSnapshot>());
         tracker.Observe(start.AddSeconds(8), Array.Empty<EngineProcessSnapshot>());
         Assert(tracker.ShouldStop, "exits after tracked engine and grace");
+    }
+
+    private static void TestBridgeConsolePresentation()
+    {
+        string row = BridgeConsole.FormatRow("Controller", "connected");
+        Assert(row.Length == BridgeConsole.Width, "bridge status row has stable width");
+        Assert(row.StartsWith("| Controller", StringComparison.Ordinal), "bridge status row is structured");
+        Assert(row.All(character => character >= 32 && character <= 126), "bridge status row is ASCII-safe");
+        Assert(row.IndexOf('\u001b') < 0, "bridge status row contains no raw ANSI escapes");
+        Assert(BridgeConsole.ToAscii("ready \u2713") == "ready ?", "non-ASCII console text is sanitized");
+        Assert(!BridgeConsole.SupportsColor(true, null), "redirected output disables color");
+        Assert(!BridgeConsole.SupportsColor(false, "1"), "NO_COLOR disables color");
+        Assert(BridgeConsole.SupportsColor(false, null), "interactive output allows ConsoleColor");
+        string centered = BridgeConsole.FormatCentered(ProductMetadata.BridgeBanner);
+        Assert(centered.Length == BridgeConsole.Width && centered[0] == '|' && centered[^1] == '|',
+            "bridge banner is centered inside ASCII frame");
     }
 
     private static string FindRepositoryRoot()
