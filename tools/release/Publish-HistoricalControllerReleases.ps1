@@ -39,12 +39,10 @@ foreach ($milestone in $milestones) {
         -DisplayVersion 'v0.8.0 Experimental' -ReleaseSequence ([long]$milestone.sequence) -Commit ([string]$milestone.commit) `
         -Title ([string]$milestone.title) -Summary ([string]$milestone.summary) -KnownLimitations ([string]$milestone.limitations) `
         -PublishedAtUtc $publishedAt -OutputRoot $sidecarRoot
-    if ($LASTEXITCODE -ne 0) { Write-Warning "Historical sidecar generation failed: $($milestone.tag)"; continue }
     & (Join-Path $PSScriptRoot 'Publish-ControllerRelease.ps1') -Commit ([string]$milestone.commit) -Version '0.8.0' `
         -DisplayVersion 'v0.8.0 Experimental' -Tag ([string]$milestone.tag) -Slug ([string]$milestone.tag) `
         -Title ([string]$milestone.title) -Channel 'historical-experimental' -ReleaseNotesPath (Join-Path $sidecarRoot 'RELEASE_NOTES.md') `
         -PackagePath $package -ManifestPath (Join-Path $sidecarRoot 'controller-release-manifest.json') `
         -PayloadInventoryPath (Join-Path $sidecarRoot 'payload-sha256.json') -ExpectedPackageSha256 ([string]$milestone.sha) `
         -Prerelease -Historical -DryRun:$DryRun
-    if ($LASTEXITCODE -ne 0) { Write-Warning "Historical publication failed: $($milestone.tag)"; continue }
 }

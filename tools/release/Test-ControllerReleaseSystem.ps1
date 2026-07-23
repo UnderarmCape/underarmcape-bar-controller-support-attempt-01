@@ -107,11 +107,13 @@ Check 84 'historical releases are prerelease recovery data and never Latest'
 
 $localBefore = (@(& git -C $RepositoryRoot show-ref --tags 2>$null) | Sort-Object) -join "`n"
 $remoteBefore = (@(& git -C $RepositoryRoot ls-remote --tags origin) | Sort-Object) -join "`n"
-$releasesBefore = (@(gh release list --repo $repository --limit 100 --json tagName | ConvertFrom-Json | ForEach-Object tagName) | Sort-Object) -join "`n"
+$releaseListBefore = gh release list --repo $repository --limit 100 --json tagName | ConvertFrom-Json
+$releasesBefore = (@($releaseListBefore.tagName) | Sort-Object) -join "`n"
 $null = & (Join-Path $PSScriptRoot 'Publish-HistoricalControllerReleases.ps1') -DryRun
 $localAfter = (@(& git -C $RepositoryRoot show-ref --tags 2>$null) | Sort-Object) -join "`n"
 $remoteAfter = (@(& git -C $RepositoryRoot ls-remote --tags origin) | Sort-Object) -join "`n"
-$releasesAfter = (@(gh release list --repo $repository --limit 100 --json tagName | ConvertFrom-Json | ForEach-Object tagName) | Sort-Object) -join "`n"
+$releaseListAfter = gh release list --repo $repository --limit 100 --json tagName | ConvertFrom-Json
+$releasesAfter = (@($releaseListAfter.tagName) | Sort-Object) -join "`n"
 Require ($localBefore -eq $localAfter -and $remoteBefore -eq $remoteAfter -and $releasesBefore -eq $releasesAfter) 'Dry run mutated GitHub or Git tags.'
 Check 85 'publisher dry run performs no GitHub or tag mutation'
 
