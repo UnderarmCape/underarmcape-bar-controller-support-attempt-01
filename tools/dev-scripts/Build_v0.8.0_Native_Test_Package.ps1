@@ -12,7 +12,7 @@ $versionDefinitionPath = Join-Path $RepositoryRoot 'tools\controller-companion\D
 $semanticVersion = [string]$versionDefinition.Project.PropertyGroup.ControllerCompanionSemanticVersion
 $releaseChannel = [string]$versionDefinition.Project.PropertyGroup.ControllerCompanionChannel
 if ($semanticVersion -ne '0.8.0' -or $releaseChannel -ne 'Experimental') { throw 'Unexpected central experimental version metadata.' }
-if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-radial-tactical-idle-redesign-test' }
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $RepositoryRoot 'artifacts\v0.8.0-v06-input-restore-ui-polish-test' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
 $stage = Join-Path $OutputDirectory ('.package-' + [guid]::NewGuid().ToString('N'))
@@ -35,6 +35,7 @@ try {
         'luaui\Include\controller_native_radial_adapter.lua',
         'luaui\Include\controller_native_targeting.lua',
         'luaui\Include\controller_native_command_owner.lua',
+        'luaui\Include\controller_selection_taps.lua',
         'luaui\Include\controller_glyphs.lua',
         'luaui\images\controller-glyphs\controller_glyph_atlas.png',
         'luaui\images\controller-glyphs\controller_glyph_atlas_xbox.png',
@@ -44,10 +45,12 @@ try {
         'controller-ui\shipping-defaults.json',
         'controller-ui\shipping-defaults-manifest.json',
         'tools\controller-companion\Directory.Build.props',
+        'tools\controller-companion\BarControllerCompanion.csproj',
         'tools\controller-companion\Program.cs',
         'tools\controller-companion\Installer\Program.cs',
         'tools\controller-companion\Shared\ProductMetadata.cs',
         'tools\controller-companion\Shared\EngineSessionTracker.cs',
+        'tools\controller-companion\Shared\BridgeConsole.cs',
         'tools\controller-companion\UpdateService.cs',
         'tools\controller-companion\Tests\BARControllerCompanionUpdateTests.csproj',
         'tools\controller-companion\Tests\Program.cs',
@@ -101,6 +104,15 @@ try {
         'doc\controller-companion-v0.8.0\RADIAL_PAGE_PACKING.md',
         'doc\controller-companion-v0.8.0\BUILD_FACTORY_CATEGORY_MODEL.md',
         'doc\controller-companion-v0.8.0\NATIVE_BUILD_CELL_RENDERER.md',
+        'doc\controller-companion-v0.8.0\PRE_V06_RESTORE_RECOVERY.md',
+        'doc\controller-companion-v0.8.0\V06_TACTICAL_BEHAVIOR_RESTORE.md',
+        'doc\controller-companion-v0.8.0\CONTROLLER_AREA_MEX_RESTORE.md',
+        'doc\controller-companion-v0.8.0\CONTROLLER_SELECTION_TAPS.md',
+        'doc\controller-companion-v0.8.0\CONTROLLER_IDLE_V06_RESTORE.md',
+        'doc\controller-companion-v0.8.0\TACTICAL_SELF_DESTRUCT.md',
+        'doc\controller-companion-v0.8.0\RADIAL_MIXED_PAGE_PRESENTATION.md',
+        'doc\controller-companion-v0.8.0\BRIDGE_CONSOLE_PRESENTATION.md',
+        'doc\controller-companion-v0.8.0\LUA_WIDGET_REFACTOR.md',
         'tools\controller-ui-tests\Test-ControllerHybridRadials.lua',
         'tools\controller-ui-tests\Test-ControllerNativeUIIntegration.lua',
         'tools\controller-ui-tests\Test-ControllerNativeTargeting.lua',
@@ -111,6 +123,7 @@ try {
         'tools\controller-ui-tests\Test-ControllerNativeRegressionRepair.lua',
 		'tools\controller-ui-tests\Test-ControllerHybridAreaIdleRepair.lua',
         'tools\controller-ui-tests\Test-ControllerInputRestoration.lua',
+        'tools\controller-ui-tests\Test-ControllerV06InputRestore.lua',
         'tools\dev-scripts\Build_v0.8.0_Native_Test_Package.ps1',
         'tools\dev-scripts\Deploy_v0.8.0_Native_Test.ps1',
         'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1',
@@ -159,7 +172,7 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $stage 'payload-sha256.json'), (($payload | ConvertTo-Json -Depth 6) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
 
-    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_RADIAL_TACTICAL_IDLE_REDESIGN_TEST.zip'
+    $zip = Join-Path $OutputDirectory 'BAR_Controller_Support_v0.8.0_V06_INPUT_RESTORE_UI_POLISH_TEST.zip'
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()

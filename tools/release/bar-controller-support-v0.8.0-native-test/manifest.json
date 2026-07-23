@@ -2,10 +2,10 @@
   "packageName": "BAR Controller Companion",
   "version": "0.8.0",
   "stability": "EXPERIMENTAL",
-  "warning": "EXPERIMENTAL — V0.7 TACTICAL RESTORE, MIXED RADIAL SECTORS, NATIVE CELLS, AND IDLE CONTROL TEST",
+  "warning": "EXPERIMENTAL — V0.6 TACTICAL/IDLE RESTORE, SELECTION TAPS, AND UI POLISH TEST",
   "repository": "UnderarmCape/underarmcape-bar-controller-support-attempt-01",
   "branch": "controller/v0.8.0-native-ui-integration-test",
-  "assetName": "BAR_Controller_Support_v0.8.0_RADIAL_TACTICAL_IDLE_REDESIGN_TEST.zip",
+  "assetName": "BAR_Controller_Support_v0.8.0_V06_INPUT_RESTORE_UI_POLISH_TEST.zip",
   "barBuild": "Beyond All Reason test-30735-bf9c7bf",
   "barUpstreamCommit": "bf9c7bfdba26704832157bba47f3653ba8bdd8d2",
   "publicRelease": false,
@@ -25,6 +25,7 @@
     "luaui/Include/controller_native_radial_adapter.lua",
     "luaui/Include/controller_native_targeting.lua",
     "luaui/Include/controller_native_command_owner.lua",
+    "luaui/Include/controller_selection_taps.lua",
     "luaui/Include/controller_glyphs.lua",
     "luaui/images/controller-glyphs/controller_glyph_atlas.png",
     "luaui/images/controller-glyphs/controller_glyph_atlas_xbox.png",
@@ -45,6 +46,11 @@
   "requiredCompanionFiles": [
     "BARControllerBridge.exe",
     "BARControllerLauncher.exe"
+  ],
+  "includedSourceFiles": [
+    "luaui/Include/controller_selection_taps.lua",
+    "tools/controller-companion/Shared/BridgeConsole.cs",
+    "tools/controller-ui-tests/Test-ControllerV06InputRestore.lua"
   ],
   "requiredPublicFiles": [
     "README_EXPERIMENTAL.md",
@@ -69,6 +75,15 @@
     "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_idle_builders.lua"
   ],
   "documentation": [
+    "doc/controller-companion-v0.8.0/PRE_V06_RESTORE_RECOVERY.md",
+    "doc/controller-companion-v0.8.0/V06_TACTICAL_BEHAVIOR_RESTORE.md",
+    "doc/controller-companion-v0.8.0/CONTROLLER_AREA_MEX_RESTORE.md",
+    "doc/controller-companion-v0.8.0/CONTROLLER_SELECTION_TAPS.md",
+    "doc/controller-companion-v0.8.0/CONTROLLER_IDLE_V06_RESTORE.md",
+    "doc/controller-companion-v0.8.0/TACTICAL_SELF_DESTRUCT.md",
+    "doc/controller-companion-v0.8.0/RADIAL_MIXED_PAGE_PRESENTATION.md",
+    "doc/controller-companion-v0.8.0/BRIDGE_CONSOLE_PRESENTATION.md",
+    "doc/controller-companion-v0.8.0/LUA_WIDGET_REFACTOR.md",
     "doc/controller-companion-v0.8.0/VERSION_AND_SESSION_LIFECYCLE.md",
     "doc/controller-companion-v0.8.0/CONTROLLER_SINGLE_SELECTION.md",
     "doc/controller-companion-v0.8.0/V07_TACTICAL_INPUT_RESTORE.md",
