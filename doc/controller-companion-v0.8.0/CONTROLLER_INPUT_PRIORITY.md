@@ -1,12 +1,11 @@
-# Controller input priority
+# Controller Input Priority
 
-A consumed edge is never reconsidered by a lower layer.
+One camera-widget update loop owns controller input.
 
-| Input | Highest to lowest priority |
-| --- | --- |
-| A / X | controller point/area/front/rectangle targeting; build placement; Factory quantity; Tactical item or direct state cycle; Disassemble; normal A/Smart X |
-| B | target cancellation; placement cancellation; active radial close; Disassemble sub-operation/double-B; normal clear |
-| RB / LB | active Build/Factory global packed-page traversal; modal quantity/state action; shoulder chord only when explicitly eligible |
-| D-pad | settings/modal; active radial; placement; normal live-idle navigation |
+For A/X, the priority is: staged v0.6 tactical point/area target; active build placement and distributed grid; Factory/Lab queue action; Tactical Radial action; Disassemble direct/radius action; ordinary A selection or Smart X. A consumed edge cannot reach a lower layer.
 
-The root update services hybrid targeting before Disassemble and normal selection, preventing a second A/X from leaking. A Tactical radial selection closes and arms neutral waiting before any normal action. Build/Factory shoulder traversal clears chord state. Idle navigation is reached only after every higher-priority modal declines the input. Legacy Controller UI retains its separate existing paths.
+For A selection: tap selects one exact unit; compatible double tap expands to visible locally owned same-type units; hold enters the brush; RT+A performs exact additive/toggle selection.
+
+For D-pad: modal/radial navigation; build placement; LB+D-pad Down idle same-type selection; then ordinary idle previous/next. Self Destruct always routes through the existing protected Back/View + R3 + L3 hold.
+
+The native owner-session and hybrid target broker remain in the recovery commit but are not polled or registered by the deployed input path.
