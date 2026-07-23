@@ -62,8 +62,8 @@ if (@(& git -C $RepositoryRoot status --porcelain).Count -ne 0) {
     throw 'Public deployment requires a clean worktree.'
 }
 
-$testArguments = @('-PackagePath', $PackagePath, '-ManifestPath', $ManifestPath, '-KeepExtracted')
-if ($PayloadInventoryPath) { $testArguments += @('-PayloadInventoryPath', $PayloadInventoryPath) }
+$testArguments = @{ PackagePath=$PackagePath; ManifestPath=$ManifestPath; KeepExtracted=$true }
+if ($PayloadInventoryPath) { $testArguments.PayloadInventoryPath = $PayloadInventoryPath }
 $validation = @(& (Join-Path $PSScriptRoot 'Test-ControllerRelease.ps1') @testArguments)
 $extractedRecord = @($validation | Where-Object { $_ -like 'EXTRACTED_ROOT=*' })
 if ($extractedRecord.Count -ne 1) { throw 'Release validator did not return one isolated extraction root.' }

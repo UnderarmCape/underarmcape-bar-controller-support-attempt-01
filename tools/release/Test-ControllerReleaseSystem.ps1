@@ -181,9 +181,11 @@ foreach ($project in $projects) {
 }
 Check 107 'all seven .NET projects build with zero errors and warnings'
 
-$deployArguments = @('-PackagePath',$PackagePath,'-ManifestPath',$ManifestPath,'-PayloadInventoryPath',$PayloadInventoryPath,
-    '-RepositoryRoot',$RepositoryRoot,'-BarDataPath',$BarDataPath,'-CompanionInstallPath',$CompanionInstallPath,'-ValidateOnly')
-if ($AllowUnknownBase) { $deployArguments += '-AllowUnknownBase' }
+$deployArguments = @{
+    PackagePath=$PackagePath; ManifestPath=$ManifestPath; PayloadInventoryPath=$PayloadInventoryPath
+    RepositoryRoot=$RepositoryRoot; BarDataPath=$BarDataPath; CompanionInstallPath=$CompanionInstallPath
+    ValidateOnly=$true; AllowUnknownBase=[bool]$AllowUnknownBase
+}
 $null = & (Join-Path $PSScriptRoot 'Deploy-ControllerPublicRelease.ps1') @deployArguments
 Check 108 'manifest-driven deployment validator passes'
 
