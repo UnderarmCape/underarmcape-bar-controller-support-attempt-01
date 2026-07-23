@@ -23,7 +23,7 @@ local service = Runtime.New()
 local api = service:PublicAPI()
 local fixture = Json.decode(read(root .. "/tools/controller-ui-tests/fixtures/controller-ui-v0.6.1-hints.json"))
 
-equal(service.activeVersion, "0.8.1-disassemble-idle-hints-polish-1", "shipping version")
+equal(service.activeVersion, "0.8.2-tactical-insert-idle-repair-1", "shipping version")
 for key, value in pairs(fixture.component) do equal(api.GetComponent("hints")[key], value, "v0.6.1 visual fixture " .. key) end
 for key, value in pairs(fixture.bindingsButton) do equal(api.GetComponent("bindingsButton")[key], value, "bindings fixture " .. key) end
 

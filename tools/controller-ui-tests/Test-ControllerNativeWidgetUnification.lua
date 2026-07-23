@@ -206,13 +206,13 @@ test(97, "One cycle creates one action", function() local s=Chords.New(); chordS
 test(98, "Distributed build has higher priority in build placement", function() return has(camera,"distributedPlacementOwns") and has(camera,"local placementBusy = not stagedTacticalBusy and not distributedPlacementOwns") end)
 
 -- 99-105 Idle-unit navigation.
-test(99, "D-pad Left selects the previous live vanilla-list idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(-1)") and has(camera,"ControllerCameraTestFocusAndSelectUnit(unitID, \"Idle unit\")") end)
-test(100, "D-pad Right selects the next live vanilla-list idle", function() return has(camera,"ControllerCameraTestCycleIdleUnit(1)") and has(camera,"ControllerCameraTestFocusAndSelectUnit(unitID, \"Idle unit\")") end)
-test(101, "Vanilla ordering is used", function() return has(idle,"for _, unitDefID in ipairs(existingIcons)") end)
+test(99, "D-pad Left selects the previous restored idle unit", function() return has(camera,"ControllerCameraTestCycleIdleUnit(-1)") and has(camera,"ControllerCameraTestFocusAndSelectUnit(unitID, \"Idle unit\")") end)
+test(100, "D-pad Right selects the next restored idle unit", function() return has(camera,"ControllerCameraTestCycleIdleUnit(1)") and has(camera,"ControllerCameraTestFocusAndSelectUnit(unitID, \"Idle unit\")") end)
+test(101, "v0.6 own-team enumeration is used", function() return has(camera,"ControllerCameraTestGetOwnTeamUnits()") and has(camera,"local builders, fallback = {}, {}") end)
 test(102, "Controller directly selects and focuses", function() return has(camera,"ControllerCameraTestSelectUnits({ unitID }") and has(camera,"ControllerCameraTestFocusCameraAt(x, y, z") end)
 test(103, "Controller remembers exact idle unit and type", function() return has(camera,"ControllerCameraTestIdleCycle.currentUnitID = unitID") and has(camera,"ControllerCameraTestIdleCycle.currentTypeKey = unitDefID") end)
 test(104, "Dead/non-idle entries are skipped", function() return has(idle,"spGetUnitIsDead(unitID)") and has(idle,"updateList(true)") end)
-test(105, "Parallel controller list is disabled", function() local a=camera:find("function ControllerCameraTestGetIdleCycleUnits",1,true); local b=camera:find("function ControllerCameraTestUnitTypeName",a,true); local section=camera:sub(a,b); return has(section,"WG.idlebuilders") and not has(section,"GetOwnTeamUnits") end)
+test(105, "Idle cycling no longer depends on vanilla live snapshot", function() local a=camera:find("function ControllerCameraTestGetIdleCycleUnits",1,true); local b=camera:find("function ControllerCameraTestUnitTypeName",a,true); local source=camera:sub(a,b); return has(source,"ControllerCameraTestGetOwnTeamUnits") and not has(source,"WG.idlebuilders") end)
 
 -- 106-114 Panel visibility.
 test(106, "Controller input hides Build Menu", function() return has(build,"controllerSetPanelVisible") and has(camera,"WG.buildmenu") end)
@@ -282,7 +282,7 @@ test(138, "Deployment and rollback manifests cover every changed file", function
 	return all(deploy,"controller_native_command_owner.lua","controller_native_build_cell_renderer.lua","Test-ControllerInputRestoration.lua")
 		and all(manifest,"cmd_area_mex.lua","cmd_buildsplit.lua","cmd_customformations2.lua","gui_idle_builders.lua","gui_buildmenu.lua")
 		and has(restore,"bar-controller-v06-input-restore-ui-polish-test-deployment-backup")
-		and has(packageScript,"BAR_Controller_Support_v0.8.1_DISASSEMBLE_IDLE_HINT_REPAIR_TEST.zip")
+		and has(packageScript,"BAR_Controller_Support_v0.8.2_TACTICAL_INSERT_IDLE_REPAIR_TEST.zip")
 end)
 
 assert(#cases == 138, "expected exactly 138 cases")

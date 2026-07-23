@@ -108,15 +108,15 @@ test(42, "Stale tap candidate cannot fire later", function()
 end)
 
 -- Idle navigation
-test(43, "Idle IDs match current ZZZ list", function() return has(camera, "controllerGetLiveIdleEntries") and has(idleWidget, "controllerGetLiveIdleEntries") end)
+test(43, "Idle IDs use restored v0.6 own-team enumeration", function() return has(camera, "ControllerCameraTestGetOwnTeamUnits()") and has(camera, "local builders, fallback = {}, {}") end)
 test(44, "D-pad Right selects next", function() return has(camera, "ControllerCameraTestCycleIdleUnit(1)") end)
 test(45, "D-pad Left selects previous", function() return has(camera, "ControllerCameraTestCycleIdleUnit(-1)") end)
 test(46, "Camera behavior matches v0.6", function() return has(camera, 'ControllerCameraTestFocusAndSelectUnit(unitID, "Idle unit")') end)
-test(47, "Idle wrap works", function() return has(camera, "((current - 1 + delta) % #units) + 1") end)
-test(48, "Disappeared ID repairs", function() return has(camera, "local current = 0") and has(camera, "currentUnitID") end)
-test(49, "Busy unit is removed", function() return has(idleWidget, "idle") and has(camera, "snapshot.units") end)
+test(47, "Idle wrap works", function() return has(camera, "((currentIndex - 1 + delta) % #units) + 1") end)
+test(48, "Missing current ID starts from restored v0.6 zero index", function() return has(camera, "local currentIndex = 0") and has(camera, "currentUnitID") end)
+test(49, "Busy unit is removed", function() return has(camera, "ControllerCameraTestUnitIsIdle(unitID)") and has(camera, "ControllerCameraTestIsIdleCycleCandidate") end)
 test(50, "LB+D-pad Down selects all idle same-type", function() return has(camera, "ControllerCameraTestSelectAllIdleUnitsInCurrentTypeBucket") end)
-test(51, "Busy same-type units are excluded", function() return has(camera, "nativeBucket.units") and not has(camera, "GetTeamUnitsByDefs") end)
+test(51, "Busy same-type units are excluded", function() return has(camera, "ControllerCameraTestGetIdleCycleUnits()") and not has(camera, "GetTeamUnitsByDefs") end)
 test(52, "Idle navigation uses no mouse-click simulation", function() return not has(camera, "controllerCycleIdle") and has(camera, "spSelectUnitArray") end)
 test(53, "Radial context suppresses idle navigation", function() return has(camera, "ControllerCameraTestBuildMenu.open or ControllerCameraTestTacticalMenu.open") end)
 
@@ -126,7 +126,7 @@ test(55, "Self Destruct appears for structures", function() return has(camera, "
 test(56, "Self Destruct uses shared Tactical renderer", function() return has(adapter, 'return "self_destruct"') and has(camera, "controllerDrawCommandButton") end)
 test(57, "Self Destruct invokes protected implementation", function() return has(camera, "ControllerCameraTestArmProtectedSelfDestruct") end)
 test(58, "Self Destruct safety timing remains", function() return has(camera, "state.holdSeconds or 0.75") end)
-test(59, "Self Destruct disabled state is respected", function() return ordered(camera, "if option.disabled then", 'if option.kind == "self_destruct" then') end)
+test(59, "Self Destruct protected flow precedes disabled gate", function() return ordered(camera, 'if option.kind == "self_destruct" then', "ControllerCameraTestArmProtectedSelfDestruct()", "if option.disabled then") end)
 test(60, "No raw duplicate Self Destruct command issues", function() return not has(adapter, "GiveOrder") and not has(orderMenu, "ControllerCameraTestIssueSelfDestruct") end)
 
 -- Radial cleanup

@@ -84,10 +84,10 @@ test(21, "plain B can still enter double-B flow", function() return ordered(disa
 test(22, "cancel clears pending X state", function() return has(camera, "state.pendingX = { pressActive = false, startedAt = 0, holdFired = false, targetInfo = nil, groundInfo = nil }") end)
 test(23, "cancel clears disassemble X drag", function() return has(camera, 'ControllerCameraTestDragCommand.pressButton == "disassemble-smartAction"') and has(camera, "ControllerCameraTestCancelDrag(reason or \"Disassemble X cancelled\")") end)
 
-test(24, "idle cycle stores current index", function() return has(camera, "ControllerCameraTestIdleCycle.currentIndex = index") end)
-test(25, "idle cycle repairs disappeared current ID from remembered index", function() return has(camera, "local remembered = math.max(1, math.min(#units, math.floor(ControllerCameraTestIdleCycle.currentIndex)))") end)
-test(26, "idle no-units resets current index", function() return has(camera, "ControllerCameraTestIdleCycle.currentIndex = 1") end)
-test(27, "idle type cycle stores current type index", function() return has(camera, "ControllerCameraTestIdleCycle.currentTypeIndex = index") end)
+test(24, "idle cycle stores current index", function() return has(camera, "ControllerCameraTestIdleCycle.currentIndex = nextIndex") end)
+test(25, "idle cycle restores v0.6 own-team enumeration", function() return has(camera, "ControllerCameraTestGetOwnTeamUnits()") and has(camera, "local builders, fallback = {}, {}") end)
+test(26, "idle no-units reports no idle units", function() return has(camera, 'latchSelectionDebugMessage("Idle cycle: no idle units")') end)
+test(27, "idle type cycle stores current type index", function() return has(camera, "ControllerCameraTestIdleCycle.currentTypeIndex = nextIndex") end)
 
 test(28, "context snapshot builds command capabilities", function() return has(camera, "ControllerCameraTestCommandCapabilitiesFromDescs") and has(camera, "capabilityCache.activeSignature") end)
 test(29, "context snapshot exports smart and tactical capability flags", function() return has(camera, "canSmartAction = commandCaps.canSmartAction == true") and has(camera, "canTacticalCommand = commandCaps.canTacticalCommand == true") end)
@@ -104,8 +104,8 @@ test(35, "hint signatures include capability keys", function() return has(runtim
 test(36, "self destruct finder can include disabled descriptors", function() return has(camera, "function ControllerCameraTestFindSelfDestructCommandID(includeDisabled)") and has(camera, "includeDisabled == true") end)
 test(37, "self destruct command is ensured for native model", function() return ordered(camera, "local nativeCommands = {}", "ControllerCameraTestEnsureSelfDestructCommand(nativeCommands)", "BuildTacticalModel(nativeCommands") end)
 test(38, "self destruct command is ensured for legacy model", function() return has(camera, "ControllerCameraTestEnsureSelfDestructCommand(commands)") end)
-test(39, "self destruct remains protected behind radial disabled gate", function() return ordered(camera, "if option.disabled then", 'if option.kind == "self_destruct" then', "ControllerCameraTestArmProtectedSelfDestruct()") end)
-test(40, "self destruct added item is disabled-aware", function() return has(camera, "disabled = disabled == true") and has(camera, "Protected Self Destruct unavailable") end)
+test(39, "self destruct enters protected flow before disabled gate", function() return ordered(camera, 'if option.kind == "self_destruct" then', "ControllerCameraTestArmProtectedSelfDestruct()", "if option.disabled then") end)
+test(40, "self destruct added item is disabled-aware", function() return has(camera, "disabled = not enabled") and has(camera, "Protected Self Destruct unavailable") end)
 
 test(41, "mixed radial sector labels use label color", function() return has(renderer, "sector.labelColor or sector.accent or accent") end)
 test(42, "mixed radial sector labels have dark shadow", function() return has(renderer, "0, 0, 0, 0.72 * opacity") and has(renderer, "labelX + 1.2 * values.fontScale") end)
@@ -119,11 +119,11 @@ test(48, "affordability clears immediately when affordable", function() return h
 test(49, "draw overlays use raw affordability", function() return has(camera, "local affordable = ControllerCameraTestCanAffordBuildOption(option)") and has(camera, "local affordable = ControllerCameraTestCanAffordBuildOption(currentOption)") end)
 test(50, "center text uses smoothed availability only", function() return has(camera, "return ControllerCameraTestGetSmoothedBuildAvailability(option)") end)
 
-test(51, "central companion version is 0.8.1 Experimental", function() return has(props, ">0.8.1<") and has(props, ">Experimental<") end)
-test(52, "release spec names v0.8.1 repair package", function() return has(releaseSpec, "controller-support-v0.8.1-disassemble-idle-hints-polish") and has(releaseSpec, "BAR_Controller_Support_v0.8.1_DISASSEMBLE_IDLE_HINT_REPAIR.zip") end)
-test(53, "public builder defaults to v0.8.1 output", function() return has(releaseBuilder, "artifacts\\v0.8.1-public-release") and has(releaseBuilder, "Install_v0.8.1.ps1") end)
-test(54, "release system expects v0.8.1 latest", function() return has(releaseSystem, "controller-support-v0.8.1-disassemble-idle-hints-polish") and has(releaseSystem, "bridge version remains v0.8.1 Experimental") end)
-test(55, "shipping defaults manifest tracks v0.8.1", function() return has(defaultsManifest, "0.8.1-disassemble-idle-hints-polish") and has(defaultsManifest, '"minimumCompanionVersion": "0.8.1"') end)
+test(51, "central companion version is 0.8.2 Experimental", function() return has(props, ">0.8.2<") and has(props, ">Experimental<") end)
+test(52, "release spec names v0.8.2 repair package", function() return has(releaseSpec, "controller-support-v0.8.2-tactical-insert-idle-repair") and has(releaseSpec, "BAR_Controller_Support_v0.8.2_TACTICAL_INSERT_IDLE_REPAIR.zip") end)
+test(53, "public builder defaults to v0.8.2 output", function() return has(releaseBuilder, "artifacts\\v0.8.2-public-release") and has(releaseBuilder, "Install_v0.8.2.ps1") end)
+test(54, "release system expects v0.8.2 latest", function() return has(releaseSystem, "controller-support-v0.8.2-tactical-insert-idle-repair") and has(releaseSystem, "bridge version remains v0.8.2 Experimental") end)
+test(55, "shipping defaults manifest tracks v0.8.2", function() return has(defaultsManifest, "0.8.2-tactical-insert-idle-repair") and has(defaultsManifest, '"minimumCompanionVersion": "0.8.2"') end)
 test(56, "dev deployment runs the v0.8.1 harness", function() return has(deploy, "Test-ControllerV081DisassembleIdleHints.lua") end)
 test(57, "dev package includes the v0.8.1 harness", function() return has(packageScript, "Test-ControllerV081DisassembleIdleHints.lua") end)
 

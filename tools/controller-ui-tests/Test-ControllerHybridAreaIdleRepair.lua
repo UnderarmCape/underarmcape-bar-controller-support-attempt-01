@@ -134,7 +134,7 @@ test(79, "Entry activation focuses camera", function() return has(camera,"Contro
 test(80, "Controller does not invoke mouse sound/click wrapper", function() return lacks(camera,"activateIdleEntry") end)
 test(81, "Focused identity is controller-owned", function() return has(camera,"ControllerCameraTestIdleCycle.currentUnitID = unitID") end)
 test(82, "Focused type is remembered", function() return has(camera,"ControllerCameraTestIdleCycle.currentTypeKey = unitDefID") end)
-test(83, "Invalid focused identity repairs against live list", function() return has(camera,"local current = 0") and has(camera,"unitID == ControllerCameraTestIdleCycle.currentUnitID") end)
+test(83, "Invalid focused identity is skipped by restored index scan", function() return has(camera,"local currentIndex = 0") and has(camera,"unitID == ControllerCameraTestIdleCycle.currentUnitID") end)
 test(84, "LB plus Down selects focused type", function() return has(camera,"ControllerCameraTestSelectAllFocusedIdleType") end)
 test(85, "Select-all uses only live current bucket", function() return has(camera,'ControllerCameraTestSelectUnits(bucket.units, "Idle type group")') end)
 

@@ -179,7 +179,7 @@ test("24 selection path has no periodic logging or pass-through", function()
 end)
 
 test("25 shipping defaults enable tested stabilization", function()
-	contains(defaults, '"defaultsVersion": "0.8.1-disassemble-idle-hints-polish-1"', "defaults revision")
+	contains(defaults, '"defaultsVersion": "0.8.2-tactical-insert-idle-repair-1"', "defaults revision")
 	contains(defaults, '"contextEnterDebounce": 0.14', "enter timing")
 	contains(defaults, '"contextExitGrace": 0.12', "exit timing")
 	contains(camera, 'lbTacticalHoldSeconds = 0.20', "hold timing")
