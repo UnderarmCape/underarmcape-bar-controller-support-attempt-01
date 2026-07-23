@@ -14,10 +14,16 @@
     <Compile Remove="Launcher\**\*.cs" />
     <Compile Remove="Installer\**\*.cs" />
     <Compile Remove="Restore\**\*.cs" />
+    <Compile Remove="Updater\**\*.cs" />
     <Compile Remove="Shared\**\*.cs" />
     <Compile Remove="Tests\**\*.cs" />
+    <Compile Remove="ReleaseTests\**\*.cs" />
     <Compile Include="Shared\ProductMetadata.cs" />
     <Compile Include="Shared\EngineSessionTracker.cs" />
     <Compile Include="Shared\BridgeConsole.cs" />
+    <Compile Include="Shared\ControllerReleaseModels.cs" />
+    <Compile Include="Shared\ControllerReleaseSecurity.cs" />
+    <Compile Include="Shared\ControllerReleaseTransaction.cs" />
+    <Compile Include="Shared\ControllerUpdatePolicy.cs" />
   </ItemGroup>
 </Project>
