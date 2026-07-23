@@ -282,7 +282,7 @@ test(138, "Deployment and rollback manifests cover every changed file", function
 	return all(deploy,"controller_native_command_owner.lua","controller_native_build_cell_renderer.lua","Test-ControllerInputRestoration.lua")
 		and all(manifest,"cmd_area_mex.lua","cmd_buildsplit.lua","cmd_customformations2.lua","gui_idle_builders.lua","gui_buildmenu.lua")
 		and has(restore,"bar-controller-v06-input-restore-ui-polish-test-deployment-backup")
-		and has(packageScript,"BAR_Controller_Support_v0.8.3_SMARTX_INSERT_TACTICAL_REPAIR_TEST.zip")
+		and has(packageScript,"BAR_Controller_Support_v0.8.4_GENERAL_INSERT_DISASSEMBLE_IDLE_EXPANSION_TEST.zip")
 end)
 
 assert(#cases == 138, "expected exactly 138 cases")

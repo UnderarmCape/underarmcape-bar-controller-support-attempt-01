@@ -1,9 +1,9 @@
 {
   "kind": "bar-controller-ui-defaults",
   "schemaVersion": 3,
-  "defaultsVersion": "0.8.3-smartx-insert-tactical-repair-1",
+  "defaultsVersion": "0.8.4-general-insert-disassemble-idle-1",
   "generatedAt": "2026-07-23T00:00:00Z",
-  "compatibleModVersion": "0.8.3-experimental",
+  "compatibleModVersion": "0.8.4-experimental",
   "settings": {
     "global": {
       "enabled": true,

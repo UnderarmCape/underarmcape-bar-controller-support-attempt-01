@@ -152,7 +152,7 @@ test(80, "Other-player allies are excluded", function() return has(camera, "Cont
 test(81, "B cancels cleanly", function() return has(camera, "ControllerCameraTestHandleDisassembleB") end)
 
 -- 82-90 Additive target selection.
-test(82, "A replaces with one target", function() return has(camera, "markedTargets = { [targetID] = true }") end)
+test(82, "A replaces with one target", function() return has(camera, "markedTargets = { [unitID] = true }") end)
 test(83, "RT+A adds an unselected target", function() local r, action = Disassemble.ToggleSelection({ 1 }, 2); return action == "added" and #r == 2 end)
 test(84, "RT+A removes an already selected target", function() local r, action = Disassemble.ToggleSelection({ 1, 2 }, 2); return action == "removed" and #r == 1 end)
 test(85, "Other targets remain selected", function() local r = Disassemble.ToggleSelection({ 1, 2 }, 3); return r[1] == 1 and r[2] == 2 end)

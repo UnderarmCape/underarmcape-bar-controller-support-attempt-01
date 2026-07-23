@@ -144,7 +144,7 @@ if (Test-Path -LiteralPath (Join-Path $RepositoryRoot '.git')) {
     $sourceCommit = (& git -C $RepositoryRoot rev-parse HEAD).Trim()
 }
 
-$publishRoot = Join-Path $RepositoryRoot ('artifacts\v0.8.3-smartx-insert-tactical-repair-test\.deploy-' + [guid]::NewGuid().ToString('N'))
+$publishRoot = Join-Path $RepositoryRoot ('artifacts\v0.8.4-general-insert-disassemble-idle-test\.deploy-' + [guid]::NewGuid().ToString('N'))
 $bridgePublish = Join-Path $publishRoot 'bridge'
 $launcherPublish = Join-Path $publishRoot 'launcher'
 $bridgeSource = Join-Path $RepositoryRoot 'BARControllerBridge.exe'
@@ -230,6 +230,7 @@ Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerV06InputRestore.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerV081DisassembleIdleHints.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerV082TacticalInsertIdleRepair.lua'
 Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerV083SmartXInsertTacticalRepair.lua'
+Assert-LuaHarness 'tools\controller-ui-tests\Test-ControllerV084GeneralInsertDisassembleIdle.lua'
 
 if ($ValidateOnly) {
     Write-Step "Validation passed for $($deployMap.Count) files; BAR build and native base policy are compatible."
@@ -237,7 +238,7 @@ if ($ValidateOnly) {
 }
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.3-smartx-insert-tactical-repair-test-' + $timestamp)
+$backupRoot = Join-Path $CompanionInstallPath ('deployment-backups\v0.8.4-general-insert-disassemble-idle-test-' + $timestamp)
 if (Test-Path -LiteralPath $backupRoot) { throw "Backup path already exists: $backupRoot" }
 New-Item -ItemType Directory -Path (Join-Path $backupRoot 'live-before') -Force | Out-Null
 $records = New-Object Collections.Generic.List[object]
@@ -290,7 +291,7 @@ foreach ($record in $preserved) {
 
 $manifest = [ordered]@{
     kind = 'bar-controller-v06-input-restore-ui-polish-test-deployment-backup'; schemaVersion = 1
-    experiment = ('EXPERIMENTAL ' + [char]0x2014 + ' V0.8.3 SMART X, INSERT, AND TACTICAL REPAIR TEST'); deployedAt = (Get-Date).ToString('o')
+    experiment = ('EXPERIMENTAL ' + [char]0x2014 + ' V0.8.4 GENERAL INSERT, DISASSEMBLE, AND IDLE EXPANSION TEST'); deployedAt = (Get-Date).ToString('o')
     repositoryRoot = $RepositoryRoot; sourceCommit = $sourceCommit
     barDataPath = $BarDataPath; companionInstallPath = $CompanionInstallPath; backupRoot = $backupRoot
     expectedBarBuild = $ExpectedBuild; buildIdentityMatched = $buildMatches; explicitUnknownBaseOverride = [bool]$AllowUnknownBase
@@ -305,6 +306,6 @@ foreach ($record in $records) {
     if ((Get-Sha256 $record.destination) -ne $record.postSha256) { throw "Post-manifest verification failed: $($record.destination)" }
 }
 Stop-RuntimesSafely
-Write-Step 'Experimental v0.8.3 Smart X, insert, and tactical repair deployed. BAR was not launched.'
+Write-Step 'Experimental v0.8.4 general insert, Disassemble, and idle expansion deployed. BAR was not launched.'
 Write-Output ('BACKUP_ROOT=' + $backupRoot)
 Write-Output ('ROLLBACK_COMMAND=powershell -NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $RepositoryRoot 'tools\dev-scripts\Restore_v0.8.0_Native_Test.ps1') + '" -BackupRoot "' + $backupRoot + '"')

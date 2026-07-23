@@ -123,7 +123,11 @@ test(46, "RT+Hold-A adds enemy", function() return has(camera, "area.initialSele
 test(47, "Own constructor joins reclaimers", function() return has(camera, "ControllerCameraTestAppendDisassembleReclaimer") end)
 test(48, "Own constructor is excluded", function() return has(disassemble, "not constructorSet[unitID]") end)
 test(49, "Factory never joins reclaimer set", function() return has(disassemble, "unitDef.isFactory ~= true") end)
-test(50, "LB+A no longer combines own/enemy batches", function() return has(disassemble, "seenTargets") and not has(camera, "local combined = {}") end)
+test(50, "LB+A reclaims selected mixed collection", function()
+	return has(camera, "ControllerCameraTestIssueDisassembleSelectedReclaim")
+		and has(camera, "ControllerCameraTestGetDisassembleSelectedTargetCollection")
+		and has(camera, "local combined = {}")
+end)
 test(51, "Timer resets only after accepted reclaim", function() return has(camera, "if issuedTargets > 0 then") end)
 test(52, "Disassemble remains active", function() return has(camera, "state.successfulActivity = true") and has(camera, "state.lastReclaimAt = debugEventTime") end)
 
