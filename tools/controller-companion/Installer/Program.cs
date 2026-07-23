@@ -47,6 +47,12 @@ internal static class Program
             options.PackageRoot = ReleaseOperations.ExpandPath(options.PackageRoot);
             options.BarDataPath = ReleaseOperations.ExpandPath(options.BarDataPath);
             options.InstallRoot = ReleaseOperations.ExpandPath(options.InstallRoot);
+            string controllerManifestPath = Path.Combine(
+                options.PackageRoot, "controller-release-manifest.json");
+            if (File.Exists(controllerManifestPath))
+            {
+                return InstallManifestPackage(options, controllerManifestPath);
+            }
             PackageManifest localManifest =
                 ReleaseOperations.ReadAndValidateManifest(options.PackageRoot);
             string packageRoot = SelectPackageSource(
@@ -128,6 +134,50 @@ internal static class Program
                 }
             }
         }
+    }
+
+    private static int InstallManifestPackage(
+        InstallerOptions options,
+        string controllerManifestPath)
+    {
+        ControllerReleaseManifest manifest = ControllerReleaseSecurity.ReadManifest(
+            controllerManifestPath, options.PackageRoot);
+        string backupRoot = Path.Combine(
+            options.InstallRoot,
+            "recovery-backups",
+            DateTime.Now.ToString("yyyyMMdd-HHmmssfff") + "-" + manifest.ReleaseTag);
+        ControllerTransactionResult result = ControllerReleaseTransaction.ExecuteLocalPackage(
+            controllerManifestPath,
+            options.PackageRoot,
+            options.BarDataPath,
+            options.InstallRoot,
+            backupRoot,
+            ControllerReleaseSecurity.IsBarRunning());
+        if (!result.Succeeded)
+        {
+            throw new InvalidOperationException(result.Message);
+        }
+
+        PackageManifest compatibilityManifest = ReleaseOperations.ReadAndValidateManifest(options.PackageRoot);
+        InstallState state = ReleaseOperations.ReadState(options.InstallRoot, manifest.SemanticVersion);
+        ReleaseOperations.EnableRequiredWidgets(options.BarDataPath, backupRoot, state);
+        string settingsPath = Path.Combine(options.BarDataPath, "springsettings.cfg");
+        ReleaseOperations.EnsureCameraSetting(settingsPath, backupRoot, state);
+        ReleaseOperations.InstallShortcuts(
+            GetShortcutPaths(options), options.InstallRoot, settingsPath, backupRoot, state);
+        ReleaseOperations.SaveState(options.InstallRoot, state);
+
+        Console.WriteLine();
+        Console.WriteLine(result.Message);
+        Console.WriteLine("Recovery backup: " + result.BackupRoot);
+        if (ControllerReleaseSecurity.IsBarRunning() && manifest.RequiresLuaUiReset)
+        {
+            BridgeConsole.WriteLuaUiResetWarning(
+                manifest.Components.Any(component => component.ComponentType == "native-override"));
+        }
+        Console.WriteLine("The installer did not launch or terminate BAR.");
+        PauseIfNeeded(options.NoPause);
+        return 0;
     }
 
     private static string SelectPackageSource(
