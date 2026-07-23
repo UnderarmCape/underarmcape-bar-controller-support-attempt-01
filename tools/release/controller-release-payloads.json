@@ -1,0 +1,165 @@
+{
+  "kind": "bar-controller-release-payload-spec",
+  "schemaVersion": 1,
+  "release": {
+    "tag": "controller-support-v0.8.0-v06-input-restore-ui-polish",
+    "semanticVersion": "0.8.0",
+    "displayVersion": "v0.8.0 Experimental",
+    "releaseSequence": 800090,
+    "channel": "experimental",
+    "assetName": "BAR_Controller_Support_v0.8.0_V06_INPUT_RESTORE_UI_POLISH.zip",
+    "title": "BAR Controller Support v0.8.0 — v0.6 Input Restore & UI Polish",
+    "releaseNotesAsset": "RELEASE_NOTES_v0.8.0.md"
+  },
+  "builds": [
+    {
+      "id": "bridge",
+      "project": "tools/controller-companion/BarControllerCompanion.csproj",
+      "outputFile": "BARControllerBridge.exe",
+      "packagePath": "BARControllerBridge.exe",
+      "component": {
+        "componentType": "companion-executable",
+        "destinationRoot": "companion",
+        "destinationPath": "BARControllerBridge.exe",
+        "mayBeLockedByCompanion": true,
+        "companionMustRestart": true,
+        "barMustRunLuaUiReset": false
+      }
+    },
+    {
+      "id": "launcher",
+      "project": "tools/controller-companion/Launcher/BARControllerLauncher.csproj",
+      "outputFile": "BARControllerLauncher.exe",
+      "packagePath": "BARControllerLauncher.exe",
+      "component": {
+        "componentType": "companion-executable",
+        "destinationRoot": "companion",
+        "destinationPath": "BARControllerLauncher.exe",
+        "mayBeLockedByCompanion": true,
+        "companionMustRestart": true,
+        "barMustRunLuaUiReset": false
+      }
+    },
+    {
+      "id": "updater",
+      "project": "tools/controller-companion/Updater/BARControllerUpdater.csproj",
+      "outputFile": "BARControllerUpdater.exe",
+      "packagePath": "BARControllerUpdater.exe",
+      "component": {
+        "componentType": "updater-executable",
+        "destinationRoot": "companion",
+        "destinationPath": "BARControllerUpdater.exe",
+        "mayBeLockedByCompanion": false,
+        "companionMustRestart": false,
+        "barMustRunLuaUiReset": false
+      }
+    },
+    {
+      "id": "restore",
+      "project": "tools/controller-companion/Restore/BARControllerCompanionRestore.csproj",
+      "outputFile": "BAR_Controller_Companion_Restore_v0.8.0_Experimental.exe",
+      "packagePath": "BAR_Controller_Companion_Restore_v0.8.0_Experimental.exe",
+      "component": {
+        "componentType": "recovery-executable",
+        "destinationRoot": "companion",
+        "destinationPath": "BAR_Controller_Companion_Restore_v0.8.0_Experimental.exe",
+        "mayBeLockedByCompanion": false,
+        "companionMustRestart": false,
+        "barMustRunLuaUiReset": false
+      }
+    },
+    {
+      "id": "installer",
+      "project": "tools/controller-companion/Installer/BARControllerCompanionInstaller.csproj",
+      "outputFile": "BAR_Controller_Companion_Installer_v0.8.0_Experimental.exe",
+      "packagePath": "BAR_Controller_Companion_Installer_v0.8.0_Experimental.exe",
+      "packageOnly": true
+    }
+  ],
+  "sourceGroups": [
+    {
+      "idPrefix": "widget",
+      "componentType": "lua-widget",
+      "destinationRoot": "bar-data",
+      "packagePrefix": "luaui/Widgets",
+      "destinationPrefix": "LuaUI/Widgets",
+      "barMustRunLuaUiReset": true,
+      "sourcePaths": [
+        "luaui/Widgets/gui_controller_camera_test.lua",
+        "luaui/Widgets/gui_controller_bindings_ui.lua",
+        "luaui/Widgets/gui_controller_ui_runtime.lua",
+        "luaui/Widgets/gui_controller_ui_layout.lua"
+      ]
+    },
+    {
+      "idPrefix": "include",
+      "componentType": "lua-include",
+      "destinationRoot": "bar-data",
+      "packagePrefix": "luaui/Include",
+      "destinationPrefix": "LuaUI/Include",
+      "barMustRunLuaUiReset": true,
+      "sourcePaths": [
+        "luaui/Include/controller_disassemble_behavior.lua",
+        "luaui/Include/controller_input_chords.lua",
+        "luaui/Include/controller_ui_runtime.lua",
+        "luaui/Include/controller_ui_editor_workspace.lua",
+        "luaui/Include/controller_ui_editor_input.lua",
+        "luaui/Include/controller_ui_shared_renderers.lua",
+        "luaui/Include/controller_native_build_cell_renderer.lua",
+        "luaui/Include/controller_native_radial_adapter.lua",
+        "luaui/Include/controller_native_targeting.lua",
+        "luaui/Include/controller_native_command_owner.lua",
+        "luaui/Include/controller_selection_taps.lua",
+        "luaui/Include/controller_glyphs.lua"
+      ]
+    },
+    {
+      "idPrefix": "glyph",
+      "componentType": "lua-asset",
+      "destinationRoot": "bar-data",
+      "packagePrefix": "luaui/images/controller-glyphs",
+      "destinationPrefix": "LuaUI/Images/controller-glyphs",
+      "barMustRunLuaUiReset": true,
+      "sourcePaths": [
+        "luaui/images/controller-glyphs/controller_glyph_atlas.png",
+        "luaui/images/controller-glyphs/controller_glyph_atlas_xbox.png",
+        "luaui/images/controller-glyphs/controller_glyph_atlas_playstation.png",
+        "luaui/images/controller-glyphs/asset-manifest.json",
+        "luaui/images/controller-glyphs/LICENSE.md"
+      ]
+    },
+    {
+      "idPrefix": "defaults",
+      "componentType": "controller-defaults",
+      "destinationRoot": "bar-data",
+      "packagePrefix": "controller-ui",
+      "destinationPrefix": "controller-ui",
+      "barMustRunLuaUiReset": true,
+      "sourcePaths": [
+        "controller-ui/shipping-defaults.json",
+        "controller-ui/shipping-defaults-manifest.json"
+      ]
+    },
+    {
+      "idPrefix": "metadata",
+      "componentType": "release-metadata",
+      "destinationRoot": "companion",
+      "packagePrefix": "release",
+      "destinationPrefix": "",
+      "barMustRunLuaUiReset": false,
+      "sourcePaths": [
+        "tools/release/legacy-release-catalog.json",
+        "tools/release/controller-release-schema.json"
+      ]
+    }
+  ],
+  "nativeOverrideManifest": "native-overrides/native-override-manifest.json",
+  "configurationPreservation": [
+    { "ruleId": "bar-luaui-config", "destinationRoot": "bar-data", "relativePath": "LuaUI/Config", "recursive": true, "behavior": "preserve" },
+    { "ruleId": "bar-spring-settings", "destinationRoot": "bar-data", "relativePath": "springsettings.cfg", "recursive": false, "behavior": "preserve" },
+    { "ruleId": "companion-launcher-config", "destinationRoot": "companion", "relativePath": "launcher-config.json", "recursive": false, "behavior": "preserve" },
+    { "ruleId": "companion-user-data", "destinationRoot": "companion", "relativePath": "user-data", "recursive": true, "behavior": "preserve" },
+    { "ruleId": "companion-release-cache", "destinationRoot": "companion", "relativePath": "release-cache", "recursive": true, "behavior": "preserve" },
+    { "ruleId": "companion-recovery-backups", "destinationRoot": "companion", "relativePath": "recovery-backups", "recursive": true, "behavior": "preserve" }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "kind": "bar-controller-legacy-release-catalog",
+  "schemaVersion": 1,
+  "repository": "UnderarmCape/underarmcape-bar-controller-support-attempt-01",
+  "minimumVersion": "0.6.0",
+  "releases": [
+    {
+      "tag": "controller-support-v0.6.0-ui-authoring",
+      "title": "BAR Controller Support v0.6.0 — UI Authoring Suite",
+      "version": "0.6.0",
+      "displayVersion": "v0.6.0 Legacy",
+      "releaseSequence": 600000,
+      "commitSha": "f500bf6679596d7bca68c1a1065f3ae4b9721b04",
+      "publishedAtUtc": "2026-07-20T13:22:03Z",
+      "assetName": "BAR_Controller_Support_v0.6.0_Widget_Companion.zip",
+      "assetSha256": "9edd691ff67d0fd6b856690953aca30fbc501562a034dac2d79b488259291601",
+      "assetByteLength": 109838366,
+      "installAdapter": "legacy-dynamic-luaui-preserve-modern-companion",
+      "requiresLuaUiReset": true,
+      "available": true,
+      "configurationPreservation": [
+        { "ruleId": "bar-luaui-config", "destinationRoot": "bar-data", "relativePath": "LuaUI/Config", "recursive": true, "behavior": "preserve" },
+        { "ruleId": "bar-spring-settings", "destinationRoot": "bar-data", "relativePath": "springsettings.cfg", "recursive": false, "behavior": "preserve" },
+        { "ruleId": "companion-launcher-config", "destinationRoot": "companion", "relativePath": "launcher-config.json", "recursive": false, "behavior": "preserve" },
+        { "ruleId": "companion-user-data", "destinationRoot": "companion", "relativePath": "user-data", "recursive": true, "behavior": "preserve" }
+      ]
+    },
+    {
+      "tag": "controller-support-v0.6.1-radial-typography",
+      "title": "BAR Controller Support v0.6.1 — Radial Typography & Color Controls",
+      "version": "0.6.1",
+      "displayVersion": "v0.6.1 Legacy",
+      "releaseSequence": 601000,
+      "commitSha": "d345fd1ee790e4ff392f020b82d8aa3b52db0edf",
+      "publishedAtUtc": "2026-07-21T02:00:28Z",
+      "assetName": "BAR_Controller_Support_v0.6.1_Widget_Companion.zip",
+      "assetSha256": "449f92814eb8eb9137c7cc3ae72dd77f18259e22418271ec7c64711128de21c1",
+      "assetByteLength": 109852943,
+      "installAdapter": "legacy-dynamic-luaui-preserve-modern-companion",
+      "requiresLuaUiReset": true,
+      "available": true,
+      "configurationPreservation": [
+        { "ruleId": "bar-luaui-config", "destinationRoot": "bar-data", "relativePath": "LuaUI/Config", "recursive": true, "behavior": "preserve" },
+        { "ruleId": "bar-spring-settings", "destinationRoot": "bar-data", "relativePath": "springsettings.cfg", "recursive": false, "behavior": "preserve" },
+        { "ruleId": "companion-launcher-config", "destinationRoot": "companion", "relativePath": "launcher-config.json", "recursive": false, "behavior": "preserve" },
+        { "ruleId": "companion-user-data", "destinationRoot": "companion", "relativePath": "user-data", "recursive": true, "behavior": "preserve" }
+      ]
+    },
+    {
+      "tag": "controller-support-v0.7.0-disassemble-mode",
+      "title": "BAR Controller Support v0.7.0 — Disassemble Mode & Streamlined Runtime",
+      "version": "0.7.0",
+      "displayVersion": "v0.7.0 Legacy",
+      "releaseSequence": 700000,
+      "commitSha": "858321fabf34c4e167f44f89ca63e53fbd7cc847",
+      "publishedAtUtc": "2026-07-21T10:47:58Z",
+      "assetName": "BAR_Controller_Support_v0.7.0_Widget_Companion.zip",
+      "assetSha256": "18060e562950bbb98a85426d78f1290df5505b2766f57f901e2876460dfcb66b",
+      "assetByteLength": 109931324,
+      "installAdapter": "legacy-dynamic-luaui-preserve-modern-companion",
+      "requiresLuaUiReset": true,
+      "available": true,
+      "configurationPreservation": [
+        { "ruleId": "bar-luaui-config", "destinationRoot": "bar-data", "relativePath": "LuaUI/Config", "recursive": true, "behavior": "preserve" },
+        { "ruleId": "bar-spring-settings", "destinationRoot": "bar-data", "relativePath": "springsettings.cfg", "recursive": false, "behavior": "preserve" },
+        { "ruleId": "companion-launcher-config", "destinationRoot": "companion", "relativePath": "launcher-config.json", "recursive": false, "behavior": "preserve" },
+        { "ruleId": "companion-user-data", "destinationRoot": "companion", "relativePath": "user-data", "recursive": true, "behavior": "preserve" }
+      ]
+    }
+  ]
+}

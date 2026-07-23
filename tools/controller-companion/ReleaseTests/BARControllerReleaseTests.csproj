@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net5.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\ControllerGitHubReleases.cs" Link="ControllerGitHubReleases.cs" />
+    <Compile Include="..\ControllerUpdateCoordinator.cs" Link="ControllerUpdateCoordinator.cs" />
+    <Compile Include="..\Shared\ProductMetadata.cs" Link="ProductMetadata.cs" />
+    <Compile Include="..\Shared\BridgeConsole.cs" Link="BridgeConsole.cs" />
+    <Compile Include="..\Shared\ControllerReleaseModels.cs" Link="ControllerReleaseModels.cs" />
+    <Compile Include="..\Shared\ControllerReleaseSecurity.cs" Link="ControllerReleaseSecurity.cs" />
+    <Compile Include="..\Shared\ControllerReleaseTransaction.cs" Link="ControllerReleaseTransaction.cs" />
+    <Compile Include="..\Shared\ControllerUpdatePolicy.cs" Link="ControllerUpdatePolicy.cs" />
+  </ItemGroup>
+</Project>
