@@ -71,13 +71,13 @@ internal static class Program
             string statusPath = Path.Combine(testRoot, "program-data", "update-status.json");
             using JsonDocument status = JsonDocument.Parse(File.ReadAllText(statusPath));
             Assert(!status.RootElement.GetProperty("ReleaseAvailable").GetBoolean(), "current release discovered, not re-applied");
-            Assert(status.RootElement.GetProperty("LatestRelease").GetString() == "0.8.2", "release version parsed");
+            Assert(status.RootElement.GetProperty("LatestRelease").GetString() == "0.8.3", "release version parsed");
 
             Assert(UpdateService.RunCommand(new[] { "reload", "--bar-data", barData }) == 0, "reload marker");
             using JsonDocument reload = JsonDocument.Parse(File.ReadAllText(Path.Combine(cacheDirectory, "reload-request.json")));
             Assert(reload.RootElement.GetProperty("kind").GetString() == "bar-controller-ui-reload-request", "reload handoff format");
 
-            Console.WriteLine("Companion tests passed: central v0.8.2 Experimental metadata, attach/wait/transition/exit lifecycle, valid/newer defaults pair, known-good backup, downgrade prevention, malformed JSON, hash/ID failure, timeout/offline cache, current release report, reload handoff.");
+            Console.WriteLine("Companion tests passed: central v0.8.3 Experimental metadata, attach/wait/transition/exit lifecycle, valid/newer defaults pair, known-good backup, downgrade prevention, malformed JSON, hash/ID failure, timeout/offline cache, current release report, reload handoff.");
             return 0;
         }
         catch (Exception exception)
@@ -96,10 +96,10 @@ internal static class Program
 
     private static void TestProductMetadataAndSessionLifecycle()
     {
-        Assert(ProductMetadata.SemanticVersion == "0.8.2", "central semantic version");
+        Assert(ProductMetadata.SemanticVersion == "0.8.3", "central semantic version");
         Assert(ProductMetadata.Channel == "Experimental", "central channel");
-        Assert(ProductMetadata.DisplayVersion == "v0.8.2 Experimental", "central display version");
-        Assert(ProductMetadata.BridgeBanner == "BAR Controller Bridge v0.8.2 Experimental", "bridge banner");
+        Assert(ProductMetadata.DisplayVersion == "v0.8.3 Experimental", "central display version");
+        Assert(ProductMetadata.BridgeBanner == "BAR Controller Bridge v0.8.3 Experimental", "bridge banner");
 
         DateTime start = new DateTime(2026, 7, 23, 0, 0, 0, DateTimeKind.Utc);
         var tracker = new EngineSessionTracker(TimeSpan.FromSeconds(3));
@@ -233,7 +233,7 @@ internal static class Program
                     }
                     else if (path.EndsWith("release", StringComparison.Ordinal))
                     {
-                        payload = Encoding.UTF8.GetBytes("{\"tag_name\":\"v0.8.2\",\"assets\":[{\"name\":\"BAR_Controller_Support_v0.8.2_Widget_Companion.zip\",\"browser_download_url\":\"" + BaseUrl + "package.zip\",\"digest\":\"sha256:" + new string('a', 64) + "\"}]}");
+                        payload = Encoding.UTF8.GetBytes("{\"tag_name\":\"v0.8.3\",\"assets\":[{\"name\":\"BAR_Controller_Support_v0.8.3_SMARTX_INSERT_TACTICAL_REPAIR.zip\",\"browser_download_url\":\"" + BaseUrl + "package.zip\",\"digest\":\"sha256:" + new string('a', 64) + "\"}]}");
                     }
                     else { context.Response.StatusCode = 404; context.Response.Close(); continue; }
                     context.Response.ContentType = "application/json";

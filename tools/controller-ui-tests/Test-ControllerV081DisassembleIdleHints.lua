@@ -119,11 +119,11 @@ test(48, "affordability clears immediately when affordable", function() return h
 test(49, "draw overlays use raw affordability", function() return has(camera, "local affordable = ControllerCameraTestCanAffordBuildOption(option)") and has(camera, "local affordable = ControllerCameraTestCanAffordBuildOption(currentOption)") end)
 test(50, "center text uses smoothed availability only", function() return has(camera, "return ControllerCameraTestGetSmoothedBuildAvailability(option)") end)
 
-test(51, "central companion version is 0.8.2 Experimental", function() return has(props, ">0.8.2<") and has(props, ">Experimental<") end)
-test(52, "release spec names v0.8.2 repair package", function() return has(releaseSpec, "controller-support-v0.8.2-tactical-insert-idle-repair") and has(releaseSpec, "BAR_Controller_Support_v0.8.2_TACTICAL_INSERT_IDLE_REPAIR.zip") end)
-test(53, "public builder defaults to v0.8.2 output", function() return has(releaseBuilder, "artifacts\\v0.8.2-public-release") and has(releaseBuilder, "Install_v0.8.2.ps1") end)
-test(54, "release system expects v0.8.2 latest", function() return has(releaseSystem, "controller-support-v0.8.2-tactical-insert-idle-repair") and has(releaseSystem, "bridge version remains v0.8.2 Experimental") end)
-test(55, "shipping defaults manifest tracks v0.8.2", function() return has(defaultsManifest, "0.8.2-tactical-insert-idle-repair") and has(defaultsManifest, '"minimumCompanionVersion": "0.8.2"') end)
+test(51, "central companion version is 0.8.3 Experimental", function() return has(props, ">0.8.3<") and has(props, ">Experimental<") end)
+test(52, "release spec names v0.8.3 repair package", function() return has(releaseSpec, "controller-support-v0.8.3-smartx-insert-tactical-repair") and has(releaseSpec, "BAR_Controller_Support_v0.8.3_SMARTX_INSERT_TACTICAL_REPAIR.zip") end)
+test(53, "public builder defaults to v0.8.3 output", function() return has(releaseBuilder, "artifacts\\v0.8.3-public-release") and has(releaseBuilder, "Install_v0.8.3.ps1") end)
+test(54, "release system expects v0.8.3 latest", function() return has(releaseSystem, "controller-support-v0.8.3-smartx-insert-tactical-repair") and has(releaseSystem, "bridge version remains v0.8.3 Experimental") end)
+test(55, "shipping defaults manifest tracks v0.8.3", function() return has(defaultsManifest, "0.8.3-smartx-insert-tactical-repair") and has(defaultsManifest, '"minimumCompanionVersion": "0.8.3"') end)
 test(56, "dev deployment runs the v0.8.1 harness", function() return has(deploy, "Test-ControllerV081DisassembleIdleHints.lua") end)
 test(57, "dev package includes the v0.8.1 harness", function() return has(packageScript, "Test-ControllerV081DisassembleIdleHints.lua") end)
 

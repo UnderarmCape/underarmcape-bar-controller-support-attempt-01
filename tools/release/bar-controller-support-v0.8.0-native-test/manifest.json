@@ -1,11 +1,11 @@
 {
     "packageName": "BAR Controller Companion",
-    "version": "0.8.2",
+    "version": "0.8.3",
     "stability": "EXPERIMENTAL",
-    "warning": "EXPERIMENTAL - V0.8.2 TACTICAL, INSERT, IDLE, AND CONTROLLER-INPUT REPAIR TEST",
+    "warning": "EXPERIMENTAL - V0.8.3 SMART X, INSERT, AND TACTICAL REPAIR TEST",
     "repository": "UnderarmCape/underarmcape-bar-controller-support-attempt-01",
     "branch": "controller/v0.8.0-native-ui-integration-test",
-    "assetName": "BAR_Controller_Support_v0.8.2_TACTICAL_INSERT_IDLE_REPAIR_TEST.zip",
+    "assetName": "BAR_Controller_Support_v0.8.3_SMARTX_INSERT_TACTICAL_REPAIR_TEST.zip",
     "barBuild": "Beyond All Reason test-30735-bf9c7bf",
     "barUpstreamCommit": "bf9c7bfdba26704832157bba47f3653ba8bdd8d2",
     "publicRelease": false,
@@ -54,7 +54,8 @@
                                 "tools/controller-companion/Shared/BridgeConsole.cs",
                                 "tools/controller-ui-tests/Test-ControllerV06InputRestore.lua",
                                 "tools/controller-ui-tests/Test-ControllerV081DisassembleIdleHints.lua",
-                                "tools/controller-ui-tests/Test-ControllerV082TacticalInsertIdleRepair.lua"
+                                "tools/controller-ui-tests/Test-ControllerV082TacticalInsertIdleRepair.lua",
+                                "tools/controller-ui-tests/Test-ControllerV083SmartXInsertTacticalRepair.lua"
                             ],
     "requiredPublicFiles": [
                                 "README_EXPERIMENTAL.md",
@@ -128,14 +129,13 @@
                           "doc/controller-companion-v0.8.0/BUILD_FACTORY_RADIAL_PAGING.md",
                           "doc/controller-companion-v0.8.0/TACTICAL_RADIAL_TOGGLE.md",
                           "doc/controller-companion-v0.8.0/DISASSEMBLE_ENEMY_TARGETS.md",
-                          "doc/controller-companion-v0.8.2/Y_REPAIR_MODIFIER.md",
-                          "doc/controller-companion-v0.8.2/TACTICAL_STATE_AND_WAIT_BEHAVIOR.md",
-                          "doc/controller-companion-v0.8.2/INSERT_QUEUE_CONTROLS.md",
-                          "doc/controller-companion-v0.8.2/DISASSEMBLE_MODE_CONTROLS.md",
-                          "doc/controller-companion-v0.8.2/DOUBLE_TAP_VISIBLE_SELECTION.md",
-                          "doc/controller-companion-v0.8.2/V060_IDLE_NAVIGATION_RESTORE.md",
-                          "doc/controller-companion-v0.8.2/TACTICAL_SELF_DESTRUCT.md",
-                          "doc/controller-companion-v0.8.2/CONTROLLER_INPUT_PRIORITY.md",
-                          "doc/controller-companion-v0.8.2/LIVE_TEST_CHECKLIST.md"
+                          "doc/controller-companion-v0.8.3/SMART_X_REPAIR.md",
+                          "doc/controller-companion-v0.8.3/UNIFIED_RB_INSERTION.md",
+                          "doc/controller-companion-v0.8.3/DISASSEMBLE_CHORDS.md",
+                          "doc/controller-companion-v0.8.3/DOUBLE_TAP_SAME_TARGET.md",
+                          "doc/controller-companion-v0.8.3/TACTICAL_STATE_ACTIONS.md",
+                          "doc/controller-companion-v0.8.3/TACTICAL_SELF_DESTRUCT.md",
+                          "doc/controller-companion-v0.8.3/CONTROLLER_INPUT_PRIORITY.md",
+                          "doc/controller-companion-v0.8.3/LIVE_TEST_CHECKLIST.md"
                       ]
 }

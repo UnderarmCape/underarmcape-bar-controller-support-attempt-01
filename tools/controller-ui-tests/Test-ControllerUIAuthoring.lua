@@ -63,7 +63,7 @@ loadstring = loadstring or load
 Json = dofile(root .. "/common/luaUtilities/json.lua")
 
 local actions = {
-	"select", "cancel", "smartAction", "buildRadial", "commandLayer", "repairModifier", "insertNextCommandModifier",
+	"select", "cancel", "smartAction", "buildRadial", "commandLayer", "insertNextCommandModifier",
 	"appendQueueModifier", "controlGroupModifier", "pitchModifier", "removeQueuedCommand",
 	"removeLastQueuedCommand", "radialSelect", "radialCancel", "radialQuick", "radialClose",
 	"radialPrevPage", "radialNextPage", "place", "placeStay", "cancelPlacement",
@@ -198,7 +198,7 @@ assertTrue(api.GetLayerStatus().dirty, "recovery remains dirty")
 local audit = WG.ControllerHintRegistry.GetAuditReport()
 assertEqual(#audit.missingBindings, 0, "complete action coverage")
 assertEqual(#audit.unregisteredActions, 0, "no orphan hint actions")
-assertEqual(audit.bindingCount, 42, "binding audit count")
+assertEqual(audit.bindingCount, 41, "binding audit count")
 
 api.OpenEditor()
 widget:DrawScreen()

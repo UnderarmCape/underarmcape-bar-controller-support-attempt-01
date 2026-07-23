@@ -1,9 +1,9 @@
 {
   "kind": "bar-controller-ui-defaults",
   "schemaVersion": 3,
-  "defaultsVersion": "0.8.2-tactical-insert-idle-repair-1",
+  "defaultsVersion": "0.8.3-smartx-insert-tactical-repair-1",
   "generatedAt": "2026-07-23T00:00:00Z",
-  "compatibleModVersion": "0.8.2-experimental",
+  "compatibleModVersion": "0.8.3-experimental",
   "settings": {
     "global": {
       "enabled": true,
@@ -339,7 +339,7 @@
       { "id": "Advanced", "label": "Advanced", "order": 140, "visible": true }
     ],
     "actionOrdering": [
-      "select", "cancel", "smartAction", "buildRadial", "commandLayer", "repairModifier", "insertNextCommandModifier",
+      "select", "cancel", "smartAction", "buildRadial", "commandLayer", "insertNextCommandModifier",
       "appendQueueModifier", "controlGroupModifier", "pitchModifier", "removeQueuedCommand",
       "removeLastQueuedCommand", "radialSelect", "radialCancel", "radialQuick", "radialClose",
       "radialPrevPage", "radialNextPage", "place", "placeStay", "cancelPlacement", "rotateBuildingLeft",
@@ -353,7 +353,6 @@
     "defaultShortLabels": {
       "selectCommander": "Commander",
       "groupRecallOrAssign": "Recall group",
-      "repairModifier": "Repair",
       "insertNextCommandModifier": "Insert order",
       "removeQueuedCommand": "Remove queue item",
       "removeLastQueuedCommand": "Remove last queued"

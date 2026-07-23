@@ -837,7 +837,7 @@ CONTROLLER_BINDINGS_CONFIG_SCHEMA = 2
 CONTROLLER_BUILD_FIRST_PRESET_NAME = "Build-First Commander"
 ControllerCameraTestBuildFirstPreset = ControllerCameraTestBuildFirstPreset or {
 	select = "A", cancel = "B", smartAction = "X", buildRadial = "RB",
-	commandLayer = "back", repairModifier = "Y", insertNextCommandModifier = "RB", appendQueueModifier = "RT",
+	commandLayer = "back", insertNextCommandModifier = "RB", appendQueueModifier = "RT",
 	controlGroupModifier = "start", pitchModifier = "LB",
 	removeQueuedCommand = "leftStickClick", removeLastQueuedCommand = "rightStickClick",
 	radialSelect = "A", radialCancel = "B", radialQuick = "X", radialClose = "Y",
@@ -1191,7 +1191,7 @@ local XboxController = {
 		[13] = "Layer + D-pad Left = Previous selection cycle",
 		[14] = "Layer + D-pad Right = Next selection cycle",
 	},
-	normalLayoutSummary = "A Select One/Hold Area, B Clear, X Context, Y Repair Modifier, L3/R3 Queue Remove, D-pad L/R Idle, Start Groups",
+	normalLayoutSummary = "A Select One/Hold Area, B Clear, X Smart/Repair, L3/R3 Queue Remove, D-pad L/R Idle, Start Groups",
 	commandLayoutSummary = "Layer+A Commander, Layer+B Stop, Layer+X Attack, Layer+RB Tactical, Layer+D-pad Commands",
 }
 
@@ -2338,7 +2338,6 @@ function ControllerCameraTestBindingDefinitions()
 		{ action = "smartAction", label = "Smart Action", default = "X", group = "Core" },
 		{ action = "buildRadial", label = "Build / Factory Radial", default = "RB", group = "Core" },
 		{ action = "commandLayer", label = "Command Layer", default = ControllerCameraTestBuildFirstPreset.commandLayer, group = "Modifiers" },
-		{ action = "repairModifier", label = "Repair Modifier", default = "Y", group = "Commands" },
 		{ action = "insertNextCommandModifier", label = "Insert Order Modifier", default = "RB", group = "Queue" },
 		{ action = "appendQueueModifier", label = "Append Queue / Shift Modifier", default = "RT", group = "Queue" },
 		{ action = "controlGroupModifier", label = "Group Layer Modifier", default = "start", group = "Modifiers" },
@@ -3157,10 +3156,6 @@ function ControllerCameraTestIsInsertModifierActive()
 	return ControllerCameraTestActionDown("insertNextCommandModifier")
 end
 
-function ControllerCameraTestIsRepairModifierActive()
-	return ControllerCameraTestActionDown("repairModifier")
-end
-
 function ControllerCameraTestIsCommandInsertContextActive()
 	local phase = ControllerCameraTestNativeTargeting and ControllerCameraTestNativeTargeting.phase
 	return ControllerCameraTestBuildPlacement.active == true
@@ -3174,7 +3169,7 @@ function ControllerCameraTestIsQueueFrontModifierActive()
 end
 
 function ControllerCameraTestIsFactoryInsertModifierActive()
-	return (normalizedLeftTrigger or 0) > 0.5
+	return ControllerCameraTestIsInsertModifierActive()
 end
 
 function ControllerCameraTestIsAppendQueueModifierActive()
@@ -3452,7 +3447,7 @@ end
 
 function ControllerCameraTestHandleQueueRemovalInput()
 	-- Block L3 queue removal when self-destruct chord (Back + R3 + L3) is active
-	if ControllerCameraTestSelfDestruct.chordActive then
+	if ControllerCameraTestSelfDestruct.chordActive and IsButtonDown("back") then
 		return false
 	end
 	if ControllerCameraTestActionPressed("removeQueuedCommand") then
@@ -3481,6 +3476,48 @@ function ControllerCameraTestGetCommandOptions(extraOptions)
 		end
 	end
 	return opts
+end
+
+function ControllerCameraTestEncodeCommandOptions(options)
+	if type(options) == "number" then return options end
+	local bits, seen = 0, {}
+	local constants = {
+		alt = CMD and CMD.OPT_ALT,
+		shift = CMD and CMD.OPT_SHIFT,
+		ctrl = CMD and CMD.OPT_CTRL,
+		right = CMD and CMD.OPT_RIGHT,
+		internal = CMD and CMD.OPT_INTERNAL,
+	}
+	local function add(name)
+		name = tostring(name or "")
+		if seen[name] then return end
+		seen[name] = true
+		local bit = constants[name]
+		if type(bit) == "number" then bits = bits + bit end
+	end
+	if type(options) == "table" then
+		for _, option in ipairs(options) do add(option) end
+		for option, enabled in pairs(options) do
+			if type(option) == "string" and enabled == true then add(option) end
+		end
+	end
+	return bits
+end
+
+function ControllerCameraTestBuildInsertCommandParams(position, cmdID, innerOptions, params)
+	local insertParams = { tonumber(position) or 0, cmdID, ControllerCameraTestEncodeCommandOptions(innerOptions) }
+	for _, value in ipairs(type(params) == "table" and params or {}) do
+		insertParams[#insertParams + 1] = value
+	end
+	return insertParams
+end
+
+function ControllerCameraTestGiveInsertOrderToUnit(unitID, position, cmdID, params, innerOptions, outerOptions)
+	if type(spGiveOrderToUnit) ~= "function" or not CMD or type(CMD.INSERT) ~= "number" then return false end
+	local insertParams = ControllerCameraTestBuildInsertCommandParams(position, cmdID, innerOptions, params)
+	local orderOptions = outerOptions or { "alt" }
+	local ok, result = pcall(spGiveOrderToUnit, unitID, CMD.INSERT, insertParams, orderOptions)
+	return ok and result ~= false, insertParams
 end
 
 function ControllerCameraTestCommandOptionsSummary(options)
@@ -3874,13 +3911,10 @@ local function issueOrderToSelection(cmdID, params, cmdName, targetName, options
 		local orderOk, orderResult
 		if useInsert then
 			-- Vanilla INSERT format: CMD.INSERT, {pos, cmdID, encodedOpts, ...params}, {"alt"}
-			-- pos=0 inserts at front; encodedOpts=0 means no special sub-command options
+			-- pos=0 inserts at front; encodedOpts preserves the sub-command options
 			-- Outer {"alt"} is required by engine; do NOT add "shift" here
 			local cmdInsert = CMD.INSERT
-			local insertParams = { 0, cmdID, 0 }
-			for i = 1, paramsCount do
-				insertParams[#insertParams + 1] = params[i]
-			end
+			local insertParams = ControllerCameraTestBuildInsertCommandParams(0, cmdID, orderOptions, params)
 			orderOk, orderResult = pcall(Spring.GiveOrder, cmdInsert, insertParams, { "alt" })
 		else
 			orderOk, orderResult = pcall(Spring.GiveOrder, cmdID, params, orderOptions)
@@ -4047,10 +4081,9 @@ function ControllerCameraTestAttemptMexBuildSmartAction(x, y, z, forceShift, for
 		end
 
 		if #builders > 0 then
-			local cmdInsert = CMD.INSERT
 			for _, unitID in ipairs(builders) do
-				-- Vanilla INSERT: {pos, cmdID, encodedOpts, ...params}, outer {"alt"} only
-				pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, -selectedMex, 0, buildCmd[2], buildCmd[3], buildCmd[4], buildCmd[5] }, { "alt" })
+				ControllerCameraTestGiveInsertOrderToUnit(unitID, 0, -selectedMex,
+					{ buildCmd[2], buildCmd[3], buildCmd[4], buildCmd[5] }, {}, { "alt" })
 			end
 			if ControllerCameraTestSettings.debugPanelVisible then
 				Spring.Echo(string.format(
@@ -5251,18 +5284,19 @@ function ControllerCameraTestHandleSelfDestructChord()
 	-- Chord: Back/View + R3 (rightStickClick) + L3 (leftStickClick)
 	-- Must take priority over DGUN entry (Back + R3 alone).
 	-- L3 normal queue-removal is blocked while chord is active (see HandleQueueRemovalInput).
-	local chordActive = IsButtonDown("back")
+	local chordButtonsDown = IsButtonDown("back")
 		and IsButtonDown("rightStickClick")
 		and IsButtonDown("leftStickClick")
-	if state.tacticalArmed and not chordActive and ControllerCameraTestActionPressed("cancel") then
+	if state.tacticalArmed and debugEventTime - (state.tacticalArmedAt or 0) > 10 then
+		state.tacticalArmed = false
+		state.lastResult = "tactical arm expired"
+	end
+	local chordActive = state.tacticalArmed == true and chordButtonsDown == true
+	if state.tacticalArmed and not chordButtonsDown and ControllerCameraTestActionPressed("cancel") then
 		state.tacticalArmed = false
 		state.lastResult = "tactical arm cancelled"
 		latchSelectionDebugMessage("Self Destruct cancelled")
 		return true
-	end
-	if state.tacticalArmed and debugEventTime - (state.tacticalArmedAt or 0) > 10 then
-		state.tacticalArmed = false
-		state.lastResult = "tactical arm expired"
 	end
 	if not chordActive then
 		if state.chordActive and not state.attempted then
@@ -5334,8 +5368,11 @@ function ControllerCameraTestUnitNeedsRepair(unitID)
 	return type(buildProgress) == "number" and buildProgress < 1
 end
 
-function ControllerCameraTestGetRepairModifierTarget()
-	local target = ControllerCameraTestGetReticleTargetInfo()
+function ControllerCameraTestGetSmartRepairTarget(target)
+	target = type(target) == "table" and target or ControllerCameraTestGetReticleTargetInfo()
+	if type(target) ~= "table" then
+		return nil, "no target"
+	end
 	local unitID = target.targetType == "unit" and tonumber(target.targetID) or nil
 	if not unitID or not ControllerCameraTestIsAlliedUnit(unitID) then
 		return nil, "no allied unit"
@@ -5348,34 +5385,29 @@ function ControllerCameraTestGetRepairModifierTarget()
 	end
 	local commandIDs = ControllerCameraTestGetSmartCommandIDs()
 	local repairID = tonumber(commandIDs and commandIDs.repair) or ((CMD and CMD.REPAIR) or 40)
-	local defaultIsRepair = false
-	if type(Spring.GetDefaultCommand) == "function" then
-		local ok, _, defaultCmdID = pcall(Spring.GetDefaultCommand)
-		defaultIsRepair = ok and tonumber(defaultCmdID) == repairID
-	end
-	if not defaultIsRepair and not ControllerCameraTestUnitNeedsRepair(unitID) then
+	if not ControllerCameraTestUnitNeedsRepair(unitID) then
 		return nil, "not repairable"
 	end
 	return unitID, repairID, target
 end
 
-function ControllerCameraTestTryIssueRepairModifier(source)
-	local unitID, repairID = ControllerCameraTestGetRepairModifierTarget()
-	ControllerCameraTestCommandDebug.repairModifierSource = tostring(source or "repair modifier")
-	ControllerCameraTestCommandDebug.repairModifierTarget = tostring(unitID or "none")
+function ControllerCameraTestTryIssueSmartRepair(source, target)
+	local unitID, repairID = ControllerCameraTestGetSmartRepairTarget(target)
+	ControllerCameraTestCommandDebug.smartRepairSource = tostring(source or "Smart X repair")
+	ControllerCameraTestCommandDebug.smartRepairTarget = tostring(unitID or "none")
 	if not unitID or type(repairID) ~= "number" then
-		ControllerCameraTestCommandDebug.repairModifierResult = "fallback"
+		ControllerCameraTestCommandDebug.smartRepairResult = "fallback"
 		return false
 	end
 	local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(repairID,
 		{ unitID }, "Repair", "unit " .. tostring(unitID))
 	if ok then
-		ControllerCameraTestCommandDebug.repairModifierResult = "issued " .. tostring(issuedCount or 0)
+		ControllerCameraTestCommandDebug.smartRepairResult = "issued " .. tostring(issuedCount or 0)
 		ControllerCameraTestShowHotkeyFeedback("REPAIR", "repair")
-		ControllerCameraTestResetSelectionTap(tostring(source or "repair modifier") .. " issued")
+		ControllerCameraTestResetSelectionTap(tostring(source or "Smart X repair") .. " issued")
 		return true
 	end
-	ControllerCameraTestCommandDebug.repairModifierResult = "rejected"
+	ControllerCameraTestCommandDebug.smartRepairResult = "rejected"
 	return false
 end
 
@@ -5877,7 +5909,7 @@ function ControllerCameraTestAttemptT2UpgradeSmartAction(targetUnitID)
 	return false
 end
 
-local function attemptLegacyContextCommand()
+local function attemptLegacyContextCommand(targetOverride)
 	local cmdID = 10 -- Fallback to Move (CMD.MOVE)
 	local cmdName = "Move"
 
@@ -5907,7 +5939,16 @@ local function attemptLegacyContextCommand()
 	local isBuild = type(cmdID) == "number" and cmdID < 0
 	ControllerCameraTestCommandDebug.isBuild = isBuild and "yes" or "no"
 
-	local ok, targetType, targetID = pcall(Spring.TraceScreenRay, screenCenterX, screenCenterY)
+	local capturedTarget = type(targetOverride) == "table" and targetOverride or nil
+	local ok, targetType, targetID
+	if capturedTarget and (capturedTarget.targetType == "unit" or capturedTarget.targetType == "feature")
+			and tonumber(capturedTarget.targetID) then
+		ok, targetType, targetID = true, capturedTarget.targetType, tonumber(capturedTarget.targetID)
+	elseif type(Spring.TraceScreenRay) == "function" then
+		ok, targetType, targetID = pcall(Spring.TraceScreenRay, screenCenterX, screenCenterY)
+	else
+		ok = false
+	end
 	local exactTargetType = ok and targetType or nil
 	local exactTargetID = ok and targetID or nil
 	local hasExactTarget = (exactTargetType == "unit" or exactTargetType == "feature") and tonumber(exactTargetID)
@@ -6142,7 +6183,7 @@ end
 -- Native Experimental retains the complete known-good Smart X decision tree.
 -- Only Repair/Reclaim use the narrow live-descriptor extension below, so air
 -- constructors and hostile reclaim targets reach BAR's CommandNotify boundary.
-local function tryNativeSmartRepairReclaimExtension()
+local function tryNativeSmartRepairReclaimExtension(targetOverride)
 	if not ControllerCameraTestUsesNativeBARUI() or type(Spring.GetDefaultCommand) ~= "function" then
 		return false
 	end
@@ -6151,7 +6192,7 @@ local function tryNativeSmartRepairReclaimExtension()
 	local _, defaultCmdID, _, defaultCmdName = Spring.GetDefaultCommand()
 	local repairID, reclaimID = (CMD and CMD.REPAIR) or 40, (CMD and CMD.RECLAIM) or 90
 	if defaultCmdID ~= repairID and defaultCmdID ~= reclaimID then return false end
-	local target = ControllerCameraTestGetReticleTargetInfo()
+	local target = type(targetOverride) == "table" and targetOverride or ControllerCameraTestGetReticleTargetInfo()
 	-- These are deliberately narrow unit-target extensions.  The known-good
 	-- Smart X implementation below continues to own every other decision.
 	if target.targetType ~= "unit" or not target.targetID then return false end
@@ -6173,13 +6214,14 @@ local function tryNativeSmartRepairReclaimExtension()
 	return true
 end
 
-local function attemptContextCommand()
+local function attemptContextCommand(targetOverride)
 	ControllerCameraTestResetMexCommandDebug()
 	ControllerCameraTestResetSmartCommandDebug()
-	if tryNativeSmartRepairReclaimExtension() then return true end
+	if ControllerCameraTestTryIssueSmartRepair("Smart X", targetOverride) then return true end
+	if tryNativeSmartRepairReclaimExtension(targetOverride) then return true end
 	-- Commit 95e4b907 is authoritative for the normal Smart X decision tree.
 	-- Native Repair/Reclaim above is an extension, not a replacement wrapper.
-	return attemptLegacyContextCommand()
+	return attemptLegacyContextCommand(targetOverride)
 end
 
 local function attemptAttackCommand()
@@ -6745,20 +6787,8 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
 	params = type(params) == "table" and params or {}
 
-	local isBuild = type(cmdID) == "number" and cmdID < 0
-	local useInsert = not isBuild and (options == nil or #options == 0) and ControllerCameraTestIsQueueFrontModifierActive()
+	local useInsert = (options == nil or #options == 0) and ControllerCameraTestIsQueueFrontModifierActive()
 	local finalOpts = type(options) == "table" and options or ControllerCameraTestGetCommandOptions()
-
-	-- If it's a build command and queue front is active, ensure we pass "alt" natively instead of CMD.INSERT
-	if isBuild and ControllerCameraTestIsQueueFrontModifierActive() then
-		local hasAlt = false
-		for _, opt in ipairs(finalOpts) do
-			if opt == "alt" then hasAlt = true end
-		end
-		if not hasAlt then
-			finalOpts = { "alt" }
-		end
-	end
 
 	-- INSERT outer options: vanilla cmd_commandinsert uses {"alt"} only.
 	-- Do NOT use {"alt","shift"} - "shift" would append the INSERT cmd itself
@@ -6804,16 +6834,10 @@ function ControllerCameraTestIssueOrderToSelectedUnits(cmdID, params, cmdName, t
 	end
 
 	local issuedCount = 0
-	local cmdInsert = CMD.INSERT
 	for _, unitID in ipairs(selectedUnits) do
 		local ok, result
 		if useInsert then
-			-- Vanilla INSERT: {pos, cmdID, encodedOpts, ...params}, outer {"alt"} only
-			local insertParams = { 0, cmdID, 0 }
-			for i = 1, #params do
-				insertParams[#insertParams + 1] = params[i]
-			end
-			ok, result = pcall(spGiveOrderToUnit, unitID, cmdInsert, insertParams, { "alt" })
+			ok, result = ControllerCameraTestGiveInsertOrderToUnit(unitID, 0, cmdID, params, finalOpts, { "alt" })
 		else
 			ok, result = pcall(spGiveOrderToUnit, unitID, cmdID, params, finalOpts)
 		end
@@ -6939,6 +6963,45 @@ function ControllerCameraTestGetReticleOwnedTarget()
 	local unitDefID, unitDef = ControllerCameraTestGetUnitDef(target.targetID)
 	if not unitDefID or not unitDef then return nil, nil, nil end
 	return target.targetID, unitDefID, unitDef
+end
+
+function ControllerCameraTestGetReticleOwnedTapTarget()
+	local target = ControllerCameraTestGetReticleTargetInfo()
+	local unitID = target.targetType == "unit" and tonumber(target.targetID) or nil
+	if not unitID or not ControllerCameraTestIsOwnedUnit(unitID) then
+		return nil, nil, nil
+	end
+	if type(Spring.ValidUnitID) == "function" and not Spring.ValidUnitID(unitID) then
+		return nil, nil, nil
+	end
+	if type(Spring.GetUnitIsDead) == "function" and Spring.GetUnitIsDead(unitID) then
+		return nil, nil, nil
+	end
+	local unitDefID, unitDef = ControllerCameraTestGetUnitDef(unitID)
+	if not unitDefID or not unitDef then return nil, nil, nil end
+	return unitID, unitDefID, unitDef
+end
+
+function ControllerCameraTestGetRecentSelectionTapTarget()
+	local state = ControllerCameraTestSelectionTaps
+	if type(state) ~= "table" or not state.lastUnitID or not state.lastUnitDefID then
+		return nil, nil
+	end
+	local elapsed = debugEventTime - (tonumber(state.lastTapAt) or -math.huge)
+	if elapsed < 0 or elapsed > (tonumber(state.windowSeconds) or 0.35) then
+		return nil, nil
+	end
+	local unitID, unitDefID = tonumber(state.lastUnitID), tonumber(state.lastUnitDefID)
+	if not unitID or not unitDefID or not ControllerCameraTestIsOwnedUnit(unitID) then
+		return nil, nil
+	end
+	if type(Spring.ValidUnitID) == "function" and not Spring.ValidUnitID(unitID) then
+		return nil, nil
+	end
+	if type(Spring.GetUnitIsDead) == "function" and Spring.GetUnitIsDead(unitID) then
+		return nil, nil
+	end
+	return unitID, unitDefID
 end
 
 function ControllerCameraTestGetReticleNativeReclaimTarget()
@@ -7369,13 +7432,11 @@ function ControllerCameraTestUpdateNativeDisassembleInput(dt)
 		state.doubleB = ControllerDisassembleBehavior.NewDoubleBTap()
 		return true
 	end
-	if ControllerCameraTestHandleDisassembleB() then return true end
 
 	if state.areaReclaim.active then
+		if ControllerCameraTestHandleDisassembleB() then return true end
 		return ControllerCameraTestUpdateAreaReclaimTargeting()
 	end
-
-	if ControllerCameraTestHandleDisassembleXInput(dt) then return true end
 
 	if lbDown and ControllerCameraTestActionPressed("select") then
 		local targetInfo = ControllerCameraTestGetReticleNativeReclaimCommandTarget()
@@ -7403,6 +7464,10 @@ function ControllerCameraTestUpdateNativeDisassembleInput(dt)
 		state.lbA.pressActive, state.lbA.holdFired, state.lbA.targetInfo = false, false, nil
 		return true
 	end
+
+	if ControllerCameraTestHandleDisassembleXInput(dt) then return true end
+
+	if ControllerCameraTestHandleDisassembleB() then return true end
 
 	return ControllerCameraTestHandleNormalAInput(dt, true) or true
 end
@@ -8558,7 +8623,7 @@ function ControllerCameraTestSelectAllIdleUnitsInCurrentTypeBucket()
 	if #buckets == 0 then
 		ControllerCameraTestIdleCycle.selectedAllCount = 0
 		ControllerCameraTestIdleCycle.lastResult = "no idle units for type-select"
-		latchSelectionDebugMessage("LT+A double-tap: no idle units")
+		latchSelectionDebugMessage("Idle type select: no idle units")
 		return false
 	end
 	local bucket = buckets[1]
@@ -10459,6 +10524,12 @@ function ControllerCameraTestExecuteTacticalCommand(option, stageTargeted, state
 		ControllerCameraTestTacticalMenu.lastResult = tostring(option.name or "Command") .. " disabled"
 		return false
 	end
+	local optionCmdID = tonumber(option.cmdID)
+	if option.kind ~= "wait_toggle" and optionCmdID == ((CMD and CMD.WAIT) or 5) then
+		option.kind = "wait_toggle"
+	elseif option.kind ~= "move_state_cycle" and optionCmdID == TacticalCategories.CmdMoveState then
+		option.kind = "move_state_cycle"
+	end
 	-- The v0.6 controller state machine owns all targeted commands, including
 	-- descriptors sourced from the current native Order Menu. Native data and
 	-- rendering remain authoritative; its failed mouse/owner target lifecycle
@@ -12219,7 +12290,28 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 		local optionsToIssue = orderOptions
 
 		if queueFrontActive then
-			optionsToIssue = { "alt" }
+			local ok = ControllerCameraTestInsertFactoryBuildOption(option)
+			local issuedCount = ControllerCameraTestBuildPlacement.lastIssuedCount or 0
+			menu.placementParamsCount = ControllerCameraTestBuildPlacement.lastParamsCount or 3
+			if ok then
+				menu.placementResult = "factory inserted to " .. tostring(issuedCount)
+				menu.lastAction = source or "factory inserted"
+				ControllerCameraTestBuildPlacement.lastResult = menu.placementResult
+				if exitPlacement then
+					if ControllerCameraTestBuildPlacement.nativePreviewActive then
+						ControllerCameraTestClearNativeBuildCommand()
+						ControllerCameraTestBuildPlacement.nativePreviewActive = false
+					end
+					ControllerCameraTestBuildPlacement.active = false
+					ControllerCameraTestBuildPlacement.placementPattern = "single"
+					ControllerCameraTestBuildPlacement.patternPressActive = false
+					ControllerCameraTestBuildPlacement.placementMode = "none"
+					ControllerCameraTestBuildPlacement.cmdDescIndex = nil
+					ControllerCameraTestBuildPlacement.nativeSetActiveCommandResult = "none"
+				end
+			end
+			ControllerCameraTestRefreshBuildMenuDebug()
+			return ok
 		end
 
 		local ok, issuedCount = ControllerCameraTestIssueOrderToSelectedUnits(cmdToIssue, paramsToIssue, "Factory queue " .. tostring(option.name), "queue", optionsToIssue)
@@ -12311,7 +12403,7 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	local issuedCount = 0
 
 	local useQueueFront = ControllerCameraTestBuildPlacement.active and ControllerCameraTestBuildPlacement.queueFrontActive
-	local cmdInsert = CMD.INSERT
+	local insertParamCount = 0
 
 	if ControllerCameraTestSettings.debugPanelVisible and (useQueueFront or ControllerCameraTestIsQueueFrontModifierActive()) then
 		Spring.Echo(string.format(
@@ -12329,7 +12421,9 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	for _, unitID in ipairs(selectedUnits) do
 		local orderOk, orderResult
 		if useQueueFront then
-			orderOk, orderResult = pcall(spGiveOrderToUnit, unitID, cmdInsert, { 0, option.cmdID, 0, x, y, z, facing }, { "alt" })
+			orderOk, orderResult = ControllerCameraTestGiveInsertOrderToUnit(unitID, 0,
+				option.cmdID, params, orderOptions, { "alt" })
+			if orderOk and type(orderResult) == "table" then insertParamCount = #orderResult end
 		else
 			orderOk, orderResult = pcall(spGiveOrderToUnit, unitID, option.cmdID, params, orderOptions)
 		end
@@ -12339,14 +12433,14 @@ function ControllerCameraTestPlaceBuildOption(option, exitPlacement, source)
 	end
 
 	if useQueueFront then
-		ControllerCameraTestCommandDebug.issuedCmdID = tostring(cmdInsert) .. " (inserting " .. tostring(option.cmdID) .. ")"
-		ControllerCameraTestCommandDebug.issuedParamsCount = 7
+		ControllerCameraTestCommandDebug.issuedCmdID = tostring(CMD.INSERT) .. " (inserting " .. tostring(option.cmdID) .. ")"
+		ControllerCameraTestCommandDebug.issuedParamsCount = insertParamCount > 0 and insertParamCount or 7
 	else
 		ControllerCameraTestCommandDebug.issuedCmdID = tostring(option.cmdID)
 		ControllerCameraTestCommandDebug.issuedParamsCount = #params
 	end
-	menu.placementParamsCount = useQueueFront and 7 or #params
-	ControllerCameraTestBuildPlacement.lastParamsCount = useQueueFront and 7 or #params
+	menu.placementParamsCount = useQueueFront and (insertParamCount > 0 and insertParamCount or 7) or #params
+	ControllerCameraTestBuildPlacement.lastParamsCount = useQueueFront and (insertParamCount > 0 and insertParamCount or 7) or #params
 	ControllerCameraTestBuildPlacement.lastIssuedCount = issuedCount
 	if issuedCount > 0 then
 		lastIssuedCommand = useQueueFront and ("Build menu prepend: " .. tostring(option.name)) or ("Build menu: " .. tostring(option.name))
@@ -12442,7 +12536,7 @@ function ControllerCameraTestInsertFactoryBuildOption(option)
 		menu.radialLastAction = menu.lastAction
 		return false
 	end
-	if type(spGiveOrderToUnit) ~= "function" or type(CMD.INSERT) ~= "number" then
+	if type(spGiveOrderToUnit) ~= "function" or not CMD or type(CMD.INSERT) ~= "number" then
 		menu.lastAction = "factory insert failed: INSERT unavailable"
 		menu.radialLastAction = menu.lastAction
 		return false
@@ -12456,8 +12550,10 @@ function ControllerCameraTestInsertFactoryBuildOption(option)
 
 	local issuedCount = 0
 	for _, unitID in ipairs(selectedUnits) do
-		local ok, result = pcall(spGiveOrderToUnit, unitID, CMD.INSERT,
-			{ 0, option.cmdID, 0 }, { "alt" })
+		local outerOptions = (CMD and type(CMD.OPT_ALT) == "number" and type(CMD.OPT_CTRL) == "number")
+			and ControllerCameraTestEncodeCommandOptions({ "alt", "ctrl" }) or { "alt", "ctrl" }
+		local ok, result = ControllerCameraTestGiveInsertOrderToUnit(unitID, 0,
+			option.cmdID, {}, { "alt", "internal" }, outerOptions)
 		if ok and result ~= false then
 			issuedCount = issuedCount + 1
 		end
@@ -12465,9 +12561,11 @@ function ControllerCameraTestInsertFactoryBuildOption(option)
 	if issuedCount > 0 then
 		ControllerCameraTestCommandDebug.issuedCmdID = tostring(CMD.INSERT) .. " (factory " .. tostring(option.cmdID) .. ")"
 		ControllerCameraTestCommandDebug.issuedParamsCount = 3
-		ControllerCameraTestCommandDebug.lastOptions = "alt (factory INSERT front)"
+		ControllerCameraTestCommandDebug.lastOptions = "alt+ctrl (factory INSERT front)"
 		ControllerCameraTestCommandDebug.lastResult = "factory insert to " .. tostring(issuedCount)
-		menu.lastAction = "factory inserted (LT+A)"
+		ControllerCameraTestBuildPlacement.lastParamsCount = 3
+		ControllerCameraTestBuildPlacement.lastIssuedCount = issuedCount
+		menu.lastAction = "factory inserted (RB+A)"
 		menu.radialLastAction = menu.lastAction
 		ControllerCameraTestShowHotkeyFeedback("INSERT", "utility")
 		ControllerCameraTestRefreshFactoryQueueCounts()
@@ -13001,6 +13099,7 @@ function ControllerCameraTestHandleNormalXInput(dt)
 		drag.active = false
 		drag.singleUnitPathActive = false
 		drag.singleUnitPathUnitID = nil
+		drag.smartPressTargetInfo = ControllerCameraTestGetReticleTargetInfo()
 	end
 
 	if drag.pressActive and drag.pressButton == "smartAction" and ControllerCameraTestActionDown("smartAction") then
@@ -13030,12 +13129,10 @@ function ControllerCameraTestHandleNormalXInput(dt)
 		elseif drag.active then
 			ControllerCameraTestConfirmDragCommand(false)
 		else
-			if not (ControllerCameraTestIsRepairModifierActive()
-					and ControllerCameraTestTryIssueRepairModifier("Y+X")) then
-				attemptContextCommand()
-			end
+			attemptContextCommand(drag.smartPressTargetInfo)
 		end
 		drag.pressActive = false
+		drag.smartPressTargetInfo = nil
 	end
 
 	return drag.pressActive or drag.active
@@ -13102,12 +13199,6 @@ function ControllerCameraTestHandleNormalAInput(dt, disassembleMode)
 		return false
 	end
 
-	if not disassembleMode and ControllerCameraTestIsRepairModifierActive()
-			and ControllerCameraTestActionPressed("select")
-			and ControllerCameraTestTryIssueRepairModifier("Y+A") then
-		return true
-	end
-
 	local area = ControllerCameraTestAreaSelect
 	local HOLD_SECONDS = ControllerCameraTestSettings.aHoldSeconds or 0.38
 
@@ -13124,7 +13215,10 @@ function ControllerCameraTestHandleNormalAInput(dt, disassembleMode)
 		area.additive = ControllerCameraTestIsQueueModifierActive()
 		area.constructorSet = disassembleMode and ControllerCameraTestConstructorSet() or nil
 		local hoveredID, hoveredDefID = ControllerCameraTestGetReticleAlliedUnitAndDef()
-		local pressTargetID, pressUnitDefID = ControllerCameraTestGetReticleOwnedTarget()
+		local pressTargetID, pressUnitDefID = ControllerCameraTestGetReticleOwnedTapTarget()
+		if not pressTargetID and not disassembleMode then
+			pressTargetID, pressUnitDefID = ControllerCameraTestGetRecentSelectionTapTarget()
+		end
 		area.pressTargetID = pressTargetID
 		area.pressUnitDefID = pressUnitDefID
 		ControllerCameraTestTraceSingleSelection("DOWN#" .. tostring(area.selectionEdgeID),
@@ -13333,9 +13427,12 @@ function ControllerCameraTestHandleNormalAInput(dt, disassembleMode)
 				area.lastResult = "Disassemble additive target unchanged"
 			end
 		else
-			local targetID, unitDefID = ControllerCameraTestGetReticleOwnedTarget()
+			local targetID, unitDefID = ControllerCameraTestGetReticleOwnedTapTarget()
 			if not targetID and area.pressTargetID then
 				targetID, unitDefID = area.pressTargetID, area.pressUnitDefID
+			end
+			if not targetID then
+				targetID, unitDefID = ControllerCameraTestGetRecentSelectionTapTarget()
 			end
 			attemptReticleSelection(targetID)
 			local tapResult = "single"
@@ -13728,7 +13825,7 @@ function ControllerCameraTestUpdateLBFaceButtonDispatcher(dt)
 	local lbHeld = ControllerCameraTestActionDown("pitchModifier")
 	local buttons = {
 		{ key = "A", action = "select" }, { key = "B", action = "cancel" },
-		{ key = "X", action = "smartAction" }, { key = "Y", action = "repairModifier" },
+		{ key = "X", action = "smartAction" }, { key = "Y", action = "radialClose" },
 	}
 	local now = debugEventTime
 
@@ -14985,7 +15082,7 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 	if selectionTapModal then
 		ControllerCameraTestResetSelectionTap("modal or modifier context")
 	elseif ControllerSelectionTaps then
-		local observedUnitID, observedUnitDefID = ControllerCameraTestGetReticleOwnedTarget()
+		local observedUnitID, observedUnitDefID = ControllerCameraTestGetReticleOwnedTapTarget()
 		ControllerSelectionTaps.ObserveTarget(
 			ControllerCameraTestSelectionTaps, observedUnitID, observedUnitDefID)
 		ControllerSelectionTaps.Expire(ControllerCameraTestSelectionTaps, debugEventTime)

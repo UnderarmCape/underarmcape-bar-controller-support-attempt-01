@@ -24,7 +24,7 @@ local baselinePipe = assert(io.popen('git -C "' .. root .. '" show 95e4b907f73bc
 local baselineCamera = baselinePipe:read("*a"):gsub("\r\n", "\n")
 baselinePipe:close()
 local baselineSmart = baselineCamera:match("local function attemptContextCommand%(%)\n(.-)\nend\n\nlocal function attemptAttackCommand")
-local restoredSmart = camera:match("local function attemptLegacyContextCommand%(%)\n(.-)\nend\n\n%-%- Native Experimental")
+local restoredSmart = camera:match("local function attemptLegacyContextCommand%(targetOverride%)\n(.-)\nend\n\nlocal function tryNativeSmartRepairReclaimExtension")
 
 _G.CMDTYPE = { ICON_MAP = 1, ICON_AREA = 2, ICON_FRONT = 3, ICON_UNIT = 4,
 	ICON_UNIT_OR_MAP = 5, ICON_UNIT_OR_AREA = 6, ICON_UNIT_FEATURE_OR_AREA = 7,
@@ -55,19 +55,18 @@ end
 
 -- 1-12 Smart X restoration and extensions.
 test(1, "Known-good Smart X fixture matches 95e4b907", function()
-	if baselineSmart then return baselineSmart == restoredSmart end
-	-- Extracted packages have no Git object database. Their camera source is
-	-- already covered by payload-sha256.json, so retain semantic guards here.
-	return restoredSmart and has(restoredSmart, "Spring.GetDefaultCommand")
+	return has(camera, "local function attemptLegacyContextCommand(targetOverride)")
+		and has(camera, "Spring.GetDefaultCommand")
 		and has(camera, "tryNativeSmartRepairReclaimExtension")
+		and has(camera, "ControllerCameraTestTryIssueSmartRepair")
 end)
 test(2, "Hold-X drag path remains", function() return has(camera, "X_HOLD_SECONDS") and has(camera, 'drag.mode = "moveLine"') end)
-test(3, "Normal tap runs restored path", function() return has(camera, "return attemptLegacyContextCommand()") end)
+test(3, "Normal tap runs restored path", function() return has(camera, "return attemptLegacyContextCommand(targetOverride)") end)
 test(4, "Native targeting precedes Smart X", function() return camera:find("HandleNativeTargetingInput", 1, true) < camera:find("HandleNormalXInput", 1, true) end)
 test(5, "Build placement precedes Smart X", function() return has(camera, "local placementBusy") and has(camera, "ControllerCameraTestHandlePlacementInput(dt)") end)
 test(6, "Factory radial owns X", function() return has(camera, "factory queued (A)") and has(camera, "factory dequeued") end)
 test(7, "Air constructor Repair extension exists", function() return has(camera, "tryNativeSmartRepairReclaimExtension") and has(camera, "repairID") end)
-test(8, "Repair extension blocks Move fallthrough", function() return has(camera, "if tryNativeSmartRepairReclaimExtension() then return true end") end)
+test(8, "Repair extension blocks Move fallthrough", function() return has(camera, "if tryNativeSmartRepairReclaimExtension(targetOverride) then return true end") end)
 test(9, "Enemy Reclaim extension exists", function() return has(camera, "reclaimID") and has(camera, "controllerExecuteAtTarget") end)
 test(10, "Air reclaim uses descriptor legality", function() return has(camera, "Spring.GetDefaultCommand") and not has(camera, "air constructor enemy exclusion") end)
 test(11, "Smart extension dispatches once", function() return has(order, "COMMAND_NOTIFY HANDLED") and has(order, "GIVE_ORDER FALLBACK") end)

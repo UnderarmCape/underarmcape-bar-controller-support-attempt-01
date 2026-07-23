@@ -2,14 +2,14 @@
   "kind": "bar-controller-release-payload-spec",
   "schemaVersion": 1,
   "release": {
-    "tag": "controller-support-v0.8.2-tactical-insert-idle-repair",
-    "semanticVersion": "0.8.2",
-    "displayVersion": "v0.8.2 Experimental",
-    "releaseSequence": 800200,
+    "tag": "controller-support-v0.8.3-smartx-insert-tactical-repair",
+    "semanticVersion": "0.8.3",
+    "displayVersion": "v0.8.3 Experimental",
+    "releaseSequence": 800300,
     "channel": "experimental",
-    "assetName": "BAR_Controller_Support_v0.8.2_TACTICAL_INSERT_IDLE_REPAIR.zip",
-    "title": "BAR Controller Support v0.8.2 \u2014 Tactical, Insert & Idle Repair",
-    "releaseNotesAsset": "RELEASE_NOTES_v0.8.2.md"
+    "assetName": "BAR_Controller_Support_v0.8.3_SMARTX_INSERT_TACTICAL_REPAIR.zip",
+    "title": "BAR Controller Support v0.8.3 \u2014 Smart X, Insert & Tactical Repair",
+    "releaseNotesAsset": "RELEASE_NOTES_v0.8.3.md"
   },
   "builds": [
     {
@@ -57,12 +57,12 @@
     {
       "id": "restore",
       "project": "tools/controller-companion/Restore/BARControllerCompanionRestore.csproj",
-      "outputFile": "BAR_Controller_Companion_Restore_v0.8.2_Experimental.exe",
-      "packagePath": "BAR_Controller_Companion_Restore_v0.8.2_Experimental.exe",
+      "outputFile": "BAR_Controller_Companion_Restore_v0.8.3_Experimental.exe",
+      "packagePath": "BAR_Controller_Companion_Restore_v0.8.3_Experimental.exe",
       "component": {
         "componentType": "recovery-executable",
         "destinationRoot": "companion",
-        "destinationPath": "BAR_Controller_Companion_Restore_v0.8.2_Experimental.exe",
+        "destinationPath": "BAR_Controller_Companion_Restore_v0.8.3_Experimental.exe",
         "mayBeLockedByCompanion": false,
         "companionMustRestart": false,
         "barMustRunLuaUiReset": false
@@ -71,8 +71,8 @@
     {
       "id": "installer",
       "project": "tools/controller-companion/Installer/BARControllerCompanionInstaller.csproj",
-      "outputFile": "BAR_Controller_Companion_Installer_v0.8.2_Experimental.exe",
-      "packagePath": "BAR_Controller_Companion_Installer_v0.8.2_Experimental.exe",
+      "outputFile": "BAR_Controller_Companion_Installer_v0.8.3_Experimental.exe",
+      "packagePath": "BAR_Controller_Companion_Installer_v0.8.3_Experimental.exe",
       "packageOnly": true
     }
   ],
