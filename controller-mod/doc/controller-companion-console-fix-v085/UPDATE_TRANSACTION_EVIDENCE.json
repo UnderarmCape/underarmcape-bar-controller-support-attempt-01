@@ -1,0 +1,9 @@
+{
+  "transactionCount": 1,
+  "executedAtUtc": "2026-07-24T05:33:32.0903393\u002B00:00",
+  "targetTag": "controller-support-v0.8.5-unit-insert-quota-type-navigation",
+  "installedVersionAfter": "0.8.5",
+  "hashesValidated": true,
+  "configurationPreserved": true,
+  "helperProcessesRunning": 0
+}

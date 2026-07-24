@@ -1,0 +1,14 @@
++------------------------------------------------------------------+
+|                          RECOVERY MODE                           |
++------------------------------------------------------------------+
+| Select a release to install or restore.                          |
+| Versions older than v0.6.0 are intentionally hidden.             |
++------------------------------------------------------------------+
+| 1. v0.8.5 Experimental [Latest]                                  |
+| 2. v0.8.0 Experimental [Installed]                               |
++------------------------------------------------------------------+
+| Page 1/1                                                         |
+| [Number] Details  [N] Next  [P] Previous  [B] Back  [Q] Quit     |
++------------------------------------------------------------------+
+Type option number or N/P/B/Q, then press Enter.
+Choice: Invalid choice. Type option number or N/P/B/Q, then press Enter: 
