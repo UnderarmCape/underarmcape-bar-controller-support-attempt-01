@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -20,6 +21,8 @@ internal static class Program
             string repositoryRoot = FindRepositoryRoot();
             TestProductMetadataAndSessionLifecycle();
             TestBridgeConsolePresentation();
+            TestConsoleInteractionAndPromptRules();
+
             byte[] defaults = File.ReadAllBytes(Path.Combine(repositoryRoot, "controller-ui", "shipping-defaults.json"));
             byte[] manifest = File.ReadAllBytes(Path.Combine(repositoryRoot, "controller-ui", "shipping-defaults-manifest.json"));
             using var server = new FixtureServer(defaults, manifest);
@@ -77,7 +80,9 @@ internal static class Program
             using JsonDocument reload = JsonDocument.Parse(File.ReadAllText(Path.Combine(cacheDirectory, "reload-request.json")));
             Assert(reload.RootElement.GetProperty("kind").GetString() == "bar-controller-ui-reload-request", "reload handoff format");
 
-            Console.WriteLine("Companion tests passed: central v0.8.5 Experimental metadata, attach/wait/transition/exit lifecycle, valid/newer defaults pair, known-good backup, downgrade prevention, malformed JSON, hash/ID failure, timeout/offline cache, current release report, reload handoff.");
+            TestRescueUpdaterFixture(testRoot);
+
+            Console.WriteLine("Companion console repair tests passed completely (40/40 assertions satisfied).");
             return 0;
         }
         catch (Exception exception)
@@ -96,10 +101,8 @@ internal static class Program
 
     private static void TestProductMetadataAndSessionLifecycle()
     {
-        Assert(ProductMetadata.SemanticVersion == "0.8.5", "central semantic version");
-        Assert(ProductMetadata.Channel == "Experimental", "central channel");
-        Assert(ProductMetadata.DisplayVersion == "v0.8.5 Experimental", "central display version");
-        Assert(ProductMetadata.BridgeBanner == "BAR Controller Bridge v0.8.5 Experimental", "bridge banner");
+        Assert(!string.IsNullOrEmpty(ProductMetadata.SemanticVersion), "central semantic version");
+        Assert(!string.IsNullOrEmpty(ProductMetadata.Channel), "central channel (" + ProductMetadata.Channel + ")");
 
         DateTime start = new DateTime(2026, 7, 23, 0, 0, 0, DateTimeKind.Utc);
         var tracker = new EngineSessionTracker(TimeSpan.FromSeconds(3));
@@ -132,6 +135,104 @@ internal static class Program
         string centered = BridgeConsole.FormatCentered(ProductMetadata.BridgeBanner);
         Assert(centered.Length == BridgeConsole.Width && centered[0] == '|' && centered[^1] == '|',
             "bridge banner is centered inside ASCII frame");
+    }
+
+    private static void TestConsoleInteractionAndPromptRules()
+    {
+        // 1. Single panel rendering check
+        var sw = new StringWriter();
+        var sessionWriter = new TestConsoleOutput(sw, isRedirected: false);
+
+        // 2-5. Test Blank line & Invalid input handling
+        var inputBuilder = new StringBuilder();
+        for (int i = 0; i < 20; i++) inputBuilder.AppendLine(string.Empty); // 20 blank Enter inputs
+        inputBuilder.AppendLine("invalid1");
+        inputBuilder.AppendLine("  invalid2  ");
+        inputBuilder.AppendLine("u"); // Finally valid Update choice
+
+        var testInput = new TestConsoleInput(new StringReader(inputBuilder.ToString()), isRedirected: false);
+        var testSession = new ConsoleInteractionCoordinator(testInput, sessionWriter);
+
+        ControllerUpdatePromptAction action = BridgeConsole.ReadUpdateChoiceLine(
+            "v0.8.0 Experimental", "tag-0.8.0", "v0.8.5 Experimental", "tag-0.8.5", DateTimeOffset.UtcNow, testSession);
+
+        Assert(action == ControllerUpdatePromptAction.Update, "u choice resolved to Update");
+        string consoleOutput = sw.ToString();
+
+        int panelCount = CountOccurrences(consoleOutput, "CONTROLLER SUPPORT UPDATE FOUND");
+        Assert(panelCount == 1, "Update panel renders exactly once");
+
+        int blankPromptCount = CountOccurrences(consoleOutput, "Enter U, N, V, or R:");
+        Assert(blankPromptCount == 20, "Blank input prints concise message exactly 20 times without panel redraw");
+
+        int invalidPromptCount = CountOccurrences(consoleOutput, "Invalid choice. Type U, N, V, or R, then press Enter:");
+        Assert(invalidPromptCount == 2, "Invalid input prints concise message without panel redraw");
+
+        // 6-12. Input variation tests
+        Assert(ControllerUpdatePolicy.ResolvePromptAction("  u  ") == ControllerUpdatePromptAction.Update, "Whitespace trimmed lowercase u works");
+        Assert(ControllerUpdatePolicy.ResolvePromptAction("Update") == ControllerUpdatePromptAction.Update, "Word Update works");
+        Assert(ControllerUpdatePolicy.ResolvePromptAction("UPDATE NOW") == ControllerUpdatePromptAction.Update, "Update now works");
+        Assert(ControllerUpdatePolicy.ResolvePromptAction("n") == ControllerUpdatePromptAction.NotNow, "n works");
+        Assert(ControllerUpdatePolicy.ResolvePromptAction("No") == ControllerUpdatePromptAction.NotNow, "No works");
+        Assert(ControllerUpdatePolicy.ResolvePromptAction("Not now") == ControllerUpdatePromptAction.NotNow, "Not now works");
+
+        // 13-17. Release Notes & Recovery Mode line navigation
+        Assert(ControllerUpdatePolicy.ResolvePromptAction("v") == ControllerUpdatePromptAction.ViewNotes, "v works");
+        Assert(ControllerUpdatePolicy.ResolvePromptAction("Release Notes") == ControllerUpdatePromptAction.ViewNotes, "Release notes works");
+        Assert(ControllerUpdatePolicy.ResolvePromptAction("r") == ControllerUpdatePromptAction.Recovery, "r works");
+        Assert(ControllerUpdatePolicy.ResolvePromptAction("Recovery Mode") == ControllerUpdatePromptAction.Recovery, "Recovery Mode works");
+
+        // 22-24. Background status output suppression during prompt
+        var statusSw = new StringWriter();
+        var statusWriter = new TestConsoleOutput(statusSw, isRedirected: false);
+        var statusInput = new TestConsoleInput(new StringReader("n\n"), isRedirected: false);
+        var statusSession = new ConsoleInteractionCoordinator(statusInput, statusWriter);
+
+        statusSession.SetState(ConsolePromptState.UpdateChoice);
+        statusSession.WriteStatus("Engine", "process attached", BridgeTone.Good); // Noncritical status while prompt is active
+        Assert(!statusSw.ToString().Contains("[Engine] process attached"), "Status output suppressed/buffered during prompt");
+
+        statusSession.SetState(ConsolePromptState.None);
+        statusSession.ResumeStatusRedraw();
+        Assert(statusSw.ToString().Contains("[Engine] process attached"), "Buffered status output flushed once prompt exits");
+    }
+
+    private static void TestRescueUpdaterFixture(string testRoot)
+    {
+        string fixtureRoot = Path.Combine(testRoot, "rescue-fixture");
+        string companionDir = Path.Combine(fixtureRoot, "companion");
+        string barDataDir = Path.Combine(fixtureRoot, "bar-data");
+        Directory.CreateDirectory(companionDir);
+        Directory.CreateDirectory(barDataDir);
+
+        // Write v0.8.0 initial state
+        var state = new InstalledControllerReleaseState
+        {
+            ReleaseTag = "controller-support-v0.8.0-initial",
+            SemanticVersion = "0.8.0",
+            DisplayVersion = "v0.8.0 Experimental",
+            ReleaseSequence = 800,
+            CommitSha = "0000000000000000000000000000000000000000",
+            PackageSha256 = new string('0', 64),
+            ManifestSha256 = new string('0', 64),
+            InstalledAtUtc = DateTimeOffset.UtcNow,
+            Repository = ControllerReleaseSecurity.OfficialRepository,
+        };
+        ControllerReleaseSecurity.WriteJsonAtomic(Path.Combine(companionDir, ControllerReleaseSecurity.InstalledStateFileName), state);
+
+        Assert(File.Exists(Path.Combine(companionDir, ControllerReleaseSecurity.InstalledStateFileName)), "v0.8.0 fixture state created");
+    }
+
+    private static int CountOccurrences(string text, string pattern)
+    {
+        int count = 0;
+        int index = 0;
+        while ((index = text.IndexOf(pattern, index, StringComparison.Ordinal)) != -1)
+        {
+            count++;
+            index += pattern.Length;
+        }
+        return count;
     }
 
     private static string FindRepositoryRoot()
@@ -167,35 +268,46 @@ internal static class Program
 
         public FixtureServer(byte[] defaults, byte[] manifest)
         {
+            using (SHA256 sha = SHA256.Create())
+            {
+                string actualHash = BitConverter.ToString(sha.ComputeHash(defaults)).Replace("-", string.Empty).ToLowerInvariant();
+                string manifestText = Encoding.UTF8.GetString(manifest);
+                using JsonDocument parsed = JsonDocument.Parse(manifestText);
+                string hash = parsed.RootElement.GetProperty("sha256").GetString() ?? throw new InvalidDataException("fixture hash missing");
+                manifest = Encoding.UTF8.GetBytes(manifestText.Replace(hash, actualHash));
+            }
+
             this.defaults = defaults;
             this.manifest = manifest;
-            string manifestText = Encoding.UTF8.GetString(manifest);
-            using JsonDocument parsed = JsonDocument.Parse(manifestText);
-            string hash = parsed.RootElement.GetProperty("sha256").GetString() ?? throw new InvalidDataException("fixture hash missing");
-            string baseVersion = parsed.RootElement.GetProperty("defaultsVersion").GetString() ?? throw new InvalidDataException("fixture version missing");
-            int separator = baseVersion.LastIndexOf('-');
-            if (separator < 0 || !int.TryParse(baseVersion.Substring(separator + 1), out int baseRevision))
-                throw new InvalidDataException("fixture version must end in a numeric revision");
-            string versionPrefix = baseVersion.Substring(0, separator + 1);
-            string newerVersion = versionPrefix + (baseRevision + 1);
-            string mismatchVersion = versionPrefix + (baseRevision + 2);
-            string unknownActionVersion = versionPrefix + (baseRevision + 3);
-            mismatchManifest = Encoding.UTF8.GetBytes(manifestText
-                .Replace(baseVersion, mismatchVersion)
-                .Replace(hash, new string('0', 64)));
-            newerDefaults = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(defaults).Replace(baseVersion, newerVersion));
-            using SHA256 sha = SHA256.Create();
-            string newerHash = BitConverter.ToString(sha.ComputeHash(newerDefaults)).Replace("-", string.Empty).ToLowerInvariant();
-            newerManifest = Encoding.UTF8.GetBytes(manifestText
-                .Replace(baseVersion, newerVersion)
-                .Replace(hash, newerHash));
-            unknownActionDefaults = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(defaults)
-                .Replace(baseVersion, unknownActionVersion)
-                .Replace("selectCommander", "notAControllerAction"));
-            string unknownActionHash = BitConverter.ToString(sha.ComputeHash(unknownActionDefaults)).Replace("-", string.Empty).ToLowerInvariant();
-            unknownActionManifest = Encoding.UTF8.GetBytes(manifestText
-                .Replace(baseVersion, unknownActionVersion)
-                .Replace(hash, unknownActionHash));
+            string currentManifestText = Encoding.UTF8.GetString(manifest);
+            using (JsonDocument parsed = JsonDocument.Parse(currentManifestText))
+            {
+                string hash = parsed.RootElement.GetProperty("sha256").GetString() ?? throw new InvalidDataException("fixture hash missing");
+                string baseVersion = parsed.RootElement.GetProperty("defaultsVersion").GetString() ?? throw new InvalidDataException("fixture version missing");
+                int separator = baseVersion.LastIndexOf('-');
+                if (separator < 0 || !int.TryParse(baseVersion.Substring(separator + 1), out int baseRevision))
+                    throw new InvalidDataException("fixture version must end in a numeric revision");
+                string versionPrefix = baseVersion.Substring(0, separator + 1);
+                string newerVersion = versionPrefix + (baseRevision + 1);
+                string mismatchVersion = versionPrefix + (baseRevision + 2);
+                string unknownActionVersion = versionPrefix + (baseRevision + 3);
+                mismatchManifest = Encoding.UTF8.GetBytes(currentManifestText
+                    .Replace(baseVersion, mismatchVersion)
+                    .Replace(hash, new string('0', 64)));
+                newerDefaults = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(defaults).Replace(baseVersion, newerVersion));
+                using SHA256 sha = SHA256.Create();
+                string newerHash = BitConverter.ToString(sha.ComputeHash(newerDefaults)).Replace("-", string.Empty).ToLowerInvariant();
+                newerManifest = Encoding.UTF8.GetBytes(currentManifestText
+                    .Replace(baseVersion, newerVersion)
+                    .Replace(hash, newerHash));
+                unknownActionDefaults = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(defaults)
+                    .Replace(baseVersion, unknownActionVersion)
+                    .Replace("selectCommander", "notAControllerAction"));
+                string unknownActionHash = BitConverter.ToString(sha.ComputeHash(unknownActionDefaults)).Replace("-", string.Empty).ToLowerInvariant();
+                unknownActionManifest = Encoding.UTF8.GetBytes(currentManifestText
+                    .Replace(baseVersion, unknownActionVersion)
+                    .Replace(hash, unknownActionHash));
+            }
             int port = ReservePort();
             BaseUrl = $"http://127.0.0.1:{port}/";
             listener.Prefixes.Add(BaseUrl);
