@@ -19,7 +19,19 @@ internal static class ControllerUpdateCoordinator
 {
     public static readonly TimeSpan CheckInterval = TimeSpan.FromHours(6);
     private const int RecoveryPageSize = 8;
-    private static int promptActive;
+    private static readonly SemaphoreSlim PromptSemaphore = new SemaphoreSlim(1, 1);
+    private static string? activePromptTag;
+    private static string? lastPromptedTag;
+    private static string? dismissedReleaseTag;
+    private static bool updateTransactionActive;
+
+    public static void ResetStateForTest()
+    {
+        activePromptTag = null;
+        lastPromptedTag = null;
+        dismissedReleaseTag = null;
+        updateTransactionActive = false;
+    }
 
     public static void StartPeriodicCheck(Action requestCompanionExit)
     {
@@ -40,52 +52,89 @@ internal static class ControllerUpdateCoordinator
         });
     }
 
-    public static async Task<bool> CheckAndPromptAsync(Action? requestCompanionExit, bool interactive)
+    public static async Task<bool> CheckAndPromptAsync(
+        Action? requestCompanionExit,
+        bool interactive,
+        IConsoleSession? session = null)
     {
+        session ??= ConsoleInteractionCoordinator.Instance;
+        if (updateTransactionActive) return false;
+        if (!ControllerUpdatePolicy.CanPrompt(interactive, session.Input.IsRedirected, session.Output.IsRedirected))
+        {
+            return false;
+        }
+
         string companionRoot = GetCompanionRoot();
         using var client = CreateClient(companionRoot);
         List<ControllerReleaseCatalogItem> catalog = await GetCatalogAsync(client, companionRoot).ConfigureAwait(false);
         ControllerReleaseCatalogItem? latest = catalog.FirstOrDefault(item => item.IsLatest);
         InstalledControllerReleaseState? installed = ControllerReleaseSecurity.ReadInstalledState(companionRoot);
         if (latest == null || !latest.IsAvailable || !IsNewer(latest, installed)) return false;
-        if (!ControllerUpdatePolicy.CanPrompt(interactive, Console.IsInputRedirected, Console.IsOutputRedirected)
-            || Interlocked.CompareExchange(ref promptActive, 1, 0) != 0)
+
+        if (string.Equals(latest.Tag, dismissedReleaseTag, StringComparison.Ordinal)
+            || string.Equals(latest.Tag, activePromptTag, StringComparison.Ordinal))
         {
             return false;
         }
+
+        if (!await PromptSemaphore.WaitAsync(0).ConfigureAwait(false))
+        {
+            return false;
+        }
+
         try
         {
+            activePromptTag = latest.Tag;
+            lastPromptedTag = latest.Tag;
+            session.SetState(ConsolePromptState.UpdateChoice);
             string installedVersion = installed?.DisplayVersion ?? "Unknown installation";
             string installedTag = installed?.ReleaseTag ?? "legacy state not adopted";
+
             while (true)
             {
-                ConsoleKey choice = BridgeConsole.ReadUpdateChoice(
-                    installedVersion, installedTag, latest.DisplayVersion, latest.Tag, latest.PublishedAtUtc);
-                switch (ControllerUpdatePolicy.ResolvePromptAction(choice))
+                ControllerUpdatePromptAction action = BridgeConsole.ReadUpdateChoiceLine(
+                    installedVersion, installedTag, latest.DisplayVersion, latest.Tag, latest.PublishedAtUtc, session);
+                switch (action)
                 {
                     case ControllerUpdatePromptAction.Update:
-                        if (await InstallReleaseAsync(client, latest, requestCompanionExit).ConfigureAwait(false)) return true;
+                        updateTransactionActive = true;
+                        session.SetState(ConsolePromptState.Installing);
+                        if (await InstallReleaseAsync(client, latest, requestCompanionExit, session).ConfigureAwait(false)) return true;
+                        updateTransactionActive = false;
                         break;
                     case ControllerUpdatePromptAction.NotNow:
-                        BridgeConsole.WriteStatus("Updates", "dismissed for this session", BridgeTone.Neutral);
+                        dismissedReleaseTag = latest.Tag;
+                        session.SetState(ConsolePromptState.None);
+                        BridgeConsole.WriteStatus(session, "Updates", "dismissed for this session", BridgeTone.Neutral);
                         return false;
                     case ControllerUpdatePromptAction.ViewNotes:
-                        WriteDetails(latest);
+                        session.SetState(ConsolePromptState.ReleaseNotes);
+                        WriteDetails(latest, session);
+                        session.SetState(ConsolePromptState.UpdateChoice);
                         break;
                     case ControllerUpdatePromptAction.Recovery:
-                        if (await RunRecoveryModeAsync(client, companionRoot, catalog, requestCompanionExit).ConfigureAwait(false)) return true;
+                        session.SetState(ConsolePromptState.RecoveryBrowser);
+                        if (await RunRecoveryModeAsync(client, companionRoot, catalog, requestCompanionExit, session).ConfigureAwait(false)) return true;
+                        session.SetState(ConsolePromptState.UpdateChoice);
                         break;
                 }
             }
         }
         finally
         {
-            Interlocked.Exchange(ref promptActive, 0);
+            activePromptTag = null;
+            if (session.State != ConsolePromptState.Installing)
+            {
+                session.SetState(ConsolePromptState.None);
+            }
+            PromptSemaphore.Release();
         }
     }
 
-    public static async Task<bool> UpdateLatestAsync(Action? requestCompanionExit, bool assumeYes)
+    public static async Task<bool> UpdateLatestAsync(Action? requestCompanionExit, bool assumeYes, IConsoleSession? session = null)
     {
+        session ??= ConsoleInteractionCoordinator.Instance;
+        if (updateTransactionActive) return false;
         string companionRoot = GetCompanionRoot();
         using var client = CreateClient(companionRoot);
         List<ControllerReleaseCatalogItem> catalog = await GetCatalogAsync(client, companionRoot).ConfigureAwait(false);
@@ -94,33 +143,37 @@ internal static class ControllerUpdateCoordinator
         InstalledControllerReleaseState? installed = ControllerReleaseSecurity.ReadInstalledState(companionRoot);
         if (!IsNewer(latest, installed))
         {
-            BridgeConsole.WriteStatus("Updates", "installed release is already GitHub Latest", BridgeTone.Good);
+            BridgeConsole.WriteStatus(session, "Updates", "installed release is already GitHub Latest", BridgeTone.Good);
             return false;
         }
-        if (!assumeYes && !BridgeConsole.ConfirmReleaseAction("Update now", latest.DisplayVersion, latest.Tag, false))
+        if (!assumeYes && !BridgeConsole.ConfirmReleaseAction("Update now", latest.DisplayVersion, latest.Tag, false, session))
         {
-            BridgeConsole.WriteStatus("Updates", "cancelled; no files changed", BridgeTone.Neutral);
+            BridgeConsole.WriteStatus(session, "Updates", "cancelled; no files changed", BridgeTone.Neutral);
             return false;
         }
-        return await InstallReleaseAsync(client, latest, requestCompanionExit).ConfigureAwait(false);
+        updateTransactionActive = true;
+        session.SetState(ConsolePromptState.Installing);
+        return await InstallReleaseAsync(client, latest, requestCompanionExit, session).ConfigureAwait(false);
     }
 
-    public static async Task<bool> RunRecoveryModeAsync(Action? requestCompanionExit)
+    public static async Task<bool> RunRecoveryModeAsync(Action? requestCompanionExit, IConsoleSession? session = null)
     {
+        session ??= ConsoleInteractionCoordinator.Instance;
         string companionRoot = GetCompanionRoot();
         using var client = CreateClient(companionRoot);
         List<ControllerReleaseCatalogItem> catalog = await GetCatalogAsync(client, companionRoot).ConfigureAwait(false);
-        return await RunRecoveryModeAsync(client, companionRoot, catalog, requestCompanionExit).ConfigureAwait(false);
+        return await RunRecoveryModeAsync(client, companionRoot, catalog, requestCompanionExit, session).ConfigureAwait(false);
     }
 
-    public static async Task PrintCatalogAsync()
+    public static async Task PrintCatalogAsync(IConsoleSession? session = null)
     {
+        session ??= ConsoleInteractionCoordinator.Instance;
         string companionRoot = GetCompanionRoot();
         using var client = CreateClient(companionRoot);
         List<ControllerReleaseCatalogItem> catalog = await GetCatalogAsync(client, companionRoot).ConfigureAwait(false);
         foreach (ControllerReleaseCatalogItem item in catalog)
         {
-            Console.WriteLine(item.DisplayVersion + " | " + item.Tag + " " + ControllerUpdatePolicy.Indicators(item));
+            session.WriteLine(item.DisplayVersion + " | " + item.Tag + " " + ControllerUpdatePolicy.Indicators(item));
         }
     }
 
@@ -281,7 +334,8 @@ internal static class ControllerUpdateCoordinator
     private static async Task<bool> InstallReleaseAsync(
         ControllerGitHubReleaseClient client,
         ControllerReleaseCatalogItem release,
-        Action? requestCompanionExit)
+        Action? requestCompanionExit,
+        IConsoleSession session)
     {
         string companionRoot = GetCompanionRoot();
         int pid = Process.GetCurrentProcess().Id;
@@ -296,7 +350,7 @@ internal static class ControllerUpdateCoordinator
             UseShellExecute = true,
             WindowStyle = ProcessWindowStyle.Normal,
         });
-        BridgeConsole.WriteStatus("Updates", "validated transaction handed to external updater", BridgeTone.Good);
+        BridgeConsole.WriteStatus(session, "Updates", "validated transaction handed to external updater", BridgeTone.Good);
         requestCompanionExit?.Invoke();
         return true;
     }
@@ -305,9 +359,10 @@ internal static class ControllerUpdateCoordinator
         ControllerGitHubReleaseClient client,
         string companionRoot,
         List<ControllerReleaseCatalogItem> catalog,
-        Action? requestCompanionExit)
+        Action? requestCompanionExit,
+        IConsoleSession session)
     {
-        if (Console.IsInputRedirected || Console.IsOutputRedirected) return false;
+        if (session.Input.IsRedirected || session.Output.IsRedirected) return false;
         int page = 0;
         int pageCount = Math.Max(1, (catalog.Count + RecoveryPageSize - 1) / RecoveryPageSize);
         while (true)
@@ -320,17 +375,17 @@ internal static class ControllerUpdateCoordinator
                 ControllerReleaseCatalogItem item = items[index];
                 rows.Add((index + 1) + ". " + item.DisplayVersion + " - " + TrimTitle(item.Title, 24) + " " + ControllerUpdatePolicy.Indicators(item));
             }
-            ConsoleKey key = BridgeConsole.ReadRecoveryChoice(rows, page + 1, pageCount);
+            ConsoleKey key = BridgeConsole.ReadRecoveryChoice(rows, page + 1, pageCount, session);
             if (key == ConsoleKey.N && page + 1 < pageCount) { page++; continue; }
             if (key == ConsoleKey.P && page > 0) { page--; continue; }
             if (key == ConsoleKey.B || key == ConsoleKey.Q || key == ConsoleKey.Escape) return false;
             int selected = KeyNumber(key);
             if (selected < 1 || selected > items.Count) continue;
             ControllerReleaseCatalogItem release = items[selected - 1];
-            WriteDetails(release);
+            WriteDetails(release, session);
             if (!release.IsAvailable)
             {
-                BridgeConsole.WriteStatus("Recovery", release.UnavailableReason, BridgeTone.Bad);
+                BridgeConsole.WriteStatus(session, "Recovery", release.UnavailableReason, BridgeTone.Bad);
                 continue;
             }
             InstalledControllerReleaseState? installed = ControllerReleaseSecurity.ReadInstalledState(companionRoot);
@@ -338,8 +393,8 @@ internal static class ControllerUpdateCoordinator
             bool downgrade = installed != null && !reinstall
                 && release.ReleaseSequence <= installed.ReleaseSequence;
             string action = reinstall ? "Reinstall release" : downgrade ? "Downgrade release" : "Install release";
-            if (!BridgeConsole.ConfirmReleaseAction(action, release.DisplayVersion, release.Tag, downgrade || reinstall)) continue;
-            return await InstallReleaseAsync(client, release, requestCompanionExit).ConfigureAwait(false);
+            if (!BridgeConsole.ConfirmReleaseAction(action, release.DisplayVersion, release.Tag, downgrade || reinstall, session)) continue;
+            return await InstallReleaseAsync(client, release, requestCompanionExit, session).ConfigureAwait(false);
         }
     }
 
@@ -430,7 +485,7 @@ internal static class ControllerUpdateCoordinator
         return string.Compare(latest.Tag, installed.ReleaseTag, StringComparison.Ordinal) > 0;
     }
 
-    private static void WriteDetails(ControllerReleaseCatalogItem release)
+    private static void WriteDetails(ControllerReleaseCatalogItem release, IConsoleSession session)
     {
         BridgeConsole.WriteReleaseDetails(
             release.DisplayVersion,
@@ -438,7 +493,8 @@ internal static class ControllerUpdateCoordinator
             release.Title,
             release.PublishedAtUtc,
             release.Summary,
-            ControllerUpdatePolicy.Indicators(release));
+            ControllerUpdatePolicy.Indicators(release),
+            session);
     }
 
     private static string TrimTitle(string value, int width)

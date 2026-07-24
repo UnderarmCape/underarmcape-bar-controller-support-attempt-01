@@ -6,6 +6,8 @@
     <RootNamespace>BARControllerUpdater</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);NETSDK1138</NoWarn>
     <PublishSingleFile Condition="'$(RuntimeIdentifier)' != ''">true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract Condition="'$(RuntimeIdentifier)' != ''">true</IncludeNativeLibrariesForSelfExtract>
     <PublishTrimmed>false</PublishTrimmed>
@@ -13,6 +15,7 @@
   <ItemGroup>
     <Compile Include="..\Shared\ProductMetadata.cs" Link="Shared\ProductMetadata.cs" />
     <Compile Include="..\Shared\BridgeConsole.cs" Link="Shared\BridgeConsole.cs" />
+    <Compile Include="..\Shared\ConsoleInteractionCoordinator.cs" Link="Shared\ConsoleInteractionCoordinator.cs" />
     <Compile Include="..\Shared\ControllerReleaseModels.cs" Link="Shared\ControllerReleaseModels.cs" />
     <Compile Include="..\Shared\ControllerReleaseSecurity.cs" Link="Shared\ControllerReleaseSecurity.cs" />
     <Compile Include="..\Shared\ControllerReleaseTransaction.cs" Link="Shared\ControllerReleaseTransaction.cs" />

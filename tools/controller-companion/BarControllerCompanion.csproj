@@ -6,6 +6,8 @@
     <RootNamespace>BARControllerBridge</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);NETSDK1138</NoWarn>
     <PublishSingleFile Condition="'$(RuntimeIdentifier)' != ''">true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract Condition="'$(RuntimeIdentifier)' != ''">true</IncludeNativeLibrariesForSelfExtract>
     <PublishTrimmed>false</PublishTrimmed>
@@ -15,12 +17,14 @@
     <Compile Remove="Installer\**\*.cs" />
     <Compile Remove="Restore\**\*.cs" />
     <Compile Remove="Updater\**\*.cs" />
+    <Compile Remove="Bootstrap\**\*.cs" />
     <Compile Remove="Shared\**\*.cs" />
     <Compile Remove="Tests\**\*.cs" />
     <Compile Remove="ReleaseTests\**\*.cs" />
     <Compile Include="Shared\ProductMetadata.cs" />
     <Compile Include="Shared\EngineSessionTracker.cs" />
     <Compile Include="Shared\BridgeConsole.cs" />
+    <Compile Include="Shared\ConsoleInteractionCoordinator.cs" />
     <Compile Include="Shared\ControllerReleaseModels.cs" />
     <Compile Include="Shared\ControllerReleaseSecurity.cs" />
     <Compile Include="Shared\ControllerReleaseTransaction.cs" />
