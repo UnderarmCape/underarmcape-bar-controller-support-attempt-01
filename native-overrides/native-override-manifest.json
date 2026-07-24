@@ -38,9 +38,9 @@
       "livePath": "LuaUI/Widgets/gui_buildmenu.lua",
       "sourcePath": "native-overrides/99351e53d26f5e55fa007ca1e208b936f22bd3ab/luaui/Widgets/gui_buildmenu.lua",
       "baseSha256": "082298c94eb24c17db180d5be34ed4a79bccb7751450f76d685f44cf346a12dd",
-      "previousPatchedSha256": "544b1884aabe7a226601f9a16f59bd204cb39e2da94a1881e140c1ae7a887c3a",
-      "patchedSha256": "2f9d65082d1ef52b0f25a3a1ea11700d101315c5a1feb943fada2e9ba710012b",
-      "purpose": "Export authoritative build/factory cells, hide only native pixels, and split visible/hidden refresh responsibilities to keep DrawScreen at practical upvalue headroom."
+      "previousPatchedSha256": "2f9d65082d1ef52b0f25a3a1ea11700d101315c5a1feb943fada2e9ba710012b",
+      "patchedSha256": "a5b609ec05b12a4b85e86c959e8b7de153a6aa52f1419a4130306fadf08cd184",
+      "purpose": "Export authoritative build/factory cells and quota metadata, hide only native pixels, and split visible/hidden refresh responsibilities to keep DrawScreen at practical upvalue headroom."
     },
     {
       "livePath": "LuaUI/Widgets/cmd_area_mex.lua",
