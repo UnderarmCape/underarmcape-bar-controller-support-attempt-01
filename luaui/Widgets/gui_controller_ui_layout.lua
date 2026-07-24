@@ -1190,6 +1190,7 @@ local function isNormal(c)
 		and not c.buildPlacement and not c.buildMenuOpen and not c.tacticalRadialOpen and not c.selectionRadialOpen
 		and not c.visibleSelectionRadialOpen and not c.lbTacticalLayer
 		and not c.dgunMode and not c.stagedTactical and not c.areaSelection
+		and not c.disassembleMode and not c.disassembleToggleCharge
 		and not c.commandLayer
 		and not c.controlGroupLayer and not c.pitchLayer and not c.longBindingStress
 end
@@ -1253,7 +1254,7 @@ bind("radialPrevPage", "Previous Filter", isSelectionRadial, 3)
 bind("radialNextPage", "Next Filter", isSelectionRadial, 4)
 addHint({ id = "visible-filter-choose", inputs = { "leftStick" }, label = "Choose Filter",
 	when = isVisibleSelectionRadial, priority = 1, group = "Selection" })
-addHint({ id = "visible-filter-confirm", inputs = { "LT" }, label = "Release to Confirm",
+addHint({ id = "visible-filter-confirm", inputs = { "RB" }, label = "Release to Confirm",
 	when = isVisibleSelectionRadial, priority = 2, group = "Selection" })
 bind("cancel", "Cancel", isVisibleSelectionRadial, 3, { id = "visible-filter-cancel", group = "Selection" })
 addHint({ id = "dgun-fire", inputs = { "RT" }, label = "Fire DGUN", when = isDgun, priority = 1, group = "Commands" })
@@ -1262,8 +1263,7 @@ addHint({ id = "dgun-aim", inputs = { "rightStick" }, label = "Aim", when = isDg
 bind("place", "Confirm Tactical Target", isStaged, 1)
 bind("cancelPlacement", "Cancel Tactical Target", isStaged, 2)
 bind("appendQueueModifier", "Repeat / Append", isStaged, 3)
-addHint({ id = "staged-insert-order", action = "insertNextCommandModifier",
-	chordActions = { "insertNextCommandModifier", "place" }, label = "Insert Order",
+addHint({ id = "staged-insert-order", inputs = { "RB", "X" }, label = "Insert Order",
 	when = isStaged, priority = 2, group = "Commands" })
 bind("select", "Release to Select Area", isAreaSelection, 1)
 bind("cancel", "Cancel Area Selection", isAreaSelection, 2)
@@ -1306,9 +1306,13 @@ bind("select", "Select Unit", isNormal, 1)
 bind("smartAction", "Smart Action", function(c) return isNormal(c) and not c.hasTransport end, 3)
 bind("smartAction", "Load / Move Transport", function(c) return isNormal(c) and c.hasTransport end, 3, { id = "normal-transport-smart" })
 bind("smartAction", "Draw Move / Build Path", function(c) return isNormal(c) and c.hasSelection end, 4, { hold = true, id = "normal-smart-hold" })
+addHint({ id = "normal-insert-order", inputs = { "RB", "X" }, label = "Insert Order",
+	when = function(c) return isNormal(c) and c.generalInsertAvailable end, priority = 2, group = "Commands" })
 bind("cancel", "Clear Selection", function(c) return isNormal(c) and c.hasSelection end, 5)
 bind("buildRadial", "Build / Factory Radial", function(c) return isNormal(c) and (c.hasBuilder or c.hasFactory) end, 6)
 bind("commandLayer", "Tactical Command Layer", function(c) return isNormal(c) and c.hasSelection end, 7)
+addHint({ id = "normal-disassemble-toggle", inputs = { "LB", "RB" }, label = "Disassemble Mode", hold = true,
+	when = function(c) return isNormal(c) and c.canDisassemble end, priority = 7, group = "Commands" })
 addHint({ id = "normal-visible-select", action = "pitchModifier", label = "Select Visible Combat",
 	labelResolver = function(c)
 		local behavior = extra.SharedRenderers and extra.SharedRenderers.SelectionBehavior
@@ -1316,8 +1320,17 @@ addHint({ id = "normal-visible-select", action = "pitchModifier", label = "Selec
 	end, when = isNormal, priority = 8, group = "Selection" })
 bind("idlePrev", "Previous Idle Unit", isNormal, 9)
 bind("idleNext", "Next Idle Unit", isNormal, 10)
+addHint({ id = "normal-type-prev", inputs = { "RB", "dpadLeft" }, label = "Previous Mobile Type",
+	when = function(c) return isNormal(c) and c.mobileTypeNavigationAvailable end, priority = 9, group = "Selection" })
+addHint({ id = "normal-type-next", inputs = { "RB", "dpadRight" }, label = "Next Mobile Type",
+	when = function(c) return isNormal(c) and c.mobileTypeNavigationAvailable end, priority = 10, group = "Selection" })
+addHint({ id = "normal-type-visible", inputs = { "RB", "dpadDown" }, label = "Select Visible Type",
+	when = function(c) return isNormal(c) and c.mobileTypeNavigationAvailable end, priority = 11, group = "Selection" })
 bind("controlGroupModifier", "Control Groups", isNormal, 11)
 bind("selectCommander", "Select Commander", isNormal, 9, { id = "normal-select-commander" })
+addHint({ id = "normal-self-destruct-hint", inputs = { "leftStickClick", "rightStickClick" }, label = "Self Destruct",
+	hold = true, when = function(c) return c.selfDestructFirstModifier and c.selfDestructEligible and not c.bindingsOpen end,
+	priority = 1, group = "Commands" })
 
 addHint({ id = "shortcut-mouse", shortcut = "mouseMode", label = "Toggle Mouse Mode", priority = 900,
 	when = function(c) return not c.bindingsOpen and not c.layoutEditorOpen end })
@@ -1337,7 +1350,9 @@ local function contextSignature(context)
 	local keys = { "pregame", "mouseMode", "bindingsOpen", "layoutEditorOpen", "buildMenuOpen", "buildPlacement",
 		"factoryRadialOpen", "tacticalRadialOpen", "selectionRadialOpen", "visibleSelectionRadialOpen", "areaSelection", "stagedTactical", "dgunMode",
 		"selectedCount", "hasBuilder", "hasFactory", "hasTransport", "hasWorldTarget", "hoverTargetType", "smartTargetType",
-		"commandLayer", "controlGroupLayer", "pitchLayer", "lbTacticalLayer", "visibleSelectionFilter", "selectionProfile", "selectionRevision" }
+		"commandLayer", "controlGroupLayer", "pitchLayer", "lbTacticalLayer", "visibleSelectionFilter", "selectionProfile", "selectionRevision",
+		"disassembleMode", "disassembleToggleCharge", "canDisassemble", "generalInsertAvailable", "factoryQuotaMode",
+		"mobileTypeNavigationAvailable", "selfDestructFirstModifier", "selfDestructEligible" }
 	local parts = {}
 	for i, key in ipairs(keys) do parts[i] = tostring(context[key]) end
 	return table.concat(parts, "|")
@@ -1368,6 +1383,7 @@ function extra.normalLayerContext(context)
 	base.tacticalRadialOpen, base.selectionRadialOpen = false, false
 	base.visibleSelectionRadialOpen, base.lbTacticalLayer = false, false
 	base.dgunMode, base.stagedTactical, base.areaSelection = false, false, false
+	base.disassembleMode, base.disassembleToggleCharge = false, false
 	base.commandLayer, base.controlGroupLayer, base.pitchLayer = false, false, false
 	return base
 end

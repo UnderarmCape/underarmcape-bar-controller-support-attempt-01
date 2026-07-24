@@ -101,7 +101,7 @@ Check 81 'historical publication sequence is oldest to newest'
 $spec = Get-Content -Raw -Encoding UTF8 (Join-Path $RepositoryRoot 'tools\release\controller-release-payloads.json') | ConvertFrom-Json
 Require ([long]$spec.release.releaseSequence -gt [long]$historical[-1].sequence) 'Current release is not sequenced last.'
 Check 82 'current release is sequenced after all historical milestones'
-Require ($spec.release.tag -eq 'controller-support-v0.8.4-general-insert-disassemble-idle') 'Current Latest identity is wrong.'
+Require ($spec.release.tag -eq 'controller-support-v0.8.5-unit-insert-quota-type-navigation') 'Current Latest identity is wrong.'
 Check 83 'current release is designated as the Latest candidate'
 Require ($historicalScript -match '-Prerelease\s+-Historical' -and $historicalScript -notmatch '-Latest') 'Historical release flags could alter Latest.'
 Check 84 'historical releases are prerelease recovery data and never Latest'
@@ -141,8 +141,8 @@ Check 92 'future mandatory-release policy is durable and documented'
 
 $companionTests = Invoke-Checked 'dotnet' @('run','--project',(Join-Path $RepositoryRoot 'tools\controller-companion\Tests\BARControllerCompanionUpdateTests.csproj'),'-c','Release')
 $companionText = $companionTests -join "`n"
-Require ($companionText -match 'central v0.8.4 Experimental metadata') 'Bridge version regression failed.'
-Check 93 'bridge version remains v0.8.4 Experimental'
+Require ($companionText -match 'central v0.8.5 Experimental metadata') 'Bridge version regression failed.'
+Check 93 'bridge version remains v0.8.5 Experimental'
 Require ($companionText -match 'attach/wait/transition/exit lifecycle') 'Bridge session tracking regression failed.'
 Check 94 'bridge session tracking lifecycle passes'
 
@@ -162,7 +162,7 @@ $luaCases = @(
     @{ number=106; path='tools\controller-ui-tests\Test-ControllerV081DisassembleIdleHints.lua'; label='v0.8.1 recovery regression remains available' },
     @{ number=107; path='tools\controller-ui-tests\Test-ControllerV082TacticalInsertIdleRepair.lua'; label='v0.8.2 recovery wrapper remains available' },
     @{ number=108; path='tools\controller-ui-tests\Test-ControllerV083SmartXInsertTacticalRepair.lua'; label='v0.8.3 Smart X insert tactical repair' },
-    @{ number=109; path='tools\controller-ui-tests\Test-ControllerV084GeneralInsertDisassembleIdle.lua'; label='v0.8.4 general insert disassemble idle' }
+    @{ number=109; path='tools\controller-ui-tests\Test-ControllerV085UnitInsertQuotaTypeNavigation.lua'; label='v0.8.5 unit insert quota type navigation' }
 )
 foreach ($case in $luaCases) {
 	$null = Invoke-Checked 'lua' @((Join-Path $RepositoryRoot $case.path), $RepositoryRoot)
@@ -216,8 +216,8 @@ $manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath $ManifestPath | Convert
 if ($SkipRemotePublicationChecks) {
     Require ($publisher -match '--latest' -and $publisher -match 'isDraft,isPrerelease,assets,url' -and $publisher -match 'Published asset digest mismatch') 'Publisher cannot validate public GitHub publication.'
     Check 115 'GitHub publication validation passes'
-    Require ($spec.release.tag -eq $manifest.releaseTag -and (Test-Path -LiteralPath (Join-Path $RepositoryRoot 'tools\release\bar-controller-support-v0.8.3\README.md') -PathType Leaf)) 'Recovery release preflight is incomplete.'
-    Check 116 'Recovery Mode lists v0.8.4 first and v0.8.3 remains available'
+    Require ($spec.release.tag -eq $manifest.releaseTag -and (Test-Path -LiteralPath (Join-Path $RepositoryRoot 'tools\release\bar-controller-support-v0.8.4\README.md') -PathType Leaf)) 'Recovery release preflight is incomplete.'
+    Check 116 'Recovery Mode lists v0.8.5 first and v0.8.4 remains available'
 } else {
     $published = gh release view ([string]$manifest.releaseTag) --repo $repository --json tagName,name,isDraft,isPrerelease,assets | ConvertFrom-Json
     $latestRelease = gh api ('repos/' + $repository + '/releases/latest') | ConvertFrom-Json
@@ -229,9 +229,9 @@ if ($SkipRemotePublicationChecks) {
     Check 115 'GitHub publication validation passes'
 
     $releaseList = gh release list --repo $repository --limit 20 --json tagName | ConvertFrom-Json
-    $v083Rows = @($releaseList | Where-Object { $_.tagName -eq 'controller-support-v0.8.3-smartx-insert-tactical-repair' })
-    Require ($latestRelease.tag_name -eq $manifest.releaseTag -and $v083Rows.Count -ge 1) 'Recovery release ordering or v0.8.3 availability is wrong.'
-    Check 116 'Recovery Mode lists v0.8.4 first and v0.8.3 remains available'
+    $v084Rows = @($releaseList | Where-Object { $_.tagName -eq 'controller-support-v0.8.4-general-insert-disassemble-idle' })
+    Require ($latestRelease.tag_name -eq $manifest.releaseTag -and $v084Rows.Count -ge 1) 'Recovery release ordering or v0.8.4 availability is wrong.'
+    Check 116 'Recovery Mode lists v0.8.5 first and v0.8.4 remains available'
 }
 
 Require ($passed -eq 116) "Expected exactly 116 checks, got $passed."

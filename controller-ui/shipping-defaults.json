@@ -1,9 +1,9 @@
 {
   "kind": "bar-controller-ui-defaults",
   "schemaVersion": 3,
-  "defaultsVersion": "0.8.4-general-insert-disassemble-idle-1",
+  "defaultsVersion": "0.8.5-unit-insert-quota-type-navigation-1",
   "generatedAt": "2026-07-23T00:00:00Z",
-  "compatibleModVersion": "0.8.4-experimental",
+  "compatibleModVersion": "0.8.5-experimental",
   "settings": {
     "global": {
       "enabled": true,
@@ -304,7 +304,7 @@
       "placementStatus": { "enabled": true, "x": 0.5, "y": 0.405, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "anchor": "center" },
       "companionStatus": { "enabled": true, "x": 0.5, "y": 0.73, "scale": 1.0, "opacity": 1.0, "fontScale": 1.0, "anchor": "center" },
       "debug": { "enabled": true },
-      "gameplay": { "disassembleToggleHoldSeconds": 1.0, "disassembleUnusedTimeoutSeconds": 30.0, "areaReclaimHoldSeconds": 0.45, "areaMarkHoldSeconds": 0.38 },
+      "gameplay": { "disassembleToggleHoldSeconds": 1.0, "disassembleUnusedTimeoutSeconds": 30.0, "areaReclaimHoldSeconds": 0.45, "areaMarkHoldSeconds": 0.38, "disassembleAreaReclaimRadius": 24 },
       "editorLauncher": {
         "enabled": false,
         "x": 0.79,

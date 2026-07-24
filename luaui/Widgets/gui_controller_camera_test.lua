@@ -224,6 +224,9 @@ ControllerCameraTestBuildMenu = ControllerCameraTestBuildMenu or {
 	factoryProgressCmdID = "none",
 	factoryProgressValue = "none",
 	factoryProgressSource = "none",
+	factoryQuotaModeActive = false,
+	factoryQuotaModeSource = "unknown",
+	factoryQueueRefreshReason = "initial",
 	isFactoryContext = false,
 	selectedStableKey = nil,
 	nativeModel = nil,
@@ -517,7 +520,7 @@ ControllerCameraTestDisassemble = ControllerCameraTestDisassemble or {
 	lastValidationAt = -10,
 	lastResult = "inactive",
 	markArea = { pressActive = false, active = false, startedAt = 0, radius = 320, additive = false, typeFilter = nil },
-	areaReclaim = { active = false, anchorUnitID = nil, unitDefID = nil, x = nil, y = nil, z = nil, radius = 120, candidates = {} },
+	areaReclaim = { active = false, anchorUnitID = nil, unitDefID = nil, x = nil, y = nil, z = nil, radius = 24, candidates = {} },
 	lbA = { pressActive = false, startedAt = 0, targetID = nil, unitDefID = nil, targetInfo = nil, holdFired = false },
 	pendingX = { pressActive = false, startedAt = 0, holdFired = false, targetInfo = nil, groundInfo = nil },
 	doubleB = ControllerDisassembleBehavior and ControllerDisassembleBehavior.NewDoubleBTap()
@@ -530,6 +533,17 @@ ControllerCameraTestTacticalToggleLatch = ControllerCameraTestTacticalToggleLatc
 	or { waitingForRBRelease = false, lastResult = "idle" }
 ControllerCameraTestRTRBSuppression = ControllerCameraTestRTRBSuppression
 	or { active = false, rbPressedAt = -10, rtPressedAt = -10, lastResult = "idle" }
+ControllerCameraTestGeneralInsert = ControllerCameraTestGeneralInsert
+	or { active = false, waitingForRBRelease = false, lastResult = "idle", lastIssued = false, lastSource = "none" }
+ControllerCameraTestUnitTypeNavigation = ControllerCameraTestUnitTypeNavigation or {
+	currentUnitDefID = nil,
+	currentIndex = 1,
+	lastResult = "idle",
+	lastCount = 0,
+	lastTypeName = "none",
+	selectedVisibleCount = 0,
+	representativeRule = "lowest-unit-id",
+}
 ControllerCameraTestNativeUI = ControllerCameraTestNativeUI or {
 	tacticalFocus = nil,
 	buildFocus = nil,
@@ -755,6 +769,7 @@ function ControllerCameraTestGetDefaultSettings()
 		xHoldSeconds = 0.14,
 		aHoldSeconds = 0.38,
 		areaReclaimHoldSeconds = 0.45,
+		disassembleAreaReclaimRadius = 24,
 		disassembleToggleHoldSeconds = 0.33,
 		nativeBarUIIntegration = "Native Experimental",
 		controllerGlyphStyle = "Auto",
@@ -895,6 +910,7 @@ function ControllerCameraTestClampSetting(name, value)
 		xHoldSeconds = { 0.05, 2.0 },
 		aHoldSeconds = { 0.05, 2.0 },
 		areaReclaimHoldSeconds = { 0.10, 2.0 },
+		disassembleAreaReclaimRadius = { 12, 1200 },
 		disassembleToggleHoldSeconds = { 0.15, 1.50 },
 		disassembleUnusedTimeoutSeconds = { 30.0, 30.0 },
 		lbTapMaxSeconds = { 0.08, 0.50 },
@@ -946,6 +962,8 @@ function ControllerCameraTestApplySettingsDefaults()
 	settings.xHoldSeconds = ControllerCameraTestClampSetting("xHoldSeconds", settings.xHoldSeconds or 0.14)
 	settings.aHoldSeconds = ControllerCameraTestClampSetting("aHoldSeconds", settings.aHoldSeconds or 0.38)
 	settings.areaReclaimHoldSeconds = ControllerCameraTestClampSetting("areaReclaimHoldSeconds", settings.areaReclaimHoldSeconds or 0.45)
+	settings.disassembleAreaReclaimRadius = ControllerCameraTestClampSetting("disassembleAreaReclaimRadius",
+		settings.disassembleAreaReclaimRadius or defaults.disassembleAreaReclaimRadius)
 	settings.disassembleToggleHoldSeconds = ControllerCameraTestClampSetting("disassembleToggleHoldSeconds", settings.disassembleToggleHoldSeconds or defaults.disassembleToggleHoldSeconds)
 	settings.disassembleUnusedTimeoutSeconds = 30.0
 	settings.lbTapMaxSeconds = ControllerCameraTestClampSetting("lbTapMaxSeconds", settings.lbTapMaxSeconds or defaults.lbTapMaxSeconds)
@@ -2607,6 +2625,7 @@ function ControllerCameraTestGetSettingsDefinitions()
 		lbTacticalHoldSeconds = { 0.08, 0.50, 0.01, "number", 2 },
 		rbTapMaxSeconds = { 0.08, 0.50, 0.01, "number", 2 },
 		rbChordGraceSeconds = { 0.05, 0.40, 0.01, "number", 2 },
+		disassembleAreaReclaimRadius = { 12, 1200, 4, "number", 0 },
 		disassembleToggleHoldSeconds = { 0.15, 1.50, 0.01, "number", 2 },
 		nativeBarUIIntegration = { 0, 0, 0, "enum", 0 },
 		controllerGlyphStyle = { 0, 0, 0, "enum", 0 },
@@ -2796,6 +2815,21 @@ function ControllerCameraTestGetContextSnapshot()
 		capabilityCache.values = ControllerCameraTestCommandCapabilitiesFromDescs(activeCommandDescs, #selected > 0)
 	end
 	local commandCaps = capabilityCache.values or {}
+	local nativeCommandActive = ControllerCameraTestGetNativeActiveCommandID and
+		ControllerCameraTestGetNativeActiveCommandID() ~= nil or false
+	local nativeTargetingActive = ControllerCameraTestNativeTargetingIsActive
+		and ControllerCameraTestNativeTargetingIsActive() or false
+	local generalInsertAvailable = #selected > 0
+		and ControllerCameraTestBuildPlacement.active ~= true
+		and ControllerCameraTestBuildMenu.open ~= true
+		and ControllerCameraTestDisassemble.active ~= true
+		and (type(ControllerCameraTestTacticalMenu.stagedOption) == "table"
+			or nativeCommandActive or nativeTargetingActive or commandCaps.canSmartAction == true)
+	local canDisassemble = ControllerCameraTestSelectionHasDisassembleOperator(selected)
+	local selfDestructEligible = #selected > 0
+		and type(ControllerCameraTestFindSelfDestructCommandID(false)) == "number"
+	local mobileTypeNavigationAvailable = ControllerCameraTestHasMobileUnitTypeBuckets
+		and ControllerCameraTestHasMobileUnitTypeBuckets() or false
 	return {
 		controllerActive = controllerMode == true,
 		pregame = Spring.GetGameFrame() <= 0,
@@ -2816,9 +2850,15 @@ function ControllerCameraTestGetContextSnapshot()
 		disassembleAreaMarking = ControllerCameraTestDisassemble.markArea.active == true,
 		disassembleAreaReclaim = ControllerCameraTestDisassemble.areaReclaim.active == true,
 		disassembleMarkedCount = markedCount,
+		canDisassemble = canDisassemble,
 		nativeBarUI = ControllerCameraTestUsesNativeBARUI(),
-		nativeCommandActive = ControllerCameraTestGetNativeActiveCommandID and
-			ControllerCameraTestGetNativeActiveCommandID() ~= nil or false,
+		nativeCommandActive = nativeCommandActive,
+		nativeTargetingActive = nativeTargetingActive,
+		generalInsertAvailable = generalInsertAvailable,
+		factoryQuotaMode = ControllerCameraTestBuildMenu.factoryQuotaModeActive == true,
+		mobileTypeNavigationAvailable = mobileTypeNavigationAvailable,
+		selfDestructFirstModifier = IsButtonDown("back"),
+		selfDestructEligible = selfDestructEligible,
 		controllerGlyphStyle = ControllerCameraTestSettings.controllerGlyphStyle,
 		controllerGlyphFamily = ControllerCameraTestGetControllerGlyphFamily(),
 		selectionToggleModifier = ControllerCameraTestIsQueueModifierActive(),
@@ -2971,6 +3011,7 @@ function ControllerCameraTestGetSettingsUICategories()
 			{ key = "lbTacticalHoldSeconds", label = "LB tactical hold", step = 0.01, decimals = 2 },
 			{ key = "rbTapMaxSeconds", label = "RB tap maximum", step = 0.01, decimals = 2 },
 			{ key = "rbChordGraceSeconds", label = "RB-first chord grace", step = 0.01, decimals = 2 },
+			{ key = "disassembleAreaReclaimRadius", label = "Disassemble Area Radius", step = 4, decimals = 0 },
 			{ key = "disassembleToggleHoldSeconds", label = "Disassemble Toggle Hold Duration", step = 0.01, decimals = 2 },
 			{ key = "nativeBarUIIntegration", label = "Native BAR UI Integration", type = "enum",
 				options = { "Native Experimental", "Legacy Controller UI" } },
@@ -3168,12 +3209,24 @@ function ControllerCameraTestIsCommandInsertContextActive()
 end
 
 function ControllerCameraTestIsQueueFrontModifierActive()
-	return ControllerCameraTestIsInsertModifierActive()
-		and ControllerCameraTestIsCommandInsertContextActive()
+	if ControllerCameraTestBuildPlacement.active == true then
+		return ControllerCameraTestIsInsertModifierActive()
+	end
+	return ControllerCameraTestGeneralInsert and ControllerCameraTestGeneralInsert.active == true
 end
 
 function ControllerCameraTestIsFactoryInsertModifierActive()
 	return ControllerCameraTestIsInsertModifierActive()
+end
+
+function ControllerCameraTestConsumeRBChord(reason)
+	if ControllerInputChords and type(ControllerInputChords.Consume) == "function" then
+		ControllerCameraTestInputChord = ControllerInputChords.Consume(
+			ControllerCameraTestInputChord, tostring(reason or "RB chord"))
+	end
+	ControllerCameraTestTacticalToggleLatch.waitingForRBRelease = true
+	ControllerCameraTestTacticalToggleLatch.lastResult = tostring(reason or "RB chord")
+	ControllerCameraTestCancelVisibleSelectionRadial(tostring(reason or "RB chord"))
 end
 
 function ControllerCameraTestUpdateRTRBHardSuppression()
@@ -3208,13 +3261,7 @@ function ControllerCameraTestUpdateRTRBHardSuppression()
 	end
 	state.active = true
 	state.lastResult = "RT+RB suppressed"
-	if ControllerInputChords and type(ControllerInputChords.Consume) == "function" then
-		ControllerCameraTestInputChord = ControllerInputChords.Consume(
-			ControllerCameraTestInputChord, "RT+RB suppression")
-	end
-	ControllerCameraTestTacticalToggleLatch.waitingForRBRelease = true
-	ControllerCameraTestTacticalToggleLatch.lastResult = "RT+RB suppressed"
-	ControllerCameraTestCancelVisibleSelectionRadial("RT+RB suppression")
+	ControllerCameraTestConsumeRBChord("RT+RB suppression")
 	return true
 end
 
@@ -5138,6 +5185,8 @@ function ControllerCameraTestCancelDrag(reason)
 	drag.pressActive = false
 	drag.singleUnitPathActive = false
 	drag.singleUnitPathUnitID = nil
+	drag.generalInsertPressActive = false
+	if ControllerCameraTestGeneralInsert then ControllerCameraTestGeneralInsert.active = false end
 	drag.lastResult = reason or "cancelled"
 	drag.previewPoints = {}
 	drag.option = nil
@@ -6724,6 +6773,9 @@ function ControllerCameraTestIssueNativeTarget(params, shape)
 	ControllerCameraTestTraceNativeTarget(accepted == true and "FINAL DISPATCH ACCEPTED" or "FINAL DISPATCH REJECTED", route)
 	if accepted == true then
 		lastIssuedCommand = "Native target: " .. tostring(cmdID) .. " via " .. tostring(route)
+		if dispatchMode == "insert-front" then
+			ControllerCameraTestShowHotkeyFeedback("INSERT", "queue")
+		end
 		if state.context == "disassemble-same-type" then
 			ControllerCameraTestDisassemble.successfulActivity = true
 			ControllerCameraTestDisassemble.lastReclaimAt = debugEventTime
@@ -6777,16 +6829,34 @@ function ControllerCameraTestHandleNativeTargetingInput()
 	ControllerNativeTargeting.ObserveInput(state,
 		ControllerCameraTestActionDown("select"), ControllerCameraTestActionDown("smartAction"))
 	local pressed = ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction")
+	local generalInsertPressed = ControllerCameraTestIsRBXGeneralInsertPressed()
 	if pressed and ControllerNativeTargeting.CanAcceptPress(state) then
 		if state.anchor then
 			local params, shape = ControllerNativeTargeting.BuildAnchoredParams(state)
-			if params then ControllerCameraTestIssueNativeTarget(params, shape)
+			if params then
+				if generalInsertPressed then
+					ControllerCameraTestRunWithGeneralInsert("native target", function()
+						return ControllerCameraTestIssueNativeTarget(params, shape)
+					end)
+				else
+					ControllerCameraTestIssueNativeTarget(params, shape)
+				end
 			else ControllerCameraTestTraceNativeTarget("CONFIRM REJECTED", shape) end
 		else
 			local params, result = ControllerNativeTargeting.BeginOrBuildPoint(state, target, CMDTYPE)
 			if params then
-				ControllerCameraTestIssueNativeTarget(params, "point")
+				if generalInsertPressed then
+					ControllerCameraTestRunWithGeneralInsert("native target", function()
+						return ControllerCameraTestIssueNativeTarget(params, "point")
+					end)
+				else
+					ControllerCameraTestIssueNativeTarget(params, "point")
+				end
 			elseif result == "anchor" then
+				if generalInsertPressed then
+					ControllerCameraTestConsumeRBChord("RB+X native anchor")
+					ControllerCameraTestGeneralInsert.lastResult = "native anchor armed by RB+X"
+				end
 				ControllerCameraTestShowNativeTargetPreview()
 				ControllerCameraTestShowHotkeyFeedback("ANCHOR", "utility")
 				ControllerCameraTestTraceNativeTarget("ANCHORED", tostring(state.shape))
@@ -7165,8 +7235,19 @@ end
 function ControllerCameraTestIsDisassembleConstructor(unitID)
 	if not ControllerCameraTestIsSafeSelectableUnit(unitID) then return false end
 	local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
-	return ControllerDisassembleBehavior and ControllerDisassembleBehavior.IsConstructorDef(unitDef)
+	local constructorDef = ControllerDisassembleBehavior and ControllerDisassembleBehavior.IsConstructorDef(unitDef)
+	local operatorDef = constructorDef == true
+		or ControllerCameraTestIsCommanderUnit(unitID)
+		or ControllerCameraTestIsBuilderUnitDef(unitDef)
+	return operatorDef == true
 		and ControllerCameraTestUnitHasReclaimCapability(unitID)
+end
+
+function ControllerCameraTestSelectionHasDisassembleOperator(selected)
+	for _, unitID in ipairs(type(selected) == "table" and selected or {}) do
+		if ControllerCameraTestIsDisassembleConstructor(unitID) then return true end
+	end
+	return false
 end
 
 function ControllerCameraTestConstructorSet()
@@ -7353,6 +7434,11 @@ function ControllerCameraTestIssueNativeDisassembleStop()
 	return accepted
 end
 
+function ControllerCameraTestGetDisassembleAreaReclaimRadius()
+	return ControllerCameraTestClampSetting("disassembleAreaReclaimRadius",
+		ControllerCameraTestSettings.disassembleAreaReclaimRadius or 24)
+end
+
 function ControllerCameraTestBeginNativeReclaim(mode, targetID, unitDefID)
 	if not targetID then return false end
 	if type(Spring.ValidUnitID) == "function" and not Spring.ValidUnitID(targetID) then return false end
@@ -7365,7 +7451,7 @@ function ControllerCameraTestBeginNativeReclaim(mode, targetID, unitDefID)
 	end
 	local descriptor = orderApi.controllerGetCommandDescriptor((CMD and CMD.RECLAIM) or 90)
 	if type(descriptor) ~= "table" then return false end
-	local radius = mode == "same" and 120 or nil
+	local radius = mode == "same" and ControllerCameraTestGetDisassembleAreaReclaimRadius() or nil
 	local state = ControllerCameraTestDisassemble
 	state.areaReclaim = { active = mode == "same", anchorUnitID = targetID, unitDefID = unitDefID,
 		x = x, y = y or 0, z = z, radius = radius or 0, candidates = {}, descriptor = descriptor, mode = mode }
@@ -7424,6 +7510,54 @@ function ControllerCameraTestConfirmNativeActiveCommand(cmdID)
 		pcall(Spring.SetActiveCommand, nil)
 	end
 	return issued == true
+end
+
+function ControllerCameraTestIsRBXGeneralInsertPressed()
+	return ControllerCameraTestActionDown("buildRadial")
+		and ControllerCameraTestActionPressed("smartAction")
+		and not ControllerCameraTestBuildMenu.open
+		and not ControllerCameraTestBuildPlacement.active
+		and not ControllerCameraTestDisassemble.active
+		and not commandLayerActive
+end
+
+function ControllerCameraTestRunWithGeneralInsert(source, issueFn)
+	if type(issueFn) ~= "function" then return false end
+	local state = ControllerCameraTestGeneralInsert
+	state.active = true
+	state.lastSource = tostring(source or "general")
+	state.lastResult = "front insert active"
+	ControllerCameraTestConsumeRBChord("RB+X general insert")
+	local ok, result = pcall(issueFn)
+	state.active = false
+	state.lastIssued = ok and result == true
+	state.lastResult = state.lastIssued and ("inserted via " .. state.lastSource)
+		or ("insert rejected via " .. state.lastSource)
+	if not ok then
+		state.lastResult = "insert error: " .. tostring(result)
+		if ControllerCameraTestSettings.debugPanelVisible then
+			Spring.Echo("[Controller Insert] " .. state.lastResult)
+		end
+	end
+	return ok and result == true
+end
+
+function ControllerCameraTestNativeTargetingIsActive()
+	local phase = ControllerCameraTestNativeTargeting and ControllerCameraTestNativeTargeting.phase
+	return phase ~= nil and phase ~= "IDLE" and phase ~= "BUILD_PLACEMENT"
+end
+
+function ControllerCameraTestUpdateRBXGeneralInsert()
+	if not ControllerCameraTestIsRBXGeneralInsertPressed() then return false end
+	if type(ControllerCameraTestTacticalMenu.stagedOption) == "table"
+			or ControllerCameraTestNativeTargetingIsActive() then
+		return false
+	end
+	local cmdID = ControllerCameraTestGetNativeActiveCommandID and ControllerCameraTestGetNativeActiveCommandID() or nil
+	if type(cmdID) ~= "number" then return false end
+	return ControllerCameraTestRunWithGeneralInsert("native active command", function()
+		return ControllerCameraTestConfirmNativeActiveCommand(cmdID)
+	end)
 end
 
 function ControllerCameraTestRestoreDisassembleConstructors(label)
@@ -7638,7 +7772,7 @@ function ControllerCameraTestStartNativeSameTypeReclaim(targetID, unitDefID)
 	local area = ControllerCameraTestDisassemble.areaReclaim
 	area.active, area.anchorUnitID, area.unitDefID = true, targetID, unitDefID
 	area.x, area.y, area.z = x, y or 0, z
-	area.radius = ControllerDisassembleBehavior.MIN_TARGET_RADIUS
+	area.radius = ControllerCameraTestGetDisassembleAreaReclaimRadius()
 	area.candidates = {}
 	area.confirmArmed, area.waitingForNeutral, area.releasedThisFrame = false, true, false
 	ControllerCameraTestDisassemble.lastResult = "same-type area anchored"
@@ -7975,7 +8109,7 @@ function ControllerCameraTestUpdateDisassembleAreaRadius(area, dt)
 	if WasButtonPressed("dpadUp") or WasButtonPressed("dpadRight") then delta = delta + 80
 	elseif WasButtonPressed("dpadDown") or WasButtonPressed("dpadLeft") then delta = delta - 80 end
 	if delta ~= 0 then area.radius = clamp((area.radius or 320) + delta,
-		ControllerDisassembleBehavior and ControllerDisassembleBehavior.MIN_TARGET_RADIUS or 120,
+		ControllerDisassembleBehavior and ControllerDisassembleBehavior.MIN_TARGET_RADIUS or 12,
 		ControllerDisassembleBehavior and ControllerDisassembleBehavior.MAX_TARGET_RADIUS or 1200) end
 end
 
@@ -8054,7 +8188,7 @@ function ControllerCameraTestStartAreaReclaim(targetID, unitDefID)
 	local state = ControllerCameraTestDisassemble
 	state.areaReclaim = { active = true, anchorUnitID = targetID, unitDefID = unitDefID,
 		x = x, y = y or (type(spGetGroundHeight) == "function" and spGetGroundHeight(x, z) or 0), z = z,
-		radius = ControllerDisassembleBehavior and ControllerDisassembleBehavior.MIN_TARGET_RADIUS or 120,
+		radius = ControllerCameraTestGetDisassembleAreaReclaimRadius(),
 		candidates = {}, waitingForNeutral = true, confirmArmed = false }
 	state.lbA.pressActive, state.lbA.holdFired = false, true
 	state.lastResult = "area reclaim targeting"
@@ -8065,11 +8199,11 @@ end
 function ControllerCameraTestUpdateAreaReclaimTargeting()
 	local state, area = ControllerCameraTestDisassemble, ControllerCameraTestDisassemble.areaReclaim
 	if not area.active then return false end
-	if reticleHasWorldTarget and reticleWorldX and reticleWorldZ then
+	if reticleHasWorldTarget and reticleWorldX and reticleWorldZ and not area.waitingForNeutral then
 		local dx, dz = reticleWorldX - area.x, reticleWorldZ - area.z
-		area.radius = clamp(math.sqrt(dx * dx + dz * dz),
-			ControllerDisassembleBehavior and ControllerDisassembleBehavior.MIN_TARGET_RADIUS or 120,
+		area.radius = clamp(math.sqrt(dx * dx + dz * dz), 12,
 			ControllerDisassembleBehavior and ControllerDisassembleBehavior.MAX_TARGET_RADIUS or 1200)
+		ControllerCameraTestSettings.disassembleAreaReclaimRadius = area.radius
 	end
 	area.candidates = ControllerCameraTestCollectOwnedTargetsInRadius(area.x, area.z, area.radius, { [area.unitDefID] = true })
 	if ControllerCameraTestActionDown("pitchModifier") and ControllerCameraTestActionPressed("cancel") then
@@ -8729,6 +8863,18 @@ function ControllerCameraTestUnitIsIdle(unitID)
 	return false
 end
 
+function ControllerCameraTestFactoryHasQueueOrProduction(unitID)
+	if type(Spring.GetUnitIsBuilding) == "function" then
+		local ok, buildingID = pcall(Spring.GetUnitIsBuilding, unitID)
+		if ok and buildingID then return true end
+	end
+	if type(Spring.GetFactoryCommands) == "function" then
+		local ok, queue = pcall(Spring.GetFactoryCommands, unitID, -1)
+		if ok and type(queue) == "table" and #queue > 0 then return true end
+	end
+	return false
+end
+
 function ControllerCameraTestUnitIsFinished(unitID)
 	if type(Spring.GetUnitHealth) ~= "function" then
 		return true
@@ -8754,8 +8900,10 @@ function ControllerCameraTestIsIdleCycleCandidate(unitID, requestedPool)
 	local isBuilder = ControllerCameraTestIsBuilderUnitDef(unitDef)
 	local isFactory = unitDef.isFactory == true
 	local isMobile = ControllerCameraTestIsMobileUnitDef(unitDef)
-	local isInfrastructure = unitDef.isBuilding == true and not ControllerCameraTestIsCombatUnitDef(unitDef)
-	local pool = (isBuilder or isFactory or isInfrastructure) and "primary" or nil
+	if isFactory and ControllerCameraTestFactoryHasQueueOrProduction(unitID) then
+		return false, isBuilder, "none"
+	end
+	local pool = (isBuilder or isFactory or ControllerCameraTestIsCommanderUnit(unitID)) and "primary" or nil
 	if not pool and isMobile and not isBuilder then
 		if type(Spring.GetUnitTransporter) == "function" then
 			local ok, transporter = pcall(Spring.GetUnitTransporter, unitID)
@@ -8792,6 +8940,161 @@ function ControllerCameraTestUnitTypeName(unitDefID)
 		return tostring(unitDefID or "unknown")
 	end
 	return unitDef.translatedHumanName or unitDef.humanName or unitDef.name or tostring(unitDefID)
+end
+
+function ControllerCameraTestIsMobileTypeNavigationCandidate(unitID)
+	if not ControllerCameraTestIsSafeSelectableUnit(unitID) then return false end
+	local _, unitDef = ControllerCameraTestGetUnitDef(unitID)
+	if type(unitDef) ~= "table" then return false end
+	if unitDef.isFactory == true or unitDef.isBuilding == true then return false end
+	return ControllerCameraTestIsMobileUnitDef(unitDef)
+end
+
+function ControllerCameraTestGetMobileUnitTypeBuckets()
+	local bucketsByDef, buckets = {}, {}
+	for _, unitID in ipairs(ControllerCameraTestGetOwnTeamUnits()) do
+		if ControllerCameraTestIsMobileTypeNavigationCandidate(unitID) then
+			local unitDefID = type(Spring.GetUnitDefID) == "function" and Spring.GetUnitDefID(unitID) or nil
+			if unitDefID then
+				local bucket = bucketsByDef[unitDefID]
+				if not bucket then
+					bucket = { unitDefID = unitDefID, name = ControllerCameraTestUnitTypeName(unitDefID), units = {} }
+					bucketsByDef[unitDefID] = bucket
+					buckets[#buckets + 1] = bucket
+				end
+				bucket.units[#bucket.units + 1] = unitID
+			end
+		end
+	end
+	for _, bucket in ipairs(buckets) do
+		table.sort(bucket.units)
+		bucket.representativeID = bucket.units[1]
+	end
+	table.sort(buckets, function(a, b)
+		return (tonumber(a.representativeID) or math.huge) < (tonumber(b.representativeID) or math.huge)
+	end)
+	return buckets
+end
+
+function ControllerCameraTestHasMobileUnitTypeBuckets()
+	return #ControllerCameraTestGetMobileUnitTypeBuckets() > 0
+end
+
+function ControllerCameraTestSelectRepresentativeFromMobileTypeBucket(bucket)
+	if type(bucket) ~= "table" or not bucket.representativeID then return false end
+	local state = ControllerCameraTestUnitTypeNavigation
+	state.currentUnitDefID = bucket.unitDefID
+	state.lastTypeName = bucket.name
+	state.lastCount = #(bucket.units or {})
+	state.representativeRule = "lowest-unit-id"
+	if ControllerCameraTestFocusAndSelectUnit(bucket.representativeID, "Mobile type " .. tostring(bucket.name)) then
+		state.lastResult = "mobile type representative " .. tostring(bucket.representativeID)
+		ControllerCameraTestLayerDebug.normalUtilityAction = "Mobile type " .. tostring(bucket.name)
+		return true
+	end
+	state.lastResult = "mobile type focus failed"
+	return false
+end
+
+function ControllerCameraTestCycleMobileUnitType(delta)
+	local buckets = ControllerCameraTestGetMobileUnitTypeBuckets()
+	local state = ControllerCameraTestUnitTypeNavigation
+	if #buckets == 0 then
+		state.lastResult = "no mobile unit types"
+		state.lastCount = 0
+		latchSelectionDebugMessage("Mobile type: no owned mobile units")
+		return false
+	end
+	local currentIndex = 0
+	for index, bucket in ipairs(buckets) do
+		if bucket.unitDefID == state.currentUnitDefID then
+			currentIndex = index
+			break
+		end
+	end
+	local nextIndex = ((currentIndex - 1 + (tonumber(delta) or 1)) % #buckets) + 1
+	state.currentIndex = nextIndex
+	local bucket = buckets[nextIndex]
+	if ControllerCameraTestSelectRepresentativeFromMobileTypeBucket(bucket) then
+		state.lastResult = "mobile type " .. tostring(nextIndex) .. "/" .. tostring(#buckets)
+		latchSelectionDebugMessage("Mobile type: " .. tostring(bucket.name))
+		return true
+	end
+	return false
+end
+
+function ControllerCameraTestSelectVisibleMobileUnitType()
+	local state = ControllerCameraTestUnitTypeNavigation
+	local unitDefID = state.currentUnitDefID
+	if not unitDefID then
+		local buckets = ControllerCameraTestGetMobileUnitTypeBuckets()
+		if buckets[1] then unitDefID = buckets[1].unitDefID end
+	end
+	if not unitDefID then
+		state.selectedVisibleCount = 0
+		state.lastResult = "no mobile type selected"
+		return false
+	end
+	local units = {}
+	local visibleSet, hasVisibleList = {}, false
+	if type(Spring.GetVisibleUnits) == "function" then
+		local ok, visible = pcall(Spring.GetVisibleUnits)
+		if ok and type(visible) == "table" then
+			hasVisibleList = true
+			for _, unitID in ipairs(visible) do visibleSet[unitID] = true end
+		end
+	end
+	for _, unitID in ipairs(ControllerCameraTestGetOwnTeamUnits()) do
+		if (not hasVisibleList or visibleSet[unitID])
+				and ControllerCameraTestIsMobileTypeNavigationCandidate(unitID)
+				and type(Spring.GetUnitDefID) == "function"
+				and Spring.GetUnitDefID(unitID) == unitDefID
+				and ControllerCameraTestUnitIsOnScreen(unitID) then
+			units[#units + 1] = unitID
+		end
+	end
+	table.sort(units)
+	if #units == 0 then
+		state.selectedVisibleCount = 0
+		state.lastResult = "no visible mobile type units"
+		latchSelectionDebugMessage("Mobile type: no visible units")
+		return false
+	end
+	local selected = ControllerCameraTestSelectUnits(units, "Visible mobile type")
+	state.currentUnitDefID = unitDefID
+	state.lastTypeName = ControllerCameraTestUnitTypeName(unitDefID)
+	state.selectedVisibleCount = selected and #units or 0
+	state.lastCount = #units
+	state.lastResult = selected and ("selected visible mobile type x" .. tostring(#units)) or "visible type select failed"
+	if selected then ControllerCameraTestFocusUnitsCenter(units, "Visible mobile type") end
+	return selected
+end
+
+function ControllerCameraTestUpdateRBMobileTypeNavigation()
+	if not ControllerCameraTestActionDown("buildRadial") then return false end
+	if ControllerCameraTestBuildMenu.open or ControllerCameraTestBuildPlacement.active
+			or ControllerCameraTestTacticalMenu.open
+			or type(ControllerCameraTestTacticalMenu.stagedOption) == "table"
+			or ControllerCameraTestDisassemble.active
+			or ControllerCameraTestNativeTargetingIsActive()
+			or commandLayerActive
+			or ControllerCameraTestIsGameplayInputBlocked() then
+		return false
+	end
+	local handled = false
+	if WasButtonPressed("dpadLeft") then
+		handled = ControllerCameraTestCycleMobileUnitType(-1)
+	elseif WasButtonPressed("dpadRight") then
+		handled = ControllerCameraTestCycleMobileUnitType(1)
+	elseif WasButtonPressed("dpadDown") then
+		handled = ControllerCameraTestSelectVisibleMobileUnitType()
+	end
+	if handled then
+		ControllerCameraTestConsumeRBChord("RB+D-pad mobile type")
+		ControllerCameraTestShowHotkeyFeedback("TYPE", "utility")
+		return true
+	end
+	return false
 end
 
 --------------------------------------------------------------------------------
@@ -10757,9 +11060,14 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 	end
 
 	if ControllerCameraTestActionPressed("tacticalSelect") or ControllerCameraTestActionPressed("select") or ControllerCameraTestActionPressed("smartAction") then
+		local generalInsertPressed = ControllerCameraTestIsRBXGeneralInsertPressed()
 		if isAreaCmd or isLineCmd then
 			if not drag.active then
 				if reticleHasWorldTarget and reticleWorldX then
+					if generalInsertPressed then
+						ControllerCameraTestConsumeRBChord("RB+X staged anchor")
+						ControllerCameraTestGeneralInsert.lastResult = "staged anchor armed by RB+X"
+					end
 					drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
 					drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
 					drag.active = true
@@ -10776,10 +11084,22 @@ function ControllerCameraTestHandleStagedTacticalCommandInput()
 					latchSelectionDebugMessage(option.name .. " anchored")
 				end
 			else
-				ControllerCameraTestConfirmStagedTacticalCommand()
+				if generalInsertPressed then
+					ControllerCameraTestRunWithGeneralInsert("staged tactical", function()
+						return ControllerCameraTestConfirmStagedTacticalCommand()
+					end)
+				else
+					ControllerCameraTestConfirmStagedTacticalCommand()
+				end
 			end
 		else
-			ControllerCameraTestConfirmStagedTacticalCommand()
+			if generalInsertPressed then
+				ControllerCameraTestRunWithGeneralInsert("staged tactical", function()
+					return ControllerCameraTestConfirmStagedTacticalCommand()
+				end)
+			else
+				ControllerCameraTestConfirmStagedTacticalCommand()
+			end
 		end
 		return true
 	end
@@ -11729,6 +12049,23 @@ end
 --------------------------------------------------------------------------------
 -- SECTION: Factory radial helpers
 --------------------------------------------------------------------------------
+function ControllerCameraTestFactoryQueueEntryBuildCmdID(cmd)
+	if type(cmd) ~= "table" then return nil, 0 end
+	local cmdID = tonumber(cmd.id)
+	local params = type(cmd.params) == "table" and cmd.params or {}
+	if cmdID and cmdID < 0 then
+		local quantity = tonumber(params[1]) or tonumber(cmd.count) or 1
+		return cmdID, math.max(1, math.floor(quantity))
+	end
+	if CMD and cmdID == tonumber(CMD.INSERT) then
+		local insertedCmdID = tonumber(params[2])
+		if insertedCmdID and insertedCmdID < 0 then
+			return insertedCmdID, 1
+		end
+	end
+	return nil, 0
+end
+
 function ControllerCameraTestGetFactoryQueueCounts()
 	local counts = {}
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
@@ -11743,8 +12080,9 @@ function ControllerCameraTestGetFactoryQueueCounts()
 			if type(q) == "table" then
 				for i = 1, #q do
 					local cmd = q[i]
-					if cmd and type(cmd.id) == "number" and cmd.id < 0 then
-						counts[cmd.id] = (counts[cmd.id] or 0) + 1
+					local buildCmdID, quantity = ControllerCameraTestFactoryQueueEntryBuildCmdID(cmd)
+					if buildCmdID then
+						counts[buildCmdID] = (counts[buildCmdID] or 0) + (quantity or 1)
 					end
 				end
 			end
@@ -11755,6 +12093,76 @@ end
 
 function ControllerCameraTestRefreshFactoryQueueCounts()
 	ControllerCameraTestBuildMenu.factoryQueueCounts = ControllerCameraTestGetFactoryQueueCounts()
+end
+
+function ControllerCameraTestRefreshFactoryQueueModel(reason)
+	local menu = ControllerCameraTestBuildMenu
+	menu.factoryQueueRefreshReason = tostring(reason or "refresh")
+	ControllerCameraTestRefreshFactoryQueueCounts()
+	ControllerCameraTestRefreshFactoryQueueProgress()
+	if menu.open and ControllerCameraTestUsesNativeBARUI() and menu.isFactoryContext then
+		menu.nativeModel = nil
+		ControllerCameraTestNativeUI.buildModelRevision = -1
+	end
+end
+
+function ControllerCameraTestDetectFactoryQuotaMode()
+	local menu, api = ControllerCameraTestBuildMenu, WG and WG.ordermenu
+	if not (api and type(api.controllerGetCommands) == "function") then
+		menu.factoryQuotaModeSource = "ordermenu unavailable"
+		return menu.factoryQuotaModeActive == true
+	end
+	local ok, commands = pcall(api.controllerGetCommands)
+	if not ok or type(commands) ~= "table" then
+		menu.factoryQuotaModeSource = "ordermenu read failed"
+		return menu.factoryQuotaModeActive == true
+	end
+	for _, descriptor in ipairs(commands) do
+		local text = string.lower(tostring(descriptor.action or "") .. " " .. tostring(descriptor.name or ""))
+		if descriptor.isState == true and (text:find("factoryqueuemode", 1, true)
+				or text:find("queue mode", 1, true)) then
+			local params = type(descriptor.params) == "table" and descriptor.params or {}
+			local index = tonumber(descriptor.currentStateIndex or params[1]) or 0
+			menu.factoryQuotaModeActive = index ~= 0
+			menu.factoryQuotaModeSource = "ordermenu state " .. tostring(index)
+			return menu.factoryQuotaModeActive
+		end
+	end
+	menu.factoryQuotaModeSource = "descriptor missing"
+	return menu.factoryQuotaModeActive == true
+end
+
+function ControllerCameraTestGetFactoryQuotaInfo(option)
+	if type(option) ~= "table" then return nil end
+	local desired = tonumber(option.quotaDesired or option.desiredQuota or option.quotaTarget or option.quota)
+	local current = tonumber(option.quotaCount or option.currentQuota or option.quotaCurrent or option.quotaBuilt)
+	if (not desired or not current) and type(option.quotaText) == "string" then
+		local a, b = string.match(option.quotaText, "^(%d+)%s*/%s*(%d+)$")
+		current = current or tonumber(a)
+		desired = desired or tonumber(b)
+	end
+	if (not desired or not current) and WG and WG.Quotas and option.unitDefID then
+		local quotas = WG.Quotas
+		if not desired and type(quotas.getQuotas) == "function" then
+			local ok, quotaTable = pcall(quotas.getQuotas)
+			local info = ok and type(quotaTable) == "table" and quotaTable[option.unitDefID] or nil
+			if type(info) == "table" then
+				desired = tonumber(info.quota or info.desired or info.target or info[1])
+				current = current or tonumber(info.current or info.count or info.amount or info[2])
+			elseif type(info) == "number" then
+				desired = tonumber(info)
+			end
+		end
+		if not current and type(quotas.getUnitAmount) == "function" then
+			local builderID = tonumber(option.builderID or option.factoryID)
+			local ok, amount = pcall(quotas.getUnitAmount, builderID, option.unitDefID)
+			if ok then current = tonumber(amount) end
+		end
+	end
+	if not desired and not current then return nil end
+	current = math.max(0, math.floor(tonumber(current) or 0))
+	desired = math.max(0, math.floor(tonumber(desired) or 0))
+	return { current = current, desired = desired, text = tostring(current) .. "/" .. tostring(desired) }
 end
 
 function ControllerCameraTestGetFactoryQueueProgress()
@@ -12066,8 +12474,7 @@ function ControllerCameraTestOpenBuildMenu()
 	menu.radialLastAction = "none"
 
 	ControllerCameraTestRefreshRadialVisibleOptions()
-	ControllerCameraTestRefreshFactoryQueueCounts()
-	ControllerCameraTestRefreshFactoryQueueProgress()
+	ControllerCameraTestRefreshFactoryQueueModel("build radial open")
 	ControllerCameraTestInvalidateAffordabilityCache()  -- immediate refresh on open
 
 	menu.lastAction = "opened"
@@ -12810,8 +13217,7 @@ function ControllerCameraTestDequeueFactoryBuildOption(option)
 	if ok then
 		menu.lastAction = queueActive and "factory dequeued 5 (X)" or "factory dequeued (X)"
 		menu.radialLastAction = menu.lastAction
-		ControllerCameraTestRefreshFactoryQueueCounts()
-		ControllerCameraTestRefreshFactoryQueueProgress()
+		ControllerCameraTestRefreshFactoryQueueModel("factory dequeue")
 		return true
 	else
 		menu.lastAction = "factory dequeue failed"
@@ -12859,8 +13265,7 @@ function ControllerCameraTestInsertFactoryBuildOption(option)
 		menu.lastAction = "factory inserted (RB+A)"
 		menu.radialLastAction = menu.lastAction
 		ControllerCameraTestShowHotkeyFeedback("INSERT", "utility")
-		ControllerCameraTestRefreshFactoryQueueCounts()
-		ControllerCameraTestRefreshFactoryQueueProgress()
+		ControllerCameraTestRefreshFactoryQueueModel("factory insert")
 		return true
 	end
 	menu.lastAction = "factory insert failed"
@@ -13133,8 +13538,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 						option.stableKey or option.unitDefID, -factoryQueueQuantity)
 					menu.lastAction = ok and activated and ("factory dequeued " .. factoryQueueQuantity .. " (X)") or "factory dequeue failed"
 					menu.radialLastAction = menu.lastAction
-					ControllerCameraTestRefreshFactoryQueueCounts()
-					ControllerCameraTestRefreshFactoryQueueProgress()
+					ControllerCameraTestRefreshFactoryQueueModel("native factory dequeue")
 				else
 					ControllerCameraTestDequeueFactoryBuildOption(option)
 				end
@@ -13172,8 +13576,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 					option.stableKey or option.unitDefID, factoryQueueQuantity)
 				menu.lastAction = ok and activated and ("factory queued " .. factoryQueueQuantity .. " (A)") or "factory queue failed (A)"
 				menu.radialLastAction = menu.lastAction
-				ControllerCameraTestRefreshFactoryQueueCounts()
-				ControllerCameraTestRefreshFactoryQueueProgress()
+				ControllerCameraTestRefreshFactoryQueueModel("native factory queue")
 			elseif option then
 				local queueActive = ControllerCameraTestIsQueueModifierActive()
 				local queueFrontActive = ControllerCameraTestIsFactoryInsertModifierActive()
@@ -13199,8 +13602,7 @@ function ControllerCameraTestHandleBuildMenuInput()
 					end
 					menu.lastAction = queueFrontActive and "factory prepended (A)" or "factory queued (A)"
 					menu.radialLastAction = menu.lastAction
-					ControllerCameraTestRefreshFactoryQueueCounts()
-					ControllerCameraTestRefreshFactoryQueueProgress()
+					ControllerCameraTestRefreshFactoryQueueModel("factory queue")
 				else
 					menu.lastAction = "factory queue failed (A)"
 					menu.radialLastAction = "factory queue failed (A)"
@@ -13382,18 +13784,33 @@ function ControllerCameraTestHandleNormalXInput(dt)
 	end
 
 	if ControllerCameraTestActionPressed("smartAction") then
+		local generalInsertPress = ControllerCameraTestActionDown("buildRadial")
+			and not ControllerCameraTestBuildMenu.open
+			and not ControllerCameraTestBuildPlacement.active
+			and not ControllerCameraTestDisassemble.active
+			and not commandLayerActive
 		drag.pressActive = true
 		drag.pressStartTime = debugEventTime
 		drag.pressButton = "smartAction"
+		drag.generalInsertPressActive = generalInsertPress == true
 		drag.startX, drag.startY, drag.startZ = reticleWorldX, reticleWorldY, reticleWorldZ
 		drag.endX, drag.endY, drag.endZ = reticleWorldX, reticleWorldY, reticleWorldZ
 		drag.active = false
 		drag.singleUnitPathActive = false
 		drag.singleUnitPathUnitID = nil
 		drag.smartPressTargetInfo = ControllerCameraTestGetReticleTargetInfo()
+		if drag.generalInsertPressActive then
+			ControllerCameraTestGeneralInsert.active = true
+			ControllerCameraTestGeneralInsert.lastSource = "Smart X"
+			ControllerCameraTestGeneralInsert.lastResult = "Smart X insert armed"
+			ControllerCameraTestConsumeRBChord("RB+X general insert")
+		end
 	end
 
 	if drag.pressActive and drag.pressButton == "smartAction" and ControllerCameraTestActionDown("smartAction") then
+		if drag.generalInsertPressActive then
+			ControllerCameraTestGeneralInsert.active = true
+		end
 		if not drag.active and (debugEventTime - drag.pressStartTime) >= HOLD_SECONDS then
 			local mobileUnits = ControllerCameraTestGetSelectedMobileUnits()
 			local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
@@ -13415,6 +13832,10 @@ function ControllerCameraTestHandleNormalXInput(dt)
 	end
 
 	if ControllerCameraTestActionReleased("smartAction") and drag.pressActive and drag.pressButton == "smartAction" then
+		local generalInsertPress = drag.generalInsertPressActive == true
+		if generalInsertPress then
+			ControllerCameraTestGeneralInsert.active = true
+		end
 		if drag.singleUnitPathActive then
 			ControllerCameraTestFinishSingleUnitPath()
 		elseif drag.active then
@@ -13422,8 +13843,15 @@ function ControllerCameraTestHandleNormalXInput(dt)
 		else
 			attemptContextCommand(drag.smartPressTargetInfo)
 		end
+		if generalInsertPress then
+			ControllerCameraTestGeneralInsert.active = false
+			ControllerCameraTestGeneralInsert.lastIssued = ControllerCameraTestCommandDebug.issuedCmdID == tostring(CMD and CMD.INSERT)
+			ControllerCameraTestGeneralInsert.lastResult = ControllerCameraTestGeneralInsert.lastIssued
+				and "Smart X inserted" or "Smart X insert completed"
+		end
 		drag.pressActive = false
 		drag.smartPressTargetInfo = nil
+		drag.generalInsertPressActive = false
 	end
 
 	return drag.pressActive or drag.active
@@ -13973,8 +14401,9 @@ function ControllerCameraTestToggleFactoryQueueMode()
 			local nextState = ((tonumber(descriptor.currentStateIndex or params[1]) or 0) + 1) % stateCount
 			local activated, result = pcall(api.controllerActivateState, descriptor.cmdID, nextState)
 			if activated and result == true then
-				ControllerCameraTestShowHotkeyFeedback(nextState == 0
-					and "Queue Mode Disabled" or "Queue Mode Enabled", "utility")
+				ControllerCameraTestBuildMenu.factoryQuotaModeActive = nextState ~= 0
+				ControllerCameraTestBuildMenu.factoryQuotaModeSource = "toggle state " .. tostring(nextState)
+				ControllerCameraTestShowHotkeyFeedback(nextState == 0 and "Queue Mode" or "Quota Mode", "utility")
 				return true
 			end
 			return false
@@ -13990,10 +14419,8 @@ function ControllerCameraTestResolveLBLongAction(selected, disassembleActive)
 	end
 	if disassembleActive then return "disable-disassemble" end
 	if context == "factory" then return nil end
-	for _, unitID in ipairs(type(selected) == "table" and selected or {}) do
-		if ControllerCameraTestIsDisassembleConstructor(unitID) then
-			return "enable-disassemble"
-		end
+	if ControllerCameraTestSelectionHasDisassembleOperator(selected) then
+		return "enable-disassemble"
 	end
 	return nil
 end
@@ -15379,17 +15806,26 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		and ControllerCameraTestHandlePlacementInput(dt)
 	local rtRbSuppressed = not stagedTacticalBusy and not distributedPlacementOwns
 		and not placementBusy and ControllerCameraTestUpdateRTRBHardSuppression()
-	local nativeTargetingBusy = not stagedTacticalBusy and not distributedPlacementOwns
+	local rbxGeneralInsertBusy = not stagedTacticalBusy and not distributedPlacementOwns
 		and not placementBusy and not rtRbSuppressed
+		and ControllerCameraTestUpdateRBXGeneralInsert()
+	local rbTypeNavigationBusy = not stagedTacticalBusy and not distributedPlacementOwns
+		and not placementBusy and not rtRbSuppressed and not rbxGeneralInsertBusy
+		and ControllerCameraTestUpdateRBMobileTypeNavigation()
+	local nativeTargetingBusy = not stagedTacticalBusy and not distributedPlacementOwns
+		and not placementBusy and not rtRbSuppressed and not rbxGeneralInsertBusy and not rbTypeNavigationBusy
 		and ControllerCameraTestHandleNativeTargetingInput()
 	local priorityTacticalToggle = not stagedTacticalBusy and not distributedPlacementOwns
-		and not placementBusy and not rtRbSuppressed and not nativeTargetingBusy
+		and not placementBusy and not rtRbSuppressed and not rbxGeneralInsertBusy and not rbTypeNavigationBusy
+		and not nativeTargetingBusy
 		and ControllerCameraTestHandlePriorityTacticalToggle()
 	local disassembleBusy = not stagedTacticalBusy and not distributedPlacementOwns
-		and not placementBusy and not rtRbSuppressed and not nativeTargetingBusy and not priorityTacticalToggle
+		and not placementBusy and not rtRbSuppressed and not rbxGeneralInsertBusy
+		and not rbTypeNavigationBusy and not nativeTargetingBusy and not priorityTacticalToggle
 		and ControllerCameraTestUpdateDisassembleController(dt)
 	if not stagedTacticalBusy and not distributedPlacementOwns and not placementBusy
-			and not rtRbSuppressed and not nativeTargetingBusy and not priorityTacticalToggle and not disassembleBusy then
+			and not rtRbSuppressed and not rbxGeneralInsertBusy and not rbTypeNavigationBusy and not nativeTargetingBusy
+			and not priorityTacticalToggle and not disassembleBusy then
 		ControllerCameraTestUpdateLBFaceButtonDispatcher(dt)
 	end
 	updateSelectionTestActive()
@@ -15408,6 +15844,16 @@ function ControllerCameraTestUpdateControllerModeAndCommandLayer(dt)
 		commandLayerActive = false
 		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
 			ControllerCameraTestCancelAreaSelect("cancelled by RT+RB suppression")
+		end
+	elseif rbxGeneralInsertBusy then
+		commandLayerActive = false
+		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
+			ControllerCameraTestCancelAreaSelect("cancelled by RB+X insert")
+		end
+	elseif rbTypeNavigationBusy then
+		commandLayerActive = false
+		if ControllerCameraTestAreaSelect.pressActive or ControllerCameraTestAreaSelect.active then
+			ControllerCameraTestCancelAreaSelect("cancelled by RB+D-pad type navigation")
 		end
 	elseif nativeTargetingBusy then
 		commandLayerActive = false
@@ -16576,8 +17022,7 @@ function ControllerCameraTestBuildCompactSelectedStatus()
 
 	if info.mode == "factory" then
 		if status.refreshUnitID ~= info.unitID or debugEventTime >= (status.nextRefreshTime or 0) then
-			ControllerCameraTestRefreshFactoryQueueCounts()
-			ControllerCameraTestRefreshFactoryQueueProgress()
+			ControllerCameraTestRefreshFactoryQueueModel("compact factory status")
 			status.refreshUnitID = info.unitID
 			status.nextRefreshTime = debugEventTime + 0.12
 		end
@@ -17084,7 +17529,7 @@ function ControllerCameraTestDrawBuildRadial()
 
 	-- Throttled refresh of factory queue counts while radial is drawn
 	if Spring.GetGameFrame() % 15 == 0 then
-		ControllerCameraTestRefreshFactoryQueueCounts()
+		ControllerCameraTestRefreshFactoryQueueModel("factory radial draw")
 	end
 
 	local selectedUnits = type(spGetSelectedUnits) == "function" and spGetSelectedUnits() or {}
@@ -17095,6 +17540,9 @@ function ControllerCameraTestDrawBuildRadial()
 	if isFactoryContext then
 		ControllerCameraTestRefreshFactoryQueueProgress()
 	end
+	local quotaMode = isFactoryContext and ControllerCameraTestDetectFactoryQuotaMode()
+	local quotaCenterFill = { 0.30, 0.035, 0.24, 0.92 }
+	local quotaAccent = { 1.0, 0.38, 0.82, 1.0 }
 
 	local cx = screenCenterX > 0 and screenCenterX or (viewSizeX / 2)
 	local cy = screenCenterY > 0 and screenCenterY or (viewSizeY / 2)
@@ -17117,12 +17565,17 @@ function ControllerCameraTestDrawBuildRadial()
 		for index, option in ipairs(visibleOptions) do
 			if option.menuIndex == menu.selectedIndex then selectedIndex = index end
 			local progress = isFactoryContext and option.cmdID and menu.factoryQueueProgress and menu.factoryQueueProgress[option.cmdID]
-			local queueCount = ControllerCameraTestUsesNativeBARUI() and (option.queueCount or 0)
-				or (isFactoryContext and option.cmdID and menu.factoryQueueCounts and menu.factoryQueueCounts[option.cmdID] or 0)
+			local quotaInfo = quotaMode and ControllerCameraTestGetFactoryQuotaInfo(option) or nil
+			local parsedQueueCount = isFactoryContext and option.cmdID and menu.factoryQueueCounts
+				and menu.factoryQueueCounts[option.cmdID] or nil
+			local queueCount = quotaMode and 0 or parsedQueueCount
+				or (ControllerCameraTestUsesNativeBARUI() and (option.queueCount or 0) or 0)
 			local affordable = ControllerCameraTestCanAffordBuildOption(option)
 			entries[index] = { label = option.shortLabel or option.name or "Build", texture = option.iconTexture,
 				disabled = option.disabled == true, unavailableText = option.disabled and ControllerCameraTestGetBuildAvailability(option) or nil,
-				progress = progress, badge = queueCount, indexLabel = option.radialSlot or index,
+				progress = progress, badge = queueCount, quotaText = quotaInfo and quotaInfo.text or nil,
+				quotaCount = quotaInfo and quotaInfo.current or nil, quotaDesired = quotaInfo and quotaInfo.desired or nil,
+				indexLabel = option.radialSlot or index,
 				slot = option.radialSlot or index, nativeCell = option, queueCount = queueCount,
 				unaffordable = not affordable }
 		end
@@ -17150,6 +17603,9 @@ function ControllerCameraTestDrawBuildRadial()
 				metadata = info and info.stats or {},
 				categoryLabel = menu.radialCategoryName or (isFactoryContext and "Factory" or "Build"), sectors = sectors,
 				pageLabel = "PAGE " .. tostring(menu.radialTraversalIndex or 1) .. "/" .. tostring(menu.radialTraversalCount or 1),
+				heading = quotaMode and "QUOTA MODE" or nil,
+				centerFill = quotaMode and quotaCenterFill or nil,
+				centerAccent = quotaMode and quotaAccent or nil,
 				entries = entries, selectedIndex = selectedIndex,
 				slotCount = ControllerCameraTestUsesNativeBARUI() and 8 or #entries,
 				accent = pageColor.accent, fill = pageColor.fill },
@@ -17164,6 +17620,7 @@ function ControllerCameraTestDrawBuildRadial()
 						rect = rect, flow = WG.FlowUI, unitDefID = option.unitDefID,
 						texture = option.iconTexture, metalCost = option.metalCost,
 						energyCost = option.energyCost, queueCount = entry.queueCount,
+						progress = entry.progress, quotaText = entry.quotaText,
 						disabled = option.disabled, unaffordable = entry.unaffordable,
 						underConstruction = option.underConstruction,
 						zoom = isSelected and 0.2025 or 0.0375,
@@ -17287,16 +17744,17 @@ function ControllerCameraTestDrawBuildRadial()
 		gl.Color(1, 0.84, 0, 1)
 		gl.Text(tostring(i), x - iconSize/2 + 6, y + iconSize/2 - 16 * BuildRadialTuning.textScale, 12 * BuildRadialTuning.textScale, "o")
 
-		-- Draw Factory Queue badge if needed
+		-- Draw Factory Queue/Quota badge if needed
 		if isFactoryContext and option.cmdID and menu.factoryQueueCounts then
-			local qCount = menu.factoryQueueCounts[option.cmdID] or 0
-			if qCount > 0 then
-				local badgeText = "x" .. tostring(qCount)
+			local quotaInfo = quotaMode and ControllerCameraTestGetFactoryQuotaInfo(option) or nil
+			local qCount = quotaMode and 0 or (menu.factoryQueueCounts[option.cmdID] or 0)
+			local badgeText = quotaInfo and quotaInfo.text or (qCount > 0 and ("x" .. tostring(qCount)) or nil)
+			if badgeText then
 				local badgeW = 28 * BuildRadialTuning.textScale
-				if qCount >= 10 then
+				if #badgeText >= 4 then
 					badgeW = 36 * BuildRadialTuning.textScale
 				end
-				if qCount >= 100 then
+				if #badgeText >= 6 then
 					badgeW = 44 * BuildRadialTuning.textScale
 				end
 				local bx2 = x + iconSize/2 + 3
@@ -17307,7 +17765,8 @@ function ControllerCameraTestDrawBuildRadial()
 				-- Translucent dark glassmorphism badge
 				gl.Color(0.04, 0.08, 0.12, 0.88)
 				gl.Rect(bx1, by1, bx2, by2)
-				gl.Color(pageColor.accent[1], pageColor.accent[2], pageColor.accent[3], 0.7)
+				local badgeAccent = quotaMode and quotaAccent or pageColor.accent
+				gl.Color(badgeAccent[1], badgeAccent[2], badgeAccent[3], 0.7)
 				gl.LineWidth(1)
 				gl.BeginEnd(GL.LINE_LOOP, function()
 					gl.Vertex(bx1, by1)
@@ -17316,7 +17775,8 @@ function ControllerCameraTestDrawBuildRadial()
 					gl.Vertex(bx1, by2)
 				end)
 
-				gl.Color(1, 0.95, 0.8, 1)
+				if quotaMode then gl.Color(1.0, 0.50, 0.88, 1)
+				else gl.Color(1, 0.95, 0.8, 1) end
 				gl.Text(badgeText, (bx1 + bx2)/2, by1 + 3 * BuildRadialTuning.textScale, 11 * BuildRadialTuning.textScale, "oc")
 			end
 		end
@@ -17334,9 +17794,11 @@ function ControllerCameraTestDrawBuildRadial()
 		local labelSize = math.max(8, 8 * panelTextScale)
 		local panelTextWidth = panelRadius * 1.55
 
-		gl.Color(0.015, 0.04, 0.065, 0.88)
+		if quotaMode then gl.Color(quotaCenterFill[1], quotaCenterFill[2], quotaCenterFill[3], quotaCenterFill[4])
+		else gl.Color(0.015, 0.04, 0.065, 0.88) end
 		drawCircle(cx, cy, panelRadius, 40)
-		gl.Color(pageColor.accent[1], pageColor.accent[2], pageColor.accent[3], 0.78)
+		local centerAccent = quotaMode and quotaAccent or pageColor.accent
+		gl.Color(centerAccent[1], centerAccent[2], centerAccent[3], 0.78)
 		gl.LineWidth(1.5)
 		gl.BeginEnd(GL.LINE_LOOP, function()
 			for i = 0, 40 do
@@ -17349,6 +17811,10 @@ function ControllerCameraTestDrawBuildRadial()
 			titleSize = titleSize - 1
 		end
 		local titleY = cy + panelRadius * 0.66
+		if quotaMode then
+			gl.Color(1.0, 0.45, 0.86, 0.98)
+			gl.Text("QUOTA MODE", cx, cy + panelRadius * 0.84, math.max(9, labelSize * 1.15), "oc")
+		end
 		gl.Color(0.82, 0.94, 1, 1)
 		gl.Text(info.title, cx + 0.8, titleY, titleSize, "oc")
 		gl.Text(info.title, cx, titleY, titleSize, "oc")

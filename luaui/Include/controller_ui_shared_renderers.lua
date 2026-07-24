@@ -660,14 +660,25 @@ local function drawBuildRadial(args, cx, cy, radius, accent, values)
 		end
 		if not renderedByNativeCell then drawRoleText("slotNumber", entry.indexLabel or index, typography.slotNumber, x - size * 0.5 + 6, y + size * 0.5 - 16, values.fontScale, opacity, roles) end
 		if not renderedByNativeCell and entry.disabled and entry.unavailableText then drawRoleText("unavailableText", entry.unavailableText, typography.unavailableText, x, y - size * 0.5 + 4, values.fontScale, opacity, roles) end
-		if not renderedByNativeCell and (entry.badge or 0) > 0 then
+		if not renderedByNativeCell and entry.quotaText then
+			local badge = tostring(entry.quotaText); local badgeW = max(34, #badge * 8 + 12); local bx2, by2 = x + size * 0.5 + 3, y + size * 0.5 + 3
+			color({ 0.04, 0.02, 0.055, 0.90 * opacity }); gl.Rect(bx2 - badgeW, by2 - 20, bx2, by2); outline(bx2 - badgeW, by2 - 20, bx2, by2, { 1.0, 0.34, 0.82, 0.82 * opacity }, 1)
+			drawRoleText("metadata", badge, typography.metadata, bx2 - badgeW * 0.5, by2 - 16, values.fontScale, opacity, roles,
+				{ 1.0, 0.50, 0.88, 1.0 })
+		elseif not renderedByNativeCell and (entry.badge or 0) > 0 then
 			local badge = "x" .. tostring(entry.badge); local badgeW = max(28, #badge * 8 + 10); local bx2, by2 = x + size * 0.5 + 3, y + size * 0.5 + 3
 			color({ 0.04, 0.08, 0.12, 0.88 * opacity }); gl.Rect(bx2 - badgeW, by2 - 20, bx2, by2); outline(bx2 - badgeW, by2 - 20, bx2, by2, { accent[1], accent[2], accent[3], 0.7 * opacity }, 1)
 			drawRoleText("metadata", badge, typography.metadata, bx2 - badgeW * 0.5, by2 - 16, values.fontScale, opacity, roles)
 		end
 	end
 	local panelRadius = max(radius * 0.39, min(radius * 0.56, radius - iconSize * 0.6)) * typography.innerRadiusScale * typography.centerPanelScale
-	color({ 0.015, 0.04, 0.065, 0.88 * opacity }); circle(cx, cy, panelRadius, 40); ring(cx, cy, panelRadius, { accent[1], accent[2], accent[3], 0.78 * opacity }, 1.5, 40)
+	local centerFill = model.centerFill or { 0.015, 0.04, 0.065, 0.88 }
+	local centerAccent = model.centerAccent or accent
+	if model.heading then
+		drawRoleText("categoryLabel", string.upper(tostring(model.heading)), typography.categoryLabel,
+			cx, cy + radius * 0.78, values.fontScale, opacity, roles, { 1.0, 0.48, 0.88, 1.0 })
+	end
+	color({ centerFill[1], centerFill[2], centerFill[3], (centerFill[4] or 0.88) * opacity }); circle(cx, cy, panelRadius, 40); ring(cx, cy, panelRadius, { centerAccent[1], centerAccent[2], centerAccent[3], 0.78 * opacity }, 1.5, 40)
 	local centerScale = values.fontScale * values.centerTextScale
 	local selectedTitleColor = { typography.selectedTitleR, typography.selectedTitleG, typography.selectedTitleB, typography.selectedTitleOpacity }
 	local titleText = model.title or "Build"; local titleWidth = panelRadius * typography.centerTitle.maxWidth

@@ -851,11 +851,20 @@ local function drawCell(cellRectID, usedZoom, cellColor, disabled, underConstruc
 		tracy.ZoneEnd()
 		return false
 	end
+	local quotaInfo = cellQuotas[uDefID]
+	local quotaText, quotaCount, quotaDesired = nil, nil, nil
+	if quotaInfo and quotaInfo.quota ~= 0 and WG.Quotas and type(WG.Quotas.getUnitAmount) == "function" then
+		quotaCount = WG.Quotas.getUnitAmount(quotaInfo.builderID, uDefID)
+		quotaDesired = quotaInfo.quota
+		quotaText = tostring(quotaCount) .. "/" .. tostring(quotaDesired)
+	end
 	if ControllerNativeBuildCellRenderer then
 		local rendered = ControllerNativeBuildCellRenderer.Draw({
 			rect = cellRect, flow = WG.FlowUI, font = font2, unitDefID = uDefID,
 			texture = unitTexture, metalCost = units.unitMetalCost[uDefID],
-			energyCost = units.unitEnergyCost[uDefID], queueCount = tonumber(cmds[cellRectID].params[1]),
+			energyCost = units.unitEnergyCost[uDefID],
+			queueCount = quotaText and 0 or tonumber(cmds[cellRectID].params[1]),
+			quotaText = quotaText,
 			disabled = disabled, underConstruction = underConstruction, zoom = usedZoom,
 			padding = cellPadding, iconPadding = iconPadding, corner = cornerSize,
 			innerSize = cellInnerSize, fontSize = priceFontSize, selectedTint = cellColor,
@@ -1011,7 +1020,6 @@ local function drawCell(cellRectID, usedZoom, cellColor, disabled, underConstruc
 		)
 	end
 
-	local quotaInfo = cellQuotas[uDefID]
 	if quotaInfo and quotaInfo.quota ~= 0 then
 		local quotaText = WG.Quotas.getUnitAmount(quotaInfo.builderID, uDefID) .. "/" .. quotaInfo.quota
 		local quotaFontSize = cellInnerSize * 0.29
@@ -2063,6 +2071,13 @@ function widget:Initialize()
 				local page = math_floor((cellID - 1) / math_max(1, pageSize)) + 1
 				local pageCell = ((cellID - 1) % math_max(1, pageSize))
 				local unitDef = UnitDefs and UnitDefs[unitDefID]
+				local quotaInfo = cellQuotas[unitDefID]
+				local quotaCount, quotaDesired, quotaText = nil, nil, nil
+				if quotaInfo and quotaInfo.quota ~= 0 and WG.Quotas and type(WG.Quotas.getUnitAmount) == "function" then
+					quotaCount = WG.Quotas.getUnitAmount(quotaInfo.builderID, unitDefID)
+					quotaDesired = quotaInfo.quota
+					quotaText = tostring(quotaCount) .. "/" .. tostring(quotaDesired)
+				end
 				result[#result + 1] = {
 					stableKey = "build:" .. tostring(unitDefID),
 					unitDefID = unitDefID,
@@ -2071,6 +2086,10 @@ function widget:Initialize()
 					tooltip = cmd.tooltip,
 					description = unitTranslatedTooltip[unitDefID] or cmd.tooltip,
 					queueCount = tonumber(cmd.params and cmd.params[1]) or 0,
+					quotaCount = quotaCount,
+					quotaDesired = quotaDesired,
+					quotaText = quotaText,
+					builderID = quotaInfo and quotaInfo.builderID or nil,
 					disabled = units.unitRestricted[unitDefID] == true,
 					metalCost = units.unitMetalCost[unitDefID],
 					energyCost = units.unitEnergyCost[unitDefID],

@@ -2,14 +2,14 @@
   "kind": "bar-controller-release-payload-spec",
   "schemaVersion": 1,
   "release": {
-    "tag": "controller-support-v0.8.4-general-insert-disassemble-idle",
-    "semanticVersion": "0.8.4",
-    "displayVersion": "v0.8.4 Experimental",
-    "releaseSequence": 800400,
+    "tag": "controller-support-v0.8.5-unit-insert-quota-type-navigation",
+    "semanticVersion": "0.8.5",
+    "displayVersion": "v0.8.5 Experimental",
+    "releaseSequence": 800500,
     "channel": "experimental",
-    "assetName": "BAR_Controller_Support_v0.8.4_GENERAL_INSERT_DISASSEMBLE_IDLE_EXPANSION.zip",
-    "title": "BAR Controller Support v0.8.4 \u2014 General Insert, Disassemble & Idle Expansion",
-    "releaseNotesAsset": "RELEASE_NOTES_v0.8.4.md"
+    "assetName": "BAR_Controller_Support_v0.8.5_UNIT_INSERT_QUOTA_TYPE_NAVIGATION.zip",
+    "title": "BAR Controller Support v0.8.5 \u2014 Unit Insert, Factory Quota & Type Navigation",
+    "releaseNotesAsset": "RELEASE_NOTES_v0.8.5.md"
   },
   "builds": [
     {
@@ -57,12 +57,12 @@
     {
       "id": "restore",
       "project": "tools/controller-companion/Restore/BARControllerCompanionRestore.csproj",
-      "outputFile": "BAR_Controller_Companion_Restore_v0.8.4_Experimental.exe",
-      "packagePath": "BAR_Controller_Companion_Restore_v0.8.4_Experimental.exe",
+      "outputFile": "BAR_Controller_Companion_Restore_v0.8.5_Experimental.exe",
+      "packagePath": "BAR_Controller_Companion_Restore_v0.8.5_Experimental.exe",
       "component": {
         "componentType": "recovery-executable",
         "destinationRoot": "companion",
-        "destinationPath": "BAR_Controller_Companion_Restore_v0.8.4_Experimental.exe",
+        "destinationPath": "BAR_Controller_Companion_Restore_v0.8.5_Experimental.exe",
         "mayBeLockedByCompanion": false,
         "companionMustRestart": false,
         "barMustRunLuaUiReset": false
@@ -71,8 +71,8 @@
     {
       "id": "installer",
       "project": "tools/controller-companion/Installer/BARControllerCompanionInstaller.csproj",
-      "outputFile": "BAR_Controller_Companion_Installer_v0.8.4_Experimental.exe",
-      "packagePath": "BAR_Controller_Companion_Installer_v0.8.4_Experimental.exe",
+      "outputFile": "BAR_Controller_Companion_Installer_v0.8.5_Experimental.exe",
+      "packagePath": "BAR_Controller_Companion_Installer_v0.8.5_Experimental.exe",
       "packageOnly": true
     }
   ],

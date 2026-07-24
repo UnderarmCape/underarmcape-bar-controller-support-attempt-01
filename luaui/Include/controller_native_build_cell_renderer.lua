@@ -56,6 +56,16 @@ function Renderer.Draw(args)
 		{ tonumber(args.metalCost) or 0, tonumber(args.energyCost) or 0 },
 		tonumber(args.queueCount))
 
+	local progress = tonumber(args.progress)
+	if progress and progress >= 0 and progress < 1 then
+		local remaining = math.max(0, math.min(1, 1 - progress))
+		local overlayHeight = (iy2 - iy1) * remaining
+		if overlayHeight > 0 then
+			gl.Color(0.02, 0.02, 0.025, 0.58)
+			gl.Rect(ix1, iy2 - overlayHeight, ix2, iy2)
+		end
+	end
+
 	if args.selectedTint then
 		local color = args.selectedTint
 		gl.Blending(GL.DST_ALPHA, GL.ONE_MINUS_SRC_COLOR)
@@ -91,10 +101,11 @@ function Renderer.Draw(args)
 			y1 + padding + fontSize * 0.35)
 	end
 
-	local queue = tonumber(args.queueCount) or 0
-	if queue > 0 then
+	local quotaText = args.quotaText and tostring(args.quotaText) or nil
+	local queue = quotaText and 0 or (tonumber(args.queueCount) or 0)
+	if quotaText or queue > 0 then
 		local rectRound = flow.Draw.RectRound
-		local text = tostring(queue)
+		local text = quotaText or tostring(queue)
 		local badgeWidth = args.font and type(args.font.GetTextWidth) == "function"
 			and math.floor(args.font:GetTextWidth(text .. "  ") * innerSize * 0.285)
 			or math.max(innerSize * 0.30, #text * innerSize * 0.18)
@@ -108,7 +119,8 @@ function Renderer.Draw(args)
 			rectRound(bx2 - badgeWidth + pad, by2 - math.floor(innerSize * 0.365) + pad, bx2, by2,
 				corner * 2.6, 0, 0, 0, 1, { 0.7, 0.7, 0.7, 0.1 }, { 1, 1, 1, 0.1 })
 		end
-		printText(args.font, "\255\190\255\190" .. text, x1 + padding + math.floor(innerSize * 0.96),
+		local color = quotaText and "\255\255\130\190" or "\255\190\255\190"
+		printText(args.font, color .. text, x1 + padding + math.floor(innerSize * 0.96),
 			y1 + padding + math.floor(innerSize * 0.735), innerSize * 0.29, "ro")
 	end
 	gl.Color(1, 1, 1, 1)

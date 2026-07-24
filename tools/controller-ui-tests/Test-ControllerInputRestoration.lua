@@ -36,6 +36,7 @@ local packageScript = read("tools/dev-scripts/Build_v0.8.0_Native_Test_Package.p
 local deploy = read("tools/dev-scripts/Deploy_v0.8.0_Native_Test.ps1")
 local restore = read("tools/dev-scripts/Restore_v0.8.0_Native_Test.ps1")
 local packageManifest = read("tools/release/bar-controller-support-v0.8.0-native-test/manifest.json")
+local releaseSpec = read("tools/release/controller-release-payloads.json")
 local overrideManifest = read("native-overrides/native-override-manifest.json")
 
 _G.CMDTYPE = {
@@ -90,10 +91,10 @@ end
 local samplePages = Adapter.PackCategories(flat({ 10, 3, 0, 4 }), 8)
 
 -- 1-10: version and lifecycle.
-test(1, "Central version is 0.8.4 Experimental", function() return has(props, ">0.8.4<") and has(props, ">Experimental<") end)
-test(2, "Bridge banner matches exactly", function() return has(metadata, 'BridgeBanner => "BAR Controller Bridge " + DisplayVersion') and has(read("tools/controller-companion/Tests/Program.cs"), '"BAR Controller Bridge v0.8.4 Experimental"') end)
+test(1, "Central version is 0.8.5 Experimental", function() return has(props, ">0.8.5<") and has(props, ">Experimental<") end)
+test(2, "Bridge banner matches exactly", function() return has(metadata, 'BridgeBanner => "BAR Controller Bridge " + DisplayVersion') and has(read("tools/controller-companion/Tests/Program.cs"), '"BAR Controller Bridge v0.8.5 Experimental"') end)
 test(3, "Companion display matches central metadata", function() return has(bridge, "ProductMetadata.BridgeBanner") and has(metadata, 'DisplayVersion => "v" + SemanticVersion + " " + Channel') end)
-test(4, "Installer/package metadata matches", function() return has(installer, "ProductMetadata.DisplayVersion") and has(packageManifest, '"version": "0.8.4"') and has(packageScript, "ControllerCompanionSemanticVersion") end)
+test(4, "Installer/package metadata matches", function() return has(installer, "ProductMetadata.DisplayVersion") and has(releaseSpec, '"semanticVersion": "0.8.5"') and has(packageManifest, '"version": "0.8.4"') and has(packageScript, "ControllerCompanionSemanticVersion") end)
 test(5, "No stale v0.7.0 bridge constant remains", function() return lacks(bridge .. metadata .. installer, "BAR Controller Bridge v0.7.0") end)
 test(6, "Companion does not exit before engine starts", function() return has(lifecycle, 'return "waiting for Spring/Recoil"') and has(lifecycle, "if (!HasAttached)") end)
 test(7, "Companion tracks correct engine process", function() return has(lifecycle, "item.ProcessId == trackedProcessId") and has(lifecycle, "TrackedProcessId") end)

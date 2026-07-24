@@ -307,8 +307,7 @@ function Runtime.New()
 	bind("cancel", "Exit DGUN", dgun, 2); add({ id = "dgun-aim", inputs = { "rightStick" }, label = "Aim", when = dgun, priority = 3, group = "Commands" })
 	bind("place", "Confirm Tactical Target", staged, 1); bind("cancelPlacement", "Cancel Tactical Target", staged, 2)
 	bind("appendQueueModifier", "Repeat / Append", staged, 3)
-	add({ id = "staged-insert-order", action = "insertNextCommandModifier",
-		chordActions = { "insertNextCommandModifier", "place" }, label = "Insert Order",
+	add({ id = "staged-insert-order", inputs = { "RB", "X" }, label = "Insert Order",
 		when = staged, priority = 2, group = "Commands" })
 	bind("select", "Release to Select Area", area, 1); bind("cancel", "Cancel Area Selection", area, 2)
 	add({ id = "area-radius", inputs = { "rightStick" }, label = "Adjust Radius / Filter", when = area, priority = 3, group = "Selection" })
@@ -338,6 +337,8 @@ function Runtime.New()
 	bind("select", "Select Unit", normal, 1); bind("smartAction", "Smart Action", function(c) return normal(c) and not c.hasTransport and c.canSmartAction end, 3)
 	bind("smartAction", "Load / Move Transport", function(c) return normal(c) and c.hasTransport and c.canSmartAction end, 3, { id = "normal-transport-smart" })
 	bind("smartAction", "Draw Move / Build Path", function(c) return normal(c) and c.hasSelection and c.canMoveCommand end, 4, { hold = true, id = "normal-smart-hold" })
+	add({ id = "normal-insert-order", inputs = { "RB", "X" }, label = "Insert Order",
+		when = function(c) return normal(c) and c.generalInsertAvailable end, priority = 2, group = "Commands" })
 	add({ id = "normal-selection-toggle", inputs = { "RT", "A" }, label = "Add / Remove Selection", priority = 2, group = "Selection",
 		when = function(c) return normal(c) and c.selectionToggleModifier end })
 	bind("cancel", "Clear Selection", function(c) return normal(c) and c.hasSelection end, 5)
@@ -346,10 +347,20 @@ function Runtime.New()
 	add({ id = "normal-visible-select", action = "pitchModifier", label = "Select Visible Combat",
 		labelResolver = function(c) local behavior = self.renderers and self.renderers.SelectionBehavior; return behavior and behavior.FilterShortLabel(c.visibleSelectionFilter) or "Select Visible Combat" end,
 		when = normal, priority = 8, group = "Selection" })
-	add({ id = "normal-disassemble-toggle", inputs = { "LB", "RB" }, label = "Disassemble Mode", hold = true, when = normal, priority = 7, group = "Commands" })
+	add({ id = "normal-disassemble-toggle", inputs = { "LB", "RB" }, label = "Disassemble Mode", hold = true,
+		when = function(c) return normal(c) and c.canDisassemble end, priority = 7, group = "Commands" })
 	add({ id = "normal-visible-filter", inputs = { "LB", "RB", "leftStick" }, label = "Visible Selection Filter", when = normal, priority = 8, group = "Selection" })
+	add({ id = "normal-type-prev", inputs = { "RB", "dpadLeft" }, label = "Previous Mobile Type",
+		when = function(c) return normal(c) and c.mobileTypeNavigationAvailable end, priority = 9, group = "Selection" })
+	add({ id = "normal-type-next", inputs = { "RB", "dpadRight" }, label = "Next Mobile Type",
+		when = function(c) return normal(c) and c.mobileTypeNavigationAvailable end, priority = 10, group = "Selection" })
+	add({ id = "normal-type-visible", inputs = { "RB", "dpadDown" }, label = "Select Visible Type",
+		when = function(c) return normal(c) and c.mobileTypeNavigationAvailable end, priority = 11, group = "Selection" })
 	bind("idlePrev", "Previous Idle Builder / Factory", normal, 9); bind("idleNext", "Next Idle Builder / Factory", normal, 10)
 	bind("controlGroupModifier", "Control Groups", normal, 11); bind("selectCommander", "Select Commander", normal, 9, { id = "normal-select-commander" })
+	add({ id = "normal-self-destruct-hint", inputs = { "leftStickClick", "rightStickClick" }, label = "Self Destruct",
+		hold = true, when = function(c) return c.selfDestructFirstModifier and c.selfDestructEligible and not c.bindingsOpen end,
+		priority = 1, group = "Commands" })
 	add({ id = "shortcut-mouse", shortcut = "mouseMode", label = "Toggle Mouse Mode", priority = 900,
 		when = function(c) return not c.bindingsOpen and not c.disassembleToggleCharge end, group = "Mouse Mode" })
 
@@ -412,7 +423,9 @@ function Runtime.New()
 			"dgunMode", "commandLayer", "controlGroupLayer", "pitchLayer",
 			"lbTacticalLayer", "visibleSelectionFilter", "selectionToggleModifier",
 			"disassembleMode", "disassembleToggleCharge", "disassembleAreaMarking", "disassembleAreaReclaim", "disassembleMarkedCount",
-			"nativeBarUI", "nativeCommandActive", "controllerGlyphStyle", "controllerGlyphFamily",
+			"nativeBarUI", "nativeCommandActive", "nativeTargetingActive", "generalInsertAvailable", "factoryQuotaMode",
+			"mobileTypeNavigationAvailable", "selfDestructFirstModifier", "selfDestructEligible",
+			"canDisassemble", "controllerGlyphStyle", "controllerGlyphFamily",
 			"canSmartAction", "canTacticalCommand", "canMoveCommand", "canStopCommand", "canPatrolCommand", "canGuardCommand",
 			"canReclaimCommand", "canRepairCommand", "canAttackCommand", "canFightCommand", "canBuildCommand" }
 		local values = {}; for i, key in ipairs(keys) do values[i] = tostring(context[key]) end; return table.concat(values, "|")
@@ -420,6 +433,7 @@ function Runtime.New()
 	function self:SelectionSignature(context)
 		local keys = { "selectionRevision", "selectedCount", "hasSelection", "multipleSelection",
 			"hasBuilder", "hasFactory", "hasTransport", "selectionProfile",
+			"generalInsertAvailable", "mobileTypeNavigationAvailable", "selfDestructEligible", "canDisassemble",
 			"canSmartAction", "canTacticalCommand", "canMoveCommand", "canStopCommand", "canPatrolCommand", "canGuardCommand",
 			"canReclaimCommand", "canRepairCommand", "canAttackCommand", "canFightCommand", "canBuildCommand" }
 		local values = {}; for i, key in ipairs(keys) do values[i] = tostring(context[key]) end

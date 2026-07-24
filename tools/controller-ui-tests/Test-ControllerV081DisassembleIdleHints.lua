@@ -119,11 +119,11 @@ test(48, "affordability clears immediately when affordable", function() return h
 test(49, "draw overlays use raw affordability", function() return has(camera, "local affordable = ControllerCameraTestCanAffordBuildOption(option)") and has(camera, "local affordable = ControllerCameraTestCanAffordBuildOption(currentOption)") end)
 test(50, "center text uses smoothed availability only", function() return has(camera, "return ControllerCameraTestGetSmoothedBuildAvailability(option)") end)
 
-test(51, "central companion version is 0.8.4 Experimental", function() return has(props, ">0.8.4<") and has(props, ">Experimental<") end)
-test(52, "release spec names v0.8.4 repair package", function() return has(releaseSpec, "controller-support-v0.8.4-general-insert-disassemble-idle") and has(releaseSpec, "BAR_Controller_Support_v0.8.4_GENERAL_INSERT_DISASSEMBLE_IDLE_EXPANSION.zip") end)
-test(53, "public builder defaults to v0.8.4 output", function() return has(releaseBuilder, "artifacts\\v0.8.4-public-release") and has(releaseBuilder, "Install_v0.8.4.ps1") end)
-test(54, "release system expects v0.8.4 latest", function() return has(releaseSystem, "controller-support-v0.8.4-general-insert-disassemble-idle") and has(releaseSystem, "bridge version remains v0.8.4 Experimental") end)
-test(55, "shipping defaults manifest tracks v0.8.4", function() return has(defaultsManifest, "0.8.4-general-insert-disassemble-idle") and has(defaultsManifest, '"minimumCompanionVersion": "0.8.4"') end)
+test(51, "central companion version is 0.8.5 Experimental", function() return has(props, ">0.8.5<") and has(props, ">Experimental<") end)
+test(52, "release spec names v0.8.5 repair package", function() return has(releaseSpec, "controller-support-v0.8.5-unit-insert-quota-type-navigation") and has(releaseSpec, "BAR_Controller_Support_v0.8.5_UNIT_INSERT_QUOTA_TYPE_NAVIGATION.zip") end)
+test(53, "public builder defaults to v0.8.5 output", function() return has(releaseBuilder, "artifacts\\v0.8.5-public-release") and has(releaseBuilder, "Install_v0.8.5.ps1") end)
+test(54, "release system expects v0.8.5 latest", function() return has(releaseSystem, "controller-support-v0.8.5-unit-insert-quota-type-navigation") and has(releaseSystem, "bridge version remains v0.8.5 Experimental") end)
+test(55, "shipping defaults manifest tracks v0.8.5", function() return has(defaultsManifest, "0.8.5-unit-insert-quota-type-navigation") and has(defaultsManifest, '"minimumCompanionVersion": "0.8.5"') end)
 test(56, "dev deployment runs the v0.8.1 harness", function() return has(deploy, "Test-ControllerV081DisassembleIdleHints.lua") end)
 test(57, "dev package includes the v0.8.1 harness", function() return has(packageScript, "Test-ControllerV081DisassembleIdleHints.lua") end)
 

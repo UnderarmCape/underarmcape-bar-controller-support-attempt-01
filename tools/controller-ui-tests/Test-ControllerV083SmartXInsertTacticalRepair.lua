@@ -42,8 +42,8 @@ local packageScript = read("tools/dev-scripts/Build_v0.8.0_Native_Test_Package.p
 local companionTests = read("tools/controller-companion/Tests/Program.cs")
 local updateService = read("tools/controller-companion/UpdateService.cs")
 local publisher = read("tools/controller-ui-publisher/Program.cs")
-local releaseNotes = read("tools/release/bar-controller-support-v0.8.4/RELEASE_NOTES_v0.8.4.md")
-local releaseReadme = read("tools/release/bar-controller-support-v0.8.4/README.md")
+local releaseNotes = read("tools/release/bar-controller-support-v0.8.5/RELEASE_NOTES_v0.8.5.md")
+local releaseReadme = read("tools/release/bar-controller-support-v0.8.5/README.md")
 local releaseV083Readme = read("tools/release/bar-controller-support-v0.8.3/README.md")
 local releaseV082Readme = read("tools/release/bar-controller-support-v0.8.2/README.md")
 local tapsSource = read("luaui/Include/controller_selection_taps.lua")
@@ -183,10 +183,10 @@ test(93, "no raw unprotected command issues", function() return lacks(tacticalEx
 test(94, "completion dispatches exactly once", function() return has(selfDestruct, "state.attempted = true") and has(selfDestruct, "state.issued = ControllerCameraTestIssueSelfDestruct()") end)
 
 -- Release/regressions.
-test(95, "bridge reports v0.8.4", function() return has(props, ">0.8.4<") and has(companionTests, "BAR Controller Bridge v0.8.4 Experimental") end)
-test(96, "updater discovers v0.8.4", function() return has(companionTests, "LatestRelease") and has(companionTests, "tag_name") and has(companionTests, "v0.8.4") end)
-test(97, "Recovery Mode lists v0.8.4 first", function() return has(releaseSystem, "controller-support-v0.8.4-general-insert-disassemble-idle") and has(releaseSystem, "Recovery Mode lists v0.8.4 first") end)
-test(98, "v0.8.3 remains available", function() return has(releaseV083Readme, "v0.8.3") and has(releaseSystem, "v0.8.3 remains available") end)
+test(95, "bridge reports v0.8.5", function() return has(props, ">0.8.5<") and has(companionTests, "BAR Controller Bridge v0.8.5 Experimental") end)
+test(96, "updater discovers v0.8.5", function() return has(companionTests, "LatestRelease") and has(companionTests, "tag_name") and has(companionTests, "v0.8.5") end)
+test(97, "Recovery Mode lists v0.8.5 first", function() return has(releaseSystem, "controller-support-v0.8.5-unit-insert-quota-type-navigation") and has(releaseSystem, "Recovery Mode lists v0.8.5 first") end)
+test(98, "v0.8.4 remains available", function() return has(releaseSystem, "controller-support-v0.8.4-general-insert-disassemble-idle") and has(releaseSystem, "v0.8.4 remains available") end)
 test(99, "hint filtering remains passing", function() return has(runtime, "canRepairCommand") and has(runtime, "canTacticalCommand") end)
 test(100, "radial labels remain passing", function() return has(renderer, "sector.labelColor or sector.accent or accent") end)
 test(101, "energy warning remains passing", function() return has(camera, "AFFORDABILITY_DISPLAY_SAMPLE_SECONDS = 1.0") end)
@@ -203,7 +203,7 @@ test(111, "all .NET projects build", function() return has(releaseSystem, "all s
 test(112, "deployment validation passes", function() return has(releaseSystem, "manifest-driven deployment validator passes") end)
 test(113, "rollback validation passes", function() return has(releaseSystem, "strict rollback validator passes") end)
 test(114, "public package validation passes", function() return has(releaseSystem, "final package inventory and component hashes pass") end)
-test(115, "GitHub publication validation passes", function() return has(releaseSystem, "GitHub publication validation passes") and all(releaseSpec, "0.8.4", "GENERAL_INSERT_DISASSEMBLE_IDLE_EXPANSION") and has(releaseNotes, "General Insert") and has(releaseReadme, "v0.8.4") end)
+test(115, "GitHub publication validation passes", function() return has(releaseSystem, "GitHub publication validation passes") and all(releaseSpec, "0.8.5", "UNIT_INSERT_QUOTA_TYPE_NAVIGATION") and all(releaseNotes, "RB+X", "Queue/Quota Mode") and has(releaseReadme, "v0.8.5") end)
 
 for index, item in ipairs(cases) do
 	local ok, result = pcall(item.callback)
