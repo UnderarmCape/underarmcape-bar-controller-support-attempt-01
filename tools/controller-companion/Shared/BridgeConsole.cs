@@ -36,12 +36,75 @@ internal static class BridgeConsole
 
     public static void WriteStatus(string label, string value, BridgeTone tone = BridgeTone.Neutral)
     {
-        WriteLine("[" + ToAscii(label) + "] " + ToAscii(value), tone);
+        ConsoleInteractionCoordinator.Instance.WriteStatus(label, value, tone);
+    }
+
+    public static void WriteStatus(IConsoleSession session, string label, string value, BridgeTone tone = BridgeTone.Neutral)
+    {
+        session.WriteStatus(label, value, tone);
     }
 
     public static T RunExclusive<T>(Func<T> action)
     {
         lock (Sync) return action();
+    }
+
+    public static void RenderUpdatePanelOnce(
+        string installedVersion,
+        string installedTag,
+        string availableVersion,
+        string availableTag,
+        DateTimeOffset publishedAt,
+        IConsoleSession? session = null)
+    {
+        session ??= ConsoleInteractionCoordinator.Instance;
+        RunExclusive(() =>
+        {
+            WriteBoxTitle("CONTROLLER SUPPORT UPDATE FOUND", BridgeTone.Warning, session);
+            WriteLine(FormatRow("Installed", installedVersion), BridgeTone.Good, session);
+            WriteLine(FormatDetail(installedTag), BridgeTone.Good, session);
+            WriteLine(FormatRow("Available", availableVersion), BridgeTone.Warning, session);
+            WriteLine(FormatDetail(availableTag), BridgeTone.Warning, session);
+            WriteLine(FormatRow("Published", publishedAt.ToString("yyyy-MM-dd")), BridgeTone.Neutral, session);
+            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent, session);
+            WriteLine(FormatOption("[U] Update now"), BridgeTone.Good, session);
+            WriteLine(FormatOption("[N] Not now"), BridgeTone.Neutral, session);
+            WriteLine(FormatOption("[V] View release notes"), BridgeTone.Accent, session);
+            WriteLine(FormatOption("[R] Recovery Mode"), BridgeTone.Caution, session);
+            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent, session);
+            WriteLine("Type U, N, V, or R, then press Enter.", BridgeTone.Neutral, session);
+            session.Output.Write("Choice [U/N/V/R]: ");
+            return true;
+        });
+    }
+
+    public static ControllerUpdatePromptAction ReadUpdateChoiceLine(
+        string installedVersion,
+        string installedTag,
+        string availableVersion,
+        string availableTag,
+        DateTimeOffset publishedAt,
+        IConsoleSession? session = null)
+    {
+        session ??= ConsoleInteractionCoordinator.Instance;
+        RenderUpdatePanelOnce(installedVersion, installedTag, availableVersion, availableTag, publishedAt, session);
+
+        while (true)
+        {
+            string? line = session.ReadLine();
+            ControllerUpdatePromptAction action = ControllerUpdatePolicy.ResolvePromptAction(line);
+            if (action == ControllerUpdatePromptAction.BlankInput)
+            {
+                session.Output.Write("Enter U, N, V, or R: ");
+                continue;
+            }
+            if (action == ControllerUpdatePromptAction.Invalid)
+            {
+                session.Output.Write("Invalid choice. Type U, N, V, or R, then press Enter: ");
+                continue;
+            }
+            return action;
+        }
     }
 
     public static ConsoleKey ReadUpdateChoice(
@@ -51,54 +114,74 @@ internal static class BridgeConsole
         string availableTag,
         DateTimeOffset publishedAt)
     {
-        return RunExclusive(() =>
+        ControllerUpdatePromptAction action = ReadUpdateChoiceLine(
+            installedVersion, installedTag, availableVersion, availableTag, publishedAt);
+        return action switch
         {
-            WriteBoxTitle("CONTROLLER SUPPORT UPDATE FOUND", BridgeTone.Warning);
-            WriteLine(FormatRow("Installed", installedVersion), BridgeTone.Good);
-            WriteLine(FormatDetail(installedTag), BridgeTone.Good);
-            WriteLine(FormatRow("Available", availableVersion), BridgeTone.Warning);
-            WriteLine(FormatDetail(availableTag), BridgeTone.Warning);
-            WriteLine(FormatRow("Published", publishedAt.ToString("yyyy-MM-dd")), BridgeTone.Neutral);
-            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent);
-            WriteLine(FormatOption("[U] Update now"), BridgeTone.Good);
-            WriteLine(FormatOption("[N] Not now"), BridgeTone.Neutral);
-            WriteLine(FormatOption("[V] View release notes"), BridgeTone.Accent);
-            WriteLine(FormatOption("[R] Recovery Mode"), BridgeTone.Caution);
-            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent);
-            return Console.ReadKey(intercept: true).Key;
-        });
+            ControllerUpdatePromptAction.Update => ConsoleKey.U,
+            ControllerUpdatePromptAction.NotNow => ConsoleKey.N,
+            ControllerUpdatePromptAction.ViewNotes => ConsoleKey.V,
+            ControllerUpdatePromptAction.Recovery => ConsoleKey.R,
+            _ => ConsoleKey.NoName,
+        };
     }
 
     public static ConsoleKey ReadRecoveryChoice(
         IReadOnlyList<string> rows,
         int page,
-        int pageCount)
+        int pageCount,
+        IConsoleSession? session = null)
     {
+        session ??= ConsoleInteractionCoordinator.Instance;
         return RunExclusive(() =>
         {
-            WriteBoxTitle("RECOVERY MODE", BridgeTone.Accent);
-            WriteLine(FormatOption("Select a release to install or restore."), BridgeTone.Neutral);
-            WriteLine(FormatOption("Versions older than v0.6.0 are intentionally hidden."), BridgeTone.Neutral);
-            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent);
-            foreach (string row in rows) WriteLine(FormatOption(row), ToneForIndicator(row));
-            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent);
-            WriteLine(FormatOption("Page " + page + "/" + pageCount), BridgeTone.Neutral);
-            WriteLine(FormatOption("[Number] Details  [N] Next  [P] Previous  [B] Back  [Q] Quit"), BridgeTone.Neutral);
-            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent);
-            return Console.ReadKey(intercept: true).Key;
+            WriteBoxTitle("RECOVERY MODE", BridgeTone.Accent, session);
+            WriteLine(FormatOption("Select a release to install or restore."), BridgeTone.Neutral, session);
+            WriteLine(FormatOption("Versions older than v0.6.0 are intentionally hidden."), BridgeTone.Neutral, session);
+            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent, session);
+            foreach (string row in rows) WriteLine(FormatOption(row), ToneForIndicator(row), session);
+            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent, session);
+            WriteLine(FormatOption("Page " + page + "/" + pageCount), BridgeTone.Neutral, session);
+            WriteLine(FormatOption("[Number] Details  [N] Next  [P] Previous  [B] Back  [Q] Quit"), BridgeTone.Neutral, session);
+            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent, session);
+            WriteLine("Type option number or N/P/B/Q, then press Enter.", BridgeTone.Neutral, session);
+            session.Output.Write("Choice: ");
+
+            while (true)
+            {
+                string? line = session.ReadLine()?.Trim();
+                if (string.IsNullOrEmpty(line))
+                {
+                    session.Output.Write("Enter option number or N/P/B/Q: ");
+                    continue;
+                }
+                if (int.TryParse(line, out int number) && number >= 1 && number <= 9)
+                {
+                    return (ConsoleKey)((int)ConsoleKey.D0 + number);
+                }
+                if (string.Equals(line, "n", StringComparison.OrdinalIgnoreCase) || string.Equals(line, "next", StringComparison.OrdinalIgnoreCase)) return ConsoleKey.N;
+                if (string.Equals(line, "p", StringComparison.OrdinalIgnoreCase) || string.Equals(line, "prev", StringComparison.OrdinalIgnoreCase) || string.Equals(line, "previous", StringComparison.OrdinalIgnoreCase)) return ConsoleKey.P;
+                if (string.Equals(line, "b", StringComparison.OrdinalIgnoreCase) || string.Equals(line, "back", StringComparison.OrdinalIgnoreCase)) return ConsoleKey.B;
+                if (string.Equals(line, "q", StringComparison.OrdinalIgnoreCase) || string.Equals(line, "quit", StringComparison.OrdinalIgnoreCase)) return ConsoleKey.Q;
+                session.Output.Write("Invalid choice. Type option number or N/P/B/Q, then press Enter: ");
+            }
         });
     }
 
-    public static bool ConfirmReleaseAction(string action, string displayVersion, string tag, bool warning)
+    public static bool ConfirmReleaseAction(string action, string displayVersion, string tag, bool warning, IConsoleSession? session = null)
     {
+        session ??= ConsoleInteractionCoordinator.Instance;
         return RunExclusive(() =>
         {
-            WriteBoxTitle(action.ToUpperInvariant(), warning ? BridgeTone.Caution : BridgeTone.Accent);
-            WriteLine(FormatRow("Release", displayVersion), warning ? BridgeTone.Caution : BridgeTone.Neutral);
-            WriteLine(FormatDetail(tag), BridgeTone.Neutral);
-            WriteLine(FormatOption("Press Y to confirm or any other key to cancel."), BridgeTone.Warning);
-            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent);
-            return Console.ReadKey(intercept: true).Key == ConsoleKey.Y;
+            WriteBoxTitle(action.ToUpperInvariant(), warning ? BridgeTone.Caution : BridgeTone.Accent, session);
+            WriteLine(FormatRow("Release", displayVersion), warning ? BridgeTone.Caution : BridgeTone.Neutral, session);
+            WriteLine(FormatDetail(tag), BridgeTone.Neutral, session);
+            WriteLine(FormatOption("Confirm action? [y/N]"), BridgeTone.Warning, session);
+            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent, session);
+            session.Output.Write("Choice [y/N]: ");
+            string? line = session.ReadLine()?.Trim();
+            return string.Equals(line, "y", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(line, "yes", StringComparison.OrdinalIgnoreCase);
         });
     }
 
@@ -108,36 +191,41 @@ internal static class BridgeConsole
         string title,
         DateTimeOffset publishedAt,
         string summary,
-        string indicators)
+        string indicators,
+        IConsoleSession? session = null)
     {
+        session ??= ConsoleInteractionCoordinator.Instance;
         RunExclusive(() =>
         {
-            WriteBoxTitle("RELEASE DETAILS", BridgeTone.Accent);
-            WriteLine(FormatRow("Version", displayVersion), BridgeTone.Neutral);
-            WriteLine(FormatRow("Tag", tag), BridgeTone.Neutral);
-            WriteLine(FormatRow("Date", publishedAt.ToString("yyyy-MM-dd")), BridgeTone.Neutral);
-            WriteLine(FormatRow("Status", indicators), ToneForIndicator(indicators));
-            WriteLine(FormatRow("Title", title), BridgeTone.Neutral);
-            foreach (string line in Wrap(summary, Width - 4)) WriteLine(FormatOption(line), BridgeTone.Neutral);
-            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent);
+            WriteBoxTitle("RELEASE DETAILS", BridgeTone.Accent, session);
+            WriteLine(FormatRow("Version", displayVersion), BridgeTone.Neutral, session);
+            WriteLine(FormatRow("Tag", tag), BridgeTone.Neutral, session);
+            WriteLine(FormatRow("Date", publishedAt.ToString("yyyy-MM-dd")), BridgeTone.Neutral, session);
+            WriteLine(FormatRow("Status", indicators), ToneForIndicator(indicators), session);
+            WriteLine(FormatRow("Title", title), BridgeTone.Neutral, session);
+            foreach (string line in Wrap(summary, Width - 4)) WriteLine(FormatOption(line), BridgeTone.Neutral, session);
+            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent, session);
+            WriteLine("Press Enter to return to the update choices.", BridgeTone.Neutral, session);
+            session.ReadLine();
             return true;
         });
     }
 
-    public static void WriteLuaUiResetWarning(bool nativeOverrideChanged)
+    public static void WriteLuaUiResetWarning(bool nativeOverrideChanged, IConsoleSession? session = null)
     {
+        session ??= ConsoleInteractionCoordinator.Instance;
         RunExclusive(() =>
         {
-            WriteBoxTitle("UPDATE INSTALLED WHILE BEYOND ALL REASON IS RUNNING", BridgeTone.Warning);
-            WriteLine(FormatOption("Enter the following command in the in-game chat/console:"), BridgeTone.Warning);
-            WriteLine(FormatCentered("/luaui reset"), BridgeTone.Good);
-            WriteLine(FormatOption("This reloads the updated controller widgets."), BridgeTone.Warning);
-            WriteLine(FormatOption("Active controller menus, selections, or commands may reset."), BridgeTone.Warning);
+            WriteBoxTitle("UPDATE INSTALLED WHILE BEYOND ALL REASON IS RUNNING", BridgeTone.Warning, session);
+            WriteLine(FormatOption("Enter the following command in the in-game chat/console:"), BridgeTone.Warning, session);
+            WriteLine(FormatCentered("/luaui reset"), BridgeTone.Good, session);
+            WriteLine(FormatOption("This reloads the updated controller widgets."), BridgeTone.Warning, session);
+            WriteLine(FormatOption("Active controller menus, selections, or commands may reset."), BridgeTone.Warning, session);
             if (nativeOverrideChanged)
             {
-                WriteLine(FormatOption("Native overrides were replaced; non-Lua content may need an engine restart."), BridgeTone.Caution);
+                WriteLine(FormatOption("Native overrides were replaced; non-Lua content may need an engine restart."), BridgeTone.Caution, session);
             }
-            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent);
+            WriteLine("+" + new string('-', Width - 2) + "+", BridgeTone.Accent, session);
             return true;
         });
     }
@@ -198,39 +286,17 @@ internal static class BridgeConsole
         return BridgeTone.Warning;
     }
 
-    private static void WriteLine(string value, BridgeTone tone)
+    private static void WriteLine(string value, BridgeTone tone, IConsoleSession? session = null)
     {
-        lock (Sync)
-        {
-            bool useColor = SupportsColor(Console.IsOutputRedirected, Environment.GetEnvironmentVariable("NO_COLOR"));
-            if (!useColor)
-            {
-                Console.WriteLine(ToAscii(value));
-                return;
-            }
-
-            ConsoleColor previous = Console.ForegroundColor;
-            try
-            {
-                Console.ForegroundColor = ToneColor(tone);
-                Console.WriteLine(ToAscii(value));
-            }
-            catch (Exception)
-            {
-                Console.WriteLine(ToAscii(value));
-            }
-            finally
-            {
-                try { Console.ForegroundColor = previous; } catch (Exception) { }
-            }
-        }
+        session ??= ConsoleInteractionCoordinator.Instance;
+        session.WriteLine(value, tone);
     }
 
-    private static void WriteBoxTitle(string title, BridgeTone tone)
+    private static void WriteBoxTitle(string title, BridgeTone tone, IConsoleSession? session = null)
     {
-        WriteLine("+" + new string('-', Width - 2) + "+", tone);
-        WriteLine(FormatCentered(title), tone);
-        WriteLine("+" + new string('-', Width - 2) + "+", tone);
+        WriteLine("+" + new string('-', Width - 2) + "+", tone, session);
+        WriteLine(FormatCentered(title), tone, session);
+        WriteLine("+" + new string('-', Width - 2) + "+", tone, session);
     }
 
     private static BridgeTone ToneForIndicator(string value)
@@ -259,7 +325,7 @@ internal static class BridgeConsole
         return result.ToArray();
     }
 
-    private static ConsoleColor ToneColor(BridgeTone tone)
+    internal static ConsoleColor ToneColor(BridgeTone tone)
     {
         switch (tone)
         {

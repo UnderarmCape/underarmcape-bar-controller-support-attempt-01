@@ -9,6 +9,8 @@ internal enum ControllerUpdatePromptAction
     NotNow,
     ViewNotes,
     Recovery,
+    BlankInput,
+    Invalid,
 }
 
 internal static class ControllerUpdatePolicy
@@ -23,6 +25,41 @@ internal static class ControllerUpdatePolicy
             ConsoleKey.R => ControllerUpdatePromptAction.Recovery,
             _ => ControllerUpdatePromptAction.None,
         };
+    }
+
+    public static ControllerUpdatePromptAction ResolvePromptAction(string? line)
+    {
+        if (line == null) return ControllerUpdatePromptAction.None;
+        string trimmed = line.Trim();
+        if (trimmed.Length == 0) return ControllerUpdatePromptAction.BlankInput;
+
+        if (string.Equals(trimmed, "u", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "update", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "update now", StringComparison.OrdinalIgnoreCase))
+        {
+            return ControllerUpdatePromptAction.Update;
+        }
+        if (string.Equals(trimmed, "n", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "no", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "not now", StringComparison.OrdinalIgnoreCase))
+        {
+            return ControllerUpdatePromptAction.NotNow;
+        }
+        if (string.Equals(trimmed, "v", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "view", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "view notes", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "release notes", StringComparison.OrdinalIgnoreCase))
+        {
+            return ControllerUpdatePromptAction.ViewNotes;
+        }
+        if (string.Equals(trimmed, "r", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "recovery", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, "recovery mode", StringComparison.OrdinalIgnoreCase))
+        {
+            return ControllerUpdatePromptAction.Recovery;
+        }
+
+        return ControllerUpdatePromptAction.Invalid;
     }
 
     public static bool CanPrompt(bool interactive, bool inputRedirected, bool outputRedirected)
